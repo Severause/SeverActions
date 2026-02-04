@@ -1,0 +1,70 @@
+name: ArrestNPC
+description: "A guard arrests an NPC and escorts them to jail. The guard will approach
+  the target, restrain them, and escort them to the appropriate hold's jail cell.
+  The prisoner will be dressed in prison clothes and confined to the jail.
+
+  Use this action when:
+  - A guard needs to arrest an NPC for a crime
+  - An authority figure is taking someone into custody
+  - Someone needs to be imprisoned for their actions
+
+  This action is for NPCs only - use ArrestPlayer for confronting the player about
+  their bounty."
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: ArrestNPC_Internal
+parameterMapping:
+  - type: speaker
+    name: akGuard
+    description: The guard or authority figure making the arrest
+  - type: dynamic
+    name: akTarget
+    description: The NPC to be arrested and taken to jail
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWhiterun"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionRiften"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionSolitude"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionHaafingar"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWindhelm"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionMarkarth"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionFalkreath"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionDawnstar"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWinterhold"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "OR"
+    required: true

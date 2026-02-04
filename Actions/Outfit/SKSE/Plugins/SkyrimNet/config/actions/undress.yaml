@@ -1,0 +1,18 @@
+name: Undress
+description: Remove all equipped armor and clothing. Use when undressing completely, stripping down, or taking off all your gear.
+questEditorId: SeverActions
+scriptName: SeverActions_Outfit
+executionFunctionName: Undress_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

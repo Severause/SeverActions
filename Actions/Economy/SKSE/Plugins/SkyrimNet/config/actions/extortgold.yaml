@@ -1,0 +1,36 @@
+name: ExtortGold
+description: |
+  The actor forcibly takes gold through threats or intimidation. Use this when:
+  - The actor threatens someone for money
+  - The actor demands gold under threat of violence
+  - The actor is robbing or mugging someone
+  - The actor uses their power to extract payment
+
+  Common triggers: "hand over your gold", "your money or your life", "pay up or else", "give me everything you have", "empty your pockets"
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: ExtortGold_Execute
+parameterMapping:
+  - type: speaker
+    name: akExtorter
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: akVictim
+    description: The person being extorted
+  - type: dynamic
+    name: aiAmount
+    description: Amount of gold demanded (typically 50-500 depending on severity, but may be more)
+tags:
+  - Currency
+  - Hostile
+  - Crime
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

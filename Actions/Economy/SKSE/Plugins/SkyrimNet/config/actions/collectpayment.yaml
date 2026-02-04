@@ -1,0 +1,31 @@
+name: CollectPayment
+description: |
+  The actor collects gold owed to them after providing goods or services. Use this when:
+  - The actor states a price for something they sold
+  - The actor expects payment after completing work
+  - The actor is a merchant completing a transaction
+  - The actor is owed money and requests payment
+
+  Common triggers: "that'll be 50 gold", "pay up", "you owe me", "the price is", "that costs", "hand over the septims"
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: CollectPayment_Execute
+parameterMapping:
+  - type: speaker
+    name: akCollector
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: akPayer
+    description: The person who owes payment
+  - type: dynamic
+    name: aiAmount
+    description: The price or amount owed as stated in dialogue
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

@@ -1,0 +1,127 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "dialogue_target" or render_mode == "target" %}
+{# ============================================================================
+FERTILITY MODE RELOADED - Character Bio Integration
+Provides physical state info; emotional response depends on character personality
+============================================================================ #}
+{% set first_person = (render_mode == "full" or render_mode == "thoughts" or render_mode == "transform") %}
+{% set third_person = (render_mode == "dialogue_target" or render_mode == "target") %}
+{% if isValidActor(actorUUID) %}
+{# ========== FERTILITY DATA PARSING - Using StorageUtil ========== #}
+{# Your Papyrus script stores all fertility data in StorageUtil with these keys #}
+{% set fert_state = papyrus_util("GetStringValue", actorUUID, "SkyrimNet_FM_State", "normal") | lower %}
+{% set fert_father = papyrus_util("GetStringValue", actorUUID, "SkyrimNet_FM_Father", "") %}
+{% set fert_cycle_day = papyrus_util("GetIntValue", actorUUID, "SkyrimNet_FM_CycleDay", -1) %}
+{% set fert_pregnant_days = papyrus_util("GetIntValue", actorUUID, "SkyrimNet_FM_PregnantDays", 0) %}
+{% set fert_has_baby = papyrus_util("GetIntValue", actorUUID, "SkyrimNet_FM_HasBaby", 0) %}
+
+{# Only show fertility section if actor has non-normal fertility state #}
+{% if fert_state and fert_state != "normal" and fert_state != "" %}
+{# ========== ACTOR DATA SETUP ========== #}
+{% set actor = decnpc(actorUUID) %}
+{% set actorName = actor.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set obj = actor.objectivePronoun %}
+{% set poss = actor.possessivePronoun %}
+{% set refl = actor.reflexivePronoun %}
+{% set playerActor = decnpc(player.UUID) %}
+{% set playerName = playerActor.name %}
+{% set isPlayersChild = (fert_father == playerName) %}
+
+{# ========== FIRST PERSON VIEW ========== #}
+{% if first_person %}
+## Fertility & Physical State
+
+{% if fert_state == "third_trimester" %}
+{{ actorName }} is in {{ poss }} third trimester (day {{ fert_pregnant_days }}){% if fert_father %}, carrying {{ fert_father }}'s child{% endif %}.
+
+**Physical reality:** The baby is large and heavy. Every movement is effort — backaches, swollen ankles, shortness of breath, constant bladder pressure. Sleep is nearly impossible. Strong kicks come at unexpected moments. Birth is imminent.
+
+**Emotional landscape** (interpret based on {{ actorName }}'s personality and feelings about {% if fert_father %}{{ fert_father }}{% else %}the father{% endif %}):\n- If wanted: anticipation, nesting instincts, protectiveness, impatience to meet the baby\n- If unwanted: dread, resentment, feeling trapped, desperate for it to be over\n- If complicated: ambivalence, guilt, fear of the future, uncertainty about keeping it\n{% if isPlayersChild %}\n- {{ actorName }}'s feelings about {{ playerName }} color everything — is {{ subj }} hoping {{ playerName }} will be there, or dreading it?\n{% endif %}
+
+{% elif fert_state == "second_trimester" %}
+{{ actorName }} is in {{ poss }} second trimester (day {{ fert_pregnant_days }}){% if fert_father %}, carrying {{ fert_father }}'s child{% endif %}.
+
+**Physical reality:** Energy returning after rough first months. Belly now visibly rounded — no hiding it. First flutters of movement felt. Appetite increased. The "glow" others mention. Occasional round ligament pain.
+
+**Emotional landscape** (interpret based on {{ actorName }}'s personality and circumstances):\n- If wanted: growing bond with the baby, excitement at feeling movement, planning ahead\n- If unwanted: denial fading as belly grows, panic about what comes next, considering options\n- If complicated: moments of connection followed by guilt or fear, hiding the pregnancy from some people\n{% if isPlayersChild %}\n- How does {{ actorName }} feel when the baby kicks and {{ poss }} thoughts turn to {{ playerName }}?\n{% endif %}
+
+{% elif fert_state == "first_trimester" %}
+{{ actorName }} is in {{ poss }} first trimester (day {{ fert_pregnant_days }}){% if fert_father %}, pregnant with {{ fert_father }}'s child{% endif %}.
+
+**Physical reality:** Waves of nausea, especially around strong smells. Bone-deep exhaustion. Tender breasts. Food aversions. Heightened sense of smell. Mood swings from hormonal chaos.
+
+**Emotional landscape** (interpret based on {{ actorName }}'s personality and how this happened):\n- If wanted: cautious hope, fear of losing it, keeping the secret, tender protectiveness\n- If unwanted: shock, denial, anger, scrambling to figure out what to do, feeling betrayed by {{ poss }} body\n- If uncertain: testing different futures in {{ poss }} mind, not ready to tell anyone, mood swinging with the hormones\n- The father's identity matters — was this with someone {{ subj }} loves? A mistake? Something worse?
+
+{% elif fert_state == "ovulating" %}
+{{ actorName }} is ovulating (cycle day {{ fert_cycle_day }}) — peak fertility.
+
+**Physical reality:** Heightened libido. Subtle cramping. Feeling more attractive, confident. Noticing others noticing {{ obj }}. Body primed for conception.
+
+**How this might manifest** (depends on {{ actorName }}'s personality and situation):\n- Some feel powerful, magnetic, enjoy the attention\n- Some feel uncomfortable with unwanted urges, try to suppress them\n- Some are hyperaware of the risk, careful to avoid certain situations\n- Some don't consciously notice but are more flirtatious than usual
+
+{% elif fert_state == "fertile" %}
+{{ actorName }} is in {{ poss }} fertile window (cycle day {{ fert_cycle_day }}).
+
+**Physical reality:** Rising energy after {{ poss }} period. Body preparing for ovulation. Gradually increasing interest in intimacy. Generally better mood and more social.
+
+{% elif fert_state == "pms" %}
+{{ actorName }} is experiencing PMS (cycle day {{ fert_cycle_day }}) — period coming soon.
+
+**Physical reality:** Bloating, breast tenderness, headaches, lower back pain starting. Clothes feel tight. Fatigue despite rest. Difficulty concentrating.
+
+**Emotional reality:** Mood swings {{ subj }} can't fully control. Short temper — small things feel like big provocations. May be irritable, tearful, or both in quick succession. {{ capitalize(subj) }} likely knows {{ subj }}'s being difficult but struggles to stop.
+
+{% elif fert_state == "menstruating" %}
+{{ actorName }} is menstruating (cycle day {{ fert_cycle_day }}).
+
+**Physical reality:** Cramping ranging from dull ache to sharp pain. Heavy bleeding requiring attention. Low energy, wants to curl up somewhere quiet. Bloating, headaches. May need to pause and breathe through bad cramps.
+
+**How this affects {{ obj }}:** More withdrawn, less patient with social demands. Emotionally sensitive. The discomfort is distracting and exhausting. Prefers to avoid unnecessary interaction.
+
+{% elif fert_state == "recovery" %}
+{{ actorName }} is recovering from childbirth.{% if fert_has_baby == 1 %} {{ capitalize(subj) }} has a newborn to care for.{% endif %}
+
+**Physical reality:** Exhaustion beyond anything {{ subj }}'s felt before. Body sore and healing. Breasts heavy with milk, sometimes painfully engorged. Sleep-deprived fog.
+
+**Emotional landscape** (depends entirely on circumstances):\n- Hormonal volatility — the "baby blues" hit everyone differently\n- Joy and love don't preclude exhaustion and overwhelm\n- If the birth was wanted: fierce protectiveness mixed with "what have I done" moments\n- If unwanted: complicated feelings about the baby, guilt, detachment, or unexpected attachment\n- The father's presence (or absence) matters enormously right now
+
+{% endif %}
+
+**Roleplay guidance:**
+- Let {{ actorName }}'s established personality determine {{ poss }} emotional response. A stoic character suffers quietly; an expressive one complains openly.
+- **Don't announce the medical state** — show it through behavior, mood, and physical tells only when naturally relevant.
+- **Keep it in the background most of the time.** These states are part of daily life, not the focus of every interaction. {{ actorName }} doesn't constantly think or talk about how {{ subj }} feels physically — {{ subj }} has other things on {{ poss }} mind.
+- Only let it surface when: the conversation directly relates to it, physical symptoms actively interfere (a cramp hits mid-sentence, nausea interrupts), someone asks, or an intimate/emotional moment makes it relevant.
+- Most conversations should proceed normally with this as invisible context that subtly colors mood or energy, not as something explicitly mentioned.
+
+{% endif %}
+{# ========== THIRD PERSON VIEW ========== #}
+{% if third_person %}
+## Fertility & Physical State
+
+{% if fert_state == "third_trimester" %}
+{{ actorName }} is heavily pregnant{% if fert_father %} with {{ fert_father }}'s child{% endif %}. {{ capitalize(subj) }} moves carefully, one hand supporting {{ poss }} back, visibly uncomfortable.
+
+{% elif fert_state == "second_trimester" %}
+{{ actorName }} is visibly pregnant{% if fert_father %} with {{ fert_father }}'s child{% endif %} — a rounded belly that can't be hidden.
+
+{% elif fert_state == "first_trimester" %}
+{{ actorName }} shows subtle signs — occasional pallor, hand pressed to {{ poss }} stomach, moments of queasiness{% if fert_father %}, possibly carrying {{ fert_father }}'s child{% endif %}.
+
+{% elif fert_state == "fertile" or fert_state == "ovulating" %}
+{{ actorName }} has a subtle vitality about {{ obj }} today.
+
+{% elif fert_state == "pms" %}
+{{ actorName }} seems irritable and uncomfortable, mood shifting unpredictably.
+
+{% elif fert_state == "menstruating" %}
+{{ actorName }} is withdrawn, occasionally wincing at unseen discomfort.
+
+{% elif fert_state == "recovery" %}
+{{ actorName }} moves carefully, clearly exhausted, still recovering from childbirth.
+
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

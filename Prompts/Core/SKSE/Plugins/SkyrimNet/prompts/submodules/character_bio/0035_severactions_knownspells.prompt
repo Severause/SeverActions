@@ -1,0 +1,47 @@
+{% set first_person = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
+{% if first_person %}
+{% set spells = get_spell_list(actorUUID) %}
+{% if spells and length(spells) > 0 %}
+{% set restoration_spells = [] %}
+{% set destruction_spells = [] %}
+{% set alteration_spells = [] %}
+{% set illusion_spells = [] %}
+{% set conjuration_spells = [] %}
+{% set enchanting_spells = [] %}
+{% for spell in spells %}
+{% if spell.school == "Restoration" %}
+{% set restoration_spells = append(restoration_spells, spell.name) %}
+{% elif spell.school == "Destruction" %}
+{% set destruction_spells = append(destruction_spells, spell.name) %}
+{% elif spell.school == "Alteration" %}
+{% set alteration_spells = append(alteration_spells, spell.name) %}
+{% elif spell.school == "Illusion" %}
+{% set illusion_spells = append(illusion_spells, spell.name) %}
+{% elif spell.school == "Conjuration" %}
+{% set conjuration_spells = append(conjuration_spells, spell.name) %}
+{% elif spell.school == "Enchanting" %}
+{% set enchanting_spells = append(enchanting_spells, spell.name) %}
+{% endif %}
+{% endfor %}
+## Known Spells
+
+{% if length(restoration_spells) > 0 -%}
+Restoration: {{ join(restoration_spells, ", ") }}
+{% endif %}
+{% if length(destruction_spells) > 0 -%}
+Destruction: {{ join(destruction_spells, ", ") }}
+{% endif %}
+{% if length(alteration_spells) > 0 -%}
+Alteration: {{ join(alteration_spells, ", ") }}
+{% endif %}
+{% if length(illusion_spells) > 0 -%}
+Illusion: {{ join(illusion_spells, ", ") }}
+{% endif %}
+{% if length(conjuration_spells) > 0 -%}
+Conjuration: {{ join(conjuration_spells, ", ") }}
+{% endif %}
+{% if length(enchanting_spells) > 0 -%}
+Enchanting: {{ join(enchanting_spells, ", ") }}
+{% endif %}
+{% endif %}
+{% endif %}

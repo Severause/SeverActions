@@ -1,0 +1,24 @@
+{# SeverActions Travel - Strict Travel Rules #}
+{# Placed in user_final_instructions to remind LLM at decision time #}
+{% if is_action_enabled("TravelToPlace") or is_action_enabled("TravelToLocation") %}
+## Travel Action Rules
+
+**CRITICAL: Do NOT use TravelToPlace or TravelToLocation unless {{ player.name }} has directly told you to go somewhere.** Mentioning a location in conversation is NOT a travel command. Wanting to go somewhere is NOT enough - wait for {{ player.name }} to give you a clear instruction.
+
+Examples of when to travel:
+- "Go to Whiterun" → YES, direct command
+- "Head to the Bannered Mare" → YES, direct command
+- "Lead me to Dragonsreach" → YES, direct command
+- "Yes, let's go there" (after you suggested a destination) → YES, player agreed
+
+Examples of when NOT to travel:
+- NPC talks about Solitude in conversation → NO, just talking
+- NPC feels homesick for Riften → NO, express it in dialogue only
+- NPC is angry and wants to leave → NO, say so in dialogue only
+- NPC thinks they should check on something in Windhelm → NO, suggest it in dialogue only
+- Player says "have you been to Markarth?" → NO, just a question
+
+If you do travel, you MUST specify a real named location:
+- VALID: Whiterun, Solitude, Riverwood, Bannered Mare, Dragonsreach, Jorrvaskr
+- INVALID: "outside", "away", "elsewhere", "somewhere", "the wilderness", "home"
+{% endif %}

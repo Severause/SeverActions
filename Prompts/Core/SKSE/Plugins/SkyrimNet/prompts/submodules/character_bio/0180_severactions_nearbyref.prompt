@@ -1,0 +1,48 @@
+{% if render_mode == "full" or render_mode == "static" %}
+## Nearby Objects
+{% set first_person = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
+{% if actorUUID and isValidActor(actorUUID) %}
+{% set nearby_refs = get_nearby_references_for_entity(actorUUID, 1000) %}
+{% else %}
+{% set nearby_refs = get_nearby_references(1000) %}
+{% endif %}
+{% set excluded_subtypes = ["clutter", "misc"] %}
+{% set max_items = 20 %}
+{% set items = [] %}
+{% set seen_refids = [] %}
+{% for ref in nearby_refs %}
+{% if ref.name != "" and not (ref.subtype in excluded_subtypes) and length(items) < max_items %}
+{% if not (ref.type == "furniture" and ref.position.meters == 0.0) %}
+{% set refid_str = to_string(ref.formID) %}
+{% set refid_count = count(seen_refids, refid_str) %}
+{% if refid_count < 3 %}
+{% set items = append(items, ref) %}
+{% set seen_refids = append(seen_refids, refid_str) %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if length(items) > 0 %}
+{% set grouped_items = group_by(items, "type") %}
+{% for type_name, type_items in grouped_items %}
+### {{ type_name | capitalize }}
+{% for ref in type_items %}
+- {{ ref.name }} ({{ ref.position.meters }}m) RefID: {{ ref.formID }}{% if ref.type == "container" and ref.locked %} [locked]{% endif %}
+{% endfor %}
+{% endfor %}
+{% endif %}
+## Container Contents
+{% for ref in items %}
+{% if ref.type == "container" %}
+{% set contents = get_container_contents(ref.formID) %}
+{% if contents.itemCount > 0 and contents.itemCount <= 30 %}
+**{{ contents.name }}** ({{ ref.position.meters }}m, RefID: {{ ref.formID }}):{% if ref.locked %} [locked]{% endif %}
+{% for item in contents.items %}
+{% if item.name and length(item.name) > 0 %}
+- {{ item.name }}{% if item.count > 1 %} x{{ item.count }}{% endif %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endif %}

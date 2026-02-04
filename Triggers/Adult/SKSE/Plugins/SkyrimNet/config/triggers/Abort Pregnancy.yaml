@@ -1,0 +1,24 @@
+name: "Abort Pregnancy"
+description: "Spell that aborts child from the mother, voluntarily or otherwise."
+
+eventCriteria:
+  eventType: "active_effect"
+  schemaConditions:
+    - fieldPath: "effect"
+      operator: "equals"
+      value: "Abort Pregnancy"
+      caseSensitive: false
+    - fieldPath: "action"
+      operator: "equals"
+      value: "applied"
+
+response:
+  type: "direct_narration"
+  content: "{{ player.name }} uses a spell to abort the child from {{ event_json.target }}"
+
+audience: "target"
+
+enabled: true
+probability: 1
+cooldownSeconds: 30
+priority: 1

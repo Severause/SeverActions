@@ -1,0 +1,21 @@
+name: ModifyArousal
+description: "Adjust an actor's arousal level. Use negative values to decrease (calming), positive to increase\nDECREASE arousal (-2 to -20) when:\n  - Conversation turns awkward, uncomfortable, or unpleasant\n  - Actor is rejected or rebuffed\n  - Something disgusting, scary, or mood-killing happens\n  - Actor consciously tries to calm themselves\n  - Time passes without stimulation\n  - Actor is distracted by other concerns (danger, work, etc.)\n  - The romantic/sexual tension breaks\n  \n  INCREASE arousal (only +2 to +15) when:\n  - Genuinely flirtatious or intimate interaction occurs\n  - Actor sees something specifically arousing to them\n  - Physical closeness or touch happens\n  - Romantic tension builds naturally"
+questEditorId: SeverActions
+scriptName: SeverActions_Arousal
+executionFunctionName: ModifyArousal_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: amount
+    description: Amount to change arousal. Negative decreases(-10), positive increases(2).
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

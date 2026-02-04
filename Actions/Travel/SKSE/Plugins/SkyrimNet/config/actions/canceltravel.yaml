@@ -1,0 +1,26 @@
+name: CancelTravel
+description: |
+  The actor stops traveling and cancels any pending trip. Use this when:
+  - The actor decides not to go somewhere after all
+  - The actor changes their mind about traveling
+  - The actor needs to stay instead of leaving
+  - The actor is asked to cancel their travel plans
+
+  Common triggers: "never mind", "I'll stay", "forget about it", "I'm not going anymore", "cancel that", "I changed my mind"
+questEditorId: SeverActions
+scriptName: SeverActions_Travel
+executionFunctionName: CancelTravel
+parameterMapping:
+  - type: speaker
+    name: akNPC
+    description: Speaker Actor parameter (triggering entity)
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

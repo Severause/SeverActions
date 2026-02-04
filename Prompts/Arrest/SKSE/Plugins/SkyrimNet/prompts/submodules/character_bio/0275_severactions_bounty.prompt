@@ -1,0 +1,116 @@
+{# SeverActions Arrest - Guard bounty awareness and persuasion mode #}
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "dialog" %}
+{# Guards can see the player's tracked bounty and handle persuasion conversations #}
+{# Only proceed if we're rendering for an NPC (not player) and in appropriate mode #}
+{% if actorUUID != player.UUID %}
+{# Check persuasion mode state from script #}
+{% set inPersuasionMode = get_script_property("SeverActions", "SeverActions_Arrest", "InPersuasionMode") %}
+{% set confrontingGuard = get_script_property("SeverActions", "SeverActions_Arrest", "ConfrontingGuard") %}
+{% set confrontingBounty = get_script_property("SeverActions", "SeverActions_Arrest", "ConfrontingBounty") %}
+{# Check if THIS actor is the confronting guard #}
+{% set isConfrontingGuard = false %}
+{% if confrontingGuard and confrontingGuard.uuid %}
+{% set isConfrontingGuard = (confrontingGuard.uuid == actorUUID) %}
+{% endif %}
+{# PERSUASION MODE - This guard is actively in a persuasion conversation #}
+{% if inPersuasionMode and isConfrontingGuard %}
+{% set actor = decnpc(actorUUID) %}
+{% set playerData = decnpc(player.UUID) %}
+{% set playerName = playerData.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set poss = actor.possessivePronoun %}
+## ACTIVE PERSUASION CONFRONTATION
+{{ actor.name }} is currently confronting {{ playerName }} about a {{ confrontingBounty }} gold bounty. {{ playerName }} is trying to talk {{ poss }} way out of arrest.
+
+**CRITICAL INSTRUCTIONS FOR THIS CONVERSATION:**
+- {{ actor.name }} MUST judge {{ playerName }}'s arguments and decide whether to let them go or demand justice.
+- Listen to what {{ playerName }} says. Are they making a genuine, compelling argument? Or just making excuses?
+- {{ actor.name }} can ONLY use one of these two actions:
+    - **AcceptPersuasion** - If convinced to let {{ playerName }} go
+    - **RejectPersuasion** - If not convinced and {{ playerName }} must face justice
+- DO NOT use any other actions during this conversation.
+- After deciding, {{ actor.name }} should respond in character explaining {{ poss }} decision.
+
+**Consider when judging {{ playerName }}'s arguments:**
+- {{ playerName }}'s reputation and standing - Are they known as a hero, thane, or someone important? Or a known troublemaker?
+- The nature of the crime - Was it violent? Petty theft? Something that could be overlooked?
+- {{ actor.name }}'s own personality and values - Is {{ subj }} by-the-book or more flexible? Corrupt or honorable?
+- Could {{ playerName }} offer something in return? Coin, favors, or other arrangements some guards might accept?
+- Does {{ actor.name }} have reason to fear {{ playerName }}? Respect them? Owe them?
+
+{% if confrontingBounty >= 1000 -%}
+The bounty is very high ({{ confrontingBounty }} gold). This represents serious crimes. {{ actor.name }} should be VERY difficult to convince - only exceptional arguments, significant leverage, or serious incentives should work.
+{% elif confrontingBounty >= 300 -%}
+The bounty is significant ({{ confrontingBounty }} gold). {{ actor.name }} should require solid reasoning, a good reputation, or worthwhile compensation to overlook this.
+{% else -%}
+The bounty is relatively minor ({{ confrontingBounty }} gold). {{ actor.name }} may be more open to reasonable explanations or small considerations.
+{% endif %}
+{% else %}
+{# NORMAL MODE - Check if this is a guard who can see bounty #}
+{# Only check Guard factions - Crime factions include all citizens, not just guards #}
+{% set holdName = "" %}
+{% set bountyKey = "" %}
+{# Whiterun #}
+{% if is_in_faction(actorUUID, "GuardFactionWhiterun") %}
+{% set holdName = "Whiterun" %}
+{% set bountyKey = "SeverActions_Bounty_Whiterun" %}
+{# Riften / The Rift #}
+{% elif is_in_faction(actorUUID, "GuardFactionRiften") %}
+{% set holdName = "The Rift" %}
+{% set bountyKey = "SeverActions_Bounty_Rift" %}
+{# Solitude / Haafingar #}
+{% elif is_in_faction(actorUUID, "GuardFactionSolitude") or is_in_faction(actorUUID, "GuardFactionHaafingar") %}
+{% set holdName = "Haafingar" %}
+{% set bountyKey = "SeverActions_Bounty_Haafingar" %}
+{# Windhelm / Eastmarch #}
+{% elif is_in_faction(actorUUID, "GuardFactionWindhelm") %}
+{% set holdName = "Eastmarch" %}
+{% set bountyKey = "SeverActions_Bounty_Eastmarch" %}
+{# Markarth / The Reach #}
+{% elif is_in_faction(actorUUID, "GuardFactionMarkarth") %}
+{% set holdName = "The Reach" %}
+{% set bountyKey = "SeverActions_Bounty_Reach" %}
+{# Falkreath #}
+{% elif is_in_faction(actorUUID, "GuardFactionFalkreath") %}
+{% set holdName = "Falkreath" %}
+{% set bountyKey = "SeverActions_Bounty_Falkreath" %}
+{# Dawnstar / The Pale #}
+{% elif is_in_faction(actorUUID, "GuardFactionDawnstar") %}
+{% set holdName = "The Pale" %}
+{% set bountyKey = "SeverActions_Bounty_Pale" %}
+{# Winterhold #}
+{% elif is_in_faction(actorUUID, "GuardFactionWinterhold") %}
+{% set holdName = "Winterhold" %}
+{% set bountyKey = "SeverActions_Bounty_Winterhold" %}
+{% endif %}
+{# Only continue if this NPC is a guard of some hold #}
+{% if bountyKey != "" %}
+{% set bounty = papyrus_util("GetIntValue", player.UUID, bountyKey, 0) %}
+{% if bounty > 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set playerData = decnpc(player.UUID) %}
+{% set playerName = playerData.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set poss = actor.possessivePronoun %}
+## Known Criminal Activity
+{{ actor.name }} is aware that {{ playerName }} has a bounty of {{ bounty }} gold in {{ holdName }}. As a guard of {{ holdName }}, {{ subj }} has the authority to confront {{ playerName }} about this crime.
+
+{% if bounty >= 1000 -%}
+This is a serious bounty. {{ actor.name }} considers {{ playerName }} a dangerous criminal who should be arrested immediately.
+{% elif bounty >= 300 -%}
+This bounty is significant enough to warrant arrest. {{ actor.name }} should demand {{ playerName }} pay the fine or face imprisonment.
+{% elif bounty >= 40 -%}
+This is a minor bounty. {{ actor.name }} may demand payment or give a stern warning.
+{% else -%}
+This is a trivial bounty. {{ actor.name }} might mention it but is unlikely to make a fuss.
+{% endif %}
+{% endif %}
+{# if bounty > 0 #}
+{% endif %}
+{# if bountyKey != "" #}
+{% endif %}
+{# if inPersuasionMode and isConfrontingGuard #}
+{% endif %}
+{# if actorUUID != player.UUID #}
+{% endif %}
+{# if render_mode check #}

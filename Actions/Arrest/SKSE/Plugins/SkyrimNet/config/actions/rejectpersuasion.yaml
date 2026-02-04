@@ -1,0 +1,58 @@
+name: RejectPersuasion
+description: "Reject the player's persuasion attempt and demand they face justice.\n\n  Use this action when you are in a persuasion conversation with the player about their\n  bounty but their arguments have NOT convinced you to let them go.\n\n  Reasons to reject persuasion:\n  - The player's excuses are weak or unconvincing\n  - The player is lying or their story doesn't add up\n  - The crime was too serious to overlook (murder, major theft)\n  - The player is being disrespectful or wasting your time\n  - You've heard enough and want to end the conversation\n  - The player hasn't offered any real argument, just stalling"
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: RejectPersuasion_Internal
+parameterMapping:
+  - type: speaker
+    name: akGuard
+    description: Speaker Actor parameter (triggering entity)
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWhiterun"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionRiften"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionSolitude"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionHaafingar"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWindhelm"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionMarkarth"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionFalkreath"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionDawnstar"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWinterhold"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "OR"
+    required: true

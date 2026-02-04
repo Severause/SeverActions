@@ -1,0 +1,70 @@
+{# Combat Awareness - Adds combat state context for NPC dialogue #}
+{% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" or render_mode == "target" %}
+{% set actor = decnpc(actorUUID) %}
+{% if actor and actor.UUID %}
+{# Read combat state from StorageUtil #}
+{# Use timestamps instead of flags so they auto-expire #}
+{% set ceasefire_time = papyrus_util("GetFloatValue", actor.UUID, "SeverCombat_CeasefireTime", 0) %}
+{% set yield_time = papyrus_util("GetFloatValue", actor.UUID, "SeverCombat_YieldTime", 0) %}
+{% set yielded_to = papyrus_util("GetFormValue", actor.UUID, "SeverCombat_YieldedTo") %}
+{% set received_yield_from = papyrus_util("GetFormValue", actor.UUID, "SeverCombat_ReceivedYieldFrom") %}
+{% set in_combat = actor.isInCombat %}
+
+{# Calculate if events are still recent (within cooldown period) #}
+{# Cooldown is 30 real seconds = ~600 Skyrim seconds with default time scale #}
+{# Using 1800 game time units as threshold (~30 real seconds worth) #}
+{% set current_time = gameTimeNumeric %}
+{% set cooldown_threshold = 1800 %}
+
+{% set recent_ceasefire = (ceasefire_time > 0) and ((current_time - ceasefire_time) < cooldown_threshold) %}
+{% set recent_yield_given = (yield_time > 0) and (yielded_to) and ((current_time - yield_time) < cooldown_threshold) %}
+{% set recent_yield_received = (yield_time > 0) and (received_yield_from) and ((current_time - yield_time) < cooldown_threshold) %}
+
+{# Get combat target name via Form -> UUID -> decnpc #}
+{% set combat_target_form = papyrus_util("GetFormValue", actor.UUID, "SeverCombat_CombatTarget") %}
+{% set combat_target_name = "" %}
+{% if combat_target_form %}
+{% set target_uuid = formid_to_uuid(combat_target_form) %}
+{% if target_uuid %}
+{% set target_actor = decnpc(target_uuid) %}
+{% if target_actor %}
+{% set combat_target_name = target_actor.name %}
+{% endif %}
+{% endif %}
+{% endif %}
+{# Determine if this is dialogue context (first person perspective) #}
+{% set is_dialogue_context = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
+{# DIALOGUE GUIDANCE - Only show when rendering for direct actor dialogue #}
+{% if is_dialogue_context %}
+{# Truce states - yield or ceasefire #}
+{% if recent_ceasefire or recent_yield_given or recent_yield_received %}
+## Recent Truce
+{% if recent_yield_given %}
+You just surrendered. You are shaken, humiliated, or relieved to be alive. You will NOT immediately become hostile again - you valued your life enough to yield. Show appropriate deference or wariness toward the person you surrendered to.
+{% elif recent_yield_received %}
+Someone just surrendered to you. You have the upper hand. You may be magnanimous, threatening, or dismissive - but the fight is OVER. You will not attack someone who has yielded unless they provoke you again.
+{% elif recent_ceasefire %}
+You just stopped fighting. The tension is still high but you are holding back. You will NOT use threats, insults, or hostile language that could restart combat. You can be cold, wary, or resentful - but avoid anything that sounds like a new threat.
+{% endif %}
+{% endif %}
+{# Active combat state #}
+{% if in_combat and not recent_ceasefire %}
+## Active Combat
+{% if combat_target_name %}
+You are currently fighting {{ combat_target_name }}.
+{% else %}
+You are currently in combat.
+{% endif %}
+Your responses should reflect the urgency and danger - short, reactive, focused on survival or victory.
+{% endif %}
+{# OBSERVABLE STATE - Show for nearby people summaries #}
+{% elif render_mode == "target" %}
+{# Only show observable combat state, not internal guidance #}
+{% if in_combat and not recent_ceasefire %}
+**Combat State:** {% if combat_target_name %}Fighting {{ combat_target_name }}{% else %}In active combat{% endif %}
+{% elif recent_ceasefire or recent_yield_given or recent_yield_received %}
+**Recent Status:** Recently stopped fighting - tension is high
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

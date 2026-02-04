@@ -1,0 +1,25 @@
+name: StartFollowing
+description: Follow {{ player.name }} when asked. Use your best judgement on whether or not following through would make sense.
+questEditorId: SeverActions
+scriptName: SeverActions_Follow
+executionFunctionName: StartFollowing
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "CurrentFollowerFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

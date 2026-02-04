@@ -1,0 +1,29 @@
+{% set first_person = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
+{% if not is_player(actorUUID) and first_person %}
+{% set merchant_inventory = get_merchant_inventory(actorUUID) %}
+{% if merchant_inventory.items and length(merchant_inventory.items) > 0 %}
+## Merchant Inventory
+{% set price_multiplier = 4.5 %}
+{% for item in merchant_inventory.items %}
+{% if item.name %}
+{% set item_name = item.name %}
+{% else %}
+{% set item_name = get_form_name(item.formID) %}
+{% endif %}
+{% if item_name and item.value >= 0 -%}
+{% set adjusted_value = round(item.value * price_multiplier, 0) %}
+- {{ item_name }}: {{ item.count }} ({{ adjusted_value }} gold)
+{% endif %}
+{% endfor %}
+
+## Pricing Guidelines
+These are your BASE prices for inventory items. You may negotiate within reason:
+- **Standard negotiation**: Allow 5-15% discounts for good customers or bulk purchases
+- **Persuasion checks**: If the player uses charm or intimidation, consider adjusting prices accordingly
+- **Faction members**: Offer 10-20% discounts to members of your faction
+- **Never go below**: 60% of base price - your profit margins matter
+- **When to hold firm**: For rare items, limited stock, or difficult customers, maintain higher prices
+
+Always START with your base prices and only adjust if the player actively negotiates or uses persuasion. Don't volunteer discounts.
+{% endif %}
+{% endif %}

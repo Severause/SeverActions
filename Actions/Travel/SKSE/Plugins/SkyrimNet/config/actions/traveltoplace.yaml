@@ -1,0 +1,44 @@
+name: TravelToPlace
+description: "Travel to a specific named location. STRICT RULES - Only use this action when ALL of the following are true:
+  1. The PLAYER has directly and clearly told the actor to go somewhere (e.g. 'Go to Whiterun', 'Head to the Bannered Mare', 'Travel to Solitude')
+  2. The destination is a specific, real named location (not vague like 'away' or 'somewhere')
+
+  Do NOT use this action if:
+  - A location was merely mentioned in conversation
+  - The actor wants to go somewhere on their own initiative
+  - The actor is upset, angry, or emotional (use dialogue to express that instead)
+  - The actor is suggesting they could go somewhere (just suggest it in dialogue, don't actually go)
+  - The player has not explicitly directed the actor to travel
+
+  The only exception is if the player explicitly agrees to an actor's suggestion to travel together (e.g. Actor: 'Shall we head to Riften?' Player: 'Yes, lead the way')."
+questEditorId: SeverActions
+scriptName: SeverActions_Travel
+executionFunctionName: TravelToPlace
+parameterMapping:
+  - type: speaker
+    name: akNPC
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: placeName
+    description: Where to travel. Must be a specific named location - a city (Whiterun, Solitude), town (Riverwood), inn (Bannered Mare), or specific place (Dragonsreach). Never use vague terms like "away" or "somewhere".
+  - type: static
+    value: 24
+    name: WaitHours
+    description: Static float parameter
+  - type: static
+    value: true
+    name: stopFollowing
+    description: Static bool parameter
+  - type: static
+    value: 0
+    name: Speed
+    description: Static int parameter
+enabled: false
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

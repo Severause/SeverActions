@@ -1,0 +1,38 @@
+{# Survival Status - Tracks hunger, fatigue, and cold for followers #}
+{% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" %}
+{% set actor = decnpc(actorUUID) %}
+{% if actor and actor.UUID %}
+{% if is_follower(actor.UUID) %}
+{% set excluded = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Excluded", 0) %}
+{% if excluded == 0 %}
+{% set hunger = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Hunger", 0) %}
+{% set fatigue = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Fatigue", 0) %}
+{% set cold = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Cold", 0) %}
+{% if (hunger >= 25) or (fatigue >= 25) or (cold >= 25) %}
+## How You Feel
+{% if hunger >= 75 %}
+Gods, you're hungry. That gnawing, can't-think-about-anything-else kind of hungry. When did you last eat?
+{% elif hunger >= 50 %}
+Your stomach won't shut up. Food sounds really good right now.
+{% elif hunger >= 25 %}
+You could go for a bite to eat.
+{% endif %}
+{% if fatigue >= 75 %}
+You're exhausted. Every blink feels like your eyes might not open again. You need sleep badly.
+{% elif fatigue >= 50 %}
+You keep catching yourself yawning. The tiredness is real.
+{% elif fatigue >= 25 %}
+A bed would be nice. You're starting to drag a little.
+{% endif %}
+{% if cold >= 75 %}
+You can't stop shaking. Your fingers are numb and clumsy. You need to get warm before this gets dangerous.
+{% elif cold >= 50 %}
+The cold's really getting to you now. You're shivering and stiff.
+{% elif cold >= 25 %}
+Bit cold out here.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

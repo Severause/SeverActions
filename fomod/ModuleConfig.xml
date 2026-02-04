@@ -1,0 +1,385 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
+
+    <moduleName>SeverActions - SkyrimNet Action Pack</moduleName>
+
+    <requiredInstallFiles>
+        <folder source="00 Core" destination="" priority="0"/>
+    </requiredInstallFiles>
+
+    <installSteps order="Explicit">
+
+        <!-- Page 1: Action Modules -->
+        <installStep name="Action Modules">
+            <optionalFileGroups order="Explicit">
+
+                <group name="Select which action modules to install:" type="SelectAny">
+                    <plugins order="Explicit">
+
+                        <plugin name="Basic Actions">
+                            <description>Core follower and item actions:
+• Start/Stop Following
+• Wait Here
+• Relax / Stop Relaxing
+• Pick Up Item
+• Use Item
+• Give Item
+• Bring Item
+• Loot Container
+
+Recommended for most users.</description>
+                            <files>
+                                <folder source="Actions/Basic" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Travel Actions">
+                            <description>NPC travel and navigation:
+• Travel to Place (named locations)
+• Travel to Location (coordinates)
+• Change Travel Speed
+• Cancel Travel
+
+Allows NPCs to travel to cities, inns, and other locations.</description>
+                            <files>
+                                <folder source="Actions/Travel" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Combat Actions">
+                            <description>Combat-related behaviors:
+• Attack Target
+• Cease Fighting
+• Yield
+
+Allows NPCs to engage or disengage from combat.</description>
+                            <files>
+                                <folder source="Actions/Combat" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Outfit Actions">
+                            <description>Clothing and armor management:
+• Equip Clothing Piece
+• Remove Clothing Piece
+• Get Dressed
+• Undress
+
+Allows NPCs to change their equipment.</description>
+                            <files>
+                                <folder source="Actions/Outfit" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Furniture Actions">
+                            <description>Furniture interaction:
+• Sit or Lay Down
+• Stop Using Furniture
+
+Allows NPCs to use chairs, beds, and other furniture.</description>
+                            <files>
+                                <folder source="Actions/Furniture" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Economy Actions">
+                            <description>Economic interactions:
+• Give Gold
+• Collect Payment
+• Extort Gold
+
+Allows NPCs to handle money transactions.</description>
+                            <files>
+                                <folder source="Actions/Economy" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Crafting Actions">
+                            <description>Crafting system:
+• Craft Item (smithing/smelting)
+• Brew Potion (alchemy)
+• Cook Meal (cooking)
+
+Allows NPCs to craft items at workbenches, alchemy labs, and cooking pots.</description>
+                            <files>
+                                <folder source="Actions/Crafting" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Arrest Actions">
+                            <description>Guard arrest and crime system:
+• Arrest Player - Guards confront player about bounty
+• Arrest NPC - Guards arrest and escort NPCs to jail
+• Add Bounty to Player - Track crimes in holds
+• Accept/Reject Persuasion - Handle persuasion attempts
+• Free From Jail - Release imprisoned NPCs
+
+Allows guards to arrest players and NPCs, track bounties, and manage prisoners.</description>
+                            <files>
+                                <folder source="Actions/Arrest" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                    </plugins>
+                </group>
+
+            </optionalFileGroups>
+        </installStep>
+
+        <!-- Page 2: Prompt Modules -->
+        <installStep name="Prompt Modules (Context Awareness)">
+            <optionalFileGroups order="Explicit">
+
+                <group name="Select which context prompts to install:" type="SelectAny">
+                    <plugins order="Explicit">
+
+                        <plugin name="Core Awareness Prompts">
+                            <description>Basic NPC awareness:
+• Known Spells - NPCs know what spells they have
+• Gold Awareness - NPCs know their gold amount
+• Inventory Awareness - NPCs know their items
+• Nearby Objects - NPCs aware of surroundings
+
+Recommended for immersion.</description>
+                            <files>
+                                <folder source="Prompts/Core" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Combat Awareness Prompt">
+                            <description>Combat context:
+• Combat Awareness - NPCs understand combat situations
+
+Helps NPCs respond appropriately during fights.</description>
+                            <files>
+                                <folder source="Prompts/Combat" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Travel Guidance Prompt">
+                            <description>Travel behavior rules:
+• Strict travel constraints - Prevents NPCs from traveling on their own initiative
+• NPCs will only travel when directly told to by the player
+
+Highly recommended if using Travel Actions.</description>
+                            <files>
+                                <folder source="Prompts/Travel" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Survival Prompt">
+                            <description>Survival needs awareness:
+• Hunger Status - NPCs aware of hunger levels
+• Cold Status - NPCs aware of cold/warmth
+• Tiredness Status - NPCs aware of fatigue levels</description>
+                            <files>
+                                <folder source="Prompts/Survival" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Faction/Guild Reputation Prompt">
+                            <description>Faction awareness:
+• Guild Reputation - NPCs know your faction standings
+
+Large prompt with detailed guild information.</description>
+                            <files>
+                                <folder source="Prompts/Faction" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Arrest/Crime Prompts">
+                            <description>Crime and imprisonment awareness:
+• Guard Bounty Awareness - Guards know player's bounty
+• Jailed NPC Status - Imprisoned NPCs aware of situation
+
+Works with Arrest Actions for full crime system.</description>
+                            <files>
+                                <folder source="Prompts/Arrest" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                    </plugins>
+                </group>
+
+                <group name="Merchant Inventory Prompt - Select ONE (or none):" type="SelectAtMostOne">
+                    <plugins order="Explicit">
+
+                        <plugin name="Merchant Prompt - Show Anywhere">
+                            <description>Merchants display their inventory and pricing at all times, regardless of location.
+
+Use this if you want merchants to always be ready to trade no matter where you encounter them.</description>
+                            <files>
+                                <folder source="Prompts/Economy-Anywhere" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Merchant Prompt - Location Restricted">
+                            <description>Merchants only display their inventory when inside recognized shop locations (inns, stores, market stalls, etc.).
+
+More immersive - merchants won't try to sell you things while walking down the road.</description>
+                            <files>
+                                <folder source="Prompts/Economy-LocationOnly" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                    </plugins>
+                </group>
+
+            </optionalFileGroups>
+        </installStep>
+
+        <!-- Page 3: Adult Content -->
+        <installStep name="Adult Content (Optional)">
+            <optionalFileGroups order="Explicit">
+
+                <group name="Arousal Actions - Select ONE (or none):" type="SelectAtMostOne">
+                    <plugins order="Explicit">
+
+                        <plugin name="OSL Aroused - Modify Arousal Action">
+                            <description>Arousal action for OSL Aroused:
+• Modify Arousal - Adjust NPC arousal levels
+
+Requires OSL Aroused mod.</description>
+                            <files>
+                                <folder source="Actions/Adult-OSLAroused" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="SL Aroused - Modify Arousal Action">
+                            <description>Arousal action for SexLab Aroused:
+• Modify Arousal (SLO) - Adjust NPC arousal levels
+
+Requires SexLab Aroused mod.</description>
+                            <files>
+                                <folder source="Actions/Adult-SLOAroused" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                    </plugins>
+                </group>
+
+                <group name="Arousal Prompts - Select ONE (or none):" type="SelectAtMostOne">
+                    <plugins order="Explicit">
+
+                        <plugin name="OSL Aroused - Arousal Awareness Prompt">
+                            <description>Arousal awareness for OSL Aroused:
+• NPCs aware of their arousal state
+
+Requires OSL Aroused mod.</description>
+                            <files>
+                                <folder source="Prompts/Adult-OSLAroused" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="SL Aroused - Arousal Awareness Prompt">
+                            <description>Arousal awareness for SexLab Aroused:
+• NPCs aware of their arousal state
+
+Requires SexLab Aroused mod.</description>
+                            <files>
+                                <folder source="Prompts/Adult-SLOAroused" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                    </plugins>
+                </group>
+
+                <group name="Fertility Content:" type="SelectAny">
+                    <plugins order="Explicit">
+
+                        <plugin name="Fertility Status Prompt">
+                            <description>Fertility awareness:
+• NPCs aware of pregnancy/fertility status
+
+Requires Fertility Mode mod.</description>
+                            <files>
+                                <folder source="Prompts/Adult-Fertility" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Abort Pregnancy Trigger">
+                            <description>Fertility trigger:
+• Abort Pregnancy event trigger
+
+Requires Fertility Mode mod.</description>
+                            <files>
+                                <folder source="Triggers/Adult" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                    </plugins>
+                </group>
+
+            </optionalFileGroups>
+        </installStep>
+
+    </installSteps>
+
+</config>

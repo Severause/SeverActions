@@ -1,0 +1,26 @@
+name: Yield
+description: |
+  The actor surrenders and stops fighting. Use this when:
+  - The actor begs for mercy or gives up
+  - The actor is outmatched and wants to live
+  - The actor decides the fight isn't worth dying over
+  - The actor submits to a stronger opponent
+
+  Common triggers: "I yield", "I surrender", "please don't kill me", "I give up", "mercy", "you win", "I submit"
+questEditorId: SeverActions
+scriptName: SeverActions_Combat
+executionFunctionName: Yield_Execute
+parameterMapping:
+  - type: speaker
+    name: akYielder
+    description: Speaker Actor parameter (triggering entity)
+enabled: true
+defaultPriority: 8
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true

@@ -1,0 +1,35 @@
+{# SL Aroused NG - Arousal state for character bio #}
+{# Adds arousal awareness to NPC behavior #}
+{% set first_person = (render_mode == "full" or render_mode == "thoughts" or render_mode == "transform") %}
+{% if is_plugin_loaded("SexLabAroused.esm") %}
+
+{# Get arousal state using decorator #}
+{% set arousalDesc = get_slo_arousal_desc(actorUUID) %}
+{% set isNaked = get_slo_is_naked(actorUUID) %}
+{# Only show if actor has some arousal #}
+{% if arousalDesc != "not aroused" and first_person %}
+{% set actor = decnpc(actorUUID) %}
+{% set actorName = actor.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set obj = actor.objectivePronoun %}
+{% set poss = actor.possessivePronoun %}
+{% set refl = actor.reflexivePronoun %}
+
+## Arousal State
+
+{{ actorName }} is currently feeling {{ arousalDesc }}.
+{% if arousalDesc == "slightly aroused" or arousalDesc == "somewhat aroused" %}
+{{ subj | capitalize }} might feel a faint warmth or fleeting distraction, but it barely affects {{ poss }} behavior.
+{% elif arousalDesc == "moderately aroused" or arousalDesc == "quite aroused" %}
+{{ subj | capitalize }} is noticeably affected by {{ poss }} desires. {{ subj | capitalize }} may find {{ refl }} more flirtatious, distracted, or drawn to attractive company.
+{% elif arousalDesc == "very aroused" or arousalDesc == "extremely aroused" %}
+{{ subj | capitalize }} is struggling to focus on anything but {{ poss }} growing urges. {{ poss | capitalize }} thoughts keep drifting to intimate matters.
+{% elif arousalDesc == "overwhelmingly aroused" %}
+{{ actorName }} is consumed by desire and can barely think of anything else. {{ subj | capitalize }} desperately craves release.
+{% endif %}
+{% if isNaked == "true" %}
+{{ actorName }} is currently naked, which may heighten {{ poss }} awareness of {{ poss }} own body and vulnerability.
+{% endif %}
+{% endif %}
+
+{% endif %}

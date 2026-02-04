@@ -1,0 +1,19 @@
+{% set first_person = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
+{% if not is_player(actorUUID) and first_person %}
+{% set actor_inventory = get_inventory(actorUUID) %}
+{% set worn_equipment = get_worn_equipment(actorUUID) %}
+{% set worn_item_names = [] %}
+{% for slot, item_info in worn_equipment %}
+{% if item_info %}
+{% set worn_item_names = append(worn_item_names, item_info.name) %}
+{% endif %}
+{% endfor %}
+{% if length(actor_inventory) > 0 %}
+## Inventory Awareness
+{% for item_id, item_info in actor_inventory %}
+{%- if item_info.name and length(item_info.name) > 0 and not (item_info.name in worn_item_names) %}
+- {{ item_info.name }}: {{ item_info.count }}
+{% endif %}
+{%- endfor %}
+{% endif %}
+{% endif %}

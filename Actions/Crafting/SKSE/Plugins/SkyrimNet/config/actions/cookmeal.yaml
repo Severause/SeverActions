@@ -1,0 +1,27 @@
+name: CookMeal
+description: "Cook a meal "
+questEditorId: SeverActions
+scriptName: SeverActions_Crafting
+executionFunctionName: CookMeal_Internal
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: recipeName
+    description: Name of the meal you are cooking
+  - type: dynamic
+    name: akRecipient
+    description: The recipient of the food
+  - type: dynamic
+    name: itemCount
+    description: The amount to make(default to 1)
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

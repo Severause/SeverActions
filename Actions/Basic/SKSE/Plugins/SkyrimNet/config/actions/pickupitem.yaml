@@ -1,0 +1,21 @@
+name: PickUpItem
+description: Pick up a loose item from the ground nearby. Use when asked to grab, get, take, or pick up an item lying on the ground, a table, or other surface (not inside a container or on a body).
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: PickUpItem_Execute
+parameterMapping:
+  - type: dynamic
+    name: akActor
+    description: The person picking up the item
+  - type: dynamic
+    name: itemType
+    description: The name or type of item to pick up (e.g. "Iron Sword", "potion", "book", "gold")
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

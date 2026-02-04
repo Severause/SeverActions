@@ -1,0 +1,19 @@
+name: WaitHere
+description: Stop following and wait at current location. Use this when {{ player.name }} tells you to wait, stay here, hold position, stay put, don't move, or stop following temporarily. Only use if you are currently following {{ player.name }}
+questEditorId: SeverActions
+scriptName: SeverActions_Follow
+executionFunctionName: WaitHere
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

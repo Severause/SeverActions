@@ -1,0 +1,29 @@
+name: CeaseFighting
+description: |
+  The actor stops fighting and calls for a truce. Use this when:
+  - The actor wants to stop the fight without surrendering
+  - The actor calls for peace or a ceasefire
+  - The actor decides the conflict should end
+  - Both parties agree to stop fighting
+
+  Common triggers: "stop", "wait", "let's stop this", "enough", "truce", "hold", "this fight is over", "let's talk instead"
+questEditorId: SeverActions
+scriptName: SeverActions_Combat
+executionFunctionName: CeaseFire_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor1
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: akActor2
+    description: The other combatant
+enabled: true
+defaultPriority: 8
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true

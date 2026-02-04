@@ -1,0 +1,24 @@
+name: LootContainer
+description: "Loot items from a specific container. Use when you want to take items from a container you can see. "
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: LootContainer_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: containerRefId
+    description: The RefID of the container to loot (the number shown in parentheses after the container name, e.g., '463155')
+  - type: dynamic
+    name: itemsToTake
+    description: "What to take: 'all', 'valuables', 'gold', or comma-separated item names"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

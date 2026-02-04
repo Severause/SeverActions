@@ -1,0 +1,141 @@
+{% set first_person = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
+{% if not is_player(actorUUID) and first_person %}
+{% set actor = decnpc(actorUUID) %}
+{% set actor_name = actor.name %}
+{# Per-actor merchant location mapping: actor name -> required location substring #}
+{# Inventory only shows when the named merchant is at their shop/workplace #}
+{% set merchant_location = "" %}
+{# === WHITERUN === #}
+{% if actor_name == "Hulda" or actor_name == "Saadia" %}{% set merchant_location = "Bannered Mare" %}
+{% elif actor_name == "Adrianne Avenicci" or actor_name == "Ulfberth War-Bear" %}{% set merchant_location = "Warmaiden" %}
+{% elif actor_name == "Arcadia" %}{% set merchant_location = "Arcadia's Cauldron" %}
+{% elif actor_name == "Elrindir" or actor_name == "Anoriath" %}{% set merchant_location = "Drunken Huntsman" %}
+{% elif actor_name == "Belethor" or actor_name == "Sigurd" %}{% set merchant_location = "Belethor's General Goods" %}
+{% elif actor_name == "Carlotta Valentia" %}{% set merchant_location = "Whiterun" %}
+{% elif actor_name == "Fralia Gray-Mane" %}{% set merchant_location = "Whiterun" %}
+{% elif actor_name == "Eorlund Gray-Mane" %}{% set merchant_location = "Skyforge" %}
+{% elif actor_name == "Farengar Secret-Fire" %}{% set merchant_location = "Dragonsreach" %}
+{% elif actor_name == "Danica Pure-Spring" %}{% set merchant_location = "Temple of Kynareth" %}
+{# === SOLITUDE === #}
+{% elif actor_name == "Corpulus Vinius" or actor_name == "Sorex Vinius" %}{% set merchant_location = "Winking Skeever" %}
+{% elif actor_name == "Endarie" or actor_name == "Taarie" %}{% set merchant_location = "Radiant Raiment" %}
+{% elif actor_name == "Sayma" %}{% set merchant_location = "Bits and Pieces" %}
+{% elif actor_name == "Angeline Morrard" or actor_name == "Vivienne Onis" %}{% set merchant_location = "Angeline's Aromatics" %}
+{% elif actor_name == "Fihada" or actor_name == "Jawanan" %}{% set merchant_location = "Fletcher" %}
+{% elif actor_name == "Beirand" %}{% set merchant_location = "Solitude" %}
+{% elif actor_name == "Evette San" %}{% set merchant_location = "Solitude" %}
+{% elif actor_name == "Sybille Stentor" %}{% set merchant_location = "Blue Palace" %}
+{# === WINDHELM === #}
+{% elif actor_name == "Elda Early-Dawn" or actor_name == "Nils" %}{% set merchant_location = "Candlehearth Hall" %}
+{% elif actor_name == "Nurelion" or actor_name == "Quintus Navale" %}{% set merchant_location = "White Phial" %}
+{% elif actor_name == "Oengul War-Anvil" or actor_name == "Hermir Strong-Heart" %}{% set merchant_location = "Windhelm" %}
+{% elif actor_name == "Revyn Sadri" %}{% set merchant_location = "Sadri's Used Wares" %}
+{% elif actor_name == "Niranye" %}{% set merchant_location = "Windhelm" %}
+{% elif actor_name == "Aval Atheron" %}{% set merchant_location = "Windhelm" %}
+{% elif actor_name == "Hillevi Cruel-Sea" %}{% set merchant_location = "Windhelm" %}
+{% elif actor_name == "Ambarys Rendar" %}{% set merchant_location = "New Gnisis Cornerclub" %}
+{% elif actor_name == "Wuunferth the Unliving" %}{% set merchant_location = "Palace of the Kings" %}
+{# === RIFTEN === #}
+{% elif actor_name == "Keerava" or actor_name == "Talen-Jei" %}{% set merchant_location = "Bee and Barb" %}
+{% elif actor_name == "Balimund" or actor_name == "Asbjorn Fire-Tamer" %}{% set merchant_location = "Scorched Hammer" %}
+{% elif actor_name == "Elgrim" or actor_name == "Hafjorg" %}{% set merchant_location = "Elgrim's Elixirs" %}
+{% elif actor_name == "Bersi Honey-Hand" or actor_name == "Drifa" %}{% set merchant_location = "Pawned Prawn" %}
+{% elif actor_name == "Brand-Shei" %}{% set merchant_location = "Riften" %}
+{% elif actor_name == "Madesi" %}{% set merchant_location = "Riften" %}
+{% elif actor_name == "Grelka" %}{% set merchant_location = "Riften" %}
+{% elif actor_name == "Marise Aravel" %}{% set merchant_location = "Riften" %}
+{% elif actor_name == "Indaryn" %}{% set merchant_location = "Black-Briar Meadery" %}
+{% elif actor_name == "Wylandriah" %}{% set merchant_location = "Mistveil Keep" %}
+{% elif actor_name == "Vekel the Man" %}{% set merchant_location = "Ragged Flagon" %}
+{# === MARKARTH === #}
+{% elif actor_name == "Kleppr" or actor_name == "Frabbi" %}{% set merchant_location = "Silver-Blood Inn" %}
+{% elif actor_name == "Lisbet" or actor_name == "Imedhnain" %}{% set merchant_location = "Arnleif and Sons" %}
+{% elif actor_name == "Bothela" or actor_name == "Muiri" %}{% set merchant_location = "Hag's Cure" %}
+{% elif actor_name == "Ghorza gra-Bagol" or actor_name == "Tacitus Sallustius" %}{% set merchant_location = "Markarth" %}
+{% elif actor_name == "Moth gro-Bagol" %}{% set merchant_location = "Understone Keep" %}
+{% elif actor_name == "Calcelmo" %}{% set merchant_location = "Understone Keep" %}
+{% elif actor_name == "Kerah" or actor_name == "Endon" %}{% set merchant_location = "Markarth" %}
+{% elif actor_name == "Hogni Red-Arm" %}{% set merchant_location = "Markarth" %}
+{# === FALKREATH === #}
+{% elif actor_name == "Valga Vinicia" %}{% set merchant_location = "Dead Man's Drink" %}
+{% elif actor_name == "Lod" %}{% set merchant_location = "Falkreath" %}
+{% elif actor_name == "Zaria" %}{% set merchant_location = "Grave Concoctions" %}
+{% elif actor_name == "Solaf" %}{% set merchant_location = "Gray Pine Goods" %}
+{% elif actor_name == "Runil" %}{% set merchant_location = "Falkreath" %}
+{# === DAWNSTAR === #}
+{% elif actor_name == "Thoring" %}{% set merchant_location = "Windpeak Inn" %}
+{% elif actor_name == "Frida" %}{% set merchant_location = "Mortar and Pestle" %}
+{% elif actor_name == "Rustleif" or actor_name == "Seren" %}{% set merchant_location = "Dawnstar" %}
+{% elif actor_name == "Madena" %}{% set merchant_location = "White Hall" %}
+{# === MORTHAL === #}
+{% elif actor_name == "Jonna" %}{% set merchant_location = "Moorside Inn" %}
+{% elif actor_name == "Falion" %}{% set merchant_location = "Morthal" %}
+{% elif actor_name == "Lami" %}{% set merchant_location = "Morthal" %}
+{# === WINTERHOLD === #}
+{% elif actor_name == "Dagur" %}{% set merchant_location = "Frozen Hearth" %}
+{% elif actor_name == "Nelacar" %}{% set merchant_location = "Frozen Hearth" %}
+{% elif actor_name == "Birna" %}{% set merchant_location = "Birna's Oddments" %}
+{# === RIVERWOOD === #}
+{% elif actor_name == "Lucan Valerius" or actor_name == "Camilla Valerius" %}{% set merchant_location = "Riverwood Trader" %}
+{% elif actor_name == "Orgnar" or actor_name == "Delphine" %}{% set merchant_location = "Sleeping Giant Inn" %}
+{% elif actor_name == "Alvor" %}{% set merchant_location = "Riverwood" %}
+{# === SMALLER TOWNS === #}
+{% elif actor_name == "Wilhelm" %}{% set merchant_location = "Vilemyr Inn" %}
+{% elif actor_name == "Mralki" %}{% set merchant_location = "Frostfruit Inn" %}
+{% elif actor_name == "Faida" %}{% set merchant_location = "Four Shields Tavern" %}
+{% elif actor_name == "Eydis" %}{% set merchant_location = "Old Hroldan Inn" %}
+{# === COLLEGE OF WINTERHOLD === #}
+{% elif actor_name == "Enthir" %}{% set merchant_location = "College of Winterhold" %}
+{% elif actor_name == "Colette Marence" %}{% set merchant_location = "College of Winterhold" %}
+{% elif actor_name == "Tolfdir" %}{% set merchant_location = "College of Winterhold" %}
+{% elif actor_name == "Phinis Gestor" %}{% set merchant_location = "College of Winterhold" %}
+{% elif actor_name == "Drevis Neloren" %}{% set merchant_location = "College of Winterhold" %}
+{% elif actor_name == "Faralda" %}{% set merchant_location = "College of Winterhold" %}
+{% elif actor_name == "Urag gro-Shub" %}{% set merchant_location = "Arcanaeum" %}
+{# === SPECIAL LOCATIONS === #}
+{% elif actor_name == "Sabjorn" or actor_name == "Mallus Maccius" %}{% set merchant_location = "Honningbrew Meadery" %}
+{% elif actor_name == "Tonilia" %}{% set merchant_location = "Ragged Flagon" %}
+{# === ORC STRONGHOLDS === #}
+{% elif actor_name == "Gharol" %}{% set merchant_location = "Dushnikh Yal" %}
+{% elif actor_name == "Murbul" %}{% set merchant_location = "Dushnikh Yal" %}
+{% elif actor_name == "Shuftharz" %}{% set merchant_location = "Mor Khazgur" %}
+{% elif actor_name == "Sharamph" %}{% set merchant_location = "Mor Khazgur" %}
+{# === COURT WIZARDS (remaining) === #}
+{% elif actor_name == "Festus Krex" %}{% set merchant_location = "Dark Brotherhood Sanctuary" %}
+{% endif %}
+{# Only proceed if this actor has a mapped merchant location #}
+{% if merchant_location != "" %}
+{# Check if actor is actually at their shop location #}
+{% if contains(location, merchant_location) %}
+{% set merchant_inventory = get_merchant_inventory(actorUUID) %}
+{% if merchant_inventory.items and length(merchant_inventory.items) > 0 %}
+
+## Your Shop Inventory
+
+{% set price_multiplier = 4.5 %}
+{% for item in merchant_inventory.items %}
+{% if item.name %}
+{% set item_name = item.name %}
+{% else %}
+{% set item_name = get_form_name(item.formID) %}
+{% endif %}
+{% if item_name and item.value >= 0 -%}
+{% set adjusted_value = round(item.value * price_multiplier, 0) %}
+- {{ item_name }}: {{ item.count }} ({{ adjusted_value }} gold)
+{% endif %}
+{% endfor %}
+
+## Pricing Guidelines
+
+These are your BASE prices for inventory items. You may negotiate within reason:
+- **Standard negotiation**: Allow 5-15% discounts for good customers or bulk purchases
+- **Persuasion checks**: If the player uses charm or intimidation, consider adjusting prices accordingly
+- **Faction members**: Offer 10-20% discounts to members of your faction
+- **Never go below**: 60% of base price - your profit margins matter
+- **When to hold firm**: For rare items, limited stock, or difficult customers, maintain higher prices
+
+Always START with your base prices and only adjust if the player actively negotiates or uses persuasion. Don't volunteer discounts.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

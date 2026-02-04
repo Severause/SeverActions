@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "description": "Modded weapons for crafting system",
+  "plugin": "CSV_Vayne.esp",
+  
+  "weapons": {
+    "dagon's tooth": "CSV_Vayne.esp|0x00000815"
+  },
+  
+  "armor": {
+  },
+  
+  "misc": {
+  }
+}

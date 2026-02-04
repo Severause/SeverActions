@@ -1,0 +1,22 @@
+{% set first_person = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
+{% set arousal_data = get_arousal_state(actorUUID) %}
+
+{% if arousal_data.available and arousal_data.arousal >= 75 %}
+    {% if first_person %}
+    ## Arousal Awareness
+    **Internal Awareness:**
+    You are {{ arousal_data.arousal_state }}. You do your best to push it to the back of your mind, unless the situation warrants its discussion. Be aware of the context of a situation, it may not always be best to show your arousal. This heightened state of arousal may make you more receptive to advances, more flirtatious, or more easily distracted. Do not make this consume your personality, and do not assume that just because you are aroused, that you want a sexual encounter or even enjoy it.
+    
+    {% if arousal_data.is_naked %}
+    Being naked amplifies these sensations.
+    {% endif %}
+    {% if arousal_data.in_scene %}
+    You are currently in a scene, which intensifies your awareness.
+    {% endif %}
+    {% elif render_mode == "target" %}
+    {# In target/observer mode, show only observable signs #}
+    {% if arousal_data.is_naked %}
+    {{ actor.name }} appears flushed and distracted.
+    {% endif %}
+    {% endif %}
+{% endif %}

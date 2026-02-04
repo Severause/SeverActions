@@ -1,0 +1,26 @@
+name: Relax
+description: "Relax and wander around the current area instead of following. Use this when:
+  - The actor wants to relax, hang out, or explore the area
+  - The actor arrives at an inn, tavern, home, or safe location and wants to unwind
+  - {{ player.name }} tells them to make themselves at home, look around, or take it easy
+  - The actor is in a social setting and wants to mingle, eat, sit, or browse
+  - Only use if the actor is currently following {{ player.name }}
+
+  Common triggers: \"relax\", \"make yourself at home\", \"look around\", \"take it easy\", \"hang out here\", \"enjoy yourself\", \"go mingle\", \"do your own thing\""
+questEditorId: SeverActions
+scriptName: SeverActions_Follow
+executionFunctionName: Sandbox
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

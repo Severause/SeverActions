@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fomod>
+    <Name>SeverActions - SkyrimNet Action Pack</Name>
+    <Author>Sever</Author>
+    <Version>0.85</Version>
+    <Description>A comprehensive action and prompt pack for SkyrimNet. Adds travel, combat, outfit management, economy, crafting, arrest/crime system, follower management, and more. Includes optional adult content modules for supported mods.</Description>
+    <Groups>
+        <element>Gameplay</element>
+        <element>SkyrimNet</element>
+    </Groups>
+</fomod>

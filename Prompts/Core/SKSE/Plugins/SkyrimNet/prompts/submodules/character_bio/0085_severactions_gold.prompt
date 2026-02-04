@@ -1,0 +1,7 @@
+{% set first_person = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
+{% if first_person %}
+{% set actor = decnpc(actorUUID) %}
+## Gold
+
+{{ actor.name }} currently has {{ actor.goldCount }} gold.
+{% endif %}

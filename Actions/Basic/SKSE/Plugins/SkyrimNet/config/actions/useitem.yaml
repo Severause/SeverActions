@@ -1,0 +1,21 @@
+name: UseItem
+description: Consume a potion, food, or ingredient from your inventory. Use when you want to heal yourself, gain a buff, satisfy hunger, or drink something.
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: UseItem_Execute
+parameterMapping:
+  - type: dynamic
+    name: akActor
+    description: The person that will be using the item
+  - type: dynamic
+    name: itemName
+    description: The name of the consumable item to use (potion, food, or ingredient)
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
