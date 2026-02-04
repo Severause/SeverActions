@@ -1,7 +1,7 @@
 # SeverActions — SkyrimNet Action Pack
 
 <p align="center">
-  <strong>A comprehensive action, prompt, and behavior pack for <a href="https://www.nexusmods.com/skyrimspecialedition/mods/136016">SkyrimNet</a></strong><br>
+  <strong>A comprehensive action, prompt, and behavior pack for SkyrimNet</strong><br>
   <em>Give NPCs the ability to act, not just talk.</em>
 </p>
 
@@ -9,7 +9,7 @@
 
 ## Overview
 
-**SeverActions** extends [SkyrimNet](https://www.nexusmods.com/skyrimspecialedition/mods/136016) with **38 actions**, **15 context prompts**, and a **native C++ SKSE plugin** that together let NPCs interact with the game world in meaningful ways. NPCs can follow you, travel across Skyrim, craft items at forges, cook meals, brew potions, manage their outfits, handle gold, sit in chairs, fight enemies, get arrested by guards, and much more — all driven naturally through conversation.
+**SeverActions** extends SkyrimNet with **38 actions**, **15 context prompts**, and a **native C++ SKSE plugin** that together let NPCs interact with the game world in meaningful ways. NPCs can follow you, travel across Skyrim, craft items at forges, cook meals, brew potions, manage their outfits, handle gold, sit in chairs, fight enemies, get arrested by guards, and much more — all driven naturally through conversation.
 
 Every system is designed around one principle: **the AI decides what to do, and the mod makes it happen in-game.**
 
@@ -61,24 +61,24 @@ Prompts inject real-time game state into the AI's context so NPCs *know* about t
 
 ## Native C++ Plugin — `SeverActionsNative.dll`
 
-The included SKSE plugin replaces slow Papyrus operations with native C++ implementations for massive performance gains:
+The included SKSE plugin replaces Papyrus operations with native C++ implementations:
 
-| System | Speedup | What It Does |
-|--------|---------|--------------|
-| **String Utilities** | 2,000–10,000x | `StringToLower`, `HexToInt`, `TrimString`, `EscapeJsonString`, case-insensitive search/compare |
-| **Crafting Database** | 500x | O(1) item lookup by name with fuzzy search, loaded from JSON files |
-| **Recipe Database** | Auto-scanned | Reads all COBJ records at game load — every vanilla + modded smithing/cooking/smelting recipe, instantly searchable |
-| **Alchemy Database** | Auto-scanned | Reads all AlchemyItem records — potions, poisons, foods, ingredients with effect-based search |
-| **Travel Database** | 500x | O(1) location lookup with alias support ("whiterun" → `WhiterunBanneredMare`) |
-| **Inventory Search** | 100–200x | Find items by name in any actor's inventory or container |
-| **Nearby Search** | 10+ calls → 1 | Single-pass search for items, containers, forges, cooking pots, alchemy labs |
-| **Furniture Manager** | Native | Auto-removes furniture packages when player moves away or changes cells |
-| **Sandbox Manager** | Native | Auto-removes sandbox packages with distance/cell-change cleanup |
-| **Dialogue Animations** | Native | Plays conversation idle animations on NPCs in dialogue packages |
-| **Crime Utilities** | Native | Access jail markers, stolen goods containers, jail outfits from crime factions |
-| **Survival System** | Native | Follower tracking, food detection, weather/cold calculation, heat source detection, armor warmth |
-| **Fertility Mode Bridge** | Native | O(1) cached fertility state lookups, cycle tracking, pregnancy status |
-| **NSFW JSON Builders** | 500–2,000x | High-performance JSON assembly for SexLab event data |
+| System | What It Does |
+|--------|--------------|
+| **String Utilities** | Native `StringToLower`, `HexToInt`, `TrimString`, `EscapeJsonString`, case-insensitive search/compare |
+| **Crafting Database** | Native O(1) item lookup by name with fuzzy search, loaded from JSON files |
+| **Recipe Database** | Native auto-scan of all COBJ records at game load — every vanilla + modded smithing/cooking/smelting recipe, instantly searchable |
+| **Alchemy Database** | Native auto-scan of all AlchemyItem records — potions, poisons, foods, ingredients with effect-based search |
+| **Travel Database** | Native O(1) location lookup with alias support ("whiterun" → `WhiterunBanneredMare`) |
+| **Inventory Search** | Native item search by name in any actor's inventory or container |
+| **Nearby Search** | Native single-pass search for items, containers, forges, cooking pots, alchemy labs |
+| **Furniture Manager** | Native auto-removal of furniture packages when player moves away or changes cells |
+| **Sandbox Manager** | Native auto-removal of sandbox packages with distance/cell-change cleanup |
+| **Dialogue Animations** | Native conversation idle animations on NPCs in dialogue packages |
+| **Crime Utilities** | Native access to jail markers, stolen goods containers, jail outfits from crime factions |
+| **Survival System** | Native follower tracking, food detection, weather/cold calculation, heat source detection, armor warmth |
+| **Fertility Mode Bridge** | Native cached fertility state lookups, cycle tracking, pregnancy status |
+| **NSFW JSON Builders** | Native high-performance JSON assembly for SexLab event data |
 
 ---
 
@@ -128,7 +128,7 @@ AI responds with awareness of the NPC's actual situation
 
 - [Skyrim Special Edition](https://store.steampowered.com/app/489830/The_Elder_Scrolls_V_Skyrim_Special_Edition/)
 - [SKSE64](https://skse.silverlock.org/)
-- [SkyrimNet](https://www.nexusmods.com/skyrimspecialedition/mods/136016)
+- SkyrimNet
 - [JContainers SE](https://www.nexusmods.com/skyrimspecialedition/mods/16495)
 - [PapyrusUtil SE](https://www.nexusmods.com/skyrimspecialedition/mods/13048)
 - [powerofthree's Papyrus Extender](https://www.nexusmods.com/skyrimspecialedition/mods/22854)
@@ -233,44 +233,6 @@ The mod is configurable through the **MCM (Mod Configuration Menu)** in-game. Ke
 
 ---
 
-## Extending the Mod
-
-### Adding Custom Crafting Recipes
-
-Add JSON files to `Data/SKSE/Plugins/SeverActions/CraftingDB/`. All `.json` files in the folder are automatically loaded and merged. Later files override earlier ones.
-
-```json
-{
-    "weapons": {
-        "dragonbone sword": "Dragonborn.esm|0x0401C014"
-    },
-    "armor": {
-        "dragonscale armor": "Dragonborn.esm|0x0401C012"
-    },
-    "misc": {
-        "gold ingot": "Skyrim.esm|0x0005AD9E"
-    }
-}
-```
-
-### Adding Travel Markers
-
-Edit or add JSON files in `Data/SKSE/Plugins/SeverActions/TravelDB/`. Format:
-
-```json
-{
-    "places": {
-        "WhiterunBreezehome": {
-            "name": "Breezehome",
-            "aliases": ["breezehome", "my house in whiterun"],
-            "marker": "0x00012345"
-        }
-    }
-}
-```
-
----
-
 ## Version History
 
 | Version | Changes |
@@ -283,7 +245,7 @@ Edit or add JSON files in `Data/SKSE/Plugins/SeverActions/TravelDB/`. Format:
 ## Credits
 
 - **Sever** — Mod author
-- **[SkyrimNet](https://www.nexusmods.com/skyrimspecialedition/mods/136016)** — The AI framework that makes this possible
+- **SkyrimNet** — The AI framework that makes this possible
 - **[JContainers](https://www.nexusmods.com/skyrimspecialedition/mods/16495)** — JSON data storage
 - **[PapyrusUtil](https://www.nexusmods.com/skyrimspecialedition/mods/13048)** — Extended Papyrus functions
 - **[powerofthree's Papyrus Extender](https://www.nexusmods.com/skyrimspecialedition/mods/22854)** — Additional Papyrus functions
