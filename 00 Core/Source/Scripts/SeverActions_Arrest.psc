@@ -2355,23 +2355,14 @@ Bool Function DispatchGuardToArrest(Actor akGuard, String targetName, Actor akSe
     Return true
 EndFunction
 
-Bool Function DispatchGuardToArrest_Execute(Actor akGuard, String targetName, String senderName = "")
+Bool Function DispatchGuardToArrest_Execute(Actor akGuard, String targetName, Actor akSender = None)
     {SkyrimNet action entry point: Dispatch a guard to find and arrest an NPC by name.
      The guard will travel to the target, arrest them, and either bring them back to the
      sender for judgment or take them to jail.
-     senderName: Name of the NPC who ordered the arrest. If provided, the guard brings
-                 the prisoner back to this person. If empty, guard takes prisoner to jail.}
+     akSender: The actor who ordered the arrest. If provided, the guard brings
+               the prisoner back to this person. If None, guard takes prisoner to jail.}
 
-    ; Resolve sender by name
-    Actor sender = None
-    If senderName != ""
-        sender = SeverActionsNative.FindActorByName(senderName)
-        If sender == None
-            DebugMsg("WARNING: Could not find sender '" + senderName + "', prisoner will be taken to jail")
-        EndIf
-    EndIf
-
-    Return DispatchGuardToArrest(akGuard, targetName, sender)
+    Return DispatchGuardToArrest(akGuard, targetName, akSender)
 EndFunction
 
 Bool Function DispatchGuardToHome(Actor akGuard, String targetName, Actor akSender = None, String reason = "")
