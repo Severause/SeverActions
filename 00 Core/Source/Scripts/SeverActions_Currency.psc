@@ -182,7 +182,7 @@ Function CollectPayment_Execute(Actor akCollector, Actor akPayer, Int aiAmount)
     Actor player = Game.GetPlayer()
     if akPayer == player
         String collectorName = akCollector.GetDisplayName()
-        String promptText = collectorName + " is requesting " + aiAmount + " gold.\n\nPay them?"
+        String promptText = collectorName + " is requesting " + aiAmount + " gold. Pay them?"
         
         String result = SkyMessage.Show(promptText, "Yes", "No", "No (Silent)")
         

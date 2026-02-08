@@ -1727,7 +1727,7 @@ Function ShowPlayerArrestMenu()
         ; Low bounty - fine or refuse (no jail option for minor offenses)
         If PaymentFailed
             ; Already failed to pay - only submit or refuse
-            String bodyText = "You have a bounty of " + bounty + " gold in " + holdName + ".\n\nThe guard won't accept payment attempts anymore."
+            String bodyText = "You have a bounty of " + bounty + " gold in " + holdName + ". The guard won't accept payment attempts anymore."
             resultStr = SkyMessage.Show(bodyText, "Submit to Arrest", "Refuse", getIndex = true)
 
             If resultStr == "0"
@@ -1737,7 +1737,7 @@ Function ShowPlayerArrestMenu()
             EndIf
         Else
             ; Can still try to pay
-            String bodyText = "You have a bounty of " + bounty + " gold in " + holdName + ".\n\nPay your fine or face the consequences."
+            String bodyText = "You have a bounty of " + bounty + " gold in " + holdName + ". Pay your fine or face the consequences."
             resultStr = SkyMessage.Show(bodyText, "Pay Fine (" + bounty + " gold)", "Refuse", getIndex = true)
 
             If resultStr == "0"
@@ -1752,7 +1752,7 @@ Function ShowPlayerArrestMenu()
 
         If PaymentFailed && PersuadeAttempted
             ; No payment, no persuade - only submit or resist
-            bodyText += "\n\nThe guard has lost all patience. Submit or resist."
+            bodyText += " The guard has lost all patience. Submit or resist."
             resultStr = SkyMessage.Show(bodyText, "Submit to Arrest", "Resist Arrest", getIndex = true)
 
             If resultStr == "0"
@@ -1763,7 +1763,7 @@ Function ShowPlayerArrestMenu()
 
         ElseIf PaymentFailed && !PersuadeAttempted
             ; No payment, but can persuade
-            bodyText += "\n\nThe guard won't accept payment anymore."
+            bodyText += " The guard won't accept payment anymore."
             resultStr = SkyMessage.Show(bodyText, "Submit to Arrest", "Resist Arrest", "Persuade", getIndex = true)
 
             If resultStr == "0"
@@ -1776,7 +1776,7 @@ Function ShowPlayerArrestMenu()
 
         ElseIf !PaymentFailed && PersuadeAttempted
             ; Can bribe, but no persuade
-            bodyText += "\n\nThe guard has lost patience. Make your choice now."
+            bodyText += " The guard has lost patience. Make your choice now."
             resultStr = SkyMessage.Show(bodyText, "Submit to Arrest", "Resist Arrest", "Bribe (" + bribeCost + " gold)", getIndex = true)
 
             If resultStr == "0"
@@ -1789,7 +1789,7 @@ Function ShowPlayerArrestMenu()
 
         Else
             ; All options available
-            bodyText += "\n\nSubmit to arrest or face the consequences."
+            bodyText += " Submit to arrest or face the consequences."
             resultStr = SkyMessage.Show(bodyText, "Submit to Arrest", "Resist Arrest", "Bribe (" + bribeCost + " gold)", "Persuade", getIndex = true)
 
             If resultStr == "0"
