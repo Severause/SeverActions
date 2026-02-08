@@ -18,15 +18,17 @@
                     <plugins order="Explicit">
 
                         <plugin name="Basic Actions">
-                            <description>Core follower and item actions:
+                            <description>Core follower, item, and reading actions:
 • Start/Stop Following
 • Wait Here
 • Relax / Stop Relaxing
-• Pick Up Item
+• Pick Up Item (items, flora, ingredients)
 • Use Item
 • Give Item
 • Bring Item
 • Loot Container
+• Loot Corpse
+• Read Book / Stop Reading
 
 Recommended for most users.</description>
                             <files>
@@ -129,14 +131,17 @@ Allows NPCs to craft items at workbenches, alchemy labs, and cooking pots.</desc
                         </plugin>
 
                         <plugin name="Arrest Actions">
-                            <description>Guard arrest and crime system:
+                            <description>Guard arrest, dispatch, and crime system:
 • Arrest Player - Guards confront player about bounty
 • Arrest NPC - Guards arrest and escort NPCs to jail
+• Dispatch Guard to Arrest - Send guards to arrest distant NPCs across cells
+• Dispatch Guard to Home - Investigate an NPC's home for evidence
 • Add Bounty to Player - Track crimes in holds
 • Accept/Reject Persuasion - Handle persuasion attempts
 • Free From Jail - Release imprisoned NPCs
+• Order Jailed / Order Release - Judgment phase after prisoner delivery
 
-Allows guards to arrest players and NPCs, track bounties, and manage prisoners.</description>
+Full cross-cell dispatch with off-screen escort, combat suppression, and judgment.</description>
                             <files>
                                 <folder source="Actions/Arrest" destination="" priority="1"/>
                             </files>
@@ -163,7 +168,8 @@ Allows guards to arrest players and NPCs, track bounties, and manage prisoners.<
 • Known Spells - NPCs know what spells they have
 • Gold Awareness - NPCs know their gold amount
 • Inventory Awareness - NPCs know their items
-• Nearby Objects - NPCs aware of surroundings
+• Nearby Objects - NPCs aware of surroundings (items, flora, furniture)
+• Book Reading Rules - Prevents NPCs from fabricating book content
 
 Recommended for immersion.</description>
                             <files>
