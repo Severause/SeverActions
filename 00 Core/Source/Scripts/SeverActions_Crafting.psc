@@ -1,6 +1,7 @@
 Scriptname SeverActions_Crafting extends Quest
-{Crafting system with JContainers JSON database integration.
-Replaces FormLists with a JSON-based item lookup system.}
+{Crafting system using native DLL databases for fast item lookup.
+RecipeDB scans all COBJ records, AlchemyDB scans all AlchemyItem records.
+No JSON or JContainers needed - all data comes from game forms.}
 
 ; =============================================================================
 ; PROPERTIES - Set in Creation Kit
@@ -52,388 +53,93 @@ float Property INTERACTION_DISTANCE = 150.0 Auto
 int Property CRAFT_PACKAGE_PRIORITY = 100 Auto
 {Priority for craft package - must be higher than dialogue (usually 50-80)}
 
-string Property DATABASE_FOLDER = "Data/SKSE/Plugins/SeverActions/CraftingDB/" Auto
-{Folder containing craftable item JSON databases. All .json files in this folder will be loaded and merged.}
-
-; =============================================================================
-; INTERNAL VARIABLES
-; =============================================================================
-
-int craftableDB = 0          ; JContainers handle to the database
-bool isInitialized = false   ; Whether database has been loaded
-
 ; =============================================================================
 ; INITIALIZATION
 ; =============================================================================
 
 Event OnInit()
-    LoadDatabase()
+    ; Native databases auto-initialize on kDataLoaded in the DLL
+    ; No JSON loading needed
+    Debug.Trace("SeverActions_Crafting: Initialized (native databases)")
 EndEvent
 
-Function LoadDatabase()
-    {Load all craftable items databases from the database folder and merge them}
-    
-    ; Create the master database structure
-    craftableDB = JMap.object()
-    JMap.setObj(craftableDB, "weapons", JMap.object())
-    JMap.setObj(craftableDB, "armor", JMap.object())
-    JMap.setObj(craftableDB, "misc", JMap.object())
-    
-    bool loadedAny = false
-    
-    ; Try to load from the folder using readFromDirectory
-    ; JContainers returns a JMap of {filename: parsed_json_object} pairs
-    int fileMap = JValue.readFromDirectory(DATABASE_FOLDER, ".json")
-    
-    if fileMap != 0 && JValue.isMap(fileMap)
-        int fileCount = JMap.count(fileMap)
-        Debug.Trace("SeverActions_Crafting: Found " + fileCount + " database files in " + DATABASE_FOLDER)
-        
-        ; Iterate through the map using nextKey
-        string fileName = JMap.nextKey(fileMap)
-        while fileName != ""
-            Debug.Trace("SeverActions_Crafting: Loading " + fileName)
-            
-            ; Get the already-parsed JSON object for this file
-            int fileDB = JMap.getObj(fileMap, fileName)
-            if fileDB != 0
-                MergeDatabaseInto(fileDB, craftableDB)
-                loadedAny = true
-                Debug.Trace("SeverActions_Crafting: Successfully merged " + fileName)
-            else
-                Debug.Trace("SeverActions_Crafting: Failed to get object for " + fileName)
-            endif
-            
-            fileName = JMap.nextKey(fileMap, fileName)
-        endwhile
-        
-        ; Release the file map (individual file objects are owned by it)
-        JValue.release(fileMap)
-    else
-        Debug.Trace("SeverActions_Crafting: readFromDirectory returned nothing for " + DATABASE_FOLDER)
-    endif
-    
-    ; If folder scan didn't work, try loading known filenames directly
-    if !loadedAny
-        Debug.Trace("SeverActions_Crafting: Trying direct file paths...")
-        
-        ; Try common filenames
-        string[] tryFiles = new string[6]
-        tryFiles[0] = DATABASE_FOLDER + "00_vanilla.json"
-        tryFiles[1] = DATABASE_FOLDER + "10_requiem.json"
-        tryFiles[2] = DATABASE_FOLDER + "craftable_items.json"
-        tryFiles[3] = DATABASE_FOLDER + "vanilla.json"
-        tryFiles[4] = "Data/SKSE/Plugins/SeverActions/craftable_items.json"
-        tryFiles[5] = "Data/SKSE/Plugins/SeverActions/CraftingDB/00_vanilla.json"
-        
-        int idx = 0
-        while idx < tryFiles.Length
-            if tryFiles[idx] != ""
-                int fileDB = JValue.readFromFile(tryFiles[idx])
-                if fileDB != 0
-                    Debug.Trace("SeverActions_Crafting: Successfully loaded " + tryFiles[idx])
-                    MergeDatabaseInto(fileDB, craftableDB)
-                    JValue.release(fileDB)
-                    loadedAny = true
-                endif
-            endif
-            idx += 1
-        endwhile
-    endif
-    
-    if !loadedAny
-        Debug.Notification("SeverActions: No crafting databases found!")
-        Debug.Trace("SeverActions_Crafting: No databases found. Checked folder: " + DATABASE_FOLDER)
-        isInitialized = false
-        return
-    endif
-    
-    ; Retain the master database so it doesn't get garbage collected
-    JValue.retain(craftableDB)
-    isInitialized = true
-    
-    ; Log stats
-    int weaponsObj = JMap.getObj(craftableDB, "weapons")
-    int armorObj = JMap.getObj(craftableDB, "armor")
-    int miscObj = JMap.getObj(craftableDB, "misc")
-    
-    int weaponCount = JMap.count(weaponsObj)
-    int armorCount = JMap.count(armorObj)
-    int miscCount = JMap.count(miscObj)
-    
-    Debug.Trace("SeverActions_Crafting: Database loaded successfully!")
-    Debug.Trace("SeverActions_Crafting: " + weaponCount + " weapons, " + armorCount + " armor, " + miscCount + " misc items")
-EndFunction
-
-Function MergeDatabaseInto(int sourceDB, int targetDB)
-    {Merge a source database into the target database. Later entries override earlier ones.}
-    
-    ; Merge each category
-    MergeCategoryInto(JMap.getObj(sourceDB, "weapons"), JMap.getObj(targetDB, "weapons"))
-    MergeCategoryInto(JMap.getObj(sourceDB, "armor"), JMap.getObj(targetDB, "armor"))
-    MergeCategoryInto(JMap.getObj(sourceDB, "misc"), JMap.getObj(targetDB, "misc"))
-EndFunction
-
-Function MergeCategoryInto(int sourceCategory, int targetCategory)
-    {Merge all entries from source category into target category.
-    Stores multiple FormIDs per item as an array for fallback support.}
-    
-    if sourceCategory == 0 || targetCategory == 0
-        return
-    endif
-    
-    int keysArray = JMap.allKeys(sourceCategory)
-    int keyCount = JArray.count(keysArray)
-    
-    int idx = 0
-    while idx < keyCount
-        string keyName = JArray.getStr(keysArray, idx)
-        
-        ; Skip comment keys (start with underscore)
-        if StringUtil.Find(keyName, "_") != 0
-            string newValue = JMap.getStr(sourceCategory, keyName)
-            
-            ; Get or create array for this item
-            int formIdArray = JMap.getObj(targetCategory, keyName)
-            if formIdArray == 0
-                ; First entry for this item - create new array
-                formIdArray = JArray.object()
-                JMap.setObj(targetCategory, keyName, formIdArray)
-            endif
-            
-            ; Add this FormID to the array (later entries go first for priority)
-            JArray.addStr(formIdArray, newValue, 0)
-        endif
-        
-        idx += 1
-    endwhile
-EndFunction
-
-Function ReloadDatabase()
-    {Reload database from disk - useful after editing JSON}
-    
-    if craftableDB != 0
-        JValue.release(craftableDB)
-    endif
-    
-    LoadDatabase()
-    Debug.Notification("SeverActions: Crafting database reloaded")
-EndFunction
+; No JSON database loading needed - native DLL scans all game forms on kDataLoaded
 
 ; =============================================================================
 ; ITEM LOOKUP FUNCTIONS
 ; =============================================================================
 
 Form Function FindCraftableByName(string itemName)
-    {Find a craftable item by name.
-    Uses native RecipeDB first (auto-scanned from COBJ records), falls back to JContainers database.
+    {Find a craftable item by name using native databases.
+    Searches RecipeDB (smithing + cooking) and AlchemyDB (potions + poisons).
     Returns None if not found.}
 
-    ; Try native RecipeDB first - this is auto-populated from game data
-    ; and includes all vanilla + mod smithing recipes
+    ; Try smithing recipes (forge items)
     if SeverActionsNative.IsRecipeDBLoaded()
-        Form nativeResult = SeverActionsNative.FindSmithingRecipe(itemName)
-        if nativeResult
-            Debug.Trace("SeverActions_Crafting: Found '" + itemName + "' via native RecipeDB")
-            return nativeResult
-        endif
-    endif
-
-    ; Fallback to JContainers database for custom/non-COBJ items
-    if !isInitialized
-        LoadDatabase()
-        if !isInitialized
-            return None
-        endif
-    endif
-
-    string searchName = StringToLower(itemName)
-
-    ; Try exact match first in each category
-    Form result = SearchCategory("weapons", searchName)
-    if result
-        return result
-    endif
-
-    result = SearchCategory("armor", searchName)
-    if result
-        return result
-    endif
-
-    result = SearchCategory("misc", searchName)
-    if result
-        return result
-    endif
-
-    ; Try fuzzy search if exact match failed
-    result = FuzzySearch(searchName)
-    return result
-EndFunction
-
-Form Function FindCraftableByNameJContainersOnly(string itemName)
-    {Search ONLY the JContainers database - no native fallback.
-    Used by CraftItem_Internal after native databases have already been checked.}
-
-    if !isInitialized
-        LoadDatabase()
-        if !isInitialized
-            return None
-        endif
-    endif
-
-    string searchName = StringToLower(itemName)
-
-    ; Try exact match first in each category
-    Form result = SearchCategory("weapons", searchName)
-    if result
-        return result
-    endif
-
-    result = SearchCategory("armor", searchName)
-    if result
-        return result
-    endif
-
-    result = SearchCategory("misc", searchName)
-    if result
-        return result
-    endif
-
-    ; Try fuzzy search if exact match failed
-    result = FuzzySearch(searchName)
-    return result
-EndFunction
-
-Form Function SearchCategory(string category, string searchName)
-    {Search a specific category for an item by name.
-    Tries each registered FormID until one succeeds (for mod fallback support).}
-    
-    int categoryObj = JMap.getObj(craftableDB, category)
-    if categoryObj == 0
-        return None
-    endif
-    
-    ; Get the array of FormIDs for this item
-    int formIdArray = JMap.getObj(categoryObj, searchName)
-    if formIdArray == 0
-        return None
-    endif
-    
-    ; Try each FormID in order (higher priority mods first)
-    int arrayCount = JArray.count(formIdArray)
-    int idx = 0
-    while idx < arrayCount
-        string formIdStr = JArray.getStr(formIdArray, idx)
-        Form result = GetFormFromHexString(formIdStr)
+        Form result = SeverActionsNative.FindSmithingRecipe(itemName)
         if result
+            Debug.Trace("SeverActions_Crafting: Found '" + itemName + "' via native RecipeDB (smithing)")
             return result
         endif
-        ; Plugin not loaded, try next one
-        idx += 1
-    endwhile
-    
-    return None
-EndFunction
 
-Form Function FuzzySearch(string searchTerm)
-    {Search all categories for partial name matches}
-    
-    string[] categories = new string[3]
-    categories[0] = "weapons"
-    categories[1] = "armor"
-    categories[2] = "misc"
-    
-    int idx = 0
-    while idx < categories.Length
-        Form result = FuzzySearchCategory(categories[idx], searchTerm)
+        ; Try cooking recipes
+        result = SeverActionsNative.FindCookingRecipe(itemName)
         if result
+            Debug.Trace("SeverActions_Crafting: Found '" + itemName + "' via native RecipeDB (cooking)")
             return result
         endif
-        idx += 1
-    endwhile
-    
+    endif
+
+    ; Try potions
+    if SeverActionsNative.IsAlchemyDBLoaded()
+        Form result = SeverActionsNative.FindPotion(itemName)
+        if result
+            Debug.Trace("SeverActions_Crafting: Found '" + itemName + "' via native AlchemyDB (potion)")
+            return result
+        endif
+
+        ; Try poisons
+        result = SeverActionsNative.FindPoison(itemName)
+        if result
+            Debug.Trace("SeverActions_Crafting: Found '" + itemName + "' via native AlchemyDB (poison)")
+            return result
+        endif
+    endif
+
+    Debug.Trace("SeverActions_Crafting: '" + itemName + "' not found in any native database")
     return None
 EndFunction
 
-Form Function FuzzySearchCategory(string category, string searchTerm)
-    {Search a category for partial matches. Tries each FormID until one works.}
-    
-    int categoryObj = JMap.getObj(craftableDB, category)
-    if categoryObj == 0
-        return None
-    endif
-    
-    ; Get all keys in this category
-    int keysArray = JMap.allKeys(categoryObj)
-    int keyCount = JArray.count(keysArray)
-    
-    ; Search for partial match
-    int idx = 0
-    while idx < keyCount
-        string keyName = JArray.getStr(keysArray, idx)
-        
-        ; Check if search term is contained in the key
-        if StringUtil.Find(keyName, searchTerm) >= 0
-            ; Get the array of FormIDs for this item
-            int formIdArray = JMap.getObj(categoryObj, keyName)
-            if formIdArray != 0
-                ; Try each FormID until one works
-                int formCount = JArray.count(formIdArray)
-                int formIdx = 0
-                while formIdx < formCount
-                    string formIdStr = JArray.getStr(formIdArray, formIdx)
-                    Form result = GetFormFromHexString(formIdStr)
-                    if result
-                        return result
-                    endif
-                    formIdx += 1
-                endwhile
-            endif
-        endif
-        
-        idx += 1
-    endwhile
-    
-    return None
+int Function HexToInt(string hexStr)
+    {Convert hex string (with or without 0x prefix) to integer}
+    return SeverActionsNative.HexToInt(hexStr)
 EndFunction
 
 Form Function GetFormFromHexString(string hexString)
     {Convert a hex string like "Skyrim.esm|0x00012EB7" to a Form.
-    Returns None if the plugin isn't loaded or form doesn't exist.}
-    
-    ; Expected format: "PluginName.esp|0x00012EB7" or just "0x00012EB7"
-    
+    Returns None if the plugin isn't loaded or form doesn't exist.
+    Used by native dispatch functions (CraftItemNative, CookMealNative, etc.)}
+
     int pipeIndex = StringUtil.Find(hexString, "|")
-    
+
     if pipeIndex >= 0
-        ; Has plugin specification
         string pluginName = StringUtil.Substring(hexString, 0, pipeIndex)
         string formIdPart = StringUtil.Substring(hexString, pipeIndex + 1)
-        
-        ; Check if plugin is loaded first
+
         if !Game.IsPluginInstalled(pluginName)
             return None
         endif
-        
+
         int formId = HexToInt(formIdPart)
         return Game.GetFormFromFile(formId, pluginName)
     else
-        ; No plugin - try to parse as raw form ID
-        ; This assumes it's a runtime form ID
         int formId = HexToInt(hexString)
         return Game.GetForm(formId)
     endif
 EndFunction
 
-int Function HexToInt(string hexStr)
-    {Convert hex string (with or without 0x prefix) to integer}
-    ; Native implementation: ~2000x faster
-    return SeverActionsNative.HexToInt(hexStr)
-EndFunction
-
 string Function StringToLower(string text)
     {Convert string to lowercase for case-insensitive comparison}
-    ; Native implementation: ~2000-10000x faster
     return SeverActionsNative.StringToLower(text)
 EndFunction
 
@@ -462,29 +168,24 @@ EndFunction
 
 bool Function CraftWeapon_IsEligible(Actor akActor, string weaponName)
     {Check if actor can craft the specified weapon}
-    
-    ; Check if database is loaded
-    if !isInitialized
-        return false
-    endif
-    
-    ; Check if item exists in database
+
+    ; Check if item exists in native databases
     Form item = FindCraftableByName(weaponName)
     if !item
         return false
     endif
-    
+
     ; Check if actor is valid and not busy
     if !akActor || akActor.IsDead() || akActor.IsInCombat()
         return false
     endif
-    
+
     ; Check if there's a forge nearby
     ObjectReference forge = FindNearbyForge(akActor)
     if !forge
         return false
     endif
-    
+
     return true
 EndFunction
 
@@ -596,20 +297,6 @@ Function CraftItem_Internal(Actor akActor, string itemName, Actor akRecipient, b
             Debug.Trace("SeverActions_Crafting: FOUND '" + itemName + "' as POISON -> " + itemForm.GetName())
         else
             Debug.Trace("SeverActions_Crafting: Not found in poisons")
-        endif
-    endif
-
-    ; 5. Fallback to JContainers database (for custom items not in COBJ/alchemy)
-    if !itemForm
-        Debug.Trace("SeverActions_Crafting: Trying JContainers fallback...")
-        itemForm = FindCraftableByNameJContainersOnly(itemName)
-        if itemForm
-            workstation = FindNearbyForge(akActor)
-            workstationType = "forge"
-            actionVerb = "crafting"
-            Debug.Trace("SeverActions_Crafting: FOUND '" + itemName + "' in JContainers -> " + itemForm.GetName())
-        else
-            Debug.Trace("SeverActions_Crafting: Not found in JContainers either")
         endif
     endif
 
@@ -1455,55 +1142,21 @@ EndFunction
 ; DEBUG / UTILITY
 ; =============================================================================
 
-Function ListAllCraftableItems()
-    {Debug function to list all items in database}
-    
-    if !isInitialized
-        Debug.Notification("Database not loaded!")
-        return
-    endif
-    
-    string[] categories = new string[3]
-    categories[0] = "weapons"
-    categories[1] = "armor"
-    categories[2] = "misc"
-    
-    int catIdx = 0
-    while catIdx < categories.Length
-        int categoryObj = JMap.getObj(craftableDB, categories[catIdx])
-        if categoryObj != 0
-            Debug.Trace("=== " + categories[catIdx] + " ===")
-            int keysArray = JMap.allKeys(categoryObj)
-            int keyCount = JArray.count(keysArray)
-            
-            int keyIdx = 0
-            while keyIdx < keyCount && keyIdx < 20  ; Limit to first 20
-                string keyName = JArray.getStr(keysArray, keyIdx)
-                int formIdArray = JMap.getObj(categoryObj, keyName)
-                int formCount = JArray.count(formIdArray)
-                string firstValue = JArray.getStr(formIdArray, 0)
-                Debug.Trace("  " + keyName + " -> " + firstValue + " (+" + (formCount - 1) + " fallbacks)")
-                keyIdx += 1
-            endwhile
-            
-            if keyCount > 20
-                Debug.Trace("  ... and " + (keyCount - 20) + " more")
-            endif
-        endif
-        catIdx += 1
-    endwhile
-EndFunction
-
 string Function GetDatabaseStats()
-    {Get statistics about the loaded database}
-    
-    if !isInitialized
-        return "Database not loaded"
+    {Get statistics about the native databases}
+
+    string result = ""
+    if SeverActionsNative.IsRecipeDBLoaded()
+        result += "RecipeDB: loaded"
+    else
+        result += "RecipeDB: NOT loaded"
     endif
-    
-    int weaponsCount = JMap.count(JMap.getObj(craftableDB, "weapons"))
-    int armorCount = JMap.count(JMap.getObj(craftableDB, "armor"))
-    int miscCount = JMap.count(JMap.getObj(craftableDB, "misc"))
-    
-    return "Weapons: " + weaponsCount + ", Armor: " + armorCount + ", Misc: " + miscCount
+
+    if SeverActionsNative.IsAlchemyDBLoaded()
+        result += ", AlchemyDB: loaded"
+    else
+        result += ", AlchemyDB: NOT loaded"
+    endif
+
+    return result
 EndFunction

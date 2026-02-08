@@ -9,7 +9,12 @@ description: "A guard arrests an NPC and escorts them to jail. The guard will ap
   - Someone needs to be imprisoned for their actions
 
   This action is for NPCs only - use ArrestPlayer for confronting the player about
-  their bounty."
+  their bounty.
+
+  Do NOT use this action when:
+  - A guard has already been dispatched to arrest the same target via DispatchGuardToArrest
+  - The target is already under arrest, being escorted, or in jail
+  - Another arrest action was just performed on the same target"
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: ArrestNPC_Internal

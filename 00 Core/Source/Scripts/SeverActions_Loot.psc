@@ -16,6 +16,34 @@ float Property INTERACTION_DISTANCE = 150.0 AutoReadOnly
 String LastLootedItems = ""
 
 ; =============================================================================
+; BOOK READING STATE - Tracks active book reading for prompt integration
+; =============================================================================
+
+Actor Property BookReader Auto Hidden
+{The NPC currently reading a book aloud. None if nobody is reading.}
+
+String Property BookReadingTitle = "" Auto Hidden
+{The title of the book currently being read.}
+
+String Property BookReadingText = "" Auto Hidden
+{The full text content of the book currently being read.}
+
+Float Property BookReadingStartTime = 0.0 Auto Hidden
+{Real time when reading started. Used for auto-timeout.}
+
+Float Property BookReadingTimeout = 300.0 Auto Hidden
+{Max reading duration in seconds before auto-clearing state (5 minutes).}
+
+; Real time when the last reading narration was sent. Used for auto-continue.
+Float BookReadingLastNarrationTime = 0.0
+
+Float Property BookReadingContinueDelay = 15.0 Auto Hidden
+{Seconds to wait after speech queue empties before sending a continue narration.}
+
+Float Property BookReadingUpdateInterval = 5.0 Auto Hidden
+{How often to check speech queue during book reading (seconds).}
+
+; =============================================================================
 ; ANIMATION PROPERTIES
 ; =============================================================================
 
@@ -28,6 +56,10 @@ Idle Property IdleForceDefaultState Auto
 ; Consume animations
 Idle Property IdleDrinkPotion Auto
 Idle Property IdleEatSoup Auto
+
+; Book reading animations
+Idle Property IdleBook_Reading Auto
+Idle Property IdleBook_ReadingSitting Auto
 
 ; =============================================================================
 ; SCRIPT REFERENCES
@@ -169,9 +201,7 @@ Function PickUpItem_Execute(Actor akActor, String itemType)
             if IdlePickUpItem
                 PlayAnimationAndWait(akActor, IdlePickUpItem, 1.5)
             endif
-            akActor.AddItem(itemBase, 1, true)
-            nearbyItem.Disable()
-            nearbyItem.Delete()
+            nearbyItem.Activate(akActor)
             ResetToDefaultIdle(akActor)
             SkyrimNetApi.RegisterEvent("item_picked_up", akActor.GetDisplayName() + " picked up " + itemName, akActor, None)
         else
@@ -186,69 +216,30 @@ EndFunction
 ; ACTION: LootContainer - Loot a container by its RefID
 ; =============================================================================
 
-Bool Function LootContainer_IsEligible(Actor akActor, String containerRefId) Global
-{Check if actor can loot the specified container by RefID.}
-    if !akActor || akActor.IsDead() || akActor.IsInCombat()
+Bool Function LootContainer_IsEligible(Actor akActor, String containerName) Global
+{Check if actor can loot a nearby container matching the given name.}
+    if !akActor || akActor.IsDead() || akActor.IsInCombat() || containerName == ""
         return false
     endif
-    
-    if containerRefId == ""
-        return false
-    endif
-    
-    ; Parse RefID
-    int refId = containerRefId as int
-    if refId == 0 && containerRefId != "0"
-        return false
-    endif
-    
-    Form foundForm = Game.GetFormEx(refId)
-    if !foundForm
-        return false
-    endif
-    
-    ObjectReference containerRef = foundForm as ObjectReference
-    if !containerRef
-        return false
-    endif
-    
-    ; Check if it has items and is within reasonable distance
-    if containerRef.IsDisabled()
-        return false
-    endif
-    
-    if containerRef.GetNumItems() <= 0
-        return false
-    endif
-    
-    ; Check distance - must be within search radius
-    if akActor.GetDistance(containerRef) > 4096.0
-        return false
-    endif
-    
-    return true
+
+    return FindNearbyContainer(akActor, containerName) != None
 EndFunction
 
-Function LootContainer_Execute(Actor akActor, String containerRefId, String itemsToTake)
-{Loot a container specified by RefID. itemsToTake can be "all", "valuables", "gold", or comma-separated item names.}
-    if !akActor || containerRefId == ""
+Function LootContainer_Execute(Actor akActor, String containerName, String itemsToTake)
+{Loot a nearby container by name. itemsToTake can be "all", "valuables", "gold", or comma-separated item names.}
+    if !akActor || containerName == ""
         return
     endif
-    
-    ObjectReference akContainer = GetContainerByRefID(containerRefId)
+
+    ObjectReference akContainer = FindNearbyContainer(akActor, containerName)
     if !akContainer
-        SkyrimNetApi.RegisterEvent("container_not_found", akActor.GetDisplayName() + " couldn't find that container (RefID: " + containerRefId + ")", akActor, None)
+        SkyrimNetApi.RegisterEvent("container_not_found", akActor.GetDisplayName() + " couldn't find a " + containerName + " nearby", akActor, None)
         return
     endif
-    
-    if akContainer.IsDisabled()
-        SkyrimNetApi.RegisterEvent("container_not_found", akActor.GetDisplayName() + " - container is not accessible", akActor, None)
-        return
-    endif
-    
-    String containerName = akContainer.GetBaseObject().GetName()
-    Debug.Trace("[SeverActions_Loot] " + akActor.GetDisplayName() + " looting container: " + containerName + " (RefID: " + containerRefId + ")")
-    
+
+    String displayName = akContainer.GetBaseObject().GetName()
+    Debug.Trace("[SeverActions_Loot] " + akActor.GetDisplayName() + " looting container: " + displayName)
+
     if WalkToReference(akActor, akContainer)
         if IdleSearchingChest
             PlayAnimationAndWait(akActor, IdleSearchingChest, 2.5)
@@ -258,29 +249,56 @@ Function LootContainer_Execute(Actor akActor, String containerRefId, String item
         Utility.Wait(0.2)
         int itemsTaken = ProcessLootList(akActor, akContainer, itemsToTake)
         ResetToDefaultIdle(akActor)
-        
+
         if itemsTaken > 0 && LastLootedItems != ""
-            SkyrimNetApi.RegisterEvent("container_looted", akActor.GetDisplayName() + " took " + LastLootedItems + " from " + containerName, akActor, None)
+            SkyrimNetApi.RegisterEvent("container_looted", akActor.GetDisplayName() + " took " + LastLootedItems + " from " + displayName, akActor, None)
         else
-            SkyrimNetApi.RegisterEvent("container_looted", akActor.GetDisplayName() + " found nothing to take from " + containerName, akActor, None)
+            SkyrimNetApi.RegisterEvent("container_looted", akActor.GetDisplayName() + " found nothing to take from " + displayName, akActor, None)
         endif
     else
-        SkyrimNetApi.RegisterEvent("container_unreachable", akActor.GetDisplayName() + " couldn't reach " + containerName, akActor, None)
+        SkyrimNetApi.RegisterEvent("container_unreachable", akActor.GetDisplayName() + " couldn't reach " + displayName, akActor, None)
     endif
 EndFunction
 
 ; =============================================================================
-; ACTION: LootCorpse - Loot a dead actor
+; ACTION: LootCorpse - Loot a dead actor by name
 ; =============================================================================
 
-Bool Function LootCorpse_IsEligible(Actor akActor, Actor akCorpse) Global
-    if !akActor || !akCorpse || akActor.IsDead() || !akCorpse.IsDead() || akActor.IsInCombat()
+Bool Function LootCorpse_IsEligible(Actor akActor, String corpseName) Global
+    if !akActor || akActor.IsDead() || akActor.IsInCombat() || corpseName == ""
         return false
     endif
+
+    Actor akCorpse = SeverActionsNative.FindActorByName(corpseName)
+    if !akCorpse || !akCorpse.IsDead()
+        return false
+    endif
+
     return akActor.GetDistance(akCorpse) < 4096.0 && akCorpse.GetNumItems() > 0
 EndFunction
 
-Function LootCorpse_Execute(Actor akActor, Actor akCorpse, String itemsToTake)
+Function LootCorpse_Execute(Actor akActor, String corpseName, String itemsToTake)
+    if !akActor || corpseName == ""
+        return
+    endif
+
+    Actor akCorpse = SeverActionsNative.FindActorByName(corpseName)
+    if !akCorpse
+        SkyrimNetApi.RegisterEvent("corpse_not_found", akActor.GetDisplayName() + " couldn't find " + corpseName, akActor, None)
+        return
+    endif
+
+    if !akCorpse.IsDead()
+        Debug.Trace("[SeverActions_Loot] LootCorpse: " + corpseName + " is not dead, aborting")
+        SkyrimNetApi.RegisterEvent("corpse_not_found", akActor.GetDisplayName() + " - " + corpseName + " is not dead", akActor, None)
+        return
+    endif
+
+    if akActor.GetDistance(akCorpse) > 4096.0
+        SkyrimNetApi.RegisterEvent("corpse_unreachable", akActor.GetDisplayName() + " is too far from " + corpseName, akActor, None)
+        return
+    endif
+
     if WalkToReference(akActor, akCorpse)
         if IdleLootBody
             PlayAnimationAndWait(akActor, IdleLootBody, 3.0)
@@ -290,13 +308,15 @@ Function LootCorpse_Execute(Actor akActor, Actor akCorpse, String itemsToTake)
         Utility.Wait(0.2)
         int itemsTaken = ProcessLootList(akActor, akCorpse, itemsToTake)
         ResetToDefaultIdle(akActor)
-        
-        String corpseName = akCorpse.GetDisplayName()
+
+        String displayName = akCorpse.GetDisplayName()
         if itemsTaken > 0 && LastLootedItems != ""
-            SkyrimNetApi.RegisterEvent("corpse_looted", akActor.GetDisplayName() + " looted " + LastLootedItems + " from " + corpseName, akActor, None)
+            SkyrimNetApi.RegisterEvent("corpse_looted", akActor.GetDisplayName() + " looted " + LastLootedItems + " from " + displayName, akActor, None)
         else
-            SkyrimNetApi.RegisterEvent("corpse_looted", akActor.GetDisplayName() + " found nothing to take from " + corpseName, akActor, None)
+            SkyrimNetApi.RegisterEvent("corpse_looted", akActor.GetDisplayName() + " found nothing to take from " + displayName, akActor, None)
         endif
+    else
+        SkyrimNetApi.RegisterEvent("corpse_unreachable", akActor.GetDisplayName() + " couldn't reach " + corpseName, akActor, None)
     endif
 EndFunction
 
@@ -444,19 +464,27 @@ int Function ProcessLootList(Actor akActor, ObjectReference akSource, String ite
     if !akActor || !akSource
         return 0
     endif
-    
+
     ; Reset loot tracking
     LastLootedItems = ""
-    
+
+    ; Cap items processed to prevent long stalls
+    int MAX_ITEMS = 30
+
     ; Normalize the input
     String lootRequest = ToLowerCase(itemsToTake)
     int totalTaken = 0
-    
+
     ; Handle "all" - take everything
+    ; Iterate backwards so RemoveItem doesn't shift indices we haven't visited
     if lootRequest == "all" || lootRequest == "everything"
         int numItems = akSource.GetNumItems()
-        int i = 0
-        while i < numItems
+        int startIdx = numItems - 1
+        if startIdx >= MAX_ITEMS
+            startIdx = MAX_ITEMS - 1
+        endif
+        int i = startIdx
+        while i >= 0
             Form itemForm = akSource.GetNthForm(i)
             if itemForm
                 int count = akSource.GetItemCount(itemForm)
@@ -467,16 +495,21 @@ int Function ProcessLootList(Actor akActor, ObjectReference akSource, String ite
                     AddToLootedItemsList(itemForm.GetName(), count)
                 endif
             endif
-            i += 1
+            i -= 1
         endwhile
         return totalTaken
     endif
-    
+
     ; Handle "valuables" - take items worth 50+ gold
+    ; Iterate backwards so RemoveItem doesn't shift indices we haven't visited
     if lootRequest == "valuables" || lootRequest == "valuable"
         int numItems = akSource.GetNumItems()
-        int i = 0
-        while i < numItems
+        int startIdx = numItems - 1
+        if startIdx >= MAX_ITEMS
+            startIdx = MAX_ITEMS - 1
+        endif
+        int i = startIdx
+        while i >= 0
             Form itemForm = akSource.GetNthForm(i)
             if itemForm
                 int value = GetFormValue(itemForm)
@@ -490,7 +523,7 @@ int Function ProcessLootList(Actor akActor, ObjectReference akSource, String ite
                     endif
                 endif
             endif
-            i += 1
+            i -= 1
         endwhile
         return totalTaken
     endif
@@ -665,18 +698,36 @@ ObjectReference Function FindNearbyItemOfType(Actor akActor, String itemType) Gl
         return found
     endif
     
-    found = CheckFormType(akActor, 32, itemType) ; Misc (last resort)
+    found = CheckFormType(akActor, 32, itemType) ; Misc
+    if found
+        return found
+    endif
+
+    found = CheckFormType(akActor, 38, itemType) ; Trees (many harvestable plants use this type)
+    if found
+        return found
+    endif
+
+    found = CheckFormType(akActor, 39, itemType) ; Flora (flowers, plants, etc.)
+    if found
+        return found
+    endif
+
+    found = CheckFormType(akActor, 24, itemType) ; Activators (some harvestable plants use this)
     return found
 EndFunction
 
 ObjectReference Function CheckFormType(Actor akActor, int typeID, String itemType) Global
     ObjectReference[] refs = PO3_SKSEFunctions.FindAllReferencesOfFormType(akActor, typeID, 1000.0)
     if !refs
+        Debug.Trace("[SeverActions_Loot] CheckFormType: No refs found for type " + typeID + " searching for '" + itemType + "'")
         return None
     endif
-    
+
+    Debug.Trace("[SeverActions_Loot] CheckFormType: Found " + refs.Length + " refs for type " + typeID + " searching for '" + itemType + "'")
+
     String itemTypeLower = ToLowerCase(itemType)
-    
+
     int i = 0
     while i < refs.Length
         ObjectReference ref = refs[i]
@@ -685,6 +736,7 @@ ObjectReference Function CheckFormType(Actor akActor, int typeID, String itemTyp
             if name != ""
                 ; Check if item name contains the search term
                 if StringUtil.Find(ToLowerCase(name), itemTypeLower) >= 0
+                    Debug.Trace("[SeverActions_Loot] CheckFormType: MATCH '" + name + "' for type " + typeID)
                     return ref
                 endif
             endif
@@ -968,6 +1020,191 @@ Function PlayConsumeAnimation(Actor akActor, Bool isFood, Form itemForm = None)
         Utility.Wait(0.5)
     endif
 EndFunction
+
+; =============================================================================
+; ACTION: ReadBook - NPC reads a book aloud from their inventory
+; Extracts full book text via native DLL and sends to LLM for reading
+; =============================================================================
+
+Bool Function ReadBook_IsEligible(Actor akActor, String bookName)
+{Check if actor can read a book by name from their inventory.
+Returns false if someone is already reading (prevents re-triggering).}
+    if !akActor || akActor.IsDead() || akActor.IsInCombat()
+        return false
+    endif
+
+    ; Block if a reading session is already active
+    if BookReader != None
+        ; Check for timeout — auto-clear stale state
+        if BookReadingStartTime > 0.0
+            Float elapsed = Utility.GetCurrentRealTime() - BookReadingStartTime
+            if elapsed > BookReadingTimeout
+                Debug.Trace("[SeverActions_Loot] ReadBook: Timeout reached, clearing stale reading state")
+                ClearBookReadingState()
+            else
+                return false
+            endif
+        else
+            return false
+        endif
+    endif
+
+    if bookName == ""
+        ; No specific book requested — check if they have any books
+        return SeverActionsNative.HasBooks(akActor)
+    endif
+
+    ; Check if the named book is in their inventory
+    Form bookForm = SeverActionsNative.FindBookInInventory(akActor, bookName)
+    return bookForm != None
+EndFunction
+
+Function ReadBook_Execute(Actor akActor, String bookName)
+{NPC prepares to read a book from their inventory.
+Sets up book reading mode — the NPC's next dialogue responses will contain the book text,
+guided by the book reading prompt. No DirectNarration is used so the NPC can respond
+naturally first (e.g. "What shall I read?") and the player drives the conversation.}
+    if !akActor || akActor.IsDead()
+        return
+    endif
+
+    ; If already reading, ignore — the prompt is already active and driving the conversation
+    if BookReader != None
+        Debug.Trace("[SeverActions_Loot] ReadBook: Already in reading mode, ignoring duplicate execute")
+        return
+    endif
+
+    ; Find the book in inventory
+    Form bookForm = None
+    if bookName != ""
+        bookForm = SeverActionsNative.FindBookInInventory(akActor, bookName)
+    endif
+
+    if !bookForm
+        ; No book found by that name
+        String npcName = akActor.GetDisplayName()
+        if bookName != ""
+            SkyrimNetApi.RegisterEvent("book_not_found", npcName + " looked for '" + bookName + "' but doesn't have it", akActor, None)
+        else
+            SkyrimNetApi.RegisterEvent("book_not_found", npcName + " has no books to read", akActor, None)
+        endif
+        return
+    endif
+
+    String actualBookName = bookForm.GetName()
+    String npcName = akActor.GetDisplayName()
+
+    ; Extract the full text from the book
+    String bookText = SeverActionsNative.GetBookText(bookForm)
+
+    if bookText == ""
+        SkyrimNetApi.RegisterEvent("book_empty", npcName + " opened " + actualBookName + " but found it blank or unreadable", akActor, None)
+        return
+    endif
+
+    Debug.Trace("[SeverActions_Loot] ReadBook: " + npcName + " reading '" + actualBookName + "' (" + StringUtil.GetLength(bookText) + " chars)")
+
+    ; Set book reading state — script properties for internal guards
+    BookReader = akActor
+    BookReadingTitle = actualBookName
+    BookReadingText = bookText
+    BookReadingStartTime = Utility.GetCurrentRealTime()
+
+    ; Store in StorageUtil — papyrus_util reads these natively, available immediately
+    ; The prompt will detect this on the NPC's next dialogue response
+    StorageUtil.SetIntValue(akActor, "SeverActions_ReadingBook", 1)
+    StorageUtil.SetStringValue(akActor, "SeverActions_ReadingBookTitle", actualBookName)
+    StorageUtil.SetStringValue(akActor, "SeverActions_ReadingBookText", bookText)
+
+    ; Play book reading animation
+    Bool isSitting = akActor.GetSitState() >= 2  ; 2 = wanting to sit, 3 = sitting
+    if isSitting && IdleBook_ReadingSitting
+        akActor.PlayIdle(IdleBook_ReadingSitting)
+    elseif IdleBook_Reading
+        if IdleForceDefaultState
+            akActor.PlayIdle(IdleForceDefaultState)
+            Utility.Wait(0.2)
+        endif
+        akActor.PlayIdle(IdleBook_Reading)
+    endif
+
+    ; Single narration: NPC opens the book — worded to prevent LLM from reading ahead
+    ; The auto-continue loop will nudge them to start and keep reading once the prompt has the book text
+    String openNarration = "*" + npcName + " pulls out '" + actualBookName + "' and begins searching for the right page. They haven't started reading yet — do not read or recite any of the book's contents until the full text is available.*"
+    SkyrimNetApi.DirectNarration(openNarration, akActor, None)
+
+    ; Persistent event for long-term context
+    SkyrimNetApi.RegisterPersistentEvent(npcName + " is reading '" + actualBookName + "' aloud.", akActor, None)
+
+    ; Start auto-continue loop — monitors speech queue and nudges NPC to keep reading
+    BookReadingLastNarrationTime = Utility.GetCurrentRealTime()
+    RegisterForSingleUpdate(BookReadingUpdateInterval)
+EndFunction
+
+Function ClearBookReadingState()
+{Clear all book reading state. Call when reading finishes or times out.}
+    if BookReader != None
+        Debug.Trace("[SeverActions_Loot] ReadBook: Clearing reading state for " + BookReader.GetDisplayName())
+        ; Clear StorageUtil entries
+        StorageUtil.UnsetIntValue(BookReader, "SeverActions_ReadingBook")
+        StorageUtil.UnsetStringValue(BookReader, "SeverActions_ReadingBookTitle")
+        StorageUtil.UnsetStringValue(BookReader, "SeverActions_ReadingBookText")
+        ; Reset animation
+        ResetToDefaultIdle(BookReader)
+    endif
+    BookReader = None
+    BookReadingTitle = ""
+    BookReadingText = ""
+    BookReadingStartTime = 0.0
+    BookReadingLastNarrationTime = 0.0
+EndFunction
+
+Function StopReading_Execute(Actor akActor)
+{Stop the current book reading session. Can be called by the NPC or externally.}
+    if BookReader == None
+        return
+    endif
+    String npcName = BookReader.GetDisplayName()
+    ClearBookReadingState()
+    SkyrimNetApi.RegisterEvent("book_reading_stopped", npcName + " stopped reading", akActor, None)
+EndFunction
+
+; =============================================================================
+; BOOK READING AUTO-CONTINUE LOOP
+; =============================================================================
+
+Event OnUpdate()
+    ; Only active during book reading — monitors speech queue and nudges NPC to keep reading
+    if BookReader == None
+        return
+    endif
+
+    ; Check timeout
+    Float totalElapsed = Utility.GetCurrentRealTime() - BookReadingStartTime
+    if totalElapsed > BookReadingTimeout
+        Debug.Trace("[SeverActions_Loot] ReadBook: Auto-continue timeout reached, stopping")
+        String npcName = BookReader.GetDisplayName()
+        ClearBookReadingState()
+        SkyrimNetApi.RegisterEvent("book_reading_stopped", npcName + " finished reading", BookReader, None)
+        return
+    endif
+
+    ; Check if speech queue is empty (NPC has stopped talking)
+    Int queueSize = SkyrimNetApi.GetSpeechQueueSize()
+    Float timeSinceLastNarration = Utility.GetCurrentRealTime() - BookReadingLastNarrationTime
+
+    if queueSize == 0 && timeSinceLastNarration >= BookReadingContinueDelay
+        ; NPC has been silent long enough — nudge them to continue reading
+        String npcName = BookReader.GetDisplayName()
+        String narration = "*" + npcName + " continues reading aloud.*"
+        SkyrimNetApi.DirectNarration(narration, BookReader, None)
+        BookReadingLastNarrationTime = Utility.GetCurrentRealTime()
+        Debug.Trace("[SeverActions_Loot] ReadBook: Auto-continue triggered for " + npcName)
+    endif
+
+    ; Keep looping while reading is active
+    RegisterForSingleUpdate(BookReadingUpdateInterval)
+EndEvent
 
 ; =============================================================================
 ; ANIMATION HELPERS (Non-Global to access properties)

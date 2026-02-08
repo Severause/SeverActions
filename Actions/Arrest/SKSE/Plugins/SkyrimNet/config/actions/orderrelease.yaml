@@ -1,0 +1,36 @@
+name: OrderRelease
+description: "Order a prisoner to be released. The sender commands the guard to free the
+  prisoner from their restraints and let them go.
+
+  This action is only available when a guard has just brought a prisoner before the
+  sender for judgment (after a DispatchGuardToArrest with a sender). The prisoner is
+  standing in cuffs, the guard is holding them, and the sender makes the call.
+
+  Use this action when:
+  - The sender decides to show mercy and release the prisoner
+  - The prisoner made a convincing plea or argument
+  - The sender believes the prisoner is innocent or the crime was minor
+  - The sender decides to let them off with a warning
+
+  Do NOT use this action when:
+  - No prisoner has been brought before the speaker for judgment
+  - The speaker is not the person who ordered the arrest
+  - The speaker wants the prisoner taken to jail (use OrderJailed instead)
+  - The prisoner is already in jail or already released"
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: OrderRelease_Execute
+parameterMapping:
+  - type: speaker
+    name: akSender
+    description: The person who ordered the arrest and is now deciding the prisoner's fate
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

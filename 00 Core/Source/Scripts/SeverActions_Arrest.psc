@@ -15,8 +15,12 @@ Scriptname SeverActions_Arrest extends Quest
     - Create factions: SeverActions_WaitingArrest, SeverActions_Arrested, SeverActions_Jailed
     - Create keyword: SeverActions_EscortTargetKeyword
     - Create reference aliases: ArrestTarget (for approach), JailDestination (for escort), ArrestingGuard
-    - Create packages: SeverActions_ApproachTarget (Travel), SeverActions_GuardEscortToJail (Travel),
-                       SeverActions_PrisonerFollow (Follow), SeverActions_JailSandbox (Sandbox)
+    - Create packages:
+        SeverActions_DispatchTravel (Travel, Location=LinkedRef w/ SeverActions_EscortTargetKeyword, Jog)
+        SeverActions_GuardApproachTarget (Travel, Location=Alias ArrestTarget)
+        SeverActions_GuardEscortPackage (Travel, Location=Alias JailDestination)
+        SeverActions_FollowGuard_Prisoner (Follow, Target=LinkedRef w/ SeverActions_EscortTargetKeyword)
+        SeverActions_PrisonerSandBox (Sandbox, Location=LinkedRef w/ SeverActions_EscortTargetKeyword)
     - Fill properties in CK
 }
 
@@ -51,23 +55,50 @@ Faction Property CrimeFactionHjaalmarch Auto
 Faction Property CrimeFactionWinterhold Auto
 
 ; =============================================================================
+; PROPERTIES - Guard Factions (Vanilla - Fill in CK)
+; =============================================================================
+
+Faction Property GuardFactionWhiterun Auto
+{Guard faction for Whiterun Hold guards}
+Faction Property GuardFactionRiften Auto
+{Guard faction for Riften / The Rift guards}
+Faction Property GuardFactionSolitude Auto
+{Guard faction for Solitude guards}
+Faction Property GuardFactionHaafingar Auto
+{Guard faction for Haafingar Hold guards}
+Faction Property GuardFactionWindhelm Auto
+{Guard faction for Windhelm / Eastmarch guards}
+Faction Property GuardFactionMarkarth Auto
+{Guard faction for Markarth / The Reach guards}
+Faction Property GuardFactionFalkreath Auto
+{Guard faction for Falkreath Hold guards}
+Faction Property GuardFactionDawnstar Auto
+{Guard faction for Dawnstar / The Pale guards}
+Faction Property GuardFactionWinterhold Auto
+{Guard faction for Winterhold Hold guards}
+
+; =============================================================================
 ; PROPERTIES - Keywords & Packages (Create in CK)
 ; =============================================================================
 
 Keyword Property SeverActions_EscortTargetKeyword Auto
 {Keyword used to link prisoner to guard for follow package, and prisoner to jail marker for sandbox}
 
-Package Property SeverActions_ApproachTarget Auto
+Package Property SeverActions_DispatchTravel Auto
+{Travel package for cross-cell dispatch - guard travels to linked ref target.
+Setup in CK: Type=Travel, Location=Linked Reference with Keyword=SeverActions_EscortTargetKeyword, Speed=Jog}
+
+Package Property SeverActions_GuardApproachTarget Auto
 {Travel package for guard to walk to ArrestTarget alias (approach phase)}
 
-Package Property SeverActions_GuardEscortToJail Auto
-{Travel package for guard to walk to JailDestination alias (escort phase)}
+Package Property SeverActions_GuardEscortPackage Auto
+{Travel package for guard to walk to JailDestination alias (escort to jail phase)}
 
-Package Property SeverActions_PrisonerFollow Auto
+Package Property SeverActions_FollowGuard_Prisoner Auto
 {Follow package for prisoner - follows their linked ref (the guard).
 Setup: Type=Follow, Follow Target=Linked Ref with SeverActions_EscortTargetKeyword}
 
-Package Property SeverActions_JailSandbox Auto
+Package Property SeverActions_PrisonerSandBox Auto
 {Sandbox package for prisoners in jail - sandboxes near their linked ref (jail marker)}
 
 ; =============================================================================
@@ -145,6 +176,14 @@ ReferenceAlias Property ArrestingGuard Auto
 {Reference alias for the guard performing the arrest. Prisoner follow package targets this.}
 
 ; =============================================================================
+; PROPERTIES - Cross-Script References
+; =============================================================================
+
+SeverActions_Travel Property TravelSystem Auto
+{Reference to the travel quest/script. Used by guard dispatch to send guards across cells.
+Set in CK: point to the SeverActions quest running SeverActions_Travel.}
+
+; =============================================================================
 ; PROPERTIES - Settings
 ; =============================================================================
 
@@ -153,6 +192,9 @@ Float Property ApproachDistance = 150.0 Auto
 
 Float Property ArrivalDistance = 500.0 Auto
 {Distance to consider guard arrived at jail}
+
+Float Property DispatchArrivalDistance = 1500.0 Auto
+{Distance to consider dispatch guard arrived at destination (larger than ArrivalDistance to account for cross-cell pathfinding)}
 
 Float Property UpdateInterval = 1.0 Auto
 {How often to check progress (seconds)}
@@ -217,6 +259,47 @@ Float PersuasionStartTime       ; Game time when persuasion started
 Float LastArrestTime            ; Real time when last arrest confrontation started (for cooldown)
 Float LastNPCArrestTime         ; Real time when last NPC arrest started (for cooldown)
 
+; Cross-cell dispatch state (self-contained system - does NOT use TravelSystem)
+; Dispatch phases:
+;   0 = inactive
+;   1 = traveling directly to target Actor or home (AI handles cross-cell pathfinding)
+;   2 = approaching target for arrest (same cell, within range)
+;   3 = sandboxing at target's home (investigating)
+;   4 = collecting evidence (picking up item at home)
+;   5 = returning with prisoner or evidence (escorting to jail or bringing evidence/prisoner to sender)
+;   6 = judgment hold (prisoner presented to sender, awaiting OrderRelease or OrderJailed)
+Int DispatchPhase
+Actor DispatchTarget                    ; The NPC to arrest / investigate
+Actor DispatchGuard                     ; The guard doing the arresting (separate from CurrentGuard for escort phase)
+ObjectReference DispatchReturnMarker    ; Final destination marker (jail marker, Jarl, or sender)
+Float DispatchOffScreenStartTime        ; Real time when guard left player's loaded area
+Float DispatchGameTimeStart             ; Game time when dispatch began (for timeout)
+Float DispatchInitialDistance           ; Distance (units) between guard and target at dispatch start (for time-skip calc when cross-cell)
+Bool DispatchGuardOffScreen             ; True if guard is currently off-screen
+String DispatchTargetLocation           ; Cached location name for the target
+
+; Judgment hold state (Phase 6 - prisoner presented to sender for decision)
+Float JudgmentStartTime                ; Real time when judgment phase started
+Float JudgmentTimeLimit = 90.0         ; Seconds before defaulting to jail
+
+; Home investigation state (DispatchGuardToHome)
+Bool DispatchIsHomeInvestigation        ; True if this is a home investigation (not an arrest dispatch)
+ObjectReference DispatchHomeMarker      ; The NPC's home destination (interior marker if found, exterior door fallback)
+Actor DispatchSender                    ; Who sent the guard (for return destination)
+String DispatchInvestigationReason      ; Why the investigation was ordered (e.g. "dibella worship", "thieving") - used for evidence generation
+Float DispatchSandboxStartTime          ; Real time when sandbox investigation started
+Float DispatchSandboxDuration           ; How long to sandbox at home (seconds, randomized 15-30)
+ObjectReference DispatchEvidenceItem    ; The world reference picked up as evidence (consumed after AddItem)
+Form DispatchEvidenceForm               ; The base form of the evidence item (persists after pickup)
+String DispatchEvidenceName             ; Display name of the evidence item (cached at pickup time)
+
+; Guard original AI values (for restoring after dispatch)
+Float DispatchGuardOrigAggression = 0.0
+Float DispatchGuardOrigConfidence = 0.0
+
+; Off-screen return tracking — counts how many off-screen cycles have fired in Phase 5
+Int DispatchReturnOffScreenCycle = 0
+
 ; MessageBox tracking
 Int PlayerArrestMenuID          ; Menu ID for player arrest messagebox
 
@@ -230,7 +313,7 @@ Event OnInit()
 EndEvent
 
 Function Maintenance()
-    {Auto-lookup Gold001 if not set in CK, register for game load events}
+    {Auto-lookup forms if not set in CK, register for game load events}
     if Gold001 == None
         Gold001 = Game.GetFormFromFile(0x0000000F, "Skyrim.esm") as MiscObject
         if Gold001 == None
@@ -239,6 +322,60 @@ Function Maintenance()
             Debug.Trace("[SeverActions_Arrest] Gold001 found via auto-lookup")
         endif
     endif
+
+    ; Auto-lookup vanilla guard factions if not set in CK
+    if GuardFactionWhiterun == None
+        GuardFactionWhiterun = Game.GetFormFromFile(0x0002BE39, "Skyrim.esm") as Faction
+    endif
+    if GuardFactionRiften == None
+        GuardFactionRiften = Game.GetFormFromFile(0x000D27F2, "Skyrim.esm") as Faction
+    endif
+    if GuardFactionSolitude == None
+        GuardFactionSolitude = Game.GetFormFromFile(0x0002EBEE, "Skyrim.esm") as Faction
+    endif
+    if GuardFactionHaafingar == None
+        GuardFactionHaafingar = Game.GetFormFromFile(0x000367BA, "Skyrim.esm") as Faction
+    endif
+    if GuardFactionWindhelm == None
+        GuardFactionWindhelm = Game.GetFormFromFile(0x000D27F3, "Skyrim.esm") as Faction
+    endif
+    if GuardFactionMarkarth == None
+        GuardFactionMarkarth = Game.GetFormFromFile(0x00018AAC, "Skyrim.esm") as Faction
+    endif
+    if GuardFactionFalkreath == None
+        GuardFactionFalkreath = Game.GetFormFromFile(0x0002EBEC, "Skyrim.esm") as Faction
+    endif
+    if GuardFactionDawnstar == None
+        GuardFactionDawnstar = Game.GetFormFromFile(0x0003B693, "Skyrim.esm") as Faction
+    endif
+    ; GuardFactionWinterhold has no vanilla faction — left None (handled by null check in FindNearestGuard)
+
+    Int guardCount = 0
+    if GuardFactionWhiterun != None
+        guardCount += 1
+    endif
+    if GuardFactionRiften != None
+        guardCount += 1
+    endif
+    if GuardFactionSolitude != None
+        guardCount += 1
+    endif
+    if GuardFactionHaafingar != None
+        guardCount += 1
+    endif
+    if GuardFactionWindhelm != None
+        guardCount += 1
+    endif
+    if GuardFactionMarkarth != None
+        guardCount += 1
+    endif
+    if GuardFactionFalkreath != None
+        guardCount += 1
+    endif
+    if GuardFactionDawnstar != None
+        guardCount += 1
+    endif
+    Debug.Trace("[SeverActions_Arrest] Guard factions resolved: " + guardCount + "/8 vanilla")
 
     ; Register for game load event to verify prisoner positions
     RegisterForModEvent("OnPlayerLoadGame", "OnPlayerLoadGame")
@@ -304,6 +441,12 @@ Bool Function ArrestNPC_Internal(Actor akGuard, Actor akTarget)
         CancelCurrentArrest()
     EndIf
 
+    ; Block if target is already arrested or being escorted
+    If akTarget.IsInFaction(SeverActions_Arrested) || akTarget.IsInFaction(SeverActions_Jailed)
+        DebugMsg("ArrestNPC rejected: target already arrested or jailed")
+        Return false
+    EndIf
+
     ; Determine jail destination based on guard's crime faction
     ObjectReference jailMarker = GetJailMarkerForGuard(akGuard)
     String jailName = GetJailNameForGuard(akGuard)
@@ -347,7 +490,8 @@ EndFunction
 ; =============================================================================
 
 Function StartApproachPhase()
-    {Guard walks toward target with weapon drawn}
+    {Guard walks toward target with weapon drawn.
+     Includes stuck detection for cross-cell approaches.}
 
     If CurrentGuard == None || CurrentPrisoner == None
         DebugMsg("ERROR: StartApproachPhase - invalid state")
@@ -361,13 +505,16 @@ Function StartApproachPhase()
     DebugMsg("Filled ArrestTarget alias with: " + CurrentPrisoner.GetDisplayName())
 
     ; Apply approach package to guard (targets ArrestTarget alias)
-    If SeverActions_ApproachTarget
-        ActorUtil.AddPackageOverride(CurrentGuard, SeverActions_ApproachTarget, PackagePriority, 1)
+    If SeverActions_GuardApproachTarget
+        ActorUtil.AddPackageOverride(CurrentGuard, SeverActions_GuardApproachTarget, PackagePriority, 1)
         CurrentGuard.EvaluatePackage()
         DebugMsg("Applied approach package to guard")
     Else
         DebugMsg("WARNING: No approach package defined!")
     EndIf
+
+    ; Start stuck detection for long-distance approaches
+    SeverActionsNative.Stuck_StartTracking(CurrentGuard)
 
     ; Start monitoring for arrival
     RegisterForSingleUpdate(UpdateInterval)
@@ -375,6 +522,11 @@ EndFunction
 
 Event OnUpdate()
     ; Check current state and act accordingly
+
+    ; Cross-cell dispatch phases (1=traveling to door, 2=entering door, 3=approaching in same cell)
+    If DispatchPhase > 0
+        CheckDispatchProgress()
+    EndIf
 
     ; NPC arrest states
     If ArrestState == 1
@@ -392,7 +544,21 @@ Event OnUpdate()
 EndEvent
 
 Function CheckApproachProgress()
-    {Check if guard has reached the target}
+    {Check if guard has reached the target.
+     Includes stuck detection with progressive recovery for cross-cell approaches.}
+
+    Float dist
+    Int stuckLevel
+    Float teleportDist
+    Float guardX
+    Float guardY
+    Float targetX
+    Float targetY
+    Float dx
+    Float dy
+    Float dist2d
+    Float moveX
+    Float moveY
 
     If CurrentGuard == None || CurrentPrisoner == None
         DebugMsg("ERROR: CheckApproachProgress - invalid state")
@@ -403,29 +569,68 @@ Function CheckApproachProgress()
     ; Check if guard or prisoner died
     If CurrentGuard.IsDead()
         DebugMsg("Guard died during approach")
+        SeverActionsNative.Stuck_StopTracking(CurrentGuard)
         CancelCurrentArrest()
         Return
     EndIf
 
     If CurrentPrisoner.IsDead()
         DebugMsg("Target died during approach")
+        SeverActionsNative.Stuck_StopTracking(CurrentGuard)
         CancelCurrentArrest()
         Return
     EndIf
 
-    Float dist = CurrentGuard.GetDistance(CurrentPrisoner)
+    dist = CurrentGuard.GetDistance(CurrentPrisoner)
 
     If dist <= ApproachDistance
         ; Arrived at target - perform arrest
         DebugMsg("Guard reached target, performing arrest")
+        SeverActionsNative.Stuck_StopTracking(CurrentGuard)
 
         ; Remove approach package
-        If SeverActions_ApproachTarget
-            ActorUtil.RemovePackageOverride(CurrentGuard, SeverActions_ApproachTarget)
+        If SeverActions_GuardApproachTarget
+            ActorUtil.RemovePackageOverride(CurrentGuard, SeverActions_GuardApproachTarget)
         EndIf
 
         PerformArrest()
     Else
+        ; Not arrived yet - check for stuck (helps with cross-cell approaches)
+        stuckLevel = SeverActionsNative.Stuck_CheckStatus(CurrentGuard, UpdateInterval, 50.0)
+
+        If stuckLevel == 1
+            ; Possibly stuck - re-evaluate packages
+            DebugMsg("Approach: guard may be stuck, re-evaluating packages")
+            CurrentGuard.EvaluatePackage()
+        ElseIf stuckLevel == 2
+            ; Stuck - leapfrog toward target
+            teleportDist = SeverActionsNative.Stuck_GetTeleportDistance(CurrentGuard)
+            guardX = CurrentGuard.GetPositionX()
+            guardY = CurrentGuard.GetPositionY()
+            targetX = CurrentPrisoner.GetPositionX()
+            targetY = CurrentPrisoner.GetPositionY()
+            dx = targetX - guardX
+            dy = targetY - guardY
+            dist2d = Math.sqrt(dx * dx + dy * dy)
+
+            If dist2d > 0.0
+                moveX = (dx / dist2d) * teleportDist
+                moveY = (dy / dist2d) * teleportDist
+                CurrentGuard.MoveTo(CurrentGuard, moveX, moveY, 0.0)
+                CurrentGuard.EvaluatePackage()
+                DebugMsg("Approach: leapfrog guard " + teleportDist + " units toward target")
+            EndIf
+
+            SeverActionsNative.Stuck_ResetEscalation(CurrentGuard)
+        ElseIf stuckLevel >= 3
+            ; Very stuck - force teleport near target
+            DebugMsg("Approach: force teleporting guard near target")
+            CurrentGuard.MoveTo(CurrentPrisoner, 200.0, 0.0, 0.0)
+            Utility.Wait(0.5)
+            CurrentGuard.EvaluatePackage()
+            SeverActionsNative.Stuck_ResetEscalation(CurrentGuard)
+        EndIf
+
         ; Still approaching, keep checking
         RegisterForSingleUpdate(UpdateInterval)
     EndIf
@@ -455,6 +660,11 @@ Function PerformArrest()
     prisoner.StopCombat()
     prisoner.StopCombatAlarm()
 
+    ; Cancel any active travel errand so it doesn't fight with arrest escort
+    If TravelSystem != None
+        TravelSystem.CancelTravel(prisoner)
+    EndIf
+
     ; Pacify the prisoner
     prisoner.SetAV("Aggression", 0)
     prisoner.SetAV("Confidence", 0)
@@ -481,8 +691,8 @@ Function PerformArrest()
     DebugMsg("Linked prisoner to guard for follow")
 
     ; Apply follow package to prisoner
-    If SeverActions_PrisonerFollow
-        ActorUtil.AddPackageOverride(prisoner, SeverActions_PrisonerFollow, PackagePriority, 1)
+    If SeverActions_FollowGuard_Prisoner
+        ActorUtil.AddPackageOverride(prisoner, SeverActions_FollowGuard_Prisoner, PackagePriority, 1)
         prisoner.EvaluatePackage()
         DebugMsg("Applied follow package to prisoner")
     EndIf
@@ -528,8 +738,8 @@ Function StartEscortPhase()
     DebugMsg("Filled JailDestination alias with: " + CurrentJailMarker)
 
     ; Apply travel package to guard (targets JailDestination alias)
-    If SeverActions_GuardEscortToJail
-        ActorUtil.AddPackageOverride(CurrentGuard, SeverActions_GuardEscortToJail, PackagePriority, 1)
+    If SeverActions_GuardEscortPackage
+        ActorUtil.AddPackageOverride(CurrentGuard, SeverActions_GuardEscortPackage, PackagePriority, 1)
         CurrentGuard.EvaluatePackage()
         DebugMsg("Applied travel package to guard")
     Else
@@ -600,13 +810,13 @@ Function OnArrivedAtJail()
     DebugMsg("Processing prisoner at jail: " + prisoner.GetDisplayName())
 
     ; Remove guard's travel package
-    If SeverActions_GuardEscortToJail
-        ActorUtil.RemovePackageOverride(guard, SeverActions_GuardEscortToJail)
+    If SeverActions_GuardEscortPackage
+        ActorUtil.RemovePackageOverride(guard, SeverActions_GuardEscortPackage)
     EndIf
 
     ; Remove prisoner's follow package
-    If SeverActions_PrisonerFollow
-        ActorUtil.RemovePackageOverride(prisoner, SeverActions_PrisonerFollow)
+    If SeverActions_FollowGuard_Prisoner
+        ActorUtil.RemovePackageOverride(prisoner, SeverActions_FollowGuard_Prisoner)
     EndIf
 
     ; Clear prisoner's linked ref to guard (was used for follow)
@@ -671,10 +881,10 @@ Function OnArrivedAtJail()
         DebugMsg("Prisoner disabled (jailed)")
     Else
         ; Keep prisoner active with sandbox package
-        If SeverActions_JailSandbox && jailMarker
+        If SeverActions_PrisonerSandBox && jailMarker
             ; Link prisoner to their jail marker for sandbox (per-actor, supports multiple prisoners)
             PO3_SKSEFunctions.SetLinkedRef(prisoner, jailMarker, SeverActions_EscortTargetKeyword)
-            ActorUtil.AddPackageOverride(prisoner, SeverActions_JailSandbox, PackagePriority + 10, 1)
+            ActorUtil.AddPackageOverride(prisoner, SeverActions_PrisonerSandBox, PackagePriority + 10, 1)
             prisoner.EvaluatePackage()
             DebugMsg("Prisoner sandboxing in jail (linked to marker)")
         Else
@@ -815,12 +1025,15 @@ Function CancelCurrentArrest()
     DebugMsg("Canceling current arrest")
 
     If CurrentGuard
+        ; Stop stuck tracking
+        SeverActionsNative.Stuck_StopTracking(CurrentGuard)
+
         ; Remove guard packages
-        If SeverActions_ApproachTarget
-            ActorUtil.RemovePackageOverride(CurrentGuard, SeverActions_ApproachTarget)
+        If SeverActions_GuardApproachTarget
+            ActorUtil.RemovePackageOverride(CurrentGuard, SeverActions_GuardApproachTarget)
         EndIf
-        If SeverActions_GuardEscortToJail
-            ActorUtil.RemovePackageOverride(CurrentGuard, SeverActions_GuardEscortToJail)
+        If SeverActions_GuardEscortPackage
+            ActorUtil.RemovePackageOverride(CurrentGuard, SeverActions_GuardEscortPackage)
         EndIf
         CurrentGuard.SheatheWeapon()
         CurrentGuard.EvaluatePackage()
@@ -829,6 +1042,11 @@ Function CancelCurrentArrest()
     If CurrentPrisoner && ArrestState >= 2
         ; Prisoner was already arrested, release them
         ReleasePrisoner(CurrentPrisoner)
+    EndIf
+
+    ; Clear dispatch state if active
+    If DispatchPhase > 0
+        CancelDispatch()
     EndIf
 
     ; Clear reference aliases
@@ -861,11 +1079,11 @@ Function ReleasePrisoner(Actor akPrisoner)
     EndIf
 
     ; Remove any packages
-    If SeverActions_PrisonerFollow
-        ActorUtil.RemovePackageOverride(akPrisoner, SeverActions_PrisonerFollow)
+    If SeverActions_FollowGuard_Prisoner
+        ActorUtil.RemovePackageOverride(akPrisoner, SeverActions_FollowGuard_Prisoner)
     EndIf
-    If SeverActions_JailSandbox
-        ActorUtil.RemovePackageOverride(akPrisoner, SeverActions_JailSandbox)
+    If SeverActions_PrisonerSandBox
+        ActorUtil.RemovePackageOverride(akPrisoner, SeverActions_PrisonerSandBox)
     EndIf
 
     ; Clear any linked ref (guard or jail marker)
@@ -1130,8 +1348,8 @@ Bool Function FreeNPC_Internal(Actor akGuard, Actor akTarget)
         ArrestTarget.ForceRefTo(akTarget)
 
         ; Apply approach package to guard
-        If SeverActions_ApproachTarget
-            ActorUtil.AddPackageOverride(akGuard, SeverActions_ApproachTarget, PackagePriority, 1)
+        If SeverActions_GuardApproachTarget
+            ActorUtil.AddPackageOverride(akGuard, SeverActions_GuardApproachTarget, PackagePriority, 1)
             akGuard.EvaluatePackage()
         EndIf
 
@@ -1144,8 +1362,8 @@ Bool Function FreeNPC_Internal(Actor akGuard, Actor akTarget)
         EndWhile
 
         ; Remove approach package
-        If SeverActions_ApproachTarget
-            ActorUtil.RemovePackageOverride(akGuard, SeverActions_ApproachTarget)
+        If SeverActions_GuardApproachTarget
+            ActorUtil.RemovePackageOverride(akGuard, SeverActions_GuardApproachTarget)
         EndIf
         ArrestTarget.Clear()
         PO3_SKSEFunctions.SetLinkedRef(akGuard, None, SeverActions_EscortTargetKeyword)
@@ -1164,8 +1382,8 @@ Bool Function FreeNPC_Internal(Actor akGuard, Actor akTarget)
     akTarget.RemoveFromFaction(dunPrisonerFaction)
 
     ; Remove jail sandbox package and clear linked ref
-    If SeverActions_JailSandbox
-        ActorUtil.RemovePackageOverride(akTarget, SeverActions_JailSandbox)
+    If SeverActions_PrisonerSandBox
+        ActorUtil.RemovePackageOverride(akTarget, SeverActions_PrisonerSandBox)
         PO3_SKSEFunctions.SetLinkedRef(akTarget, None, SeverActions_EscortTargetKeyword)
     EndIf
 
@@ -1224,8 +1442,8 @@ Function FreePrisonerDirect(Actor akTarget)
     akTarget.RemoveFromFaction(dunPrisonerFaction)
 
     ; Remove jail sandbox package and clear linked ref
-    If SeverActions_JailSandbox
-        ActorUtil.RemovePackageOverride(akTarget, SeverActions_JailSandbox)
+    If SeverActions_PrisonerSandBox
+        ActorUtil.RemovePackageOverride(akTarget, SeverActions_PrisonerSandBox)
         PO3_SKSEFunctions.SetLinkedRef(akTarget, None, SeverActions_EscortTargetKeyword)
     EndIf
 
@@ -1391,9 +1609,9 @@ Function VerifyJailedNPCs()
                     prisoner.Enable()
 
                     ; Re-apply jail sandbox package in case it got removed
-                    If SeverActions_JailSandbox
+                    If SeverActions_PrisonerSandBox
                         PO3_SKSEFunctions.SetLinkedRef(prisoner, jailMarker, SeverActions_EscortTargetKeyword)
-                        ActorUtil.AddPackageOverride(prisoner, SeverActions_JailSandbox, PackagePriority + 10, 1)
+                        ActorUtil.AddPackageOverride(prisoner, SeverActions_PrisonerSandBox, PackagePriority + 10, 1)
                         prisoner.EvaluatePackage()
                     EndIf
 
@@ -1983,3 +2201,2266 @@ Bool Function IsPlayerInPersuasion()
 
     Return InPersuasionMode
 EndFunction
+
+; =============================================================================
+; GUARD DISPATCH - Find and arrest NPCs anywhere in the world
+; Uses native ActorFinder for NPC lookup + Travel system for cross-cell movement
+; Guard travels via the full travel system (packages, stuck detection, pathfinding)
+; then arrests when within range of the target.
+; =============================================================================
+
+Bool Function DispatchGuardToArrest(Actor akGuard, String targetName, Actor akSender = None)
+    {Dispatch a guard to find and arrest an NPC by name, wherever they are.
+     Self-contained system - does NOT use TravelSystem.
+
+     Travels directly to the target Actor reference (no door intermediary).
+     Skyrim's AI pathfinding handles cross-cell navigation natively.
+     Guard walks the entire way - no off-screen teleportation shortcuts.
+
+     Phases:
+       1: Guard travels directly to target Actor (linked ref + travel package)
+       2: Guard approaches target for arrest (same cell, within range)
+       5: Guard returns with prisoner to sender or jail
+
+     Off-screen handling:
+       - Same-cell interior detection: if guard reaches target's cell off-screen, transition to approach
+       - Game-time timeout (24h): force-completes if dispatch takes too long
+
+     akGuard: The guard to dispatch (if None, finds nearest guard to player)
+     targetName: The name of the NPC to arrest
+     akSender: Who ordered the arrest. If set, guard brings prisoner back to this actor.
+               If None, guard takes prisoner to jail.
+     Returns true if dispatch was initiated successfully.}
+
+    Actor target
+    String targetLocation
+    String eventMsg
+
+    If targetName == ""
+        DebugMsg("ERROR: DispatchGuardToArrest called with empty name")
+        Return false
+    EndIf
+
+    ; Check if ActorFinder is ready
+    If !SeverActionsNative.IsActorFinderReady()
+        DebugMsg("ERROR: Native ActorFinder not initialized")
+        Return false
+    EndIf
+
+    ; Find the target NPC by name using native lookup
+    target = SeverActionsNative.FindActorByName(targetName)
+    If target == None
+        DebugMsg("ERROR: Could not find NPC named '" + targetName + "'")
+        Debug.Notification("Cannot find NPC: " + targetName)
+        Return false
+    EndIf
+
+    ; Block if target is already arrested or jailed
+    If target.IsInFaction(SeverActions_Arrested) || target.IsInFaction(SeverActions_Jailed)
+        DebugMsg("DispatchGuardToArrest rejected: " + targetName + " already arrested or jailed")
+        Return false
+    EndIf
+
+    ; Find a guard if none provided
+    If akGuard == None
+        akGuard = FindNearestGuard(Game.GetPlayer())
+        If akGuard == None
+            DebugMsg("ERROR: No guard nearby to dispatch")
+            Debug.Notification("No guard nearby to dispatch!")
+            Return false
+        EndIf
+    EndIf
+
+    ; If already in same cell and close enough, just arrest directly
+    If akGuard.GetParentCell() == target.GetParentCell() && akGuard.GetDistance(target) <= ArrivalDistance
+        DebugMsg("Guard already close to target in same cell, starting direct arrest")
+        Return ArrestNPC_Internal(akGuard, target)
+    EndIf
+
+    ; Get the NPC's location name for narration
+    targetLocation = SeverActionsNative.GetActorLocationName(target)
+    DebugMsg("Dispatching " + akGuard.GetDisplayName() + " to arrest " + target.GetDisplayName() + " at " + targetLocation)
+
+    ; Register persistent event so NPCs know what's happening
+    eventMsg = akGuard.GetDisplayName() + " has been dispatched to arrest " + target.GetDisplayName() + " at " + targetLocation + "."
+    SkyrimNetApi.RegisterPersistentEvent(eventMsg, akGuard, target)
+    Debug.Notification(akGuard.GetDisplayName() + " dispatched to arrest " + target.GetDisplayName())
+
+    ; Set up dispatch state - travel directly to target Actor (no door intermediary)
+    DispatchPhase = 1
+    DispatchTarget = target
+    DispatchGuard = akGuard
+    DispatchTargetLocation = targetLocation
+    DispatchGuardOffScreen = false
+    DispatchOffScreenStartTime = 0.0
+    DispatchGameTimeStart = Utility.GetCurrentGameTime()
+
+    ; Store initial distance for time-skip/off-screen calculations
+    ; GetDistance returns 0 when guard and target are in different cells (3D not loaded)
+    Float dispatchDist = 0.0
+    If akGuard.Is3DLoaded() && target.Is3DLoaded()
+        dispatchDist = akGuard.GetDistance(target)
+    EndIf
+    If dispatchDist < 1000.0
+        dispatchDist = 5000.0  ; Conservative default (typical city traverse)
+    EndIf
+    DispatchInitialDistance = dispatchDist
+
+    ; Return destination: sender (live actor) or jail (static marker)
+    If akSender != None
+        DispatchSender = akSender
+        DispatchReturnMarker = akSender as ObjectReference
+        DebugMsg("Prisoner will be brought back to " + akSender.GetDisplayName())
+    Else
+        DispatchSender = None
+        ObjectReference jailMarker = GetJailMarkerForGuard(akGuard)
+        DispatchReturnMarker = jailMarker
+        DebugMsg("Prisoner will be taken to jail")
+    EndIf
+
+    ; Fill aliases immediately so the engine keeps both actors in high-process while unloaded
+    ; This is critical for cross-cell travel - without aliases, unloaded NPCs freeze
+    ArrestingGuard.ForceRefTo(akGuard)
+    ArrestTarget.ForceRefTo(target)
+
+    ; Prevent guard from stopping for idle greetings/dialogue during dispatch
+    akGuard.SetDontMove(false)
+    akGuard.AllowPCDialogue(false)
+
+    ; Apply approach package — uses ArrestTarget alias directly (already filled above)
+    ; AI pathfinds through doors automatically to reach the target Actor
+    If SeverActions_GuardApproachTarget
+        ActorUtil.AddPackageOverride(akGuard, SeverActions_GuardApproachTarget, PackagePriority, 1)
+        akGuard.EvaluatePackage()
+        DebugMsg("Applied approach package - guard heading to " + target.GetDisplayName())
+    Else
+        DebugMsg("WARNING: SeverActions_GuardApproachTarget package not set, guard may not move")
+    EndIf
+
+    ; Disable NPC-NPC collision so the guard doesn't get blocked during travel
+    SeverActionsNative.SetActorBumpable(akGuard, false)
+
+    ; Suppress guard combat during dispatch — save original values and pacify
+    DispatchGuardOrigAggression = akGuard.GetAV("Aggression")
+    DispatchGuardOrigConfidence = akGuard.GetAV("Confidence")
+    akGuard.SetAV("Aggression", 0)
+    akGuard.SetAV("Confidence", 0)
+
+    ; Start stuck detection
+    SeverActionsNative.Stuck_StartTracking(akGuard)
+
+    ; Start monitoring
+    RegisterForSingleUpdate(UpdateInterval)
+
+    Return true
+EndFunction
+
+Bool Function DispatchGuardToArrest_Execute(Actor akGuard, String targetName, String senderName = "")
+    {SkyrimNet action entry point: Dispatch a guard to find and arrest an NPC by name.
+     The guard will travel to the target, arrest them, and either bring them back to the
+     sender for judgment or take them to jail.
+     senderName: Name of the NPC who ordered the arrest. If provided, the guard brings
+                 the prisoner back to this person. If empty, guard takes prisoner to jail.}
+
+    ; Resolve sender by name
+    Actor sender = None
+    If senderName != ""
+        sender = SeverActionsNative.FindActorByName(senderName)
+        If sender == None
+            DebugMsg("WARNING: Could not find sender '" + senderName + "', prisoner will be taken to jail")
+        EndIf
+    EndIf
+
+    Return DispatchGuardToArrest(akGuard, targetName, sender)
+EndFunction
+
+Bool Function DispatchGuardToHome(Actor akGuard, String targetName, Actor akSender = None, String reason = "")
+    {Dispatch a guard to an NPC's home to investigate.
+     The guard travels to the NPC's home, sandboxes for a while searching through
+     belongings, picks up an item as evidence, then returns to whoever sent them.
+
+     Uses native ActorFinder to find the NPC and their home location.
+     akGuard: The guard to dispatch (if None, finds nearest guard)
+     targetName: The name of the NPC whose home to search
+     akSender: Who sent the guard - the guard returns to this actor with evidence.
+               If None, defaults to the guard's current position.
+     reason: Why the investigation was ordered (e.g. "dibella worship", "thieving", "skooma").
+             Used to generate thematically appropriate evidence. If empty, falls back to NPC class.
+     Returns true if dispatch was initiated successfully.
+
+     Phases:
+       1: Guard travels to target's home
+       3: Guard sandboxes at home (investigating)
+       4: Guard collects evidence item
+       5: Guard returns to sender with evidence}
+
+    Actor target
+    ObjectReference home
+    String eventMsg
+    String guardName
+
+    If targetName == ""
+        DebugMsg("ERROR: DispatchGuardToHome called with empty name")
+        Return false
+    EndIf
+
+    If !SeverActionsNative.IsActorFinderReady()
+        DebugMsg("ERROR: Native ActorFinder not initialized")
+        Return false
+    EndIf
+
+    ; Find the target NPC by name
+    target = SeverActionsNative.FindActorByName(targetName)
+    If target == None
+        DebugMsg("ERROR: Could not find NPC named '" + targetName + "'")
+        Debug.Notification("Cannot find NPC: " + targetName)
+        Return false
+    EndIf
+
+    ; Find a guard if none provided
+    If akGuard == None
+        akGuard = FindNearestGuard(Game.GetPlayer())
+        If akGuard == None
+            DebugMsg("ERROR: No guard nearby to dispatch")
+            Debug.Notification("No guard nearby to dispatch!")
+            Return false
+        EndIf
+    EndIf
+
+    guardName = akGuard.GetDisplayName()
+
+    ; Find the NPC's home — interior marker preferred, exterior door as fallback
+    ; If an interior marker exists, use it directly as the travel destination.
+    ; The NPC's AI will pathfind through doors automatically to reach it.
+    ; This avoids all cross-cell GetDistance issues from targeting exterior doors.
+    ObjectReference interiorMarker = SeverActionsNative.FindHomeInteriorMarker(target)
+    home = SeverActionsNative.FindDoorToActorHome(target)
+    If home == None
+        ; Fallback: try FindActorHome (bed ownership scan, works if NPC is loaded)
+        home = SeverActionsNative.FindActorHome(target)
+    EndIf
+    If home == None && interiorMarker == None
+        DebugMsg("ERROR: No home found for " + target.GetDisplayName() + ", cannot investigate")
+        Debug.Notification("Cannot find " + target.GetDisplayName() + "'s home!")
+        Return false
+    EndIf
+
+    ; Resolve to final destination: prefer interior marker over exterior door
+    ObjectReference finalDest = home
+    If interiorMarker != None
+        finalDest = interiorMarker
+        DebugMsg("Resolved home to interior marker for " + target.GetDisplayName())
+    ElseIf home != None
+        DebugMsg("No interior marker — using exterior door for " + target.GetDisplayName() + "'s home")
+    EndIf
+
+    DebugMsg("Dispatching " + guardName + " to investigate " + target.GetDisplayName() + "'s home")
+
+    ; If we resolved to an interior marker, unlock the exterior door so the guard can pathfind through
+    ; The homeowner will re-lock it naturally when they return home
+    If finalDest == interiorMarker && home != None && home.IsLocked()
+        DebugMsg("Unlocked home door for guard entry")
+        home.Lock(false)
+    EndIf
+
+    ; Set up dispatch state as home investigation
+    DispatchPhase = 1
+    DispatchTarget = target
+    DispatchGuard = akGuard
+    DispatchIsHomeInvestigation = true
+    DispatchHomeMarker = finalDest
+    DispatchGuardOffScreen = false
+    DispatchOffScreenStartTime = 0.0
+    DispatchGameTimeStart = Utility.GetCurrentGameTime()
+
+    ; Store initial distance for time-skip/off-screen calculations
+    Float homeDispatchDist = 0.0
+    If akGuard.Is3DLoaded() && finalDest != None && finalDest.Is3DLoaded()
+        homeDispatchDist = akGuard.GetDistance(finalDest)
+    EndIf
+    If homeDispatchDist < 1000.0
+        homeDispatchDist = 5000.0
+    EndIf
+    DispatchInitialDistance = homeDispatchDist
+
+    DispatchEvidenceItem = None
+    DispatchEvidenceForm = None
+    DispatchEvidenceName = ""
+    DispatchInvestigationReason = reason
+    DispatchSandboxStartTime = 0.0
+    DispatchSandboxDuration = 0.0
+
+    If reason != ""
+        DebugMsg("Investigation reason: " + reason)
+    EndIf
+
+    ; Set sender - guard returns to this actor with evidence
+    If akSender != None
+        DispatchSender = akSender
+        DispatchReturnMarker = akSender as ObjectReference
+        DebugMsg("Guard will return evidence to " + akSender.GetDisplayName())
+    Else
+        DispatchSender = akGuard
+        DispatchReturnMarker = akGuard as ObjectReference
+        DebugMsg("No sender specified - guard will return to starting position")
+    EndIf
+
+    ; Fill BOTH aliases so the engine keeps the guard in high-process while unloaded
+    ; Without both aliases filled, the engine can drop the guard from processing when
+    ; they leave the loaded area, causing them to freeze in place off-screen.
+    ArrestingGuard.ForceRefTo(akGuard)
+    ArrestTarget.ForceRefTo(finalDest)
+
+    ; Prevent guard from stopping for idle greetings/dialogue during dispatch
+    akGuard.SetDontMove(false)
+    akGuard.AllowPCDialogue(false)
+
+    ; Apply approach package targeting ArrestTarget alias (the home marker)
+    ; This is alias-based so the engine continues evaluating it while unloaded,
+    ; unlike DispatchTravel which uses linked refs and can stall off-screen.
+    If SeverActions_GuardApproachTarget
+        ActorUtil.AddPackageOverride(akGuard, SeverActions_GuardApproachTarget, PackagePriority, 1)
+        akGuard.EvaluatePackage()
+        DebugMsg("Applied approach package - guard heading to " + target.GetDisplayName() + "'s home")
+    Else
+        DebugMsg("WARNING: SeverActions_GuardApproachTarget package not set, guard may not move")
+    EndIf
+
+    ; Register persistent event
+    eventMsg = guardName + " has been dispatched to search " + target.GetDisplayName() + "'s home for evidence."
+    SkyrimNetApi.RegisterPersistentEvent(eventMsg, akGuard, target)
+    Debug.Notification(guardName + " heading to " + target.GetDisplayName() + "'s home to investigate")
+
+    ; Disable NPC-NPC collision so the guard doesn't get blocked during travel
+    SeverActionsNative.SetActorBumpable(akGuard, false)
+
+    ; Suppress guard combat during dispatch — save original values and pacify
+    DispatchGuardOrigAggression = akGuard.GetAV("Aggression")
+    DispatchGuardOrigConfidence = akGuard.GetAV("Confidence")
+    akGuard.SetAV("Aggression", 0)
+    akGuard.SetAV("Confidence", 0)
+
+    ; Start stuck detection
+    SeverActionsNative.Stuck_StartTracking(akGuard)
+
+    ; Start monitoring
+    RegisterForSingleUpdate(UpdateInterval)
+
+    Return true
+EndFunction
+
+Bool Function DispatchGuardToHome_Execute(Actor akGuard, String targetName, String senderName, String reason = "")
+    {SkyrimNet action entry point: Dispatch a guard to search an NPC's home for evidence.
+     The guard will travel to the home, search through belongings, collect an item as evidence,
+     and return to whoever sent them.
+     senderName: Name of the NPC who ordered the search - the guard brings evidence back to them.
+     reason: Why the investigation was ordered (e.g. "dibella worship", "thieving", "skooma").
+             Used to generate thematically appropriate evidence when the player isn't watching.}
+
+    ; Resolve sender by name — default to player if not found
+    Actor sender = None
+    If senderName != ""
+        sender = SeverActionsNative.FindActorByName(senderName)
+        If sender == None
+            DebugMsg("WARNING: Could not find sender '" + senderName + "', defaulting to player")
+            sender = Game.GetPlayer()
+        EndIf
+    Else
+        DebugMsg("No sender specified, defaulting to player")
+        sender = Game.GetPlayer()
+    EndIf
+
+    Return DispatchGuardToHome(akGuard, targetName, sender, reason)
+EndFunction
+
+; =============================================================================
+; DISPATCH PROGRESS MONITORING (Self-contained system)
+; Phases:
+;   1: Guard traveling to destination (target Actor or home marker)
+;   2: Guard approaching target for arrest (same cell, within range)
+;   3: Guard sandboxing at target's home (investigating)
+;   4: Guard collecting evidence (picking up item)
+;   5: Returning with prisoner or evidence to destination
+;
+; Off-screen handling:
+;   - Guard walks the entire way - no teleportation shortcuts
+;   - Same-cell interior detection (guard reached destination cell while off-screen)
+;   - Game-time timeout (24h): force-complete if dispatch takes too long
+; =============================================================================
+
+Function CheckDispatchProgress()
+    {Main dispatch monitor - called from OnUpdate when DispatchPhase > 0.
+     Handles off-screen detection and routes to phase handlers.}
+
+    ; Validate state - guard is always required; target required for arrest dispatches
+    If DispatchGuard == None
+        DebugMsg("ERROR: CheckDispatchProgress - guard is None")
+        CancelDispatch()
+        Return
+    EndIf
+
+    If !DispatchIsHomeInvestigation && DispatchTarget == None
+        DebugMsg("ERROR: CheckDispatchProgress - target is None (arrest dispatch)")
+        CancelDispatch()
+        Return
+    EndIf
+
+    ; Check if guard died
+    If DispatchGuard.IsDead()
+        DebugMsg("Guard died during dispatch")
+        CancelDispatch()
+        Return
+    EndIf
+
+    ; Check if target died (only matters for arrest dispatches in phases 1-2)
+    If !DispatchIsHomeInvestigation && DispatchPhase <= 2 && DispatchTarget != None && DispatchTarget.IsDead()
+        DebugMsg("Target died during dispatch")
+        CancelDispatch()
+        Return
+    EndIf
+
+    ; Game-time timeout (24 game-hours max for entire dispatch)
+    If DispatchGameTimeStart > 0.0
+        Float elapsedHours = (Utility.GetCurrentGameTime() - DispatchGameTimeStart) * 24.0
+        If elapsedHours > 24.0
+            DebugMsg("Dispatch timeout (" + elapsedHours + "h) - force-completing")
+            If DispatchIsHomeInvestigation
+                ; Home investigation timeout: skip to return phase with whatever we have
+                DebugMsg("Home investigation timeout - returning to sender")
+                StartDispatchReturnPhase()
+            Else
+                PerformOffScreenArrest()
+            EndIf
+            Return
+        EndIf
+    EndIf
+
+    ; Game-time-based arrival check for travel phases (handles T-wait / sleeping time skips)
+    ; During time skips, OnUpdate doesn't fire but game time advances. When the update
+    ; resumes, we check if enough game time elapsed for the guard to have arrived.
+    If DispatchPhase == 1 && DispatchGameTimeStart > 0.0
+        Float gameHoursElapsed = (Utility.GetCurrentGameTime() - DispatchGameTimeStart) * 24.0
+        If gameHoursElapsed >= 0.25  ; At least 15 game-minutes (catches time-skips)
+            ObjectReference travelDestCheck = None
+            If DispatchIsHomeInvestigation && DispatchHomeMarker != None
+                travelDestCheck = DispatchHomeMarker
+            ElseIf DispatchTarget != None
+                travelDestCheck = DispatchTarget as ObjectReference
+            EndIf
+
+            If travelDestCheck != None
+                ; Use stored initial distance — GetDistance returns 0 cross-cell
+                Float travelDistCheck = DispatchInitialDistance
+                If travelDistCheck < 1000.0
+                    travelDistCheck = 5000.0
+                EndIf
+                ; Guard jog speed: ~20000 units per game-hour
+                Float requiredGameHours = travelDistCheck / 20000.0
+                If requiredGameHours < 0.25
+                    requiredGameHours = 0.25
+                EndIf
+
+                If gameHoursElapsed >= requiredGameHours
+                    DebugMsg("Time-skip arrival: " + gameHoursElapsed + "h elapsed, " + requiredGameHours + "h required")
+                    If DispatchIsHomeInvestigation
+                        ; Move guard directly to home destination (interior marker)
+                        If DispatchHomeMarker != None
+                            DispatchGuard.MoveTo(DispatchHomeMarker)
+                            Utility.Wait(0.3)
+                            TransitionToSandboxPhase()
+                        EndIf
+                    Else
+                        ; Arrest dispatch: perform off-screen arrest
+                        PerformOffScreenArrest()
+                    EndIf
+                    Return
+                EndIf
+            EndIf
+        EndIf
+    ElseIf DispatchPhase == 5 && DispatchGameTimeStart > 0.0
+        ; Return phase time-skip: check if guard has had enough time to return
+        Float gameHoursReturn = (Utility.GetCurrentGameTime() - DispatchGameTimeStart) * 24.0
+        If gameHoursReturn >= 0.5 && DispatchReturnMarker != None
+            ; Use stored initial distance as proxy for return trip — GetDistance returns 0 cross-cell
+            Float returnDistCheck = DispatchInitialDistance
+            If returnDistCheck < 1000.0
+                returnDistCheck = 5000.0
+            EndIf
+            Float requiredReturnHours = returnDistCheck / 20000.0
+            If requiredReturnHours < 0.25
+                requiredReturnHours = 0.25
+            EndIf
+            ; Return phase started after outbound travel, so check total time is enough for both legs
+            If gameHoursReturn >= requiredReturnHours
+                DebugMsg("Time-skip return arrival: " + gameHoursReturn + "h elapsed")
+                DispatchGuard.MoveTo(DispatchReturnMarker, 200.0, 0.0, 0.0, false)
+                If DispatchTarget != None
+                    DispatchTarget.MoveTo(DispatchGuard, 50.0, 0.0, 0.0, false)
+                EndIf
+                Utility.Wait(0.3)
+                CompleteDispatch()
+                Return
+            EndIf
+        EndIf
+    EndIf
+
+    ; Check off-screen status (phase 1 only, not during return)
+    If DispatchPhase == 1
+        CheckDispatchOffScreen()
+    EndIf
+
+    ; Route to phase handler
+    If DispatchPhase == 1
+        CheckDispatchPhase1_Travel()
+    ElseIf DispatchPhase == 2
+        CheckDispatchPhase2_Approach()
+    ElseIf DispatchPhase == 3
+        CheckDispatchPhase3_Sandbox()
+    ElseIf DispatchPhase == 4
+        CheckDispatchPhase4_Evidence()
+    ElseIf DispatchPhase == 5
+        CheckDispatchPhase5_Return()
+    ElseIf DispatchPhase == 6
+        CheckJudgmentProgress()
+    EndIf
+EndFunction
+
+Function CheckDispatchOffScreen()
+    {Check if guard has arrived at destination while off-screen during Phase 1 travel.
+     Uses a tiered approach: trust AI first, then intervene only as a last resort.
+
+     The guard has an approach package and Skyrim's AI can pathfind through load doors.
+     We give the AI generous time (minimum 120s) before teleporting, since same-cell
+     detection in CheckDispatchPhase1_Travel handles natural arrival through doors.}
+
+    Bool guardInLoadedArea = DispatchGuard.Is3DLoaded()
+
+    If !guardInLoadedArea
+        Cell guardCell = DispatchGuard.GetParentCell()
+
+        ; --- First time going off-screen: record the timestamp ---
+        If !DispatchGuardOffScreen
+            DispatchGuardOffScreen = true
+            DispatchOffScreenStartTime = Utility.GetCurrentRealTime()
+            DebugMsg("Guard went off-screen during travel, trusting AI pathfinding")
+        EndIf
+
+        ; --- Calculate how long the guard should take to arrive ---
+        Float elapsedOffScreen = Utility.GetCurrentRealTime() - DispatchOffScreenStartTime
+
+        ; Determine destination reference
+        ObjectReference travelDest = None
+        If DispatchIsHomeInvestigation && DispatchHomeMarker != None
+            travelDest = DispatchHomeMarker
+        ElseIf DispatchTarget != None
+            travelDest = DispatchTarget as ObjectReference
+        EndIf
+
+        ; Calculate required travel time from distance (300 units/sec jogging speed)
+        ; Minimum 120 seconds — give AI plenty of time to pathfind through doors naturally.
+        ; The same-cell check in CheckDispatchPhase1_Travel detects arrival through doors
+        ; much earlier than this timer, so this is purely a fallback.
+        Float requiredTime = 120.0  ; 2 minutes minimum before intervening
+        If travelDest != None
+            Float dist = DispatchInitialDistance
+            If dist < 1000.0
+                dist = 5000.0
+            EndIf
+            Float travelTime = dist / 300.0
+            If travelTime > requiredTime
+                requiredTime = travelTime
+            EndIf
+            ; Cap at 10 minutes real time to prevent absurdly long waits
+            If requiredTime > 600.0
+                requiredTime = 600.0
+            EndIf
+        EndIf
+
+        ; --- Check if enough time has passed for arrival ---
+        If elapsedOffScreen >= requiredTime
+            DebugMsg("Off-screen travel time elapsed (" + elapsedOffScreen + "s / " + requiredTime + "s required)")
+
+            If DispatchIsHomeInvestigation
+                ; Home investigation: move guard directly to home destination (interior marker)
+                If DispatchHomeMarker != None
+                    DebugMsg("Off-screen: moving guard to home destination")
+                    DispatchGuard.MoveTo(DispatchHomeMarker)
+                    Utility.Wait(0.3)
+                    TransitionToSandboxPhase()
+                    Return
+                EndIf
+            ElseIf DispatchTarget != None
+                ; Arrest dispatch: move guard near target and transition to approach
+                DebugMsg("Off-screen: guard arrived at target location")
+                DispatchGuard.MoveTo(DispatchTarget, 200.0, 0.0, 0.0, false)
+                Utility.Wait(0.3)
+                TransitionToApproachPhase()
+                Return
+            EndIf
+        Else
+            ; Still traveling — log progress periodically
+            If Math.Floor(elapsedOffScreen) as Int % 30 == 0 && Math.Floor(elapsedOffScreen) as Int > 0
+                DebugMsg("Off-screen travel: " + elapsedOffScreen as Int + "s / " + requiredTime as Int + "s, trusting AI")
+            EndIf
+        EndIf
+    Else
+        ; Guard is on-screen
+        If DispatchGuardOffScreen
+            DebugMsg("Guard back on-screen")
+            DispatchGuardOffScreen = false
+            DispatchOffScreenStartTime = 0.0
+        EndIf
+    EndIf
+EndFunction
+
+Function PerformOffScreenArrest()
+    {Called when guard has been off-screen long enough or game-time timeout reached.
+     Teleports guard to target, performs instant arrest, then starts return phase.
+     Does NOT teleport to return destination — Phase 5 handles the return journey
+     with proper time-based simulation so the guard doesn't appear out of thin air.}
+
+    DebugMsg("Performing off-screen arrest of " + DispatchTarget.GetDisplayName())
+
+    ; Stop stuck tracking
+    SeverActionsNative.Stuck_StopTracking(DispatchGuard)
+
+    ; Remove any active dispatch packages and clear linked ref
+    If SeverActions_DispatchTravel
+        ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchTravel)
+    EndIf
+    If SeverActions_GuardApproachTarget
+        ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_GuardApproachTarget)
+    EndIf
+    PO3_SKSEFunctions.SetLinkedRef(DispatchGuard, None, SeverActions_EscortTargetKeyword)
+
+    ; Teleport guard to target (arrest happens at target's location, not at return destination)
+    DispatchGuard.MoveTo(DispatchTarget, 100.0, 0.0, 0.0, false)
+    Utility.Wait(0.2)
+
+    ; Apply arrest effects INLINE — do NOT use ApplyArrestEffects() which sets
+    ; ArrestState=3 and CurrentGuard/CurrentPrisoner, activating CheckEscortProgress
+    ; in OnUpdate and conflicting with the dispatch system.
+    DispatchTarget.StopCombat()
+    DispatchTarget.StopCombatAlarm()
+
+    ; Cancel any active travel errand so it doesn't fight with arrest escort
+    If TravelSystem != None
+        TravelSystem.CancelTravel(DispatchTarget)
+    EndIf
+
+    DispatchTarget.SetAV("Aggression", 0)
+    DispatchTarget.SetAV("Confidence", 0)
+    DispatchTarget.SetAV("HealRate", 0.1)
+
+    If SeverActions_Arrested
+        DispatchTarget.AddToFaction(SeverActions_Arrested)
+    EndIf
+    If dunPrisonerFaction
+        DispatchTarget.AddToFaction(dunPrisonerFaction)
+    EndIf
+    If SeverActions_WaitingArrest
+        DispatchTarget.RemoveFromFaction(SeverActions_WaitingArrest)
+    EndIf
+
+    If SeverActions_PrisonerCuffs
+        DispatchTarget.AddItem(SeverActions_PrisonerCuffs, 1, true)
+        DispatchTarget.EquipItem(SeverActions_PrisonerCuffs, true, true)
+    EndIf
+
+    If OffsetBoundStandingStart
+        DispatchTarget.PlayIdle(OffsetBoundStandingStart)
+    EndIf
+
+    ; Link prisoner to guard for follow package
+    PO3_SKSEFunctions.SetLinkedRef(DispatchTarget, DispatchGuard, SeverActions_EscortTargetKeyword)
+    Utility.Wait(0.2)
+
+    If SeverActions_FollowGuard_Prisoner
+        ActorUtil.AddPackageOverride(DispatchTarget, SeverActions_FollowGuard_Prisoner, PackagePriority, 1)
+        DispatchTarget.SetLookAt(DispatchGuard)
+        DispatchTarget.EvaluatePackage()
+    EndIf
+
+    DebugMsg("Off-screen dispatch arrest effects applied to " + DispatchTarget.GetDisplayName())
+
+    ; Narration: the arrest happened off-screen
+    String guardName = DispatchGuard.GetDisplayName()
+    String targetName = DispatchTarget.GetDisplayName()
+    String narration = "*" + guardName + " arrests " + targetName + " and begins escorting them back.*"
+    SkyrimNetApi.DirectNarration(narration, DispatchTarget, DispatchGuard)
+
+    ; Notify the player that the arrest happened
+    Debug.Notification(guardName + " has arrested " + targetName + " and is returning")
+
+    Utility.Wait(0.3)
+
+    ; Start return phase — guard+prisoner travel back via time-based simulation
+    ; They are NOT teleported to the destination; Phase 5 handles the journey
+    StartDispatchReturnPhase()
+EndFunction
+
+Function ApplyArrestEffects(Actor akGuard, Actor akTarget)
+    {Apply all arrest effects to target (cuffs, faction, outfit) without the approach animation.
+     Used for both off-screen arrests and normal arrests.
+     Includes full AI state reset to ensure follow package overrides current behavior.}
+
+    ; --- Clear AI state first (critical for follow package to take effect) ---
+    akTarget.StopCombat()
+    akTarget.StopCombatAlarm()
+    akTarget.SetAV("Aggression", 0)
+    akTarget.SetAV("Confidence", 0)
+    akTarget.SetAV("HealRate", 0.1)
+
+    ; Add to arrested faction
+    If SeverActions_Arrested
+        akTarget.AddToFaction(SeverActions_Arrested)
+    EndIf
+
+    ; Add to vanilla prisoner faction (prevents guards attacking)
+    If dunPrisonerFaction
+        akTarget.AddToFaction(dunPrisonerFaction)
+    EndIf
+
+    ; Remove from waiting arrest faction if present
+    If SeverActions_WaitingArrest
+        akTarget.RemoveFromFaction(SeverActions_WaitingArrest)
+    EndIf
+
+    ; Equip cuffs
+    If SeverActions_PrisonerCuffs
+        akTarget.AddItem(SeverActions_PrisonerCuffs, 1, true)
+        akTarget.EquipItem(SeverActions_PrisonerCuffs, true, true)
+    EndIf
+
+    ; Play bound idle animation
+    If OffsetBoundStandingStart
+        akTarget.PlayIdle(OffsetBoundStandingStart)
+    EndIf
+
+    ; Set up linked ref for follow package — wait briefly for PO3 to register the link
+    PO3_SKSEFunctions.SetLinkedRef(akTarget, akGuard, SeverActions_EscortTargetKeyword)
+    Utility.Wait(0.2)
+
+    ; Apply prisoner follow package
+    If SeverActions_FollowGuard_Prisoner
+        ActorUtil.AddPackageOverride(akTarget, SeverActions_FollowGuard_Prisoner, PackagePriority, 1)
+        akTarget.SetLookAt(akGuard)
+        akTarget.EvaluatePackage()
+    EndIf
+
+    ; Track for escort state
+    CurrentGuard = akGuard
+    CurrentPrisoner = akTarget
+    ArrestState = 3  ; Escorting
+
+    DebugMsg("Arrest effects applied to " + akTarget.GetDisplayName())
+EndFunction
+
+Function StartDispatchReturnPhase()
+    {Start Phase 5: Guard returning with prisoner/evidence to sender or jail.
+     If DispatchSender is set, guard approaches sender (live actor via alias).
+     Otherwise, guard escorts prisoner to jail (static marker via alias).}
+
+    If DispatchSender != None
+        DebugMsg("Starting return phase - returning to " + DispatchSender.GetDisplayName())
+    Else
+        DebugMsg("Starting return phase - escorting prisoner to jail")
+    EndIf
+
+    ; Point guard's linked ref at return destination (sender or jail marker)
+    If DispatchReturnMarker != None
+        PO3_SKSEFunctions.SetLinkedRef(DispatchGuard, DispatchReturnMarker, SeverActions_EscortTargetKeyword)
+
+        ; Small delay to ensure linked ref is processed before package evaluation
+        Utility.Wait(0.1)
+
+        If DispatchSender != None
+            ; Returning to a live actor (sender): use GuardApproachTarget alias
+            ; This dynamically tracks the sender even if they move around
+            ArrestTarget.ForceRefTo(DispatchSender)
+            ArrestingGuard.ForceRefTo(DispatchGuard)
+            If SeverActions_GuardApproachTarget
+                ActorUtil.AddPackageOverride(DispatchGuard, SeverActions_GuardApproachTarget, PackagePriority, 1)
+                DispatchGuard.EvaluatePackage()
+                DebugMsg("Applied GuardApproachTarget for return to " + DispatchSender.GetDisplayName())
+            EndIf
+        Else
+            ; Standard arrest return: escort prisoner to jail (static marker)
+            JailDestination.ForceRefTo(DispatchReturnMarker)
+            ArrestingGuard.ForceRefTo(DispatchGuard)
+            If SeverActions_GuardEscortPackage
+                ActorUtil.AddPackageOverride(DispatchGuard, SeverActions_GuardEscortPackage, PackagePriority, 1)
+                DispatchGuard.EvaluatePackage()
+                DebugMsg("Applied GuardEscortPackage for return to jail")
+            EndIf
+        EndIf
+
+        ; Disable NPC-NPC collision for the return journey
+        SeverActionsNative.SetActorBumpable(DispatchGuard, false)
+    EndIf
+
+    ; Ensure prisoner is still following the guard (re-apply in case AI dropped it)
+    If DispatchTarget != None && !DispatchIsHomeInvestigation
+        PO3_SKSEFunctions.SetLinkedRef(DispatchTarget, DispatchGuard, SeverActions_EscortTargetKeyword)
+        Utility.Wait(0.2)
+        If SeverActions_FollowGuard_Prisoner
+            ActorUtil.AddPackageOverride(DispatchTarget, SeverActions_FollowGuard_Prisoner, PackagePriority, 1)
+            DispatchTarget.EvaluatePackage()
+        EndIf
+        DebugMsg("Re-verified prisoner follow package for return journey")
+    EndIf
+
+    ; Start stuck tracking for return journey
+    SeverActionsNative.Stuck_StartTracking(DispatchGuard)
+
+    DispatchPhase = 5
+    DispatchGuardOffScreen = false
+    DispatchOffScreenStartTime = 0.0
+    DispatchReturnOffScreenCycle = 0
+
+    RegisterForSingleUpdate(UpdateInterval)
+EndFunction
+
+Function CheckDispatchPhase1_Travel()
+    {Phase 1: Guard traveling to destination (target Actor or home interior marker).
+     Skyrim AI handles cross-cell pathfinding through doors automatically. We monitor for:
+     - Same cell as destination (transition to approach or sandbox)
+     - Close enough to destination (transition to approach or sandbox)
+     - Stuck detection with leapfrog recovery}
+
+    Float dist
+    Int stuckLevel
+    ObjectReference travelDest
+
+    ; Determine travel destination based on dispatch type
+    If DispatchIsHomeInvestigation && DispatchHomeMarker != None
+        travelDest = DispatchHomeMarker
+    ElseIf DispatchTarget != None
+        travelDest = DispatchTarget as ObjectReference
+    Else
+        DebugMsg("ERROR: Phase1 - no valid travel destination")
+        CancelDispatch()
+        Return
+    EndIf
+
+    ; Check stuck detection
+    stuckLevel = SeverActionsNative.Stuck_CheckStatus(DispatchGuard, UpdateInterval, 50.0)
+    If stuckLevel >= 2
+        DebugMsg("Guard stuck (level " + stuckLevel + "), nudging...")
+        DispatchGuard.EvaluatePackage()
+        If stuckLevel >= 3 && travelDest != None
+            ; Severe stuck - leapfrog toward destination
+            Float teleportDist = SeverActionsNative.Stuck_GetTeleportDistance(DispatchGuard)
+            DispatchGuard.MoveTo(travelDest, teleportDist, 0.0, 0.0, false)
+            SeverActionsNative.Stuck_ResetEscalation(DispatchGuard)
+
+            ; If severely stuck and target is in an interior, try the door instead
+            If !DispatchIsHomeInvestigation && DispatchTarget != None
+                Cell targetCell = DispatchTarget.GetParentCell()
+                If targetCell != None && targetCell.IsInterior()
+                    ObjectReference doorRef = SeverActionsNative.FindDoorToActorCell(DispatchTarget)
+                    If doorRef != None
+                        DebugMsg("Severe stuck: redirecting to door of target's interior cell")
+                        DispatchGuard.MoveTo(doorRef, 200.0, 0.0, 0.0, false)
+                    EndIf
+                EndIf
+            EndIf
+        EndIf
+    EndIf
+
+    ; Same cell check — dest is now the interior marker (home) or target Actor (arrest)
+    ; so same cell = guard has pathfound through doors and arrived
+    Cell guardCell = DispatchGuard.GetParentCell()
+    Cell destCell = travelDest.GetParentCell()
+    If guardCell != None && destCell != None && guardCell == destCell
+        If DispatchIsHomeInvestigation
+            ; Guard is in the same cell as the interior marker — they're inside the home
+            dist = DispatchGuard.GetDistance(travelDest)
+            If dist <= DispatchArrivalDistance
+                DebugMsg("Guard arrived inside home (same cell, dist=" + dist + "), transitioning to sandbox")
+                TransitionToSandboxPhase()
+                Return
+            EndIf
+        ElseIf guardCell.IsInterior()
+            ; Interior cells are small enough that same-cell = arrived
+            DebugMsg("Guard is in same interior cell as target, transitioning to approach phase")
+            TransitionToApproachPhase()
+            Return
+        Else
+            ; Exterior cells can be very large — only transition if within ArrivalDistance
+            If DispatchGuard.Is3DLoaded() && travelDest.Is3DLoaded()
+                dist = DispatchGuard.GetDistance(travelDest)
+                If dist <= DispatchArrivalDistance
+                    DebugMsg("Guard near target in same exterior cell (dist=" + dist + "), transitioning to approach")
+                    TransitionToApproachPhase()
+                    Return
+                EndIf
+            EndIf
+        EndIf
+    EndIf
+
+    ; Snapshot-based distance check (works off-screen via position snapshots)
+    If !DispatchGuard.Is3DLoaded() || !travelDest.Is3DLoaded()
+        ; Guard or destination is off-screen — try native distance
+        If !DispatchIsHomeInvestigation
+            ; Home marker isn't an actor, can't use GetDistanceBetweenActors
+            Float snapDist = SeverActionsNative.GetDistanceBetweenActors(DispatchGuard, DispatchTarget)
+            If snapDist >= 0.0 && snapDist <= DispatchArrivalDistance
+                DebugMsg("Snapshot distance arrival: guard within " + snapDist + " of target (off-screen)")
+                TransitionToApproachPhase()
+                Return
+            EndIf
+        EndIf
+    EndIf
+
+    ; Distance check (both 3D loaded — same exterior area or player cell)
+    If DispatchGuard.Is3DLoaded() && travelDest.Is3DLoaded()
+        dist = DispatchGuard.GetDistance(travelDest)
+        If dist <= DispatchArrivalDistance
+            If DispatchIsHomeInvestigation
+                DebugMsg("Guard arrived at home destination (dist=" + dist + "), transitioning to sandbox")
+                TransitionToSandboxPhase()
+            Else
+                DebugMsg("Guard near target (dist=" + dist + "), transitioning to approach")
+                TransitionToApproachPhase()
+            EndIf
+            Return
+        EndIf
+    EndIf
+
+    ; Stale snapshot redirect — if guard has been traveling 5+ game-hours without finding target,
+    ; check if target's position data is very old and redirect to their home instead
+    If !DispatchIsHomeInvestigation && DispatchGameTimeStart > 0.0
+        Float travelHours = (Utility.GetCurrentGameTime() - DispatchGameTimeStart) * 24.0
+        If travelHours >= 5.0
+            ; Check how old the target's snapshot is
+            Float snapshotTime = SeverActionsNative.GetActorSnapshotGameTime(DispatchTarget)
+            If snapshotTime > 0.0
+                Float snapshotAge = (Utility.GetCurrentGameTime() - snapshotTime) * 24.0
+                If snapshotAge > 24.0
+                    DebugMsg("Target snapshot is " + snapshotAge + "h old — redirecting to home")
+                    ; Try to find target's home
+                    ObjectReference homeMarker = SeverActionsNative.FindHomeInteriorMarker(DispatchTarget)
+                    If homeMarker == None
+                        ObjectReference homeDoor = SeverActionsNative.FindDoorToActorHome(DispatchTarget)
+                        If homeDoor != None
+                            homeMarker = homeDoor
+                        EndIf
+                    EndIf
+
+                    If homeMarker != None
+                        ; Redirect guard to target's home
+                        DebugMsg("Redirecting guard to target's home")
+                        ArrestTarget.ForceRefTo(homeMarker)
+                        DispatchGuard.EvaluatePackage()
+                        ; Don't change DispatchTarget — still arresting same person
+                        ; Guard will arrive at home and wait for target
+                    EndIf
+                EndIf
+            EndIf
+        EndIf
+    EndIf
+
+    ; Continue monitoring
+    RegisterForSingleUpdate(UpdateInterval)
+EndFunction
+
+Function TetherPrisonerToGuard()
+    {Rubber-band: if prisoner drifts too far from guard off-screen, snap them back.
+     Uses native GetDistanceBetweenActors which works via position snapshots even when unloaded.}
+    If DispatchTarget == None || DispatchGuard == None
+        Return
+    EndIf
+    If DispatchIsHomeInvestigation
+        Return  ; No prisoner during home investigation
+    EndIf
+
+    Float tetherDist = SeverActionsNative.GetDistanceBetweenActors(DispatchGuard, DispatchTarget)
+    If tetherDist < 0.0
+        ; -1 means different worldspace/cells or no snapshot — skip
+        Return
+    EndIf
+
+    If tetherDist > 500.0
+        DebugMsg("Tether: prisoner drifted " + tetherDist + " units, snapping to guard")
+        DispatchTarget.MoveTo(DispatchGuard, 100.0, 0.0, 0.0, false)
+        ; Re-apply follow package in case AI dropped it
+        If SeverActions_FollowGuard_Prisoner
+            ActorUtil.AddPackageOverride(DispatchTarget, SeverActions_FollowGuard_Prisoner, PackagePriority, 1)
+            DispatchTarget.EvaluatePackage()
+        EndIf
+    EndIf
+EndFunction
+
+Function RestoreGuardCombatAI()
+    {Restore guard's original aggression/confidence after dispatch.}
+    If DispatchGuard != None
+        DispatchGuard.SetAV("Aggression", DispatchGuardOrigAggression)
+        DispatchGuard.SetAV("Confidence", DispatchGuardOrigConfidence)
+    EndIf
+EndFunction
+
+Function TransitionToApproachPhase()
+    {Transition to Phase 2: approaching target for arrest.
+     Guard is already using GuardApproachTarget package (applied at dispatch start)
+     and aliases are already filled. Just stop travel tracking and draw weapon.}
+
+    ; Stop stuck tracking for travel
+    SeverActionsNative.Stuck_StopTracking(DispatchGuard)
+
+    ; Restore normal NPC-NPC collision — guard is near target
+    SeverActionsNative.SetActorBumpable(DispatchGuard, true)
+
+    ; Restore guard combat AI — guard needs aggression to perform the arrest
+    RestoreGuardCombatAI()
+
+    ; Ensure aliases are current (they should already be filled from dispatch start)
+    ArrestTarget.ForceRefTo(DispatchTarget)
+    ArrestingGuard.ForceRefTo(DispatchGuard)
+
+    ; Ensure approach package is applied and re-evaluate
+    If SeverActions_GuardApproachTarget
+        ActorUtil.AddPackageOverride(DispatchGuard, SeverActions_GuardApproachTarget, PackagePriority, 1)
+        DispatchGuard.EvaluatePackage()
+        DebugMsg("Approach phase: guard approaching target")
+    EndIf
+
+    DispatchGuard.DrawWeapon()
+    DispatchPhase = 2
+    RegisterForSingleUpdate(UpdateInterval)
+EndFunction
+
+Function CheckDispatchPhase2_Approach()
+    {Phase 2: Guard approaching target in same cell for arrest.
+     GetDistance returns 0 for unloaded actors, so we must guard against false positives.
+     If neither is 3D loaded, use snapshot distance instead. If both unloaded and snapshot
+     confirms proximity (or is unavailable), proceed — the guard was transitioned to Phase 2
+     because same-cell was already confirmed.}
+
+    Float dist = -1.0
+    Bool bothLoaded = DispatchGuard.Is3DLoaded() && DispatchTarget.Is3DLoaded()
+
+    If bothLoaded
+        dist = DispatchGuard.GetDistance(DispatchTarget)
+    Else
+        ; One or both actors not loaded — use snapshot distance
+        dist = SeverActionsNative.GetDistanceBetweenActors(DispatchGuard, DispatchTarget)
+        If dist < 0.0
+            ; Snapshot unavailable — we already confirmed same-cell to reach Phase 2,
+            ; so trust it and proceed with the arrest
+            dist = 0.0
+            DebugMsg("Phase 2: both unloaded, no snapshot — trusting same-cell arrival")
+        EndIf
+    EndIf
+
+    If dist >= 0.0 && dist <= ApproachDistance
+        DebugMsg("Guard reached target (dist=" + dist + ", loaded=" + bothLoaded + "), performing arrest")
+
+        ; Remove approach package (will be replaced by escort package in return phase)
+        If SeverActions_GuardApproachTarget
+            ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_GuardApproachTarget)
+        EndIf
+
+        ; DO NOT clear aliases here — they're needed for Phase 5 return journey
+        ; ArrestingGuard keeps the guard in high-process while off-screen
+        ; ArrestTarget will be repurposed in StartDispatchReturnPhase
+
+        ; Apply arrest effects to the target (cuffs, factions, follow package)
+        ; But do NOT use ApplyArrestEffects — it sets ArrestState=3 and CurrentGuard/CurrentPrisoner
+        ; which triggers CheckEscortProgress in OnUpdate, conflicting with the dispatch system.
+        ; Instead, apply the effects inline without touching the non-dispatch escort state.
+        DispatchTarget.StopCombat()
+        DispatchTarget.StopCombatAlarm()
+
+        ; Cancel any active travel errand so it doesn't fight with arrest escort
+        If TravelSystem != None
+            TravelSystem.CancelTravel(DispatchTarget)
+        EndIf
+
+        DispatchTarget.SetAV("Aggression", 0)
+        DispatchTarget.SetAV("Confidence", 0)
+        DispatchTarget.SetAV("HealRate", 0.1)
+
+        If SeverActions_Arrested
+            DispatchTarget.AddToFaction(SeverActions_Arrested)
+        EndIf
+        If dunPrisonerFaction
+            DispatchTarget.AddToFaction(dunPrisonerFaction)
+        EndIf
+        If SeverActions_WaitingArrest
+            DispatchTarget.RemoveFromFaction(SeverActions_WaitingArrest)
+        EndIf
+
+        If SeverActions_PrisonerCuffs
+            DispatchTarget.AddItem(SeverActions_PrisonerCuffs, 1, true)
+            DispatchTarget.EquipItem(SeverActions_PrisonerCuffs, true, true)
+        EndIf
+
+        If OffsetBoundStandingStart
+            DispatchTarget.PlayIdle(OffsetBoundStandingStart)
+        EndIf
+
+        ; Link prisoner to guard for follow package
+        PO3_SKSEFunctions.SetLinkedRef(DispatchTarget, DispatchGuard, SeverActions_EscortTargetKeyword)
+        Utility.Wait(0.2)
+
+        If SeverActions_FollowGuard_Prisoner
+            ActorUtil.AddPackageOverride(DispatchTarget, SeverActions_FollowGuard_Prisoner, PackagePriority, 1)
+            DispatchTarget.SetLookAt(DispatchGuard)
+            DispatchTarget.EvaluatePackage()
+        EndIf
+
+        DebugMsg("Dispatch arrest effects applied to " + DispatchTarget.GetDisplayName())
+
+        ; Narrate the arrest
+        String guardName = DispatchGuard.GetDisplayName()
+        String targetName = DispatchTarget.GetDisplayName()
+        String narration = "*" + guardName + " seizes " + targetName + " and places them under arrest.*"
+        SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
+
+        ; Transition to return phase (escort prisoner back to jail or Jarl)
+        StartDispatchReturnPhase()
+        Return
+    EndIf
+
+    RegisterForSingleUpdate(UpdateInterval)
+EndFunction
+
+Function TransitionToSandboxPhase()
+    {Transition to Phase 3: Guard sandboxes at target's home (investigating).
+     Guard looks around the home, searching for evidence.}
+
+    ; Stop stuck tracking for travel
+    SeverActionsNative.Stuck_StopTracking(DispatchGuard)
+
+    ; Restore normal NPC-NPC collision — guard is inside home
+    SeverActionsNative.SetActorBumpable(DispatchGuard, true)
+
+    ; Remove travel/approach package and clear linked ref
+    If SeverActions_GuardApproachTarget
+        ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_GuardApproachTarget)
+    EndIf
+    If SeverActions_DispatchTravel
+        ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchTravel)
+    EndIf
+    PO3_SKSEFunctions.SetLinkedRef(DispatchGuard, None, SeverActions_EscortTargetKeyword)
+
+    ; Set up sandbox anchor INSIDE the home cell
+    ; Priority: home destination (interior marker) > target NPC (if same cell) > guard (fallback)
+    ObjectReference sandboxAnchor = DispatchGuard as ObjectReference
+    If DispatchHomeMarker != None
+        sandboxAnchor = DispatchHomeMarker
+        DebugMsg("Sandbox anchor: home destination marker")
+    ElseIf DispatchTarget != None
+        Cell guardCell = DispatchGuard.GetParentCell()
+        Cell targetCell = DispatchTarget.GetParentCell()
+        If guardCell != None && guardCell == targetCell
+            sandboxAnchor = DispatchTarget as ObjectReference
+            DebugMsg("Sandbox anchor: target NPC (same cell)")
+        Else
+            DebugMsg("Sandbox anchor: guard position (target in different cell)")
+        EndIf
+    Else
+        DebugMsg("Sandbox anchor: guard position (no target)")
+    EndIf
+    PO3_SKSEFunctions.SetLinkedRef(DispatchGuard, sandboxAnchor, SeverActions_EscortTargetKeyword)
+
+    ; Apply sandbox package (reuses PrisonerSandBox which sandboxes near linked ref)
+    If SeverActions_PrisonerSandBox
+        ActorUtil.AddPackageOverride(DispatchGuard, SeverActions_PrisonerSandBox, PackagePriority, 1)
+        DispatchGuard.EvaluatePackage()
+        DebugMsg("Applied sandbox package - guard investigating inside home")
+    EndIf
+
+    ; Register with native sandbox manager for auto-cleanup
+    If SeverActions_PrisonerSandBox
+        SeverActionsNative.RegisterSandboxUser(DispatchGuard, SeverActions_PrisonerSandBox, 2000.0)
+    EndIf
+
+    ; Randomize sandbox duration (15-30 seconds real time)
+    DispatchSandboxStartTime = Utility.GetCurrentRealTime()
+    DispatchSandboxDuration = Utility.RandomFloat(15.0, 30.0)
+    DebugMsg("Guard will investigate for " + DispatchSandboxDuration + " seconds")
+
+    ; Narration: guard is searching the home
+    String guardName = DispatchGuard.GetDisplayName()
+    String targetName = ""
+    If DispatchTarget != None
+        targetName = DispatchTarget.GetDisplayName()
+    EndIf
+    String narration = "*" + guardName + " begins searching " + targetName + "'s home, looking through belongings for evidence.*"
+    SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
+
+    DispatchPhase = 3
+    RegisterForSingleUpdate(UpdateInterval)
+EndFunction
+
+Function CheckDispatchPhase3_Sandbox()
+    {Phase 3: Guard sandboxing at target's home (investigating).
+     After the sandbox duration expires, transition to evidence collection.}
+
+    Float elapsed = Utility.GetCurrentRealTime() - DispatchSandboxStartTime
+
+    If elapsed >= DispatchSandboxDuration
+        DebugMsg("Sandbox investigation complete (" + elapsed + "s), collecting evidence")
+        TransitionToEvidencePhase()
+        Return
+    EndIf
+
+    RegisterForSingleUpdate(UpdateInterval)
+EndFunction
+
+Function TransitionToEvidencePhase()
+    {Transition to Phase 4: Guard collects evidence.
+     On-screen (player watching): Guard finds suspicious item, walks to it, picks it up.
+     Off-screen (player away): Guard gets a contextual evidence item based on target NPC's class.}
+
+    ; Unregister from sandbox manager
+    SeverActionsNative.UnregisterSandboxUser(DispatchGuard)
+
+    ; Remove sandbox package
+    If SeverActions_PrisonerSandBox
+        ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_PrisonerSandBox)
+    EndIf
+    PO3_SKSEFunctions.SetLinkedRef(DispatchGuard, None, SeverActions_EscortTargetKeyword)
+
+    DispatchPhase = 4
+
+    String guardName = DispatchGuard.GetDisplayName()
+    String targetName = ""
+    If DispatchTarget != None
+        targetName = DispatchTarget.GetDisplayName()
+    EndIf
+
+    Bool playerWatching = DispatchGuard.Is3DLoaded()
+
+    If playerWatching
+        ; === ON-SCREEN: Generate reason-appropriate evidence, play pickup animation ===
+        DebugMsg("Evidence collection: player is watching")
+
+        ; First try to generate reason-appropriate evidence (same logic as off-screen)
+        Form evidenceForm = None
+        If DispatchInvestigationReason != ""
+            DebugMsg("On-screen evidence: using reason '" + DispatchInvestigationReason + "'")
+            evidenceForm = SeverActionsNative.GenerateEvidenceForReason(DispatchInvestigationReason, DispatchTarget)
+        EndIf
+
+        ; Fallback: try to find an actual suspicious item in the world
+        If evidenceForm == None
+            DebugMsg("On-screen evidence: no reason match, scanning for world items")
+            ObjectReference evidenceRef = SeverActionsNative.FindSuspiciousItem(DispatchGuard, 2000.0)
+            If evidenceRef == None
+                evidenceRef = SeverActionsNative.FindNearbyItemOfType(DispatchGuard, "", 2000.0)
+            EndIf
+
+            If evidenceRef != None
+                DispatchEvidenceItem = evidenceRef
+                DispatchEvidenceForm = evidenceRef.GetBaseObject()
+                DispatchEvidenceName = evidenceRef.GetDisplayName()
+                String itemName = DispatchEvidenceName
+                DebugMsg("Found world item: " + itemName + ", guard walking to it")
+
+                ; Set linked ref to the evidence item and apply travel package
+                PO3_SKSEFunctions.SetLinkedRef(DispatchGuard, evidenceRef, SeverActions_EscortTargetKeyword)
+                If SeverActions_DispatchTravel
+                    ActorUtil.AddPackageOverride(DispatchGuard, SeverActions_DispatchTravel, PackagePriority, 1)
+                    DispatchGuard.EvaluatePackage()
+                EndIf
+
+                ; Phase 4 will monitor guard walking to the item and picking it up
+                RegisterForSingleUpdate(UpdateInterval)
+                Return
+            EndIf
+        EndIf
+
+        If evidenceForm != None
+            ; We have a reason-generated item — guard "finds" it during the search
+            DispatchEvidenceForm = evidenceForm
+            DispatchEvidenceName = evidenceForm.GetName()
+            String itemName = DispatchEvidenceName
+            DebugMsg("Generated reason-based evidence on-screen: " + itemName)
+
+            ; Find a nearby container or furniture to walk to (makes it look like guard found it there)
+            ObjectReference searchTarget = SeverActionsNative.FindNearbyContainer(DispatchGuard, "", 2000.0)
+            If searchTarget != None
+                ; Walk guard to the container
+                PO3_SKSEFunctions.SetLinkedRef(DispatchGuard, searchTarget, SeverActions_EscortTargetKeyword)
+                If SeverActions_DispatchTravel
+                    ActorUtil.AddPackageOverride(DispatchGuard, SeverActions_DispatchTravel, PackagePriority, 1)
+                    DispatchGuard.EvaluatePackage()
+                EndIf
+
+                ; Wait for guard to reach the container (up to 10 seconds)
+                Int waitCount = 0
+                While waitCount < 20 && DispatchGuard.GetDistance(searchTarget) > 150.0
+                    Utility.Wait(0.5)
+                    waitCount += 1
+                EndWhile
+
+                ; Remove travel package
+                If SeverActions_DispatchTravel
+                    ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchTravel)
+                EndIf
+                PO3_SKSEFunctions.SetLinkedRef(DispatchGuard, None, SeverActions_EscortTargetKeyword)
+            EndIf
+
+            ; Play pickup animation and add item to inventory
+            Debug.SendAnimationEvent(DispatchGuard, "IdlePickupFromTableStart")
+            Utility.Wait(1.5)
+            DispatchGuard.AddItem(evidenceForm, 1, true)
+
+            ; Narrate the find
+            String narration = "*" + guardName + " rummages through " + targetName + "'s belongings and discovers " + itemName + ", tucking it away as evidence.*"
+            SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
+
+            String eventMsg = guardName + " found evidence (" + itemName + ") at " + targetName + "'s home."
+            SkyrimNetApi.RegisterPersistentEvent(eventMsg, DispatchGuard, DispatchTarget)
+
+            Debug.Notification(guardName + " collected evidence: " + itemName)
+
+            ; Short pause then start return journey
+            Utility.Wait(1.0)
+            StartDispatchReturnPhase()
+            Return
+        Else
+            ; No evidence at all — return empty-handed
+            DebugMsg("No evidence found at home (on-screen) - guard returning empty-handed")
+            String narration = "*" + guardName + " finishes searching " + targetName + "'s home but finds nothing of note.*"
+            SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
+        EndIf
+    Else
+        ; === OFF-SCREEN: Generate evidence based on investigation reason (or NPC class fallback) ===
+        Form evidenceForm = None
+        If DispatchInvestigationReason != ""
+            DebugMsg("Evidence collection: using investigation reason '" + DispatchInvestigationReason + "'")
+            evidenceForm = SeverActionsNative.GenerateEvidenceForReason(DispatchInvestigationReason, DispatchTarget)
+        Else
+            DebugMsg("Evidence collection: no reason provided, using NPC class")
+            evidenceForm = SeverActionsNative.GenerateContextualEvidence(DispatchTarget)
+        EndIf
+
+        If evidenceForm != None
+            DispatchEvidenceForm = evidenceForm
+            DispatchEvidenceName = evidenceForm.GetName()
+            String itemName = DispatchEvidenceName
+            DebugMsg("Generated contextual evidence: " + itemName)
+
+            ; Add the item directly to guard's inventory (player isn't watching)
+            DispatchGuard.AddItem(evidenceForm, 1, true)
+
+            ; Register persistent event so NPCs know about the evidence
+            String eventMsg = guardName + " found evidence (" + itemName + ") at " + targetName + "'s home."
+            SkyrimNetApi.RegisterPersistentEvent(eventMsg, DispatchGuard, DispatchTarget)
+        Else
+            DebugMsg("Could not generate contextual evidence - guard returning empty-handed")
+
+            String narration = "*" + guardName + " finishes searching " + targetName + "'s home but finds nothing of note.*"
+            SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
+        EndIf
+    EndIf
+
+    ; Short pause then start return journey
+    Utility.Wait(1.0)
+    StartDispatchReturnPhase()
+EndFunction
+
+Function CheckDispatchPhase4_Evidence()
+    {Phase 4: Guard walking to evidence item (on-screen) or completing pickup.
+     Monitors the guard's distance to the evidence item. When close enough,
+     guard picks it up and narrates, then transitions to return phase.}
+
+    ; If no evidence item was found, this is a fallback — just return
+    If DispatchEvidenceItem == None
+        DebugMsg("Phase 4: no evidence item target, starting return")
+        StartDispatchReturnPhase()
+        Return
+    EndIf
+
+    ; Check if guard is close enough to the evidence item to pick it up
+    Float dist = DispatchGuard.GetDistance(DispatchEvidenceItem)
+    DebugMsg("Phase 4: guard distance to evidence = " + dist)
+
+    If dist <= 150.0
+        ; Guard is at the item — pick it up with natural animation
+        String guardName = DispatchGuard.GetDisplayName()
+        String targetName = ""
+        If DispatchTarget != None
+            targetName = DispatchTarget.GetDisplayName()
+        EndIf
+        String itemName = DispatchEvidenceName
+
+        ; Remove travel package and linked ref
+        If SeverActions_DispatchTravel
+            ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchTravel)
+        EndIf
+        PO3_SKSEFunctions.SetLinkedRef(DispatchGuard, None, SeverActions_EscortTargetKeyword)
+
+        ; Use Activate for natural pickup animation (guard reaches down, item disappears)
+        ; This plays the same animation as when any actor picks up an item in the world
+        DispatchEvidenceItem.Activate(DispatchGuard)
+
+        ; Wait for the pickup animation to play, then verify item was collected
+        Utility.Wait(1.5)
+
+        ; Fallback: if Activate failed (ownership block, etc.), force AddItem
+        If !DispatchGuard.GetItemCount(DispatchEvidenceForm)
+            DebugMsg("Phase 4: Activate pickup failed, falling back to AddItem")
+            DispatchGuard.AddItem(DispatchEvidenceItem, 1, true)
+        EndIf
+
+        ; Narration: guard found evidence (player is watching, so narrate)
+        String narration = "*" + guardName + " picks up " + itemName + " as evidence from " + targetName + "'s home.*"
+        SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
+
+        ; Register persistent event so NPCs know about the evidence
+        String eventMsg = guardName + " found evidence (" + itemName + ") at " + targetName + "'s home."
+        SkyrimNetApi.RegisterPersistentEvent(eventMsg, DispatchGuard, DispatchTarget)
+
+        Debug.Notification(guardName + " collected evidence: " + itemName)
+
+        ; Short pause then start return journey
+        Utility.Wait(1.0)
+        StartDispatchReturnPhase()
+        Return
+    EndIf
+
+    ; Guard still walking — check for stuck
+    Int stuckLevel = SeverActionsNative.Stuck_CheckStatus(DispatchGuard, UpdateInterval, 30.0)
+    If stuckLevel >= 3
+        ; Guard hopelessly stuck trying to reach item — just grab it from distance
+        DebugMsg("Phase 4: guard stuck reaching evidence, force-picking up")
+
+        If SeverActions_DispatchTravel
+            ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchTravel)
+        EndIf
+        PO3_SKSEFunctions.SetLinkedRef(DispatchGuard, None, SeverActions_EscortTargetKeyword)
+
+        String guardName = DispatchGuard.GetDisplayName()
+        String targetName = ""
+        If DispatchTarget != None
+            targetName = DispatchTarget.GetDisplayName()
+        EndIf
+        String itemName = DispatchEvidenceName
+
+        DispatchGuard.AddItem(DispatchEvidenceItem, 1, true)
+
+        String narration = "*" + guardName + " picks up " + itemName + " as evidence from " + targetName + "'s home.*"
+        SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
+
+        String eventMsg = guardName + " found evidence (" + itemName + ") at " + targetName + "'s home."
+        SkyrimNetApi.RegisterPersistentEvent(eventMsg, DispatchGuard, DispatchTarget)
+
+        Debug.Notification(guardName + " collected evidence: " + itemName)
+
+        Utility.Wait(1.0)
+        StartDispatchReturnPhase()
+        Return
+    EndIf
+
+    RegisterForSingleUpdate(UpdateInterval)
+EndFunction
+
+Function CheckDispatchPhase5_Return()
+    {Phase 5: Guard returning with prisoner to sender or jail.
+     Tiered off-screen approach — trust AI first, nudge toward door second, teleport last.
+
+     Off-screen tiers:
+       Tier 0 (0-120s):   Trust AI — guard should pathfind through doors on their own
+       Tier 1 (120-180s): Door nudge — move guard near the exit door of their current interior
+       Tier 2 (180s+):    Teleport to destination and complete dispatch}
+
+    ; Rubber-band: snap prisoner back to guard if they drifted too far
+    TetherPrisonerToGuard()
+
+    Float dist
+    Int stuckLevel
+    Bool guardLoaded = DispatchGuard.Is3DLoaded()
+
+    If guardLoaded
+        ; --- On-screen: normal stuck detection and distance checks ---
+        If DispatchGuardOffScreen
+            DebugMsg("Guard back on-screen during return")
+            DispatchGuardOffScreen = false
+            DispatchOffScreenStartTime = 0.0
+            DispatchReturnOffScreenCycle = 0
+        EndIf
+
+        ; Check stuck detection
+        stuckLevel = SeverActionsNative.Stuck_CheckStatus(DispatchGuard, UpdateInterval, 50.0)
+        If stuckLevel >= 2
+            DispatchGuard.EvaluatePackage()
+            If DispatchTarget != None
+                DispatchTarget.EvaluatePackage()
+            EndIf
+            If stuckLevel >= 3 && DispatchReturnMarker != None
+                Float teleportDist = SeverActionsNative.Stuck_GetTeleportDistance(DispatchGuard)
+                DispatchGuard.MoveTo(DispatchReturnMarker, teleportDist, 0.0, 0.0, false)
+                If DispatchTarget != None
+                    DispatchTarget.MoveTo(DispatchGuard, 50.0, 0.0, 0.0, false)
+                EndIf
+                SeverActionsNative.Stuck_ResetEscalation(DispatchGuard)
+            EndIf
+        EndIf
+
+        ; Check arrival at return destination
+        ; Both must be 3D loaded — GetDistance returns 0 cross-cell which falsely triggers arrival
+        If DispatchReturnMarker != None && DispatchGuard.Is3DLoaded() && DispatchReturnMarker.Is3DLoaded()
+            dist = DispatchGuard.GetDistance(DispatchReturnMarker)
+            If dist <= DispatchArrivalDistance
+                DebugMsg("Guard arrived at return destination (dist=" + dist + ")")
+                CompleteDispatch()
+                Return
+            EndIf
+        EndIf
+    Else
+        ; --- Off-screen: tiered escalation ---
+        If !DispatchGuardOffScreen
+            DispatchGuardOffScreen = true
+            DispatchOffScreenStartTime = Utility.GetCurrentRealTime()
+            DebugMsg("Guard went off-screen during return (cycle " + DispatchReturnOffScreenCycle + ")")
+        EndIf
+
+        ; Always check: same interior cell as destination (instant arrival detection)
+        Cell guardCell = DispatchGuard.GetParentCell()
+        If DispatchReturnMarker != None
+            Cell destCell = DispatchReturnMarker.GetParentCell()
+            If guardCell != None && guardCell == destCell && guardCell.IsInterior()
+                DebugMsg("Guard reached return destination cell (off-screen interior)")
+                CompleteDispatch()
+                Return
+            EndIf
+        EndIf
+
+        ; Always check: snapshot distance to sender (works off-screen via position snapshots)
+        If DispatchSender != None
+            Float snapReturnDist = SeverActionsNative.GetDistanceBetweenActors(DispatchGuard, DispatchSender)
+            If snapReturnDist >= 0.0 && snapReturnDist <= DispatchArrivalDistance
+                DebugMsg("Snapshot distance: guard within " + snapReturnDist + " of sender (off-screen)")
+                CompleteDispatch()
+                Return
+            EndIf
+        EndIf
+
+        Float elapsedOffScreen = Utility.GetCurrentRealTime() - DispatchOffScreenStartTime
+
+        ; === TIER 0: Trust AI (first 120 seconds) ===
+        ; The guard has an approach package targeting the sender/jail. Skyrim's AI should
+        ; pathfind through load doors naturally. Give it 2 real minutes before intervening.
+        If elapsedOffScreen < 120.0
+            ; Just waiting — let the AI work. Log progress every ~30s.
+            If Math.Floor(elapsedOffScreen) as Int % 30 == 0 && Math.Floor(elapsedOffScreen) as Int > 0
+                DebugMsg("Return: trusting AI, " + elapsedOffScreen as Int + "s off-screen (cycle " + DispatchReturnOffScreenCycle + ")")
+            EndIf
+
+        ; === TIER 1: Door nudge (120-180 seconds) ===
+        ; AI hasn't gotten the guard out. If guard is in an interior, find the exit door
+        ; and move the guard near it so AI can path through more easily.
+        ElseIf elapsedOffScreen < 180.0 && DispatchReturnOffScreenCycle == 0
+            DebugMsg("Return Tier 1: door nudge at " + elapsedOffScreen as Int + "s")
+
+            If guardCell != None && guardCell.IsInterior()
+                ; Guard is stuck inside an interior — find the exit door
+                ObjectReference exitDoor = SeverActionsNative.FindExitDoorFromCell(DispatchGuard)
+                If exitDoor != None
+                    DebugMsg("Found exit door — nudging guard toward it")
+                    DispatchGuard.MoveTo(exitDoor, 100.0, 0.0, 0.0, false)
+                    If DispatchTarget != None
+                        DispatchTarget.MoveTo(DispatchGuard, 50.0, 0.0, 0.0, false)
+                    EndIf
+                    Utility.Wait(0.3)
+                    DispatchGuard.EvaluatePackage()
+                    If DispatchTarget != None
+                        DispatchTarget.EvaluatePackage()
+                    EndIf
+                Else
+                    DebugMsg("No exit door found in guard's cell — will escalate to teleport")
+                EndIf
+            Else
+                ; Guard is in exterior but off-screen — just re-evaluate packages
+                DispatchGuard.EvaluatePackage()
+                If DispatchTarget != None
+                    DispatchTarget.EvaluatePackage()
+                EndIf
+            EndIf
+
+            ; Mark that we've done Tier 1 so we don't repeat it
+            DispatchReturnOffScreenCycle = 1
+
+        ; === TIER 2: Teleport to destination (180+ seconds) ===
+        ; Guard has been off-screen for 3 minutes despite nudging. Give up on natural
+        ; pathfinding and teleport them near the return destination.
+        ElseIf elapsedOffScreen >= 180.0
+            DebugMsg("Return Tier 2: teleporting to destination at " + elapsedOffScreen as Int + "s (cycle " + DispatchReturnOffScreenCycle + ")")
+
+            If DispatchReturnMarker != None
+                ; Place guard close to destination (300 units) so they load into player's area
+                DispatchGuard.MoveTo(DispatchReturnMarker, 300.0, 0.0, 0.0, false)
+                If DispatchTarget != None
+                    DispatchTarget.MoveTo(DispatchGuard, 50.0, 0.0, 0.0, false)
+                EndIf
+                Utility.Wait(0.5)
+            EndIf
+
+            ; If this is the second teleport cycle, just complete — don't loop forever
+            If DispatchReturnOffScreenCycle >= 2
+                DebugMsg("Multiple off-screen cycles exhausted — force completing dispatch")
+                CompleteDispatch()
+                Return
+            EndIf
+
+            ; Reset off-screen timer for one more cycle, but track that we've teleported
+            DispatchReturnOffScreenCycle += 1
+            DispatchGuardOffScreen = false
+            DispatchOffScreenStartTime = 0.0
+            DebugMsg("Guard placed near return destination, checking if they load in")
+        EndIf
+    EndIf
+
+    RegisterForSingleUpdate(UpdateInterval)
+EndFunction
+
+Function CompleteDispatch()
+    {Called when dispatch is fully complete - guard delivered prisoner or returned with evidence.}
+
+    DebugMsg("Dispatch complete!")
+
+    ; Stop stuck tracking
+    SeverActionsNative.Stuck_StopTracking(DispatchGuard)
+
+    ; Restore normal NPC-NPC collision
+    SeverActionsNative.SetActorBumpable(DispatchGuard, true)
+
+    ; Restore guard combat AI
+    RestoreGuardCombatAI()
+
+    ; Restore guard's ability to talk to the player
+    If DispatchGuard != None
+        DispatchGuard.AllowPCDialogue(true)
+    EndIf
+
+    ; Ensure prisoner is near the guard (they should already be close from Phase 5)
+    If DispatchGuard != None && DispatchTarget != None
+        If DispatchTarget.Is3DLoaded() && DispatchGuard.Is3DLoaded()
+            If DispatchTarget.GetDistance(DispatchGuard) > 300.0
+                DispatchTarget.MoveTo(DispatchGuard, 50.0, 0.0, 0.0, false)
+            EndIf
+        EndIf
+        Utility.Wait(0.3)
+    EndIf
+
+    ; Remove all possible travel/escort packages and clear linked ref
+    If SeverActions_GuardEscortPackage
+        ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_GuardEscortPackage)
+    EndIf
+    If SeverActions_DispatchTravel
+        ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchTravel)
+    EndIf
+    If SeverActions_GuardApproachTarget
+        ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_GuardApproachTarget)
+    EndIf
+    PO3_SKSEFunctions.SetLinkedRef(DispatchGuard, None, SeverActions_EscortTargetKeyword)
+
+    ; Handle completion based on dispatch type
+    If DispatchIsHomeInvestigation
+        ; Home investigation complete - guard returned to sender with evidence
+        String guardName = DispatchGuard.GetDisplayName()
+        String senderName = ""
+        If DispatchSender != None
+            senderName = DispatchSender.GetDisplayName()
+        EndIf
+        String targetName = ""
+        If DispatchTarget != None
+            targetName = DispatchTarget.GetDisplayName()
+        EndIf
+
+        If DispatchEvidenceForm != None
+            String itemName = DispatchEvidenceName
+            DebugMsg("Guard returned to " + senderName + " with evidence: " + itemName)
+
+            ; Play give/offer animation before handing over evidence
+            Debug.SendAnimationEvent(DispatchGuard, "IdleHandsOutStart")
+            Utility.Wait(1.5)
+
+            ; Physically hand the item from guard to sender
+            If DispatchSender != None
+                DispatchGuard.RemoveItem(DispatchEvidenceForm, 1, true, DispatchSender)
+                DebugMsg("Transferred evidence item to " + senderName)
+            EndIf
+
+            ; Narrate the findings including investigation reason for context
+            String reasonContext = ""
+            If DispatchInvestigationReason != ""
+                reasonContext = " regarding " + DispatchInvestigationReason
+            EndIf
+
+            String narration = "*" + guardName + " returns to " + senderName + " and presents the evidence found at " + targetName + "'s home" + reasonContext + ": " + itemName + ". The guard explains where it was found and what it suggests.*"
+            SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchSender)
+
+            String eventMsg = guardName + " returned from searching " + targetName + "'s home" + reasonContext + " and brought back " + itemName + " as evidence."
+            SkyrimNetApi.RegisterPersistentEvent(eventMsg, DispatchGuard, DispatchSender)
+
+            Debug.Notification(guardName + " returned with evidence: " + itemName)
+
+            ; End give animation
+            Debug.SendAnimationEvent(DispatchGuard, "IdleStop")
+        Else
+            DebugMsg("Guard returned to " + senderName + " without evidence")
+
+            String reasonContext = ""
+            If DispatchInvestigationReason != ""
+                reasonContext = " regarding " + DispatchInvestigationReason
+            EndIf
+
+            String narration = "*" + guardName + " returns to " + senderName + " after searching " + targetName + "'s home" + reasonContext + ", reporting that nothing incriminating was found.*"
+            SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchSender)
+
+            String eventMsg = guardName + " returned from searching " + targetName + "'s home but found no evidence."
+            SkyrimNetApi.RegisterPersistentEvent(eventMsg, DispatchGuard, DispatchSender)
+
+            Debug.Notification(guardName + " found no evidence at " + targetName + "'s home")
+        EndIf
+    ElseIf DispatchSender != None && !DispatchSender.IsDead() && !DispatchIsHomeInvestigation
+        ; Returned prisoner to sender for judgment - enter judgment hold phase
+        Actor sender = DispatchSender
+        Actor prisoner = DispatchTarget
+        Actor guard = DispatchGuard
+        String senderName = sender.GetDisplayName()
+        String prisonerName = ""
+        If prisoner != None
+            prisonerName = prisoner.GetDisplayName()
+        EndIf
+        String guardName = guard.GetDisplayName()
+
+        DebugMsg("Guard returned prisoner " + prisonerName + " to " + senderName + " - entering judgment phase")
+
+        ; Narration: guard presents prisoner before the sender
+        String narration = "*" + guardName + " brings " + prisonerName + " before " + senderName + " for judgment. The prisoner stands restrained, awaiting their fate.*"
+        SkyrimNetApi.DirectNarration(narration, prisoner, sender)
+
+        ; Persistent event: sender now has the prisoner and can decide
+        String eventMsg = guardName + " has brought " + prisonerName + " before " + senderName + " for judgment. " + senderName + " can order them released or sent to jail."
+        SkyrimNetApi.RegisterPersistentEvent(eventMsg, prisoner, sender)
+
+        Debug.Notification(prisonerName + " awaits judgment from " + senderName)
+
+        ; Transition to judgment hold phase (Phase 6)
+        ; Do NOT clear dispatch state - we need guard, prisoner, and sender references
+        DispatchPhase = 6
+        JudgmentStartTime = Utility.GetCurrentRealTime()
+
+        ; Keep guard near sender — link guard to sender and apply follow package
+        PO3_SKSEFunctions.SetLinkedRef(guard, sender, SeverActions_EscortTargetKeyword)
+        If SeverActions_GuardFollowPlayer
+            ActorUtil.AddPackageOverride(guard, SeverActions_GuardFollowPlayer, PackagePriority, 1)
+            guard.EvaluatePackage()
+            DebugMsg("Judgment phase: guard following sender " + senderName)
+        EndIf
+
+        ; Keep monitoring for timeout
+        RegisterForSingleUpdate(UpdateInterval)
+        Return
+    ElseIf DispatchReturnMarker != None
+        ; Deliver to jail
+        CurrentGuard = DispatchGuard
+        CurrentPrisoner = DispatchTarget
+        CurrentJailMarker = DispatchReturnMarker
+        CurrentJailName = GetJailNameForGuard(DispatchGuard)
+        OnArrivedAtJail()
+    EndIf
+
+    ; Clear dispatch state
+    DispatchPhase = 0
+    DispatchTarget = None
+    DispatchGuard = None
+    DispatchReturnMarker = None
+    DispatchGuardOffScreen = false
+    DispatchTargetLocation = ""
+    DispatchGameTimeStart = 0.0
+    DispatchInitialDistance = 0.0
+    DispatchIsHomeInvestigation = false
+    DispatchInvestigationReason = ""
+    DispatchHomeMarker = None
+    DispatchSender = None
+    DispatchSandboxStartTime = 0.0
+    DispatchSandboxDuration = 0.0
+    DispatchEvidenceItem = None
+    DispatchEvidenceForm = None
+    DispatchEvidenceName = ""
+    DispatchReturnOffScreenCycle = 0
+    JudgmentStartTime = 0.0
+EndFunction
+
+Function CancelDispatch()
+    {Cancel an active dispatch and clean up all state.}
+
+    ; Stop stuck tracking, restore collision, and restore combat AI
+    If DispatchGuard != None
+        SeverActionsNative.Stuck_StopTracking(DispatchGuard)
+        SeverActionsNative.SetActorBumpable(DispatchGuard, true)
+    EndIf
+    RestoreGuardCombatAI()
+
+    ; Unregister from sandbox manager if in sandbox phase
+    If DispatchIsHomeInvestigation && DispatchGuard != None
+        SeverActionsNative.UnregisterSandboxUser(DispatchGuard)
+    EndIf
+
+    ; Remove all possible dispatch packages and restore dialogue
+    If DispatchGuard != None
+        DispatchGuard.AllowPCDialogue(true)
+
+        If SeverActions_DispatchTravel
+            ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchTravel)
+        EndIf
+        If SeverActions_GuardApproachTarget
+            ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_GuardApproachTarget)
+        EndIf
+        If SeverActions_GuardEscortPackage
+            ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_GuardEscortPackage)
+        EndIf
+        If SeverActions_PrisonerSandBox
+            ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_PrisonerSandBox)
+        EndIf
+        PO3_SKSEFunctions.SetLinkedRef(DispatchGuard, None, SeverActions_EscortTargetKeyword)
+        DispatchGuard.EvaluatePackage()
+    EndIf
+
+    ; Clean up prisoner if they were arrested during this dispatch (Phase 5 = escorting)
+    If !DispatchIsHomeInvestigation && DispatchTarget != None
+        If SeverActions_FollowGuard_Prisoner
+            ActorUtil.RemovePackageOverride(DispatchTarget, SeverActions_FollowGuard_Prisoner)
+        EndIf
+        PO3_SKSEFunctions.SetLinkedRef(DispatchTarget, None, SeverActions_EscortTargetKeyword)
+        ReleasePrisoner(DispatchTarget)
+        DispatchTarget.EvaluatePackage()
+    EndIf
+
+    ; Clear aliases
+    ArrestTarget.Clear()
+    ArrestingGuard.Clear()
+    JailDestination.Clear()
+
+    ; Clear state
+    DispatchPhase = 0
+    DispatchTarget = None
+    DispatchGuard = None
+    DispatchReturnMarker = None
+    DispatchGuardOffScreen = false
+    DispatchTargetLocation = ""
+    DispatchGameTimeStart = 0.0
+    DispatchInitialDistance = 0.0
+    DispatchIsHomeInvestigation = false
+    DispatchInvestigationReason = ""
+    DispatchHomeMarker = None
+    DispatchSender = None
+    DispatchSandboxStartTime = 0.0
+    DispatchSandboxDuration = 0.0
+    DispatchEvidenceItem = None
+    DispatchEvidenceForm = None
+    DispatchEvidenceName = ""
+    JudgmentStartTime = 0.0
+
+    DebugMsg("Dispatch canceled")
+EndFunction
+
+Actor Function FindNearestGuard(Actor akNearActor)
+    {Find the nearest guard near the given actor.
+     Searches loaded actors for NPCs in an actual guard faction (NOT crime faction).
+     Crime factions include all citizens in a hold, while guard factions are specific to guards.
+     Returns None if no guard is found nearby.}
+
+    If akNearActor == None
+        Return None
+    EndIf
+
+    ; Search nearby NPCs for guards
+    Actor nearestGuard = None
+    Float nearestDist = 3000.0  ; Max search radius
+
+    ; Use actual guard factions (NOT crime factions which include all citizens)
+    Faction[] guardFactions = new Faction[9]
+    guardFactions[0] = GuardFactionWhiterun
+    guardFactions[1] = GuardFactionRiften
+    guardFactions[2] = GuardFactionSolitude
+    guardFactions[3] = GuardFactionHaafingar
+    guardFactions[4] = GuardFactionWindhelm
+    guardFactions[5] = GuardFactionMarkarth
+    guardFactions[6] = GuardFactionFalkreath
+    guardFactions[7] = GuardFactionDawnstar
+    guardFactions[8] = GuardFactionWinterhold
+
+    ; Search the cell the given actor is in
+    Cell currentCell = akNearActor.GetParentCell()
+
+    If currentCell == None
+        Return None
+    EndIf
+
+    ; Search references in the current cell for guards
+    Int numRefs = currentCell.GetNumRefs(43)  ; 43 = kNPC type
+    Int i = 0
+    While i < numRefs
+        ObjectReference ref = currentCell.GetNthRef(i, 43)
+        Actor candidate = ref as Actor
+        If candidate != None && candidate != akNearActor && !candidate.IsDead() && !candidate.IsInCombat()
+            ; Check if this NPC is in any guard faction (actual guards only)
+            Int fIdx = 0
+            While fIdx < guardFactions.Length
+                If guardFactions[fIdx] != None && candidate.IsInFaction(guardFactions[fIdx])
+                    Float dist = akNearActor.GetDistance(candidate)
+                    If dist < nearestDist
+                        nearestDist = dist
+                        nearestGuard = candidate
+                    EndIf
+                    fIdx = guardFactions.Length  ; Break inner loop
+                EndIf
+                fIdx += 1
+            EndWhile
+        EndIf
+        i += 1
+    EndWhile
+
+    If nearestGuard != None
+        DebugMsg("Found nearest guard: " + nearestGuard.GetDisplayName() + " at distance " + nearestDist)
+    Else
+        DebugMsg("No guard found near " + akNearActor.GetDisplayName())
+    EndIf
+
+    Return nearestGuard
+EndFunction
+
+String Function GetNPCLocation(String npcName)
+    {Get the current location name of an NPC by name.
+     Utility function for SkyrimNet prompts/decorators.}
+
+    If !SeverActionsNative.IsActorFinderReady()
+        Return "unknown"
+    EndIf
+
+    Actor npc = SeverActionsNative.FindActorByName(npcName)
+    If npc == None
+        Return "not found"
+    EndIf
+
+    Return SeverActionsNative.GetActorLocationName(npc)
+EndFunction
+
+; =============================================================================
+; JUDGMENT HOLD - Sender decides prisoner's fate (Phase 6)
+; After a guard brings a prisoner back to the sender, the sender can:
+;   - OrderRelease: free the prisoner (uncuff, restore, back to normal)
+;   - OrderJailed: send the prisoner to jail (guard starts standard escort)
+; If neither fires within JudgmentTimeLimit, defaults to jail.
+; =============================================================================
+
+Function CheckJudgmentProgress()
+    {Check if judgment hold has timed out or participants became invalid.
+     Called from CheckDispatchProgress when DispatchPhase == 6.}
+
+    ; Validate participants
+    If DispatchGuard == None || DispatchGuard.IsDead()
+        DebugMsg("Judgment: Guard died or invalid, releasing prisoner")
+        EndJudgment(true)
+        Return
+    EndIf
+
+    If DispatchTarget == None || DispatchTarget.IsDead()
+        DebugMsg("Judgment: Prisoner died or invalid, ending judgment")
+        EndJudgment(false)
+        Return
+    EndIf
+
+    If DispatchSender == None || DispatchSender.IsDead()
+        DebugMsg("Judgment: Sender died or invalid, defaulting to jail")
+        EndJudgment(false)
+        Return
+    EndIf
+
+    ; Check timeout
+    Float elapsed = Utility.GetCurrentRealTime() - JudgmentStartTime
+    If elapsed >= JudgmentTimeLimit
+        DebugMsg("Judgment timed out after " + elapsed + "s - defaulting to jail")
+
+        String senderName = DispatchSender.GetDisplayName()
+        String prisonerName = DispatchTarget.GetDisplayName()
+        String guardName = DispatchGuard.GetDisplayName()
+
+        String narration = "*" + senderName + " grows tired of deliberating. " + guardName + " takes hold of " + prisonerName + " and begins leading them away to jail.*"
+        SkyrimNetApi.DirectNarration(narration, DispatchTarget, DispatchSender)
+
+        String eventMsg = senderName + " did not reach a decision. " + prisonerName + " will be taken to jail by default."
+        SkyrimNetApi.RegisterPersistentEvent(eventMsg, DispatchTarget, DispatchSender)
+
+        Debug.Notification(senderName + " lost patience - " + prisonerName + " sent to jail")
+
+        EndJudgment(false)
+        Return
+    EndIf
+
+    ; Still waiting for sender's decision
+    RegisterForSingleUpdate(UpdateInterval)
+EndFunction
+
+Bool Function OrderRelease_Execute(Actor akSender)
+    {Sender orders the prisoner released. Called by SkyrimNet when the sender
+     decides to show mercy or accepts the prisoner's plea.
+     akSender: The NPC giving the release order (must be the dispatch sender, or the guard if sender is player)
+     Returns true if the prisoner was released.}
+
+    If DispatchPhase != 6
+        DebugMsg("ERROR: OrderRelease called but not in judgment phase (phase " + DispatchPhase + ")")
+        Return false
+    EndIf
+
+    If akSender == None
+        DebugMsg("ERROR: OrderRelease called with None sender")
+        Return false
+    EndIf
+
+    ; If the player is the dispatch sender, accept the guard as the caller acting on the player's behalf
+    Bool validCaller = (akSender == DispatchSender)
+    If !validCaller && DispatchSender == Game.GetPlayer() && akSender == DispatchGuard
+        validCaller = true
+        DebugMsg("OrderRelease: Guard " + akSender.GetDisplayName() + " acting on player's behalf")
+    EndIf
+
+    If !validCaller
+        DebugMsg("ERROR: OrderRelease called by wrong sender (" + akSender.GetDisplayName() + " vs " + DispatchSender.GetDisplayName() + ")")
+        Return false
+    EndIf
+
+    If DispatchTarget == None || DispatchGuard == None
+        DebugMsg("ERROR: OrderRelease - invalid state")
+        EndJudgment(true)
+        Return false
+    EndIf
+
+    String senderName = DispatchSender.GetDisplayName()
+    String prisonerName = DispatchTarget.GetDisplayName()
+    String guardName = DispatchGuard.GetDisplayName()
+
+    DebugMsg(senderName + " ordered release of " + prisonerName)
+
+    ; Narration: sender orders the guard to release the prisoner
+    String narration = "*" + senderName + " raises a hand, halting " + guardName + ". " + prisonerName + " is released from restraints.*"
+    SkyrimNetApi.DirectNarration(narration, DispatchTarget, DispatchSender)
+
+    ; Persistent event
+    String eventMsg = senderName + " ordered " + prisonerName + " released."
+    SkyrimNetApi.RegisterPersistentEvent(eventMsg, DispatchTarget, DispatchSender)
+
+    Debug.Notification(prisonerName + " has been released")
+
+    EndJudgment(true)
+    Return true
+EndFunction
+
+Bool Function OrderJailed_Execute(Actor akSender)
+    {Sender orders the prisoner taken to jail. Called by SkyrimNet when the sender
+     decides the prisoner deserves imprisonment.
+     akSender: The NPC giving the jail order (must be the dispatch sender, or the guard if sender is player)
+     Returns true if the prisoner was sent to jail.}
+
+    If DispatchPhase != 6
+        DebugMsg("ERROR: OrderJailed called but not in judgment phase (phase " + DispatchPhase + ")")
+        Return false
+    EndIf
+
+    If akSender == None
+        DebugMsg("ERROR: OrderJailed called with None sender")
+        Return false
+    EndIf
+
+    ; If the player is the dispatch sender, accept the guard as the caller acting on the player's behalf
+    Bool validCaller = (akSender == DispatchSender)
+    If !validCaller && DispatchSender == Game.GetPlayer() && akSender == DispatchGuard
+        validCaller = true
+        DebugMsg("OrderJailed: Guard " + akSender.GetDisplayName() + " acting on player's behalf")
+    EndIf
+
+    If !validCaller
+        DebugMsg("ERROR: OrderJailed called by wrong sender (" + akSender.GetDisplayName() + " vs " + DispatchSender.GetDisplayName() + ")")
+        Return false
+    EndIf
+
+    If DispatchTarget == None || DispatchGuard == None
+        DebugMsg("ERROR: OrderJailed - invalid state")
+        EndJudgment(false)
+        Return false
+    EndIf
+
+    String senderName = DispatchSender.GetDisplayName()
+    String prisonerName = DispatchTarget.GetDisplayName()
+    String guardName = DispatchGuard.GetDisplayName()
+
+    DebugMsg(senderName + " ordered " + prisonerName + " taken to jail")
+
+    ; Narration: sender orders the guard to take the prisoner away
+    String narration = "*" + senderName + " shakes their head. " + guardName + " tightens their grip on " + prisonerName + " and begins leading them away.*"
+    SkyrimNetApi.DirectNarration(narration, DispatchTarget, DispatchSender)
+
+    ; Persistent event
+    String eventMsg = senderName + " ordered " + prisonerName + " taken to jail."
+    SkyrimNetApi.RegisterPersistentEvent(eventMsg, DispatchTarget, DispatchSender)
+
+    Debug.Notification(prisonerName + " will be taken to jail")
+
+    EndJudgment(false)
+    Return true
+EndFunction
+
+Function EndJudgment(Bool released)
+    {End the judgment hold and either release the prisoner or escort them to jail.
+     released: true = free the prisoner, false = escort to jail.
+     Cleans up dispatch state either way.}
+
+    Actor prisoner = DispatchTarget
+    Actor guard = DispatchGuard
+
+    If released
+        ; --- RELEASE: Undo all restraint and clean up ---
+        DebugMsg("Judgment ended: releasing " + prisoner.GetDisplayName())
+
+        ; Remove guard packages
+        If guard != None
+            If SeverActions_GuardApproachTarget
+                ActorUtil.RemovePackageOverride(guard, SeverActions_GuardApproachTarget)
+            EndIf
+            If SeverActions_GuardEscortPackage
+                ActorUtil.RemovePackageOverride(guard, SeverActions_GuardEscortPackage)
+            EndIf
+            If SeverActions_DispatchTravel
+                ActorUtil.RemovePackageOverride(guard, SeverActions_DispatchTravel)
+            EndIf
+            If SeverActions_GuardFollowPlayer
+                ActorUtil.RemovePackageOverride(guard, SeverActions_GuardFollowPlayer)
+            EndIf
+            PO3_SKSEFunctions.SetLinkedRef(guard, None, SeverActions_EscortTargetKeyword)
+            guard.AllowPCDialogue(true)
+            guard.EvaluatePackage()
+        EndIf
+
+        ; Release the prisoner (removes factions, cuffs, linked ref, restores AVs)
+        If prisoner != None
+            ReleasePrisoner(prisoner)
+        EndIf
+
+        ; Clear aliases
+        ArrestTarget.Clear()
+        ArrestingGuard.Clear()
+        JailDestination.Clear()
+
+        ; Clear all dispatch state
+        DispatchPhase = 0
+        DispatchTarget = None
+        DispatchGuard = None
+        DispatchReturnMarker = None
+        DispatchGuardOffScreen = false
+        DispatchTargetLocation = ""
+        DispatchGameTimeStart = 0.0
+        DispatchInitialDistance = 0.0
+        DispatchIsHomeInvestigation = false
+        DispatchInvestigationReason = ""
+        DispatchHomeMarker = None
+        DispatchSender = None
+        DispatchSandboxStartTime = 0.0
+        DispatchSandboxDuration = 0.0
+        DispatchEvidenceItem = None
+        DispatchEvidenceForm = None
+        DispatchEvidenceName = ""
+        JudgmentStartTime = 0.0
+    Else
+        ; --- JAIL: Hand off to standard escort pipeline ---
+        DebugMsg("Judgment ended: sending " + prisoner.GetDisplayName() + " to jail")
+
+        ; Remove approach and follow packages (used during return to sender and judgment)
+        If guard != None
+            If SeverActions_GuardApproachTarget
+                ActorUtil.RemovePackageOverride(guard, SeverActions_GuardApproachTarget)
+            EndIf
+            If SeverActions_GuardFollowPlayer
+                ActorUtil.RemovePackageOverride(guard, SeverActions_GuardFollowPlayer)
+            EndIf
+            PO3_SKSEFunctions.SetLinkedRef(guard, None, SeverActions_EscortTargetKeyword)
+        EndIf
+
+        ; Determine jail destination
+        ObjectReference jailMarker = GetJailMarkerForGuard(guard)
+        String jailName = GetJailNameForGuard(guard)
+
+        If jailMarker != None && guard != None && prisoner != None
+            ; Set up standard arrest state for escort
+            CurrentGuard = guard
+            CurrentPrisoner = prisoner
+            CurrentJailMarker = jailMarker
+            CurrentJailName = jailName
+
+            ; Clear dispatch state BEFORE starting escort (escort uses its own state)
+            DispatchPhase = 0
+            DispatchTarget = None
+            DispatchGuard = None
+            DispatchReturnMarker = None
+            DispatchGuardOffScreen = false
+            DispatchTargetLocation = ""
+            DispatchGameTimeStart = 0.0
+            DispatchInitialDistance = 0.0
+            DispatchIsHomeInvestigation = false
+            DispatchInvestigationReason = ""
+            DispatchHomeMarker = None
+            DispatchSender = None
+            DispatchSandboxStartTime = 0.0
+            DispatchSandboxDuration = 0.0
+            DispatchEvidenceItem = None
+            DispatchEvidenceForm = None
+            DispatchEvidenceName = ""
+            JudgmentStartTime = 0.0
+
+            ; Clear aliases before escort re-fills them
+            ArrestTarget.Clear()
+            ArrestingGuard.Clear()
+            JailDestination.Clear()
+
+            ; Start standard escort phase
+            StartEscortPhase()
+        Else
+            ; Fallback: release if we can't find jail
+            DebugMsg("ERROR: Could not determine jail for guard, releasing prisoner")
+            If prisoner != None
+                ReleasePrisoner(prisoner)
+            EndIf
+            If guard != None
+                guard.AllowPCDialogue(true)
+                If SeverActions_GuardApproachTarget
+                    ActorUtil.RemovePackageOverride(guard, SeverActions_GuardApproachTarget)
+                EndIf
+                guard.EvaluatePackage()
+            EndIf
+
+            ; Clear aliases
+            ArrestTarget.Clear()
+            ArrestingGuard.Clear()
+            JailDestination.Clear()
+
+            ; Clear all dispatch state
+            DispatchPhase = 0
+            DispatchTarget = None
+            DispatchGuard = None
+            DispatchReturnMarker = None
+            DispatchGuardOffScreen = false
+            DispatchTargetLocation = ""
+            DispatchGameTimeStart = 0.0
+            DispatchInitialDistance = 0.0
+            DispatchIsHomeInvestigation = false
+            DispatchInvestigationReason = ""
+            DispatchHomeMarker = None
+            DispatchSender = None
+            DispatchSandboxStartTime = 0.0
+            DispatchSandboxDuration = 0.0
+            DispatchEvidenceItem = None
+            DispatchEvidenceForm = None
+            DispatchEvidenceName = ""
+            JudgmentStartTime = 0.0
+        EndIf
+    EndIf
+EndFunction
+

@@ -201,19 +201,24 @@ EndFunction
 
 Function InitializeTravelSystem(Bool isFirstInit)
     Debug.Trace("[SeverActions] Initializing Travel System...")
-    
+
     SeverActions_Travel travel = GetTravelSystem()
-    
+
     If travel
-        ; The travel script now handles its own initialization in OnInit/OnPlayerLoadGame
-        ; We just need to ensure the database is loaded (safe to call multiple times)
-        travel.ForceReloadDatabase()
-        
+        ; Native LocationResolver auto-initializes on kDataLoaded
+        ; Just verify it's ready and show status
+        If SeverActionsNative.IsLocationResolverReady()
+            Int locCount = SeverActionsNative.GetLocationCount()
+            Debug.Trace("[SeverActions] Travel System ready - " + locCount + " locations indexed natively")
+        Else
+            Debug.Trace("[SeverActions] WARNING: Native LocationResolver not yet initialized")
+        EndIf
+
         ; Show status for debugging
         If travel.EnableDebugMessages
             travel.ShowStatus()
         EndIf
-        
+
         Debug.Trace("[SeverActions] Travel System initialized successfully")
     Else
         Debug.Trace("[SeverActions] WARNING: Travel System not found!")

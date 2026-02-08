@@ -1,0 +1,36 @@
+name: OrderJailed
+description: "Order a prisoner to be taken to jail. The sender commands the guard to escort
+  the prisoner to the nearest hold jail cell.
+
+  This action is only available when a guard has just brought a prisoner before the
+  sender for judgment (after a DispatchGuardToArrest with a sender). The prisoner is
+  standing in cuffs, the guard is holding them, and the sender makes the call.
+
+  Use this action when:
+  - The sender decides the prisoner deserves imprisonment
+  - The prisoner's plea was unconvincing
+  - The sender wants to punish the prisoner for their crime
+  - The sender rejects any arguments for leniency
+
+  Do NOT use this action when:
+  - No prisoner has been brought before the speaker for judgment
+  - The speaker is not the person who ordered the arrest
+  - The speaker wants to release the prisoner (use OrderRelease instead)
+  - The prisoner is already in jail or already released"
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: OrderJailed_Execute
+parameterMapping:
+  - type: speaker
+    name: akSender
+    description: The person who ordered the arrest and is now deciding the prisoner's fate
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

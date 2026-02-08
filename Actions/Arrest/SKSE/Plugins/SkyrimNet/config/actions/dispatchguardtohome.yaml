@@ -1,0 +1,92 @@
+name: DispatchGuardToHome
+description: "A guard dispatches themselves to search an NPC's home for evidence. The guard
+  will travel to the target NPC's home, spend time searching through their belongings,
+  pick up an item as evidence, and then return to whoever sent them.
+
+  The guard physically walks the entire journey - to the home, investigates inside,
+  collects evidence, and walks all the way back.
+
+  Use this action when:
+  - A guard wants to search someone's home for evidence of a crime
+  - A guard has been ordered to investigate an NPC's residence
+  - A guard needs to collect evidence from a suspect's home
+  - Information about a crime leads a guard to search a home for proof
+  - A Jarl or authority figure orders a home search
+
+  Do NOT use this action when:
+  - The guard wants to arrest someone directly (use ArrestNPC or DispatchGuardToArrest)
+  - The target is the player (cannot search player's home)
+  - The guard doesn't know whose home to search"
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: DispatchGuardToHome_Execute
+parameterMapping:
+  - type: speaker
+    name: akGuard
+    description: The guard being dispatched to search the home
+  - type: dynamic
+    name: targetName
+    description: "The full name of the NPC whose home to search (e.g. 'Hulda', 'Nazeem', 'Belethor').
+      Must be the display name of a unique NPC in the game world."
+  - type: dynamic
+    name: senderName
+    description: "The full name of the NPC who ordered the home search (e.g. 'Balgruuf the Greater',
+      'Irileth', 'Proventus Avenicci'). The guard will return to this person with any
+      evidence found. Must be the display name of an NPC in the game world."
+  - type: dynamic
+    name: reason
+    description: "The reason for the investigation - what the suspect is accused of or what the guard
+      is looking for. This determines what kind of evidence the guard finds. Examples:
+      'dibella worship', 'thieving', 'skooma dealing', 'necromancy', 'daedra worship',
+      'poisoning', 'weapon smuggling', 'talos worship', 'vampire activity', 'forsworn ties'.
+      Be specific about the nature of the suspicion so the guard finds relevant evidence."
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWhiterun"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionRiften"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionSolitude"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionHaafingar"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWindhelm"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionMarkarth"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionFalkreath"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionDawnstar"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWinterhold"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "OR"
+    required: true
+eventString: "{{ actor.name }} has been dispatched to search {{ targetName }}'s home for evidence related to {{ reason }}"

@@ -88,6 +88,8 @@ Faction Property DLC1VampireFaction Auto
 ; SeverCombat_WasSurrendered - Int (1 = this actor has surrendered)
 ; SeverCombat_OriginalFaction - Form (the hostile faction they were removed from)
 ; SeverCombat_OriginalFactions - FormList ID (if they were in multiple hostile factions)
+; SeverCombat_NeedsAggroRestore - Int (1 = aggression was zeroed, needs delayed restore)
+; SeverCombat_CeasefirePartner - Form (the other actor in the ceasefire pair)
 ;
 ; DEPRECATED KEYS (cleaned up for backwards compatibility):
 ; - SeverCombat_AddedToFaction - No longer used, we don't add to combat factions anymore
@@ -102,6 +104,14 @@ SeverActions_Combat Function GetInstance() Global
     Quest kQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
     Return kQuest as SeverActions_Combat
 EndFunction
+
+; ============================================================================
+; CEASEFIRE DELAYED RESTORE STATE
+; ============================================================================
+
+; Actors that need aggression restored after ceasefire cooldown expires
+Actor CeasefireActor1
+Actor CeasefireActor2
 
 ; ============================================================================
 ; MAIN ATTACK FUNCTION
@@ -197,31 +207,87 @@ EndFunction
 ; ============================================================================
 
 Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
-{Forces two actors to stop fighting each other and restores their relationship.}
-    
+{Forces two actors to stop fighting each other and restores their relationship.
+ CRITICAL: Must zero Aggression BEFORE calling StopCombat, otherwise the engine
+ immediately re-enters combat on EvaluatePackage for hostile-faction NPCs.
+ Aggression is restored after a delay to allow the ceasefire to "stick".}
+
     If !akActor1
         Debug.Trace("[SeverCombat] CeaseFire: Actor1 is None")
         Return
     EndIf
-    
+
     Debug.Trace("[SeverCombat] CeaseFire: " + akActor1.GetDisplayName() + " and " + akActor2.GetDisplayName())
-    
-    ; Stop combat for both
-    akActor1.StopCombatAlarm()
-    akActor1.StopCombat()
-    
-    If akActor2
-        akActor2.StopCombatAlarm()
-        akActor2.StopCombat()
-    EndIf
-    
+
     ; Get stored combat target if akActor2 wasn't provided
     Actor akStoredTarget = akActor2
     If !akStoredTarget
         akStoredTarget = StorageUtil.GetFormValue(akActor1, "SeverCombat_CombatTarget") as Actor
     EndIf
-    
-    ; Clean up deprecated faction memberships (backwards compatibility)
+
+    ; ========================================================================
+    ; STEP 1: Store original aggression BEFORE we zero it
+    ; This is critical - we need to save what they were before the ceasefire
+    ; ========================================================================
+    Float origAggression1 = akActor1.GetActorValue("Aggression")
+    StorageUtil.SetFloatValue(akActor1, "SeverCombat_OriginalAggression", origAggression1)
+    Debug.Trace("[SeverCombat] Stored aggression for " + akActor1.GetDisplayName() + ": " + origAggression1)
+
+    If akStoredTarget
+        Float origAggression2 = akStoredTarget.GetActorValue("Aggression")
+        StorageUtil.SetFloatValue(akStoredTarget, "SeverCombat_OriginalAggression", origAggression2)
+        Debug.Trace("[SeverCombat] Stored aggression for " + akStoredTarget.GetDisplayName() + ": " + origAggression2)
+    EndIf
+
+    ; ========================================================================
+    ; STEP 2: Zero aggression BEFORE stopping combat
+    ; Without this, StopCombat + EvaluatePackage immediately re-triggers combat
+    ; because hostile factions (BanditFaction etc.) + Aggression > 0 = attack on sight
+    ; ========================================================================
+    akActor1.SetActorValue("Aggression", 0)
+    If akStoredTarget
+        akStoredTarget.SetActorValue("Aggression", 0)
+    EndIf
+
+    ; ========================================================================
+    ; STEP 3: Stop combat for both (now safe - aggression is 0)
+    ; ========================================================================
+    akActor1.StopCombatAlarm()
+    akActor1.StopCombat()
+
+    If akStoredTarget
+        akStoredTarget.StopCombatAlarm()
+        akStoredTarget.StopCombat()
+    EndIf
+
+    ; ========================================================================
+    ; STEP 4: Set temporary positive relationship to override faction hostility
+    ; Faction disposition (BanditFaction = Enemy to Player) can override
+    ; individual relationship ranks, but rank 1+ helps prevent re-aggro
+    ; ========================================================================
+    If akStoredTarget
+        ; Store original relationship ranks for later restore
+        Int origRankA1 = StorageUtil.GetIntValue(akActor1, "SeverCombat_OriginalRelationship", 0)
+        Int origRankA2 = StorageUtil.GetIntValue(akStoredTarget, "SeverCombat_OriginalRelationship", 0)
+
+        ; If they were enemies (e.g. from AttackTarget setting -4), bump to neutral/friendly
+        ; If they were already neutral or friendly, leave as-is
+        If origRankA1 < 0
+            akActor1.SetRelationshipRank(akStoredTarget, 0)
+        Else
+            akActor1.SetRelationshipRank(akStoredTarget, origRankA1)
+        EndIf
+
+        If origRankA2 < 0
+            akStoredTarget.SetRelationshipRank(akActor1, 0)
+        Else
+            akStoredTarget.SetRelationshipRank(akActor1, origRankA2)
+        EndIf
+    EndIf
+
+    ; ========================================================================
+    ; STEP 5: Clean up deprecated faction memberships (backwards compatibility)
+    ; ========================================================================
     If CombatAggressorFaction && StorageUtil.GetIntValue(akActor1, "SeverCombat_AddedToFaction", 0) == 1
         akActor1.RemoveFromFaction(CombatAggressorFaction)
         StorageUtil.UnsetIntValue(akActor1, "SeverCombat_AddedToFaction")
@@ -230,7 +296,7 @@ Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
         akActor1.RemoveFromFaction(CombatVictimFaction)
         StorageUtil.UnsetIntValue(akActor1, "SeverCombat_AddedToVictimFaction")
     EndIf
-    
+
     If akStoredTarget
         If CombatAggressorFaction && StorageUtil.GetIntValue(akStoredTarget, "SeverCombat_AddedToFaction", 0) == 1
             akStoredTarget.RemoveFromFaction(CombatAggressorFaction)
@@ -241,42 +307,56 @@ Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
             StorageUtil.UnsetIntValue(akStoredTarget, "SeverCombat_AddedToVictimFaction")
         EndIf
     EndIf
-    
-    ; Restore original values for both
+
+    ; Restore confidence (but NOT aggression - that stays at 0 for now)
     RestoreOriginalValues(akActor1)
     If akStoredTarget
         RestoreOriginalValues(akStoredTarget)
     EndIf
-    
-    ; Restore original relationships if we have a stored target
-    If akStoredTarget
-        Int origRankA1 = StorageUtil.GetIntValue(akActor1, "SeverCombat_OriginalRelationship", 0)
-        Int origRankA2 = StorageUtil.GetIntValue(akStoredTarget, "SeverCombat_OriginalRelationship", 0)
-        akActor1.SetRelationshipRank(akStoredTarget, origRankA1)
-        akStoredTarget.SetRelationshipRank(akActor1, origRankA2)
-    EndIf
-    
+
     ; Clear all combat state
     ClearAllCombatState(akActor1)
     If akStoredTarget
         ClearAllCombatState(akStoredTarget)
     EndIf
-    
+
     ; Set ceasefire timestamp for prompt awareness (same format as gameTimeNumeric)
     Float ceasefireTime = Utility.GetCurrentGameTime() * 24 * 3631
     StorageUtil.SetFloatValue(akActor1, "SeverCombat_CeasefireTime", ceasefireTime)
     If akStoredTarget
         StorageUtil.SetFloatValue(akStoredTarget, "SeverCombat_CeasefireTime", ceasefireTime)
     EndIf
-    
+
     ; Apply cooldown
     ApplyCooldown(akActor1, akStoredTarget)
-    
-    ; Force AI to re-evaluate
+
+    ; ========================================================================
+    ; STEP 6: Force AI re-evaluate (safe now - aggression is 0)
+    ; ========================================================================
     akActor1.EvaluatePackage()
     If akStoredTarget
         akStoredTarget.EvaluatePackage()
     EndIf
+
+    ; ========================================================================
+    ; STEP 7: Mark actors for delayed aggression restore
+    ; After CombatCooldownDuration seconds, aggression will be restored
+    ; so they don't stay permanently pacified
+    ; ========================================================================
+    StorageUtil.SetFormValue(akActor1, "SeverCombat_CeasefirePartner", akStoredTarget)
+    StorageUtil.SetIntValue(akActor1, "SeverCombat_NeedsAggroRestore", 1)
+    If akStoredTarget
+        StorageUtil.SetFormValue(akStoredTarget, "SeverCombat_CeasefirePartner", akActor1)
+        StorageUtil.SetIntValue(akStoredTarget, "SeverCombat_NeedsAggroRestore", 1)
+    EndIf
+
+    ; Register a delayed callback to restore aggression after cooldown
+    ; We use a RegisterForSingleUpdate on the quest itself
+    CeasefireActor1 = akActor1
+    CeasefireActor2 = akStoredTarget
+    RegisterForSingleUpdate(CombatCooldownDuration)
+
+    Debug.Trace("[SeverCombat] CeaseFire complete - aggression zeroed, will restore in " + CombatCooldownDuration + "s")
 EndFunction
 
 Bool Function CeaseFire_IsEligible(Actor akActor1, Actor akActor2)
@@ -851,5 +931,67 @@ Bool Function FullCleanup_IsEligible(Actor akActor)
 EndFunction
 
 Event OnPlayerLoadGame()
-    ; Nothing special needed - StorageUtil persists
+    ; Check if there are actors that need aggression restored from a ceasefire
+    ; that was in progress when the game was saved
+    If CeasefireActor1 && StorageUtil.GetIntValue(CeasefireActor1, "SeverCombat_NeedsAggroRestore", 0) == 1
+        Debug.Trace("[SeverCombat] Game loaded with pending ceasefire restore, scheduling...")
+        RegisterForSingleUpdate(5.0) ; Short delay on load
+    EndIf
 EndEvent
+
+Event OnUpdate()
+    {Delayed aggression restore after ceasefire cooldown expires.
+     Without this, hostile NPCs (bandits etc.) would stay permanently pacified
+     at Aggression=0 after a ceasefire.}
+
+    Debug.Trace("[SeverCombat] OnUpdate: Restoring aggression after ceasefire cooldown")
+
+    RestoreCeasefireAggression(CeasefireActor1)
+    RestoreCeasefireAggression(CeasefireActor2)
+
+    ; Clear references
+    CeasefireActor1 = None
+    CeasefireActor2 = None
+EndEvent
+
+Function RestoreCeasefireAggression(Actor akActor)
+    {Restore a single actor's aggression after ceasefire cooldown.
+     Only restores if the actor still has the NeedsAggroRestore flag set
+     (i.e., hasn't been re-engaged in new combat or had FullCleanup called).}
+
+    If !akActor
+        Return
+    EndIf
+
+    If StorageUtil.GetIntValue(akActor, "SeverCombat_NeedsAggroRestore", 0) != 1
+        Return
+    EndIf
+
+    ; Restore original aggression
+    Float origAggression = StorageUtil.GetFloatValue(akActor, "SeverCombat_OriginalAggression", -1.0)
+    If origAggression >= 0.0
+        akActor.SetActorValue("Aggression", origAggression)
+        Debug.Trace("[SeverCombat] Restored aggression for " + akActor.GetDisplayName() + " to " + origAggression)
+    Else
+        ; Default to 1 (Aggressive) - standard for most hostile NPCs
+        akActor.SetActorValue("Aggression", 1)
+        Debug.Trace("[SeverCombat] Restored aggression for " + akActor.GetDisplayName() + " to default 1")
+    EndIf
+
+    ; Restore original relationship rank (undo the ceasefire neutral override)
+    Actor partner = StorageUtil.GetFormValue(akActor, "SeverCombat_CeasefirePartner") as Actor
+    If partner
+        Int origRank = StorageUtil.GetIntValue(akActor, "SeverCombat_OriginalRelationship", 0)
+        akActor.SetRelationshipRank(partner, origRank)
+        Debug.Trace("[SeverCombat] Restored relationship rank for " + akActor.GetDisplayName() + " -> " + partner.GetDisplayName() + " to " + origRank)
+    EndIf
+
+    ; Clean up ceasefire-specific state
+    StorageUtil.UnsetIntValue(akActor, "SeverCombat_NeedsAggroRestore")
+    StorageUtil.UnsetFormValue(akActor, "SeverCombat_CeasefirePartner")
+    StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalAggression")
+
+    ; DON'T call EvaluatePackage here - let the NPC naturally decide
+    ; whether to re-engage based on distance and perception
+    ; If the player has walked away during the cooldown, they won't re-aggro
+EndFunction

@@ -1,15 +1,15 @@
-name: LootContainer
-description: "Loot items from a nearby container. Use when you want to take items from a chest, barrel, sack, or other container you can see."
+name: LootCorpse
+description: "Loot items from a dead body nearby. Use when you want to search a corpse and take items from it."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
-executionFunctionName: LootContainer_Execute
+executionFunctionName: LootCorpse_Execute
 parameterMapping:
   - type: speaker
     name: akActor
     description: Speaker Actor parameter (triggering entity)
   - type: dynamic
-    name: containerName
-    description: The name of the container to loot (e.g. "Chest", "Barrel", "Sack", "End Table")
+    name: corpseName
+    description: The name of the dead person to loot (e.g. "Bandit", "Stormcloak Soldier")
   - type: dynamic
     name: itemsToTake
     description: "What to take: 'all', 'valuables', 'gold', or comma-separated item names. Default to 'all' if unsure."

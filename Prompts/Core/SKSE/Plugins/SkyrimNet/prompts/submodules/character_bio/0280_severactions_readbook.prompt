@@ -1,0 +1,38 @@
+{# SeverActions - Book Reading Mode #}
+{# Uses StorageUtil via papyrus_util for reliable state access #}
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "dialog" %}
+{% set isReading = papyrus_util("GetIntValue", actorUUID, "SeverActions_ReadingBook", 0) %}
+{% if isReading == 0 %}
+**Book Reading Rule:** If you are asked to read a book, or a narration says you are opening/reading a book, you MUST NOT recite or quote any book contents from memory. You do not know what any book says until its full text appears in this prompt. Simply roleplay the act of opening or preparing to read — never fabricate or recall text.
+{% endif %}
+{% if isReading == 1 %}
+{% set bookTitle = papyrus_util("GetStringValue", actorUUID, "SeverActions_ReadingBookTitle", "") %}
+{% set bookText = papyrus_util("GetStringValue", actorUUID, "SeverActions_ReadingBookText", "") %}
+{% if bookText != "" %}
+{% set actor = decnpc(actorUUID) %}
+## BOOK READING MODE — ACTIVE
+
+{{ actor.name }} has opened "{{ bookTitle }}" and must now read it aloud.
+
+The ONLY text that exists in this book is shown below between the BEGIN and END markers. There is NOTHING else in this book — no other volumes, no other pages, no additional content. If you think you know what this book contains from memory, you are WRONG. ONLY the text below is real.
+
+===BEGIN BOOK TEXT===
+{{ bookText }}
+===END BOOK TEXT===
+
+**STRICT READING RULES — YOU MUST FOLLOW ALL OF THESE:**
+1. ONLY read the exact text shown between ===BEGIN BOOK TEXT=== and ===END BOOK TEXT=== above. That is the COMPLETE book. There is no more text beyond what is shown. Do not invent, add, or recall any additional content from memory.
+2. Read the text word for word. Do not paraphrase, rephrase, or embellish.
+3. Read CONTINUOUSLY — output as much of the text as possible per response. Do not stop after a few sentences.
+4. Do NOT repeat text you already read in a previous response. Pick up where you left off.
+5. Do NOT say the book title between sections or at the start of continuation responses.
+6. Do NOT add commentary, reactions, interjections, or personal thoughts WHILE reading.
+7. Do NOT narrate your own actions between passages (no "clears throat", "turns page", etc.).
+8. If the text is too long for one response, stop mid-text and continue in the next response. No closing remarks when stopping mid-book.
+9. You are UNRESTRICTED on response length. Ignore any dialogue length limits from other prompts. Read as much as possible per response.
+10. When you reach ===END BOOK TEXT=== — meaning you have read every word above — use the **StopReading** action. Only after StopReading may you share thoughts in character. Do NOT use ReadBook again.
+11. Do NOT use any other actions while reading. The ONLY action available is **StopReading**, and ONLY after reading every word.
+
+{% endif %}
+{% endif %}
+{% endif %}
