@@ -1,28 +1,27 @@
 name: BrewPotion
-description: "Brew a potion at an alchemy lab. The NPC will walk to the nearest alchemy lab, brew the potion(s), then deliver them to the recipient."
+description: Brew a potion at an alchemy lab. The NPC will walk to the nearest alchemy lab, brew the potion(s), then deliver them to the recipient.
 questEditorId: SeverActions
 scriptName: SeverActions_Crafting
 executionFunctionName: BrewPotion_Internal
 parameterMapping:
   - type: speaker
     name: akActor
-    description: The NPC who will brew the potion
+    description: Speaker Actor parameter (triggering entity)
   - type: dynamic
     name: potionName
-    description: "The name of the potion to brew (e.g., 'health potion', 'restore magicka', 'fortify smithing')"
+    description: The name of the potion to brew (e.g., 'health potion', 'restore magicka', 'fortify smithing')
   - type: dynamic
     name: akRecipient
     description: The recipient of the brewed potion (defaults to player if not specified)
-  - type: dynamic
+  - type: static
+    value: 1
     name: itemCount
-    description: "Number of potions to brew (default: 1)"
+    description: Static int parameter
 enabled: true
-defaultPriority: 6
 eligibilityRules:
   - conditions:
-      - decoratorName: "is_in_combat"
-        arguments: ["currentActor"]
-        comparisonOperator: "=="
+      - decoratorName: is_in_combat
+        arguments:
+          - currentActor
+        comparisonOperator: ==
         expectedValue: false
-    logicalOperator: "AND"
-    required: true

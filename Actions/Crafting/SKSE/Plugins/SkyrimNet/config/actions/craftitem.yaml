@@ -1,39 +1,38 @@
 name: CraftItem
-description: "Craft a weapon or piece of armor at a forge. The NPC will walk to the nearest forge, craft the item(s), then deliver them to the recipient."
+description: Craft a weapon or piece of armor at a forge. The NPC will walk to the nearest forge, craft the item(s), then deliver them to the recipient.
 questEditorId: SeverActions
 scriptName: SeverActions_Crafting
 executionFunctionName: CraftItem_Internal
 parameterMapping:
   - type: speaker
     name: akActor
-    description: The NPC who will craft the item
+    description: Speaker Actor parameter (triggering entity)
   - type: dynamic
     name: itemName
-    description: "The name of the weapon or armor to craft (e.g., 'iron sword', 'steel armor', 'leather boots')"
+    description: The name of the weapon or armor to craft (e.g., 'iron sword', 'steel armor', 'leather boots')
   - type: dynamic
     name: akRecipient
     description: The recipient of the crafted item (defaults to player if not specified)
   - type: static
     value: false
     name: requireMaterials
-    description: Whether materials are required (not currently enforced)
-  - type: dynamic
+    description: Static bool parameter
+  - type: static
+    value: 1
     name: itemCount
-    description: "Number of items to craft (default: 1)"
+    description: Static int parameter
 enabled: true
-defaultPriority: 6
 eligibilityRules:
   - conditions:
-      - decoratorName: "is_in_combat"
-        arguments: ["currentActor"]
-        comparisonOperator: "=="
+      - decoratorName: is_in_combat
+        arguments:
+          - currentActor
+        comparisonOperator: ==
         expectedValue: false
-    logicalOperator: "AND"
-    required: true
   - conditions:
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "JobBlacksmithFaction"]
-        comparisonOperator: "=="
+      - decoratorName: is_in_faction
+        arguments:
+          - currentActor
+          - JobBlacksmithFaction
+        comparisonOperator: ==
         expectedValue: true
-    logicalOperator: "AND"
-    required: true

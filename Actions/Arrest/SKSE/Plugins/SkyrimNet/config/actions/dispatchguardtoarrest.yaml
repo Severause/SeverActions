@@ -37,7 +37,7 @@ parameterMapping:
     name: targetName
     description: "The full name of the NPC to arrest (e.g. 'Hulda', 'Nazeem', 'Belethor').
       Must be the display name of a unique NPC in the game world."
-  - type: actor
+  - type: dynamic
     name: akSender
     description: "The person who ordered the arrest. If provided, the guard will bring the prisoner
       back to this person for judgment. If not specified, the guard takes the prisoner

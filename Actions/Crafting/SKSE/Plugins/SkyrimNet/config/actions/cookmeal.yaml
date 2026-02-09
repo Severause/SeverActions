@@ -13,15 +13,15 @@ parameterMapping:
   - type: dynamic
     name: akRecipient
     description: The recipient of the food
-  - type: dynamic
+  - type: static
+    value: 1
     name: itemCount
-    description: The amount to make(default to 1)
+    description: Static int parameter
 enabled: true
 eligibilityRules:
   - conditions:
-      - decoratorName: "is_in_combat"
-        arguments: ["currentActor"]
-        comparisonOperator: "=="
+      - decoratorName: is_in_combat
+        arguments:
+          - currentActor
+        comparisonOperator: ==
         expectedValue: false
-    logicalOperator: "AND"
-    required: true
