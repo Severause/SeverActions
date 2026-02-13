@@ -1,7 +1,7 @@
 name: TravelToLocation
-description: "Travel to a specific named location. STRICT RULES - Only use this action when ALL of the following are true:
-  1. The PLAYER has directly and clearly told the actor to go somewhere (e.g. 'Go to Whiterun', 'Head to the Bannered Mare', 'Travel to Solitude')
-  2. The destination is a specific, real named location (not vague like 'away' or 'somewhere')
+description: "Travel to a named location, relative direction, or nearby feature. STRICT RULES - Only use this action when ALL of the following are true:
+  1. The PLAYER has directly and clearly told the actor to go somewhere (e.g. 'Go to Whiterun', 'Head to the Bannered Mare', 'Go outside', 'Wait upstairs', 'Go to the bar', 'Wait by the shrine')
+  2. The destination is a specific named location, a semantic direction (outside, inside, upstairs, downstairs), OR a nearby feature (bar, kitchen, forge, shrine, bed, fireplace, table, enchanter, chest, door)
 
   Do NOT use this action if:
   - A location was merely mentioned in conversation
@@ -9,6 +9,7 @@ description: "Travel to a specific named location. STRICT RULES - Only use this 
   - The actor is upset, angry, or emotional (use dialogue to express that instead)
   - The actor is suggesting they could go somewhere (just suggest it in dialogue, don't actually go)
   - The player has not explicitly directed the actor to travel
+  - The destination is truly vague like 'away' or 'somewhere'
 
   The only exception is if the player explicitly agrees to an actor's suggestion to travel together (e.g. Actor: 'Shall we head to Riften?' Player: 'Yes, lead the way')."
 questEditorId: SeverActions
@@ -20,7 +21,7 @@ parameterMapping:
     description: Speaker Actor parameter (triggering entity)
   - type: dynamic
     name: placeName
-    description: Where to travel. Must be a specific named location - a city (Whiterun, Solitude), town (Riverwood), inn (Bannered Mare), or specific place (Dragonsreach). Never use vague terms like "away" or "somewhere".
+    description: "Where to travel. Accepts: named locations (Whiterun, Solitude, Bannered Mare, Dragonsreach), semantic directions (outside, inside, upstairs, downstairs), OR nearby features (bar, kitchen, forge, shrine, bed, fireplace, table, enchanter, chest, door). Fuzzy matching and typo tolerance are supported. Never use vague terms like 'away' or 'somewhere'."
   - type: static
     value: 24
     name: WaitHours
@@ -33,11 +34,25 @@ parameterMapping:
     value: 0
     name: Speed
     description: Static int parameter
-enabled: true
+enabled: false
 eligibilityRules:
   - conditions:
       - decoratorName: "is_in_combat"
         arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
         comparisonOperator: "=="
         expectedValue: false
     logicalOperator: "AND"

@@ -1,5 +1,5 @@
 name: WaitHere
-description: Stop following and wait at current location. Use this when {{ player.name }} tells you to wait, stay here, hold position, stay put, don't move, or stop following temporarily. Only use if you are currently following {{ player.name }}
+description: Stop following and wait at current location. Use this when {{ player.name }} tells a non-companion NPC to wait, stay here, hold position, stay put, don't move, or stop following temporarily. Only use if the NPC is currently following {{ player.name }} but is NOT an active companion. For companions, use CompanionWait instead.
 questEditorId: SeverActions
 scriptName: SeverActions_Follow
 executionFunctionName: WaitHere
@@ -13,6 +13,27 @@ eligibilityRules:
   - conditions:
       - decoratorName: "is_in_combat"
         arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
         comparisonOperator: "=="
         expectedValue: false
     logicalOperator: "AND"

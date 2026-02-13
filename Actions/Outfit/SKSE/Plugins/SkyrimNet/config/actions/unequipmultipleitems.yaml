@@ -1,0 +1,35 @@
+name: UnequipMultipleItems
+description: "Unequip multiple currently worn items at once. Use when told to take off several pieces of armor, clothing, or weapons in one request. Provide a comma-separated list of item names. For example: 'steel gauntlets, iron helmet, glass cuirass'. For removing all clothing use Undress instead. For a single item use UnequipItemByName instead."
+questEditorId: SeverActions
+scriptName: SeverActions_Outfit
+executionFunctionName: UnequipMultipleItems_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: itemNames
+    description: "Comma-separated list of item names to unequip (e.g., 'steel gauntlets, iron helmet, glass cuirass'). Use partial name matches."
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

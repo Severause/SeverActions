@@ -23,6 +23,9 @@ SeverActions_Follow Property FollowSystem Auto
 SeverActions_WheelMenu Property WheelMenuSystem Auto
 {Optional - Link to the Wheel Menu system for UIExtensions integration}
 
+SeverActions_FollowerManager Property FollowerManagerSystem Auto
+{Optional - Link to the Follower Manager system for companion tracking}
+
 ; =============================================================================
 ; INITIALIZATION
 ; =============================================================================
@@ -49,6 +52,7 @@ Function Initialize(Bool isFirstInit)
     InitializeFurnitureSystem()
     InitializeFollowSystem()
     InitializeWheelMenuSystem()
+    InitializeFollowerManagerSystem()
     SyncMCMSettings()
 
     Debug.Trace("[SeverActions] Initialization complete!")
@@ -193,6 +197,40 @@ SeverActions_WheelMenu Function GetWheelMenuSystem()
 
     ; Try to get instance via global function
     Return SeverActions_WheelMenu.GetInstance()
+EndFunction
+
+; =============================================================================
+; FOLLOWER MANAGER INITIALIZATION
+; =============================================================================
+
+Function InitializeFollowerManagerSystem()
+    Debug.Trace("[SeverActions] Initializing Follower Manager...")
+
+    SeverActions_FollowerManager fmSys = GetFollowerManagerSystem()
+
+    If fmSys
+        fmSys.Maintenance()
+        Int count = fmSys.GetFollowerCount()
+        Debug.Trace("[SeverActions] Follower Manager initialized - " + count + " companions tracked")
+    Else
+        Debug.Trace("[SeverActions] Follower Manager not found (optional)")
+    EndIf
+EndFunction
+
+; Helper to get follower manager system reference
+SeverActions_FollowerManager Function GetFollowerManagerSystem()
+    If FollowerManagerSystem
+        Return FollowerManagerSystem
+    EndIf
+
+    ; Try to find it via FormID
+    SeverActions_FollowerManager fmSys = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+    If fmSys
+        Debug.Trace("[SeverActions] Found Follower Manager via GetFormFromFile")
+        Return fmSys
+    EndIf
+
+    Return None
 EndFunction
 
 ; =============================================================================

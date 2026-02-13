@@ -13,6 +13,7 @@ SeverActions_Outfit Property OutfitScript Auto
 SeverActions_WheelMenu Property WheelMenuScript Auto
 SeverActions_Arrest Property ArrestScript Auto
 SeverActions_Survival Property SurvivalScript Auto
+SeverActions_FollowerManager Property FollowerManagerScript Auto
 
 ; =============================================================================
 ; SETTINGS - These mirror the properties in other scripts
@@ -100,6 +101,26 @@ int OID_SurvivalDebug
 int[] OID_FollowerExclude
 Actor[] CachedFollowers
 
+; Follower Manager page
+int OID_FM_MaxFollowers
+int OID_FM_RapportDecay
+int OID_FM_AllowLeaving
+int OID_FM_LeavingThreshold
+int OID_FM_Notifications
+int OID_FM_Debug
+int OID_FM_ResetAll
+int[] OID_FM_DismissFollower
+int[] OID_FM_ClearHome
+int[] OID_FM_Rapport
+int[] OID_FM_Trust
+int[] OID_FM_Loyalty
+int[] OID_FM_Mood
+int[] OID_FM_CombatStyle
+Actor[] CachedManagedFollowers
+
+; Combat style dropdown options
+string[] CombatStyleOptions
+
 ; Page names
 string PAGE_GENERAL = "General"
 string PAGE_HOTKEYS = "Hotkeys"
@@ -107,6 +128,7 @@ string PAGE_CURRENCY = "Currency"
 string PAGE_TRAVEL = "Travel"
 string PAGE_CRIME = "Crime"
 string PAGE_SURVIVAL = "Survival"
+string PAGE_FOLLOWERS = "Followers"
 
 ; Target mode options
 string[] TargetModeOptions
@@ -120,21 +142,30 @@ Event OnConfigInit()
 
     ; Set current version - increment this when you make MCM changes
     ; Format: major * 100 + minor (e.g., 107 = version 1.07)
-    CurrentVersion = 109
+    CurrentVersion = 110
 
-    Pages = new string[6]
+    Pages = new string[7]
     Pages[0] = PAGE_GENERAL
     Pages[1] = PAGE_HOTKEYS
     Pages[2] = PAGE_CURRENCY
     Pages[3] = PAGE_TRAVEL
     Pages[4] = PAGE_CRIME
     Pages[5] = PAGE_SURVIVAL
+    Pages[6] = PAGE_FOLLOWERS
 
     ; Initialize target mode dropdown options
     TargetModeOptions = new string[3]
     TargetModeOptions[0] = "Crosshair Target"
     TargetModeOptions[1] = "Nearest NPC"
     TargetModeOptions[2] = "Last Talked To"
+
+    ; Initialize combat style dropdown options
+    CombatStyleOptions = new string[5]
+    CombatStyleOptions[0] = "balanced"
+    CombatStyleOptions[1] = "aggressive"
+    CombatStyleOptions[2] = "defensive"
+    CombatStyleOptions[3] = "ranged"
+    CombatStyleOptions[4] = "healer"
 EndEvent
 
 Event OnVersionUpdate(int newVersion)
@@ -142,19 +173,28 @@ Event OnVersionUpdate(int newVersion)
     Debug.Trace("[SeverActions_MCM] Updating from version " + CurrentVersion + " to " + newVersion)
 
     ; Force page rebuild on any version change
-    Pages = new string[6]
+    Pages = new string[7]
     Pages[0] = PAGE_GENERAL
     Pages[1] = PAGE_HOTKEYS
     Pages[2] = PAGE_CURRENCY
     Pages[3] = PAGE_TRAVEL
     Pages[4] = PAGE_CRIME
     Pages[5] = PAGE_SURVIVAL
+    Pages[6] = PAGE_FOLLOWERS
 
     ; Re-initialize dropdown options
     TargetModeOptions = new string[3]
     TargetModeOptions[0] = "Crosshair Target"
     TargetModeOptions[1] = "Nearest NPC"
     TargetModeOptions[2] = "Last Talked To"
+
+    ; Re-initialize combat style dropdown options
+    CombatStyleOptions = new string[5]
+    CombatStyleOptions[0] = "balanced"
+    CombatStyleOptions[1] = "aggressive"
+    CombatStyleOptions[2] = "defensive"
+    CombatStyleOptions[3] = "ranged"
+    CombatStyleOptions[4] = "healer"
 EndEvent
 
 ; Force MCM to rebuild - call this on game load
@@ -187,6 +227,8 @@ Event OnPageReset(string page)
         DrawCrimePage()
     elseif page == PAGE_SURVIVAL
         DrawSurvivalPage()
+    elseif page == PAGE_FOLLOWERS
+        DrawFollowersPage()
     endif
 EndEvent
 
@@ -211,6 +253,7 @@ Function DrawGeneralPage()
     AddTextOption("", "Travel - NPC travel system")
     AddTextOption("", "Crime - View/manage bounties")
     AddTextOption("", "Survival - Follower survival needs")
+    AddTextOption("", "Followers - Companion framework")
 EndFunction
 
 Function DrawHotkeysPage()
@@ -331,15 +374,15 @@ Function DrawCrimePage()
 
     If ArrestScript
         ; Display bounty for each hold
-        OID_BountyWhiterun = AddTextOption("Whiterun", GetBountyDisplayText(ArrestScript.CrimeFactionWhiterun))
-        OID_BountyRift = AddTextOption("The Rift", GetBountyDisplayText(ArrestScript.CrimeFactionRift))
-        OID_BountyHaafingar = AddTextOption("Haafingar", GetBountyDisplayText(ArrestScript.CrimeFactionHaafingar))
-        OID_BountyEastmarch = AddTextOption("Eastmarch", GetBountyDisplayText(ArrestScript.CrimeFactionEastmarch))
-        OID_BountyReach = AddTextOption("The Reach", GetBountyDisplayText(ArrestScript.CrimeFactionReach))
-        OID_BountyFalkreath = AddTextOption("Falkreath", GetBountyDisplayText(ArrestScript.CrimeFactionFalkreath))
-        OID_BountyPale = AddTextOption("The Pale", GetBountyDisplayText(ArrestScript.CrimeFactionPale))
-        OID_BountyHjaalmarch = AddTextOption("Hjaalmarch", GetBountyDisplayText(ArrestScript.CrimeFactionHjaalmarch))
-        OID_BountyWinterhold = AddTextOption("Winterhold", GetBountyDisplayText(ArrestScript.CrimeFactionWinterhold))
+        OID_BountyWhiterun = AddTextOption("$Whiterun", GetBountyDisplayText(ArrestScript.CrimeFactionWhiterun))
+        OID_BountyRift = AddTextOption("$The Rift", GetBountyDisplayText(ArrestScript.CrimeFactionRift))
+        OID_BountyHaafingar = AddTextOption("$Haafingar", GetBountyDisplayText(ArrestScript.CrimeFactionHaafingar))
+        OID_BountyEastmarch = AddTextOption("$Eastmarch", GetBountyDisplayText(ArrestScript.CrimeFactionEastmarch))
+        OID_BountyReach = AddTextOption("$The Reach", GetBountyDisplayText(ArrestScript.CrimeFactionReach))
+        OID_BountyFalkreath = AddTextOption("$Falkreath", GetBountyDisplayText(ArrestScript.CrimeFactionFalkreath))
+        OID_BountyPale = AddTextOption("$The Pale", GetBountyDisplayText(ArrestScript.CrimeFactionPale))
+        OID_BountyHjaalmarch = AddTextOption("$Hjaalmarch", GetBountyDisplayText(ArrestScript.CrimeFactionHjaalmarch))
+        OID_BountyWinterhold = AddTextOption("$Winterhold", GetBountyDisplayText(ArrestScript.CrimeFactionWinterhold))
 
         AddEmptyOption()
         AddHeaderOption("Settings")
@@ -448,6 +491,82 @@ Function DrawSurvivalPage()
     EndIf
 EndFunction
 
+Function DrawFollowersPage()
+    SetCursorFillMode(TOP_TO_BOTTOM)
+
+    AddHeaderOption("Companion Framework")
+    AddTextOption("", "Manage recruited companions and")
+    AddTextOption("", "relationship settings.")
+    AddEmptyOption()
+
+    If FollowerManagerScript
+        ; Settings
+        AddHeaderOption("Settings")
+        OID_FM_MaxFollowers = AddSliderOption("Max Companions", FollowerManagerScript.MaxFollowers as Float, "{0}")
+        OID_FM_RapportDecay = AddSliderOption("Rapport Decay Rate", FollowerManagerScript.RapportDecayRate, "{1}x")
+        OID_FM_AllowLeaving = AddToggleOption("Allow Autonomous Leaving", FollowerManagerScript.AllowAutonomousLeaving)
+        OID_FM_LeavingThreshold = AddSliderOption("Leaving Threshold", FollowerManagerScript.LeavingThreshold, "{0}")
+        OID_FM_Notifications = AddToggleOption("Show Notifications", FollowerManagerScript.ShowNotifications)
+        OID_FM_Debug = AddToggleOption("Debug Mode", FollowerManagerScript.DebugMode)
+
+        AddEmptyOption()
+
+        ; Current companions
+        AddHeaderOption("Current Companions")
+        CachedManagedFollowers = FollowerManagerScript.GetAllFollowers()
+        OID_FM_DismissFollower = new int[10]
+        OID_FM_ClearHome = new int[10]
+        OID_FM_Rapport = new int[10]
+        OID_FM_Trust = new int[10]
+        OID_FM_Loyalty = new int[10]
+        OID_FM_Mood = new int[10]
+        OID_FM_CombatStyle = new int[10]
+
+        If CachedManagedFollowers.Length == 0
+            AddTextOption("", "No companions recruited", OPTION_FLAG_DISABLED)
+            AddTextOption("", "Adjust values here for mid-playthrough", OPTION_FLAG_DISABLED)
+            AddTextOption("", "followers once they are recruited.", OPTION_FLAG_DISABLED)
+        Else
+            Int j = 0
+            While j < CachedManagedFollowers.Length && j < 10
+                Actor follower = CachedManagedFollowers[j]
+                If follower
+                    Float rapport = FollowerManagerScript.GetRapport(follower)
+                    Float trust = FollowerManagerScript.GetTrust(follower)
+                    Float loyalty = FollowerManagerScript.GetLoyalty(follower)
+                    Float mood = FollowerManagerScript.GetMood(follower)
+                    String style = FollowerManagerScript.GetCombatStyle(follower)
+                    String home = FollowerManagerScript.GetAssignedHome(follower)
+
+                    AddHeaderOption(follower.GetDisplayName())
+                    OID_FM_Rapport[j] = AddSliderOption("$Rapport", rapport, "{0}")
+                    OID_FM_Trust[j] = AddSliderOption("$Trust", trust, "{0}")
+                    OID_FM_Loyalty[j] = AddSliderOption("$Loyalty", loyalty, "{0}")
+                    OID_FM_Mood[j] = AddSliderOption("Mood", mood, "{0}")
+                    OID_FM_CombatStyle[j] = AddMenuOption("Combat Style", style)
+                    If home != ""
+                        AddTextOption("Home", home, OPTION_FLAG_DISABLED)
+                        OID_FM_ClearHome[j] = AddTextOption("Clear Home", "CLICK")
+                    Else
+                        AddTextOption("Home", "Not assigned", OPTION_FLAG_DISABLED)
+                    EndIf
+                    OID_FM_DismissFollower[j] = AddTextOption("Dismiss", "CLICK")
+                    AddEmptyOption()
+                EndIf
+                j += 1
+            EndWhile
+        EndIf
+
+        AddEmptyOption()
+        AddHeaderOption("Maintenance")
+        OID_FM_ResetAll = AddTextOption("Reset All Companions", "CLICK")
+        AddTextOption("", "Emergency: dismiss and clear all data.")
+    Else
+        AddTextOption("", "Follower Manager not connected!")
+        AddTextOption("", "Set FollowerManagerScript property in CK.")
+    EndIf
+EndFunction
+
 ; =============================================================================
 ; OPTION SELECTION
 ; =============================================================================
@@ -540,8 +659,60 @@ Event OnOptionSelect(int option)
             SetToggleOptionValue(OID_SurvivalDebug, SurvivalScript.DebugMode)
         EndIf
 
-    ; Per-follower exclusion toggles
+    ; Follower Manager page toggles
+    elseif option == OID_FM_AllowLeaving
+        If FollowerManagerScript
+            FollowerManagerScript.AllowAutonomousLeaving = !FollowerManagerScript.AllowAutonomousLeaving
+            SetToggleOptionValue(OID_FM_AllowLeaving, FollowerManagerScript.AllowAutonomousLeaving)
+        EndIf
+    elseif option == OID_FM_Notifications
+        If FollowerManagerScript
+            FollowerManagerScript.ShowNotifications = !FollowerManagerScript.ShowNotifications
+            SetToggleOptionValue(OID_FM_Notifications, FollowerManagerScript.ShowNotifications)
+        EndIf
+    elseif option == OID_FM_Debug
+        If FollowerManagerScript
+            FollowerManagerScript.DebugMode = !FollowerManagerScript.DebugMode
+            SetToggleOptionValue(OID_FM_Debug, FollowerManagerScript.DebugMode)
+        EndIf
+    elseif option == OID_FM_ResetAll
+        If FollowerManagerScript
+            bool confirm = ShowMessage("This will dismiss ALL companions and clear all relationship data. Continue?", true, "Yes", "No")
+            If confirm
+                Actor[] managed = FollowerManagerScript.GetAllFollowers()
+                Int j = 0
+                While j < managed.Length
+                    If managed[j]
+                        FollowerManagerScript.UnregisterFollower(managed[j], false)
+                    EndIf
+                    j += 1
+                EndWhile
+                ForcePageReset()
+                Debug.Notification("All companions dismissed and data cleared.")
+            EndIf
+        EndIf
+
+    ; Per-follower exclusion toggles and follower manager per-follower actions
     else
+        ; Follower Manager dismiss/clear home buttons
+        If FollowerManagerScript && OID_FM_DismissFollower && CachedManagedFollowers
+            Int j = 0
+            While j < CachedManagedFollowers.Length && j < 10
+                If option == OID_FM_DismissFollower[j] && CachedManagedFollowers[j]
+                    bool confirm = ShowMessage("Dismiss " + CachedManagedFollowers[j].GetDisplayName() + "?", true, "Yes", "No")
+                    If confirm
+                        FollowerManagerScript.UnregisterFollower(CachedManagedFollowers[j])
+                        ForcePageReset()
+                    EndIf
+                ElseIf OID_FM_ClearHome && option == OID_FM_ClearHome[j] && CachedManagedFollowers[j]
+                    FollowerManagerScript.ClearHome(CachedManagedFollowers[j])
+                    Debug.Notification(CachedManagedFollowers[j].GetDisplayName() + "'s home cleared.")
+                    ForcePageReset()
+                EndIf
+                j += 1
+            EndWhile
+        EndIf
+
         If SurvivalScript && OID_FollowerExclude && CachedFollowers
             Int j = 0
             While j < CachedFollowers.Length && j < 10
@@ -722,6 +893,21 @@ Event OnOptionMenuOpen(int option)
         SetMenuDialogStartIndex(TargetMode)
         SetMenuDialogDefaultIndex(0)
         SetMenuDialogOptions(TargetModeOptions)
+    else
+        ; Per-follower combat style menus
+        If FollowerManagerScript && CachedManagedFollowers && OID_FM_CombatStyle
+            Int j = 0
+            While j < CachedManagedFollowers.Length && j < 10
+                If option == OID_FM_CombatStyle[j] && CachedManagedFollowers[j]
+                    String currentStyle = FollowerManagerScript.GetCombatStyle(CachedManagedFollowers[j])
+                    Int startIdx = CombatStyleIndexFromString(currentStyle)
+                    SetMenuDialogStartIndex(startIdx)
+                    SetMenuDialogDefaultIndex(0)
+                    SetMenuDialogOptions(CombatStyleOptions)
+                EndIf
+                j += 1
+            EndWhile
+        EndIf
     endif
 EndEvent
 
@@ -732,6 +918,18 @@ Event OnOptionMenuAccept(int option, int index)
         ApplyHotkeySettings()
         ; Force page refresh to show/hide radius slider
         ForcePageReset()
+    else
+        ; Per-follower combat style menus
+        If FollowerManagerScript && CachedManagedFollowers && OID_FM_CombatStyle
+            Int j = 0
+            While j < CachedManagedFollowers.Length && j < 10
+                If option == OID_FM_CombatStyle[j] && CachedManagedFollowers[j]
+                    FollowerManagerScript.SetCombatStyle(CachedManagedFollowers[j], CombatStyleOptions[index])
+                    SetMenuOptionValue(OID_FM_CombatStyle[j], CombatStyleOptions[index])
+                EndIf
+                j += 1
+            EndWhile
+        EndIf
     endif
 EndEvent
 
@@ -785,6 +983,61 @@ Event OnOptionSliderOpen(int option)
             SetSliderDialogRange(0.25, 3.0)
             SetSliderDialogInterval(0.25)
         EndIf
+
+    ; Follower Manager sliders
+    elseif option == OID_FM_MaxFollowers
+        If FollowerManagerScript
+            SetSliderDialogStartValue(FollowerManagerScript.MaxFollowers as Float)
+            SetSliderDialogDefaultValue(5.0)
+            SetSliderDialogRange(1.0, 10.0)
+            SetSliderDialogInterval(1.0)
+        EndIf
+    elseif option == OID_FM_RapportDecay
+        If FollowerManagerScript
+            SetSliderDialogStartValue(FollowerManagerScript.RapportDecayRate)
+            SetSliderDialogDefaultValue(1.0)
+            SetSliderDialogRange(0.0, 5.0)
+            SetSliderDialogInterval(0.25)
+        EndIf
+    elseif option == OID_FM_LeavingThreshold
+        If FollowerManagerScript
+            SetSliderDialogStartValue(FollowerManagerScript.LeavingThreshold)
+            SetSliderDialogDefaultValue(-60.0)
+            SetSliderDialogRange(-100.0, -10.0)
+            SetSliderDialogInterval(5.0)
+        EndIf
+
+    ; Per-follower relationship sliders
+    else
+        If FollowerManagerScript && CachedManagedFollowers
+            Int j = 0
+            While j < CachedManagedFollowers.Length && j < 10
+                If CachedManagedFollowers[j]
+                    If option == OID_FM_Rapport[j]
+                        SetSliderDialogStartValue(FollowerManagerScript.GetRapport(CachedManagedFollowers[j]))
+                        SetSliderDialogDefaultValue(0.0)
+                        SetSliderDialogRange(-100.0, 100.0)
+                        SetSliderDialogInterval(5.0)
+                    ElseIf option == OID_FM_Trust[j]
+                        SetSliderDialogStartValue(FollowerManagerScript.GetTrust(CachedManagedFollowers[j]))
+                        SetSliderDialogDefaultValue(25.0)
+                        SetSliderDialogRange(0.0, 100.0)
+                        SetSliderDialogInterval(5.0)
+                    ElseIf option == OID_FM_Loyalty[j]
+                        SetSliderDialogStartValue(FollowerManagerScript.GetLoyalty(CachedManagedFollowers[j]))
+                        SetSliderDialogDefaultValue(50.0)
+                        SetSliderDialogRange(0.0, 100.0)
+                        SetSliderDialogInterval(5.0)
+                    ElseIf option == OID_FM_Mood[j]
+                        SetSliderDialogStartValue(FollowerManagerScript.GetMood(CachedManagedFollowers[j]))
+                        SetSliderDialogDefaultValue(50.0)
+                        SetSliderDialogRange(-100.0, 100.0)
+                        SetSliderDialogInterval(5.0)
+                    EndIf
+                EndIf
+                j += 1
+            EndWhile
+        EndIf
     endif
 EndEvent
 
@@ -820,6 +1073,47 @@ Event OnOptionSliderAccept(int option, float value)
         If SurvivalScript
             SurvivalScript.ColdRate = value
             SetSliderOptionValue(OID_ColdRate, value, "{1}x")
+        EndIf
+
+    ; Follower Manager sliders
+    elseif option == OID_FM_MaxFollowers
+        If FollowerManagerScript
+            FollowerManagerScript.MaxFollowers = value as Int
+            SetSliderOptionValue(OID_FM_MaxFollowers, value, "{0}")
+        EndIf
+    elseif option == OID_FM_RapportDecay
+        If FollowerManagerScript
+            FollowerManagerScript.RapportDecayRate = value
+            SetSliderOptionValue(OID_FM_RapportDecay, value, "{1}x")
+        EndIf
+    elseif option == OID_FM_LeavingThreshold
+        If FollowerManagerScript
+            FollowerManagerScript.LeavingThreshold = value
+            SetSliderOptionValue(OID_FM_LeavingThreshold, value, "{0}")
+        EndIf
+
+    ; Per-follower relationship sliders
+    else
+        If FollowerManagerScript && CachedManagedFollowers
+            Int j = 0
+            While j < CachedManagedFollowers.Length && j < 10
+                If CachedManagedFollowers[j]
+                    If option == OID_FM_Rapport[j]
+                        FollowerManagerScript.SetRapport(CachedManagedFollowers[j], value)
+                        SetSliderOptionValue(OID_FM_Rapport[j], value, "{0}")
+                    ElseIf option == OID_FM_Trust[j]
+                        FollowerManagerScript.SetTrust(CachedManagedFollowers[j], value)
+                        SetSliderOptionValue(OID_FM_Trust[j], value, "{0}")
+                    ElseIf option == OID_FM_Loyalty[j]
+                        FollowerManagerScript.SetLoyalty(CachedManagedFollowers[j], value)
+                        SetSliderOptionValue(OID_FM_Loyalty[j], value, "{0}")
+                    ElseIf option == OID_FM_Mood[j]
+                        FollowerManagerScript.SetMood(CachedManagedFollowers[j], value)
+                        SetSliderOptionValue(OID_FM_Mood[j], value, "{0}")
+                    EndIf
+                EndIf
+                j += 1
+            EndWhile
         EndIf
     endif
 EndEvent
@@ -912,7 +1206,23 @@ Event OnOptionHighlight(int option)
     elseif option == OID_SurvivalDebug
         SetInfoText("Enable debug messages for survival system. Shows detailed tracking info in the console. Useful for troubleshooting.")
 
-    ; Per-follower exclusion tooltips
+    ; Follower Manager tooltips
+    elseif option == OID_FM_MaxFollowers
+        SetInfoText("Maximum number of companions allowed at once. Default: 5")
+    elseif option == OID_FM_RapportDecay
+        SetInfoText("How fast rapport decays when you don't talk to a companion. 1.0x is normal. Set to 0 to disable rapport decay. Default: 1.0x")
+    elseif option == OID_FM_AllowLeaving
+        SetInfoText("When enabled, companions with very low rapport may decide to leave on their own. Disable for companions that never leave regardless of treatment.")
+    elseif option == OID_FM_LeavingThreshold
+        SetInfoText("Rapport level at which companions may decide to leave. Lower values (closer to -100) mean they tolerate more mistreatment. Default: -60")
+    elseif option == OID_FM_Notifications
+        SetInfoText("Show notifications when companions are recruited, dismissed, or when relationship milestones occur.")
+    elseif option == OID_FM_Debug
+        SetInfoText("Enable debug messages for companion framework. Shows relationship value changes in the console.")
+    elseif option == OID_FM_ResetAll
+        SetInfoText("Emergency reset: dismisses all companions and clears all relationship data. Use if the system is stuck or broken.")
+
+    ; Per-follower tooltips (survival exclusions + relationship sliders)
     else
         If OID_FollowerExclude && CachedFollowers
             Int j = 0
@@ -926,6 +1236,27 @@ Event OnOptionHighlight(int option)
                     EndIf
                 EndIf
                 j += 1
+            EndWhile
+        EndIf
+
+        ; Per-follower relationship slider tooltips
+        If FollowerManagerScript && CachedManagedFollowers
+            Int k = 0
+            While k < CachedManagedFollowers.Length && k < 10
+                If CachedManagedFollowers[k]
+                    If option == OID_FM_Rapport[k]
+                        SetInfoText("How much " + CachedManagedFollowers[k].GetDisplayName() + " likes the player. Range: -100 (hostile) to 100 (devoted). Affects willingness to help and dialogue tone. Useful for mid-playthrough adjustment.")
+                    ElseIf option == OID_FM_Trust[k]
+                        SetInfoText("How much " + CachedManagedFollowers[k].GetDisplayName() + " trusts the player's judgment. Range: 0 to 100. Affects willingness to follow dangerous orders. Low trust = more refusals.")
+                    ElseIf option == OID_FM_Loyalty[k]
+                        SetInfoText("How committed " + CachedManagedFollowers[k].GetDisplayName() + " is to staying. Range: 0 to 100. Very low loyalty combined with low rapport may cause them to leave.")
+                    ElseIf option == OID_FM_Mood[k]
+                        SetInfoText(CachedManagedFollowers[k].GetDisplayName() + "'s current temperament. Range: -100 (miserable) to 100 (ecstatic). Mood drifts toward baseline over time and is affected by events.")
+                    ElseIf option == OID_FM_CombatStyle[k]
+                        SetInfoText("How " + CachedManagedFollowers[k].GetDisplayName() + " approaches combat. Aggressive = charges in, Defensive = protects, Ranged = keeps distance, Healer = supports allies, Balanced = adapts.")
+                    EndIf
+                EndIf
+                k += 1
             EndWhile
         EndIf
     endif
@@ -1056,6 +1387,65 @@ Event OnOptionDefault(int option)
             SurvivalScript.DebugMode = false
             SetToggleOptionValue(OID_SurvivalDebug, false)
         EndIf
+
+    ; Follower Manager defaults
+    elseif option == OID_FM_MaxFollowers
+        If FollowerManagerScript
+            FollowerManagerScript.MaxFollowers = 5
+            SetSliderOptionValue(OID_FM_MaxFollowers, 5.0, "{0}")
+        EndIf
+    elseif option == OID_FM_RapportDecay
+        If FollowerManagerScript
+            FollowerManagerScript.RapportDecayRate = 1.0
+            SetSliderOptionValue(OID_FM_RapportDecay, 1.0, "{1}x")
+        EndIf
+    elseif option == OID_FM_AllowLeaving
+        If FollowerManagerScript
+            FollowerManagerScript.AllowAutonomousLeaving = true
+            SetToggleOptionValue(OID_FM_AllowLeaving, true)
+        EndIf
+    elseif option == OID_FM_LeavingThreshold
+        If FollowerManagerScript
+            FollowerManagerScript.LeavingThreshold = -60.0
+            SetSliderOptionValue(OID_FM_LeavingThreshold, -60.0, "{0}")
+        EndIf
+    elseif option == OID_FM_Notifications
+        If FollowerManagerScript
+            FollowerManagerScript.ShowNotifications = true
+            SetToggleOptionValue(OID_FM_Notifications, true)
+        EndIf
+    elseif option == OID_FM_Debug
+        If FollowerManagerScript
+            FollowerManagerScript.DebugMode = false
+            SetToggleOptionValue(OID_FM_Debug, false)
+        EndIf
+
+    ; Per-follower relationship defaults
+    else
+        If FollowerManagerScript && CachedManagedFollowers
+            Int j = 0
+            While j < CachedManagedFollowers.Length && j < 10
+                If CachedManagedFollowers[j]
+                    If option == OID_FM_Rapport[j]
+                        FollowerManagerScript.SetRapport(CachedManagedFollowers[j], 0.0)
+                        SetSliderOptionValue(OID_FM_Rapport[j], 0.0, "{0}")
+                    ElseIf option == OID_FM_Trust[j]
+                        FollowerManagerScript.SetTrust(CachedManagedFollowers[j], 25.0)
+                        SetSliderOptionValue(OID_FM_Trust[j], 25.0, "{0}")
+                    ElseIf option == OID_FM_Loyalty[j]
+                        FollowerManagerScript.SetLoyalty(CachedManagedFollowers[j], 50.0)
+                        SetSliderOptionValue(OID_FM_Loyalty[j], 50.0, "{0}")
+                    ElseIf option == OID_FM_Mood[j]
+                        FollowerManagerScript.SetMood(CachedManagedFollowers[j], 50.0)
+                        SetSliderOptionValue(OID_FM_Mood[j], 50.0, "{0}")
+                    ElseIf option == OID_FM_CombatStyle[j]
+                        FollowerManagerScript.SetCombatStyle(CachedManagedFollowers[j], "balanced")
+                        SetMenuOptionValue(OID_FM_CombatStyle[j], "balanced")
+                    EndIf
+                EndIf
+                j += 1
+            EndWhile
+        EndIf
     endif
 EndEvent
 
@@ -1124,4 +1514,24 @@ Function SyncAllSettings()
     Debug.Trace("[SeverActions_MCM] Dialogue Animations: " + DialogueAnimEnabled)
 
     Debug.Trace("[SeverActions_MCM] All settings synced and menu rebuilt")
+EndFunction
+
+; =============================================================================
+; HELPERS
+; =============================================================================
+
+Int Function CombatStyleIndexFromString(String style)
+    {Convert combat style string to dropdown index}
+    If style == "balanced"
+        Return 0
+    ElseIf style == "aggressive"
+        Return 1
+    ElseIf style == "defensive"
+        Return 2
+    ElseIf style == "ranged"
+        Return 3
+    ElseIf style == "healer"
+        Return 4
+    EndIf
+    Return 0
 EndFunction

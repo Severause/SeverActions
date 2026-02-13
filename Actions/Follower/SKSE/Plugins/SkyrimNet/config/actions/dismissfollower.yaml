@@ -1,0 +1,46 @@
+name: DismissFollower
+description: "Part ways with this companion. Use this action when:
+  - The player clearly tells the companion to leave or go home
+  - A mutual parting of ways occurs in conversation
+  - The player says goodbye and tells them they're done traveling together
+  - The companion is being sent to their assigned home
+
+  Do NOT use this action when:
+  - The player is just talking about potentially parting ways
+  - The companion is upset but hasn't been told to leave
+  - The player is giving other orders (wait here, go there, etc.)
+
+  If the companion has an assigned home, they will travel there.
+  Otherwise they will remain at the current location."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: DismissCompanion
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The companion being dismissed
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} has parted ways with {{ player.name }}"

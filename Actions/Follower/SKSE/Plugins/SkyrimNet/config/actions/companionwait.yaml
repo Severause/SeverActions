@@ -1,0 +1,52 @@
+name: CompanionWait
+description: "I will wait here for {{ player.name }} and relax until they return.
+  Use this action when {{ player.name }} tells me to wait, stay here, hold position,
+  stay put, hang out here, or stop following temporarily. I will sandbox around this
+  area — sitting, wandering, leaning — until {{ player.name }} comes back and tells
+  me to follow again.
+
+  I must be an active companion (follower) to use this action.
+
+  Do NOT use this action when:
+  - {{ player.name }} is dismissing me entirely (use DismissFollower instead)
+  - {{ player.name }} wants me to live here permanently (use AssignHome instead)
+  - I am not currently a companion"
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: CompanionWait
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The companion being told to wait
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} is waiting here for {{ player.name }}"

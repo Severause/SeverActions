@@ -1,0 +1,48 @@
+name: FollowerLeaves
+description: "The companion decides to leave {{ player.name }}'s service on their
+  own. This is a dramatic, meaningful moment. Use ONLY when:
+  - The companion has been severely mistreated (very low rapport/trust)
+  - The companion's values are fundamentally incompatible with the player's repeated actions
+  - The companion has been ordered to do something deeply against their nature multiple times
+  - The relationship has deteriorated beyond repair
+
+  This should be EXTREMELY RARE - a last resort after clear, sustained mistreatment.
+  The companion should express WHY they are leaving in their dialogue.
+
+  Do NOT use this action when:
+  - The companion is just temporarily upset
+  - There was a single disagreement
+  - The companion is annoyed but not at a breaking point
+  - The player hasn't done anything particularly egregious"
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: FollowerLeaves
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The companion who is choosing to leave
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} has decided to leave {{ player.name }}'s service"

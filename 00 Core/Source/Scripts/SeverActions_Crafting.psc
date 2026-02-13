@@ -157,6 +157,11 @@ ObjectReference Function FindNearbyCookingPot(Actor akActor)
     return SeverActionsNative.FindNearbyCookingPot(akActor, SEARCH_RADIUS)
 EndFunction
 
+ObjectReference Function FindNearbyOven(Actor akActor)
+    {Find the nearest oven within search radius - for baked goods}
+    return SeverActionsNative.FindNearbyOven(akActor, SEARCH_RADIUS)
+EndFunction
+
 ObjectReference Function FindNearbyAlchemyLab(Actor akActor)
     {Find the nearest alchemy lab within search radius - uses native function}
     return SeverActionsNative.FindNearbyAlchemyLab(akActor, SEARCH_RADIUS)
@@ -456,10 +461,27 @@ Function CookMeal_Internal(Actor akActor, string recipeName, Actor akRecipient, 
         return
     endif
 
-    ; Find nearby cooking pot
-    ObjectReference cookingPot = FindNearbyCookingPot(akActor)
+    ; Check if this recipe needs an oven (baked goods) or a cooking pot
+    bool needsOven = SeverActionsNative.IsOvenRecipe(recipeName)
+
+    ; Find the appropriate workstation
+    ObjectReference cookingPot = None
+    if needsOven
+        cookingPot = FindNearbyOven(akActor)
+        if !cookingPot
+            ; Fallback: try a regular cooking pot if no oven found
+            cookingPot = FindNearbyCookingPot(akActor)
+        endif
+    else
+        cookingPot = FindNearbyCookingPot(akActor)
+    endif
+
     if !cookingPot
-        Debug.Notification("No cooking pot nearby!")
+        if needsOven
+            Debug.Notification("No oven nearby!")
+        else
+            Debug.Notification("No cooking pot nearby!")
+        endif
         return
     endif
 
@@ -482,7 +504,11 @@ Function CookMeal_Internal(Actor akActor, string recipeName, Actor akRecipient, 
     ; PHASE 1: Walk to cooking pot and cook
     ; =========================================================================
 
-    Debug.Trace("SeverActions_Crafting: CookMeal - Walking to cooking pot")
+    if needsOven
+        Debug.Trace("SeverActions_Crafting: CookMeal - Walking to oven")
+    else
+        Debug.Trace("SeverActions_Crafting: CookMeal - Walking to cooking pot")
+    endif
 
     ; Register persistent event: Started cooking
     SkyrimNetApi.RegisterPersistentEvent(crafterName + " begins cooking " + itemDisplayName + countStr + ".", akActor, recipient)

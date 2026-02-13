@@ -150,6 +150,28 @@ Full cross-cell dispatch with off-screen escort, combat suppression, and judgmen
                             </typeDescriptor>
                         </plugin>
 
+                        <plugin name="Follower Actions">
+                            <description>Companion recruitment and management:
+• Set Companion - Make an NPC your companion (first time or re-recruit)
+• Dismiss Follower - Part ways with a companion
+• Companion Wait - Tell a companion to wait and sandbox at current location
+• Assign Home - Set where a follower lives when dismissed
+• Set Combat Style - Change follower tactics (aggressive, defensive, ranged, healer, balanced)
+• Follower Leaves - Companion decides to leave on their own (very rare, severe mistreatment)
+
+Makes recruited NPCs proper Skyrim followers (teammate status, faction membership).
+Integrates with Nether's Follower Framework (NFF) when installed for full compatibility.
+Falls back to vanilla follower mechanics when NFF is not present.
+Adds a relationship system with rapport, trust, loyalty, and mood that evolves over time.
+Install with Follower Prompts for full companion awareness.</description>
+                            <files>
+                                <folder source="Actions/Follower" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
+                            </typeDescriptor>
+                        </plugin>
+
                     </plugins>
                 </group>
 
@@ -244,6 +266,21 @@ Works with Arrest Actions for full crime system.</description>
                             </files>
                             <typeDescriptor>
                                 <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Follower Companion Prompts">
+                            <description>Companion relationship awareness:
+• Follower Context - NPCs know their rapport, trust, mood, combat style, and home assignment
+• Follower Action Guidance - Rules for when to use companion management actions
+
+Companions can refuse orders based on low trust, express opinions, and remember past recruitment history.
+Install with Follower Actions for the full companion system.</description>
+                            <files>
+                                <folder source="Prompts/Follower" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
                             </typeDescriptor>
                         </plugin>
 

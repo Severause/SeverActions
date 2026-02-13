@@ -74,6 +74,7 @@ The bounty is relatively minor ({{ confrontingBounty }} gold). {{ actor.name }} 
 {% set senderIsPlayer = (dispatchSender.uuid == player.UUID) %}
 {% endif %}
 {% if isSender %}
+{% if actorUUID and actorUUID != 0 and dispatchTarget and dispatchTarget.uuid and dispatchTarget.uuid != 0 and dispatchGuard and dispatchGuard.uuid and dispatchGuard.uuid != 0 %}
 {% set actor = decnpc(actorUUID) %}
 {% set accusedData = decnpc(dispatchTarget.uuid) %}
 {% set accusedName = accusedData.name %}
@@ -101,8 +102,10 @@ The bounty is relatively minor ({{ confrontingBounty }} gold). {{ actor.name }} 
 - The severity of the offense - Could it be overlooked, or does it demand punishment?
 - Would releasing {{ accusedName }} undermine {{ actor.name }}'s authority?
 - Are there witnesses? Would mercy or harshness serve {{ actor.name }}'s interests?
+{% endif %}
 
 {% elif isDispatchGuard and senderIsPlayer %}
+{% if actorUUID and actorUUID != 0 and dispatchTarget and dispatchTarget.uuid and dispatchTarget.uuid != 0 and player and player.UUID and player.UUID != 0 %}
 {% set actor = decnpc(actorUUID) %}
 {% set accusedData = decnpc(dispatchTarget.uuid) %}
 {% set accusedName = accusedData.name %}
@@ -123,8 +126,10 @@ The bounty is relatively minor ({{ confrontingBounty }} gold). {{ actor.name }} 
     - **OrderJailed** - Take {{ accusedName }} to jail on {{ playerName }}'s orders
 - DO NOT use any other actions during this judgment.
 - {{ actor.name }} should respond in character, acknowledging {{ playerName }}'s authority and carrying out their wishes.
+{% endif %}
 
 {% elif isAccused %}
+{% if actorUUID and actorUUID != 0 and dispatchSender and dispatchSender.uuid and dispatchSender.uuid != 0 %}
 {% set actor = decnpc(actorUUID) %}
 {% set senderData = decnpc(dispatchSender.uuid) %}
 {% set senderName = senderData.name %}
@@ -139,6 +144,7 @@ The bounty is relatively minor ({{ confrontingBounty }} gold). {{ actor.name }} 
 - {{ actor.name }}'s arguments should reflect {{ poss }} personality - are they humble? Defiant? Desperate? Cunning?
 - {{ actor.name }} does NOT have access to any actions right now. {{ subj | capitalize }} can only speak.
 - Time is limited. {{ actor.name }} should make {{ poss }} case clearly and convincingly.
+{% endif %}
 
 {% endif %}
 {% else %}

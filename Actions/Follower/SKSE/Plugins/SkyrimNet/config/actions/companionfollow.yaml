@@ -1,0 +1,50 @@
+name: CompanionFollow
+description: "I will stop waiting and resume following {{ player.name }}.
+  Use this action when {{ player.name }} returns to me after telling me to wait
+  and asks me to follow them again, come along, move out, or resume traveling together.
+
+  I must be an active companion (follower) who is currently waiting to use this action.
+
+  Do NOT use this action when:
+  - I am already following {{ player.name }} (I'm not waiting)
+  - {{ player.name }} is recruiting me for the first time (use SetCompanion instead)
+  - {{ player.name }} wants to dismiss me (use DismissFollower instead)"
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: CompanionFollow
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The companion resuming following
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} stopped waiting and is following {{ player.name }} again"

@@ -1,4 +1,7 @@
-{% if render_mode == "full" or render_mode == "static" %}
+{# Skip nearby refs entirely during SexLab/OStim scenes - saves tokens #}
+{% set _in_sexlab = is_in_faction(actorUUID, "SexLabAnimatingFaction") %}
+{% set _in_ostim = is_in_faction(actorUUID, "OStimExcitementFaction") %}
+{% if (render_mode == "full" or render_mode == "static") and not _in_sexlab and not _in_ostim %}
 ## Nearby Objects
 {% set first_person = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
 {% if actorUUID and isValidActor(actorUUID) %}

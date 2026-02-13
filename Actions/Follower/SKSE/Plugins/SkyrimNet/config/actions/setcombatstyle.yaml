@@ -1,0 +1,49 @@
+name: SetCombatStyle
+description: "Set how this companion approaches combat. Use when the player gives
+  clear tactical instructions about fighting style:
+  - 'Stay back and use your bow' -> ranged
+  - 'Get in there and fight up close' -> aggressive
+  - 'Be careful, protect yourself' -> defensive
+  - 'Focus on keeping us healed' -> healer
+  - 'Fight however you want' -> balanced
+
+  Do NOT use this action when:
+  - The companion is just talking about combat in general
+  - No clear tactical direction was given
+  - The player is discussing strategy but not giving orders"
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: SetCombatStyle
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The companion whose combat style is being set
+  - type: dynamic
+    name: style
+    description: "The combat style to use. Must be one of: aggressive, defensive,
+      ranged, healer, balanced"
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} will now fight in a {{ style }} style"

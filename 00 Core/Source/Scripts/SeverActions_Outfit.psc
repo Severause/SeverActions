@@ -306,7 +306,360 @@ Bool Function Dress_IsEligible(Actor akActor)
 EndFunction
 
 ; =============================================================================
-; ACTION: RemoveClothingPiece
+; ACTION: EquipItemByName
+; YAML parameterMapping: [speaker, itemName]
+; Equips any item from actor's inventory by name (case-insensitive substring)
+; =============================================================================
+
+Function EquipItemByName_Execute(Actor akActor, String itemName)
+    if !akActor
+        return
+    endif
+
+    if itemName == ""
+        Debug.Trace("[SeverActions_Outfit] EquipItemByName: No item name specified")
+        return
+    endif
+
+    Debug.Trace("[SeverActions_Outfit] EquipItemByName: " + akActor.GetDisplayName() + " equipping '" + itemName + "'")
+
+    ; Use native C++ for fast inventory search
+    Form foundForm = SeverActionsNative.FindItemByName(akActor, itemName)
+
+    if !foundForm
+        Debug.Trace("[SeverActions_Outfit] EquipItemByName: Item '" + itemName + "' not found in inventory")
+        return
+    endif
+
+    ; Handle armor
+    Armor armorItem = foundForm as Armor
+    if armorItem
+        String slotName = GetSlotNameFromMask(armorItem.GetSlotMask())
+        PlayEquipAnimation(akActor, slotName)
+        akActor.EquipItem(armorItem, false, true)
+        Debug.Trace("[SeverActions_Outfit] Equipped armor: " + armorItem.GetName())
+        return
+    endif
+
+    ; Handle weapons
+    Weapon weaponItem = foundForm as Weapon
+    if weaponItem
+        akActor.EquipItem(weaponItem, false, true)
+        Debug.Trace("[SeverActions_Outfit] Equipped weapon: " + weaponItem.GetName())
+        return
+    endif
+
+    ; Generic fallback for other equippable items (ammo, etc.)
+    akActor.EquipItem(foundForm, false, true)
+    Debug.Trace("[SeverActions_Outfit] Equipped item: " + foundForm.GetName())
+EndFunction
+
+; =============================================================================
+; ACTION: UnequipItemByName
+; YAML parameterMapping: [speaker, itemName]
+; Unequips a currently worn/equipped item by name (case-insensitive substring)
+; =============================================================================
+
+Function UnequipItemByName_Execute(Actor akActor, String itemName)
+    if !akActor
+        return
+    endif
+
+    if itemName == ""
+        Debug.Trace("[SeverActions_Outfit] UnequipItemByName: No item name specified")
+        return
+    endif
+
+    Debug.Trace("[SeverActions_Outfit] UnequipItemByName: " + akActor.GetDisplayName() + " removing '" + itemName + "'")
+
+    ; Use native C++ for fast worn item search (InventoryChanges.IsWorn + name match)
+    Form foundForm = SeverActionsNative.FindWornItemByName(akActor, itemName)
+
+    if !foundForm
+        Debug.Trace("[SeverActions_Outfit] UnequipItemByName: '" + itemName + "' not found on " + akActor.GetDisplayName())
+        return
+    endif
+
+    ; Handle armor - store for Dress re-equip, play animation
+    Armor armorItem = foundForm as Armor
+    if armorItem
+        String storageKey = "SeverActions_RemovedArmor_" + (akActor.GetFormID() as String)
+        if StorageUtil.FormListFind(None, storageKey, armorItem) < 0
+            StorageUtil.FormListAdd(None, storageKey, armorItem)
+        endif
+
+        String slotName = GetSlotNameFromMask(armorItem.GetSlotMask())
+        PlayUnequipAnimation(akActor, slotName)
+        akActor.UnequipItem(armorItem, false, true)
+        Debug.Trace("[SeverActions_Outfit] Unequipped armor: " + armorItem.GetName())
+        return
+    endif
+
+    ; Handle weapons - just unequip (no storage for Dress)
+    akActor.UnequipItem(foundForm, false, true)
+    Debug.Trace("[SeverActions_Outfit] Unequipped item: " + foundForm.GetName())
+EndFunction
+
+; =============================================================================
+; ACTION: EquipMultipleItems
+; YAML parameterMapping: [speaker, itemNames]
+; Equips multiple items from a comma-separated list
+; C++ for search, Papyrus EquipItem for thread-safe equipping
+; =============================================================================
+
+Function EquipMultipleItems_Execute(Actor akActor, String itemNames)
+    if !akActor || itemNames == ""
+        return
+    endif
+
+    Debug.Trace("[SeverActions_Outfit] EquipMultipleItems: " + akActor.GetDisplayName() + " equipping '" + itemNames + "'")
+
+    Int count = 0
+    Int startPos = 0
+    Int commaPos = StringUtil.Find(itemNames, ",", startPos)
+
+    while startPos < StringUtil.GetLength(itemNames)
+        String itemName
+        if commaPos >= 0
+            itemName = StringUtil.Substring(itemNames, startPos, commaPos - startPos)
+            startPos = commaPos + 1
+            commaPos = StringUtil.Find(itemNames, ",", startPos)
+        else
+            itemName = StringUtil.Substring(itemNames, startPos)
+            startPos = StringUtil.GetLength(itemNames)
+        endif
+
+        ; Trim leading/trailing spaces
+        itemName = TrimString(itemName)
+        if itemName != ""
+            count += EquipSingleItemInternal(akActor, itemName)
+        endif
+    endwhile
+
+    Debug.Trace("[SeverActions_Outfit] EquipMultipleItems: Equipped " + count + " items")
+EndFunction
+
+; =============================================================================
+; ACTION: UnequipMultipleItems
+; YAML parameterMapping: [speaker, itemNames]
+; Unequips multiple worn items from a comma-separated list
+; C++ for search, Papyrus UnequipItem for thread-safe unequipping
+; =============================================================================
+
+Function UnequipMultipleItems_Execute(Actor akActor, String itemNames)
+    if !akActor || itemNames == ""
+        return
+    endif
+
+    Debug.Trace("[SeverActions_Outfit] UnequipMultipleItems: " + akActor.GetDisplayName() + " removing '" + itemNames + "'")
+
+    Int count = 0
+    Int startPos = 0
+    Int commaPos = StringUtil.Find(itemNames, ",", startPos)
+
+    while startPos < StringUtil.GetLength(itemNames)
+        String itemName
+        if commaPos >= 0
+            itemName = StringUtil.Substring(itemNames, startPos, commaPos - startPos)
+            startPos = commaPos + 1
+            commaPos = StringUtil.Find(itemNames, ",", startPos)
+        else
+            itemName = StringUtil.Substring(itemNames, startPos)
+            startPos = StringUtil.GetLength(itemNames)
+        endif
+
+        itemName = TrimString(itemName)
+        if itemName != ""
+            count += UnequipSingleItemInternal(akActor, itemName)
+        endif
+    endwhile
+
+    Debug.Trace("[SeverActions_Outfit] UnequipMultipleItems: Unequipped " + count + " items")
+EndFunction
+
+; =============================================================================
+; ACTION: SaveOutfitPreset
+; YAML parameterMapping: [speaker, presetName]
+; Snapshots all currently worn items and stores them under a named preset
+; =============================================================================
+
+Function SaveOutfitPreset_Execute(Actor akActor, String presetName)
+    if !akActor || presetName == ""
+        return
+    endif
+
+    presetName = StringToLower(presetName)
+    String presetKey = "SeverOutfit_" + presetName + "_" + (akActor.GetFormID() as String)
+
+    Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset: Saving '" + presetName + "' for " + akActor.GetDisplayName())
+
+    ; Clear any existing preset with this name
+    StorageUtil.FormListClear(None, presetKey)
+
+    ; Store the preset name in a list of known presets for this actor
+    String presetsListKey = "SeverOutfit_Presets_" + (akActor.GetFormID() as String)
+    if StorageUtil.StringListFind(None, presetsListKey, presetName) < 0
+        StorageUtil.StringListAdd(None, presetsListKey, presetName)
+    endif
+
+    ; Iterate all worn slots and snapshot them
+    int[] slots = new int[18]
+    slots[0] = 0x00000001   ; Head (30)
+    slots[1] = 0x00000004   ; Body (32)
+    slots[2] = 0x00000008   ; Hands (33)
+    slots[3] = 0x00000010   ; Forearms (34)
+    slots[4] = 0x00000020   ; Amulet (35)
+    slots[5] = 0x00000040   ; Ring (36)
+    slots[6] = 0x00000080   ; Feet (37)
+    slots[7] = 0x00000200   ; Shield (39)
+    slots[8] = 0x00000400   ; Tail/Cloak (40)
+    slots[9] = 0x00001000   ; Circlet (42)
+    slots[10] = 0x00002000  ; Ears (43)
+    slots[11] = 0x00008000  ; Neck/Scarf (45)
+    slots[12] = 0x00010000  ; Cloak (46)
+    slots[13] = 0x00020000  ; Back/Cloak (47)
+    slots[14] = 0x00080000  ; Pelvis outer (49)
+    slots[15] = 0x00400000  ; Underwear (52)
+    slots[16] = 0x02000000  ; Face (55)
+    slots[17] = 0x08000000  ; Cloak (57)
+
+    Int savedCount = 0
+    int i = 0
+    while i < slots.Length
+        Armor equippedItem = akActor.GetWornForm(slots[i]) as Armor
+        if equippedItem
+            ; Avoid duplicates (multi-slot items)
+            if StorageUtil.FormListFind(None, presetKey, equippedItem) < 0
+                StorageUtil.FormListAdd(None, presetKey, equippedItem)
+                savedCount += 1
+            endif
+        endif
+        i += 1
+    endwhile
+
+    Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset: Saved " + savedCount + " items as '" + presetName + "'")
+EndFunction
+
+; =============================================================================
+; ACTION: ApplyOutfitPreset
+; YAML parameterMapping: [speaker, presetName]
+; Removes current gear and equips all items from a saved preset
+; =============================================================================
+
+Function ApplyOutfitPreset_Execute(Actor akActor, String presetName)
+    if !akActor || presetName == ""
+        return
+    endif
+
+    presetName = StringToLower(presetName)
+    String presetKey = "SeverOutfit_" + presetName + "_" + (akActor.GetFormID() as String)
+
+    Int count = StorageUtil.FormListCount(None, presetKey)
+    if count == 0
+        Debug.Trace("[SeverActions_Outfit] ApplyOutfitPreset: No preset '" + presetName + "' found for " + akActor.GetDisplayName())
+        return
+    endif
+
+    Debug.Trace("[SeverActions_Outfit] ApplyOutfitPreset: Applying '" + presetName + "' (" + count + " items) to " + akActor.GetDisplayName())
+
+    ; First undress — remove all currently worn items
+    ; We use the RemovedArmor storage so Dress can still work as a fallback
+    String storageKey = "SeverActions_RemovedArmor_" + (akActor.GetFormID() as String)
+    StorageUtil.FormListClear(None, storageKey)
+
+    int[] slots = new int[18]
+    slots[0] = 0x00000001
+    slots[1] = 0x00000004
+    slots[2] = 0x00000008
+    slots[3] = 0x00000010
+    slots[4] = 0x00000020
+    slots[5] = 0x00000040
+    slots[6] = 0x00000080
+    slots[7] = 0x00000200
+    slots[8] = 0x00000400
+    slots[9] = 0x00001000
+    slots[10] = 0x00002000
+    slots[11] = 0x00008000
+    slots[12] = 0x00010000
+    slots[13] = 0x00020000
+    slots[14] = 0x00080000
+    slots[15] = 0x00400000
+    slots[16] = 0x02000000
+    slots[17] = 0x08000000
+
+    int s = 0
+    while s < slots.Length
+        Armor equippedItem = akActor.GetWornForm(slots[s]) as Armor
+        if equippedItem
+            if StorageUtil.FormListFind(None, storageKey, equippedItem) < 0
+                StorageUtil.FormListAdd(None, storageKey, equippedItem)
+            endif
+            akActor.UnequipItem(equippedItem, false, true)
+        endif
+        s += 1
+    endwhile
+
+    ; Now equip every item from the preset
+    Int equippedCount = 0
+    int i = 0
+    while i < count
+        Form item = StorageUtil.FormListGet(None, presetKey, i)
+        if item
+            Armor armorItem = item as Armor
+            if armorItem
+                String slotName = GetSlotNameFromMask(armorItem.GetSlotMask())
+                PlayEquipAnimation(akActor, slotName)
+            endif
+            akActor.EquipItem(item, false, true)
+            equippedCount += 1
+        endif
+        i += 1
+    endwhile
+
+    Debug.Trace("[SeverActions_Outfit] ApplyOutfitPreset: Equipped " + equippedCount + " items from '" + presetName + "'")
+EndFunction
+
+; =============================================================================
+; INTERNAL HELPERS - C++ search + Papyrus equip (thread-safe)
+; =============================================================================
+
+Int Function EquipSingleItemInternal(Actor akActor, String itemName)
+{Search inventory in C++, equip via Papyrus EquipItem. Returns 1 on success, 0 on failure.}
+    Form foundForm = SeverActionsNative.FindItemByName(akActor, itemName)
+    if !foundForm
+        Debug.Trace("[SeverActions_Outfit] EquipMultiple: '" + itemName + "' not found in inventory")
+        return 0
+    endif
+
+    akActor.EquipItem(foundForm, false, true)
+    Debug.Trace("[SeverActions_Outfit] EquipMultiple: Equipped '" + foundForm.GetName() + "'")
+    return 1
+EndFunction
+
+Int Function UnequipSingleItemInternal(Actor akActor, String itemName)
+{Search worn items in C++, unequip via Papyrus UnequipItem. Returns 1 on success, 0 on failure.}
+    Form foundForm = SeverActionsNative.FindWornItemByName(akActor, itemName)
+    if !foundForm
+        Debug.Trace("[SeverActions_Outfit] UnequipMultiple: '" + itemName + "' not worn")
+        return 0
+    endif
+
+    ; Store armor for Dress re-equip
+    Armor armorItem = foundForm as Armor
+    if armorItem
+        String storageKey = "SeverActions_RemovedArmor_" + (akActor.GetFormID() as String)
+        if StorageUtil.FormListFind(None, storageKey, armorItem) < 0
+            StorageUtil.FormListAdd(None, storageKey, armorItem)
+        endif
+    endif
+
+    akActor.UnequipItem(foundForm, false, true)
+    Debug.Trace("[SeverActions_Outfit] UnequipMultiple: Unequipped '" + foundForm.GetName() + "'")
+    return 1
+EndFunction
+
+; =============================================================================
+; ACTION: RemoveClothingPiece (LEGACY - kept for compatibility)
 ; YAML parameterMapping: [speaker, slot]
 ; =============================================================================
 
@@ -508,6 +861,26 @@ int[] Function GetSlotsFromName(String slotName)
     results = new int[1]
     results[0] = GetSlotFromName(slotName)
     return results
+EndFunction
+
+String Function TrimString(String text)
+{Remove leading and trailing spaces from a string}
+    Int len = StringUtil.GetLength(text)
+    if len == 0
+        return ""
+    endif
+    Int startIdx = 0
+    while startIdx < len && StringUtil.Substring(text, startIdx, 1) == " "
+        startIdx += 1
+    endwhile
+    Int endIdx = len - 1
+    while endIdx > startIdx && StringUtil.Substring(text, endIdx, 1) == " "
+        endIdx -= 1
+    endwhile
+    if startIdx > endIdx
+        return ""
+    endif
+    return StringUtil.Substring(text, startIdx, endIdx - startIdx + 1)
 EndFunction
 
 String Function StringToLower(String text)

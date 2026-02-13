@@ -8,6 +8,8 @@
 {% set yield_time = papyrus_util("GetFloatValue", actor.UUID, "SeverCombat_YieldTime", 0) %}
 {% set yielded_to = papyrus_util("GetFormValue", actor.UUID, "SeverCombat_YieldedTo") %}
 {% set received_yield_from = papyrus_util("GetFormValue", actor.UUID, "SeverCombat_ReceivedYieldFrom") %}
+{% set yield_broken_flag = papyrus_util("GetIntValue", actor.UUID, "SeverCombat_YieldBroken", 0) %}
+{% set yield_broken = (yield_broken_flag == 1) %}
 {% set in_combat = actor.isInCombat %}
 
 {# Calculate if events are still recent (within cooldown period) #}
@@ -36,8 +38,13 @@
 {% set is_dialogue_context = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
 {# DIALOGUE GUIDANCE - Only show when rendering for direct actor dialogue #}
 {% if is_dialogue_context %}
+{# Yield broken state - attacked after surrendering #}
+{% if yield_broken and in_combat %}
+## Betrayed Surrender
+You surrendered but were attacked anyway. Your surrender was not respected. You are furious and fighting back with renewed aggression — show no mercy to someone who would strike a defenseless opponent.
+{% endif %}
 {# Truce states - yield or ceasefire #}
-{% if recent_ceasefire or recent_yield_given or recent_yield_received %}
+{% if not yield_broken and (recent_ceasefire or recent_yield_given or recent_yield_received) %}
 ## Recent Truce
 {% if recent_yield_given %}
 You just surrendered. You are shaken, humiliated, or relieved to be alive. You will NOT immediately become hostile again - you valued your life enough to yield. Show appropriate deference or wariness toward the person you surrendered to.

@@ -1,0 +1,35 @@
+name: ApplyOutfitPreset
+description: "Change into a previously saved outfit preset. Use when told to put on or change into a named outfit like 'put on your home clothes', 'change into your combat gear', 'switch to your formal outfit'. This will remove all currently worn armor/clothing and equip everything from the saved preset. The preset must have been saved first with SaveOutfitPreset."
+questEditorId: SeverActions
+scriptName: SeverActions_Outfit
+executionFunctionName: ApplyOutfitPreset_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: presetName
+    description: "Name of the outfit preset to apply (e.g., 'home', 'combat', 'formal', 'casual', 'travel'). Must match a previously saved preset name."
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

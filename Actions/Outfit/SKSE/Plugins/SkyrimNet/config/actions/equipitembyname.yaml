@@ -1,0 +1,35 @@
+name: EquipItemByName
+description: "Equip a specific item from inventory by name. Use when told to put on a particular piece of armor, weapon, or clothing. The item must be in the actor's inventory. Use the exact or partial item name (e.g., 'steel gauntlets', 'iron helmet', 'glass cuirass', 'ebony sword'). For removing all clothing use Undress instead."
+questEditorId: SeverActions
+scriptName: SeverActions_Outfit
+executionFunctionName: EquipItemByName_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: itemName
+    description: "The name of the item to equip from inventory (e.g., 'steel gauntlets', 'iron helmet', 'glass cuirass', 'ebony sword', 'hide armor')"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

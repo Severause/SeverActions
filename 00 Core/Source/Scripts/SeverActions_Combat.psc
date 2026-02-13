@@ -106,6 +106,14 @@ SeverActions_Combat Function GetInstance() Global
 EndFunction
 
 ; ============================================================================
+; INITIALIZATION
+; ============================================================================
+
+Event OnInit()
+    RegisterForModEvent("SeverActionsNative_YieldBroken", "OnYieldBroken")
+EndEvent
+
+; ============================================================================
 ; CEASEFIRE DELAYED RESTORE STATE
 ; ============================================================================
 
@@ -461,6 +469,10 @@ Function Yield_Execute(Actor akYielder)
     If akStoredTarget
         akStoredTarget.EvaluatePackage()
     EndIf
+
+    ; Register with native yield monitor — auto-reverts surrender if player keeps attacking
+    Float origAggro = StorageUtil.GetFloatValue(akYielder, "SeverCombat_OriginalAggression", 1.0)
+    SeverActionsNative.RegisterYieldedActor(akYielder, origAggro, SeverSurrenderedFaction)
 EndFunction
 
 Bool Function Yield_IsEligible(Actor akYielder)
@@ -654,7 +666,10 @@ Function ReturnToCrime_Execute(Actor akActor)
     EndIf
     
     Debug.Trace("[SeverCombat] ReturnToCrime: " + akActor.GetDisplayName() + " returning to hostile faction")
-    
+
+    ; Stop yield hit monitoring — they're returning to crime voluntarily
+    SeverActionsNative.UnregisterYieldedActor(akActor)
+
     ; Remove from surrendered faction
     If SeverSurrenderedFaction && akActor.IsInFaction(SeverSurrenderedFaction)
         akActor.RemoveFromFaction(SeverSurrenderedFaction)
@@ -852,7 +867,10 @@ Function FullCleanup(Actor akActor)
     EndIf
     
     Debug.Trace("[SeverCombat] FullCleanup starting for " + akActor.GetDisplayName())
-    
+
+    ; Stop yield hit monitoring if active
+    SeverActionsNative.UnregisterYieldedActor(akActor)
+
     ; Stop any combat
     akActor.StopCombatAlarm()
     akActor.StopCombat()
@@ -931,6 +949,9 @@ Bool Function FullCleanup_IsEligible(Actor akActor)
 EndFunction
 
 Event OnPlayerLoadGame()
+    ; Re-register for native yield monitor mod event
+    RegisterForModEvent("SeverActionsNative_YieldBroken", "OnYieldBroken")
+
     ; Check if there are actors that need aggression restored from a ceasefire
     ; that was in progress when the game was saved
     If CeasefireActor1 && StorageUtil.GetIntValue(CeasefireActor1, "SeverCombat_NeedsAggroRestore", 0) == 1
@@ -995,3 +1016,61 @@ Function RestoreCeasefireAggression(Actor akActor)
     ; whether to re-engage based on distance and perception
     ; If the player has walked away during the cooldown, they won't re-aggro
 EndFunction
+
+; ============================================================================
+; YIELD BROKEN EVENT HANDLER
+; ============================================================================
+
+Event OnYieldBroken(string eventName, string strArg, float numArg, Form sender)
+    {Called by native YieldMonitor when a yielded actor takes enough hits to break surrender.
+     C++ already restored aggression and removed from SeverSurrenderedFaction.
+     This handler restores hostile factions, cleans up StorageUtil keys, and fires SkyrimNet event.}
+    Actor akActor = sender as Actor
+    If !akActor
+        Return
+    EndIf
+
+    Debug.Trace("[SeverCombat] YieldBroken: " + akActor.GetDisplayName() + " was attacked after surrendering")
+
+    ; Restore original hostile factions from StorageUtil (C++ only removed SeverSurrenderedFaction)
+    Int factionCount = StorageUtil.FormListCount(akActor, "SeverCombat_RemovedFactions")
+    Int i = 0
+    While i < factionCount
+        Faction originalFaction = StorageUtil.FormListGet(akActor, "SeverCombat_RemovedFactions", i) as Faction
+        If originalFaction
+            akActor.AddToFaction(originalFaction)
+            akActor.SetFactionRank(originalFaction, 0)
+            Debug.Trace("[SeverCombat] YieldBroken: Restored faction " + originalFaction)
+        EndIf
+        i += 1
+    EndWhile
+
+    ; Clean up surrender-related StorageUtil keys
+    StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasSurrendered")
+    StorageUtil.UnsetFormValue(akActor, "SeverCombat_OriginalFaction")
+    StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalAggression")
+    StorageUtil.UnsetFloatValue(akActor, "SeverCombat_YieldTime")
+    StorageUtil.UnsetFormValue(akActor, "SeverCombat_YieldedTo")
+    StorageUtil.FormListClear(akActor, "SeverCombat_RemovedFactions")
+
+    ; Also clean up the other actor's yield-received data if present
+    Actor playerRef = Game.GetPlayer()
+    If playerRef
+        StorageUtil.UnsetFormValue(playerRef, "SeverCombat_ReceivedYieldFrom")
+    EndIf
+
+    ; Set yield-broken flag for prompt awareness
+    StorageUtil.SetIntValue(akActor, "SeverCombat_YieldBroken", 1)
+
+    ; Force AI re-evaluate now that factions are restored
+    akActor.EvaluatePackage()
+
+    ; Fire SkyrimNet event
+    If playerRef
+        SkyrimNetApi.RegisterEvent("yield_broken", \
+            akActor.GetDisplayName() + " was attacked after surrendering and is fighting back against " + playerRef.GetDisplayName(), \
+            akActor, playerRef)
+    EndIf
+
+    Debug.Trace("[SeverCombat] YieldBroken complete for " + akActor.GetDisplayName())
+EndEvent

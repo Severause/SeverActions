@@ -34,3 +34,56 @@ eligibilityRules:
         expectedValue: false
     logicalOperator: "AND"
     required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWhiterun"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionRiften"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionSolitude"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionHaafingar"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWindhelm"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionMarkarth"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionFalkreath"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionDawnstar"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWinterhold"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "OR"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
