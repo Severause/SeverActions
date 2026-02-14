@@ -1,23 +1,23 @@
 name: CompanionWait
-description: "I will wait here for {{ player.name }} and relax until they return.
-  Use this action when {{ player.name }} tells me to wait, stay here, hold position,
-  stay put, hang out here, or stop following temporarily. I will sandbox around this
+description: "Wait here and relax until {{ player.name }} returns.
+  Use this action when {{ player.name }} tells an NPC to wait, stay here, hold position,
+  stay put, hang out here, or stop following temporarily. The NPC will sandbox around this
   area — sitting, wandering, leaning — until {{ player.name }} comes back and tells
-  me to follow again.
+  them to follow again.
 
-  I must be an active companion (follower) to use this action.
+  This works for any NPC, whether they are a companion or simply following {{ player.name }}.
 
   Do NOT use this action when:
-  - {{ player.name }} is dismissing me entirely (use DismissFollower instead)
-  - {{ player.name }} wants me to live here permanently (use AssignHome instead)
-  - I am not currently a companion"
+  - {{ player.name }} is dismissing a companion entirely (use DismissFollower instead)
+  - {{ player.name }} wants a companion to live here permanently (use AssignHome instead)
+  - The NPC is not currently following or traveling with {{ player.name }}"
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: CompanionWait
 parameterMapping:
   - type: speaker
     name: akActor
-    description: The companion being told to wait
+    description: The NPC being told to wait
 enabled: true
 defaultPriority: 7
 eligibilityRules:
@@ -26,13 +26,6 @@ eligibilityRules:
         arguments: ["currentActor"]
         comparisonOperator: "=="
         expectedValue: false
-    logicalOperator: "AND"
-    required: true
-  - conditions:
-      - decoratorName: "is_follower"
-        arguments: ["currentActor"]
-        comparisonOperator: "=="
-        expectedValue: true
     logicalOperator: "AND"
     required: true
   - conditions:

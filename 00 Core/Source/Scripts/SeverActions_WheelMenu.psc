@@ -17,6 +17,9 @@ SeverActions_Combat Property CombatScript Auto
 SeverActions_Outfit Property OutfitScript Auto
 {Reference to the outfit system script}
 
+SeverActions_FollowerManager Property FollowerManagerScript Auto
+{Reference to the follower manager script}
+
 ; =============================================================================
 ; WHEEL HOTKEY SETTING - Configured via MCM
 ; =============================================================================
@@ -36,8 +39,8 @@ int Property OPT_STAND_UP = 2 AutoReadOnly
 int Property OPT_YIELD = 3 AutoReadOnly
 int Property OPT_UNDRESS = 4 AutoReadOnly
 int Property OPT_DRESS = 5 AutoReadOnly
-int Property OPT_CANCEL = 6 AutoReadOnly
-; Index 7 reserved for future use
+int Property OPT_WAIT = 6 AutoReadOnly
+int Property OPT_SET_COMPANION = 7 AutoReadOnly
 
 ; =============================================================================
 ; INITIALIZATION
@@ -174,18 +177,21 @@ Function OpenWheelMenu()
     UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_DRESS, "Dress")
     UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_DRESS, "Dress")
 
-    ; Option 6 - Cancel
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_CANCEL, "Cancel")
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_CANCEL, "")
-    UIExtensions.SetMenuPropertyIndexInt("UIWheelMenu", "optionTextColor", OPT_CANCEL, 0x808080) ; Gray
+    ; Option 6 - Wait Here (context-aware label)
+    if target && target.GetAV("WaitingForPlayer") > 0
+        UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_WAIT, "Resume Follow")
+    else
+        UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_WAIT, "Wait Here")
+    endif
+    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_WAIT, "Wait")
 
-    ; Option 7 - Empty/Reserved
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", 7, "")
-    UIExtensions.SetMenuPropertyIndexBool("UIWheelMenu", "optionEnabled", 7, false)
+    ; Option 7 - Set Companion
+    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_SET_COMPANION, "Set Companion")
+    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_SET_COMPANION, "Companion")
 
-    ; Enable all options except reserved slot
+    ; Enable all options
     int i = 0
-    while i < 7
+    while i < 8
         UIExtensions.SetMenuPropertyIndexBool("UIWheelMenu", "optionEnabled", i, true)
         i += 1
     endwhile
@@ -199,7 +205,7 @@ EndFunction
 
 Function HandleWheelSelection(int selection, Actor target)
     ; 255 = cancelled (clicked outside or escape)
-    if selection == 255 || selection == OPT_CANCEL
+    if selection == 255
         return
     endif
 
@@ -226,6 +232,10 @@ Function HandleWheelSelection(int selection, Actor target)
         HandleUndress(target)
     elseif selection == OPT_DRESS
         HandleDress(target)
+    elseif selection == OPT_WAIT
+        HandleWait(target)
+    elseif selection == OPT_SET_COMPANION
+        HandleSetCompanion(target)
     endif
 EndFunction
 
@@ -348,6 +358,39 @@ Function HandleDress(Actor target)
     else
         Debug.Notification(target.GetDisplayName() + " has no stored clothing")
     endif
+EndFunction
+
+Function HandleWait(Actor target)
+    if !FollowerManagerScript
+        FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+    endif
+
+    if !FollowerManagerScript
+        Debug.Notification("SeverActions: Follower Manager not configured!")
+        return
+    endif
+
+    ; Toggle: if waiting, resume following; if not, wait here
+    if target.GetAV("WaitingForPlayer") > 0
+        if FollowScript
+            FollowScript.StartFollowing(target)
+        endif
+    else
+        FollowerManagerScript.CompanionWait(target)
+    endif
+EndFunction
+
+Function HandleSetCompanion(Actor target)
+    if !FollowerManagerScript
+        FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+    endif
+
+    if !FollowerManagerScript
+        Debug.Notification("SeverActions: Follower Manager not configured!")
+        return
+    endif
+
+    FollowerManagerScript.RegisterFollower(target)
 EndFunction
 
 ; =============================================================================

@@ -10,7 +10,7 @@ parameterMapping:
   - type: dynamic
     name: speedText
     description: "Natural language indicating desired speed. Keywords detected:\n        - Run (fastest): hurry, urgent, rush, quick, fast, run, emergency, immediate, asap, sprint\n        - Jog (medium): jog, brisk, steady, pace\n        - Walk (slowest): walk, slow, stroll, leisurely, casual (or any other text)"
-enabled: true
+enabled: false
 eligibilityRules:
   - conditions:
       - decoratorName: "is_in_combat"

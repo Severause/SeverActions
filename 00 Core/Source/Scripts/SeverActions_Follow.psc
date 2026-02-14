@@ -8,14 +8,14 @@ Scriptname SeverActions_Follow extends Quest
 ; No package property needed - SkyrimNet handles it internally via RegisterPackage
 ; But we need to tell SkyrimNet which package to use, so we register it in GetPackageFromString
 
-int Property FollowPackagePriority = 10 AutoReadOnly
-{Keep low so other packages can interrupt when needed}
+int Property FollowPackagePriority = 95 AutoReadOnly
+{High priority so follow reliably overrides other packages}
 
 Package Property SandboxPackage Auto
 {Sandbox package for relaxing in place - NPC wanders and interacts with nearby furniture}
 
 int Property SandboxPackagePriority = 90 AutoReadOnly
-{Higher than follow (10) so it overrides follow behavior, but lower than crafting/travel (100)}
+{Lower than follow (95) so sandbox yields when follow resumes, but higher than vanilla packages}
 
 float Property SandboxAutoStandDistance = 2000.0 Auto
 {Distance at which sandboxing actors auto-resume following when player moves away}

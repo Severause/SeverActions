@@ -241,6 +241,9 @@ Function Undress_Execute(Actor akActor)
         i += 1
     endwhile
     
+    ; Clear outfit lock — nothing worn means nothing to persist
+    ClearLockedOutfit(akActor)
+
     Debug.Trace("[SeverActions_Outfit] Removed " + removedCount + " items")
 EndFunction
 
@@ -289,6 +292,10 @@ Function Dress_Execute(Actor akActor)
     endwhile
     
     StorageUtil.FormListClear(None, storageKey)
+
+    ; Lock the new outfit so it persists across cell transitions
+    SnapshotLockedOutfit(akActor)
+
     Debug.Trace("[SeverActions_Outfit] Re-equipped " + count + " items")
 EndFunction
 
@@ -337,6 +344,7 @@ Function EquipItemByName_Execute(Actor akActor, String itemName)
         String slotName = GetSlotNameFromMask(armorItem.GetSlotMask())
         PlayEquipAnimation(akActor, slotName)
         akActor.EquipItem(armorItem, false, true)
+        SnapshotLockedOutfit(akActor)
         Debug.Trace("[SeverActions_Outfit] Equipped armor: " + armorItem.GetName())
         return
     endif
@@ -391,6 +399,7 @@ Function UnequipItemByName_Execute(Actor akActor, String itemName)
         String slotName = GetSlotNameFromMask(armorItem.GetSlotMask())
         PlayUnequipAnimation(akActor, slotName)
         akActor.UnequipItem(armorItem, false, true)
+        SnapshotLockedOutfit(akActor)
         Debug.Trace("[SeverActions_Outfit] Unequipped armor: " + armorItem.GetName())
         return
     endif
@@ -436,6 +445,11 @@ Function EquipMultipleItems_Execute(Actor akActor, String itemNames)
         endif
     endwhile
 
+    ; Lock the new outfit after batch equip
+    if count > 0
+        SnapshotLockedOutfit(akActor)
+    endif
+
     Debug.Trace("[SeverActions_Outfit] EquipMultipleItems: Equipped " + count + " items")
 EndFunction
 
@@ -473,6 +487,11 @@ Function UnequipMultipleItems_Execute(Actor akActor, String itemNames)
             count += UnequipSingleItemInternal(akActor, itemName)
         endif
     endwhile
+
+    ; Update the outfit lock after batch unequip
+    if count > 0
+        SnapshotLockedOutfit(akActor)
+    endif
 
     Debug.Trace("[SeverActions_Outfit] UnequipMultipleItems: Unequipped " + count + " items")
 EndFunction
@@ -616,6 +635,9 @@ Function ApplyOutfitPreset_Execute(Actor akActor, String presetName)
         i += 1
     endwhile
 
+    ; Lock the preset outfit so it persists across cell transitions
+    SnapshotLockedOutfit(akActor)
+
     Debug.Trace("[SeverActions_Outfit] ApplyOutfitPreset: Equipped " + equippedCount + " items from '" + presetName + "'")
 EndFunction
 
@@ -656,6 +678,108 @@ Int Function UnequipSingleItemInternal(Actor akActor, String itemName)
     akActor.UnequipItem(foundForm, false, true)
     Debug.Trace("[SeverActions_Outfit] UnequipMultiple: Unequipped '" + foundForm.GetName() + "'")
     return 1
+EndFunction
+
+; =============================================================================
+; OUTFIT PERSISTENCE - Lock follower outfits across cell transitions
+; Only applies to registered followers (SeverFollower_IsFollower == 1)
+; =============================================================================
+
+Function SnapshotLockedOutfit(Actor akActor)
+    {Snapshot all currently worn armor into a persistent FormList so it can be
+     re-applied after cell transitions. Only activates for registered followers.}
+    if !akActor
+        return
+    endif
+
+    ; Only lock outfits for registered followers
+    if StorageUtil.GetIntValue(akActor, "SeverFollower_IsFollower", 0) != 1
+        return
+    endif
+
+    String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
+    StorageUtil.FormListClear(None, lockKey)
+
+    ; Snapshot all 18 armor slots
+    int[] slots = new int[18]
+    slots[0] = 0x00000001   ; Head (30)
+    slots[1] = 0x00000004   ; Body (32)
+    slots[2] = 0x00000008   ; Hands (33)
+    slots[3] = 0x00000010   ; Forearms (34)
+    slots[4] = 0x00000020   ; Amulet (35)
+    slots[5] = 0x00000040   ; Ring (36)
+    slots[6] = 0x00000080   ; Feet (37)
+    slots[7] = 0x00000200   ; Shield (39)
+    slots[8] = 0x00000400   ; Tail/Cloak (40)
+    slots[9] = 0x00001000   ; Circlet (42)
+    slots[10] = 0x00002000  ; Ears (43)
+    slots[11] = 0x00008000  ; Neck/Scarf (45)
+    slots[12] = 0x00010000  ; Cloak (46)
+    slots[13] = 0x00020000  ; Back/Cloak (47)
+    slots[14] = 0x00080000  ; Pelvis outer (49)
+    slots[15] = 0x00400000  ; Underwear (52)
+    slots[16] = 0x02000000  ; Face (55)
+    slots[17] = 0x08000000  ; Cloak (57)
+
+    Int count = 0
+    int i = 0
+    while i < slots.Length
+        Armor equippedItem = akActor.GetWornForm(slots[i]) as Armor
+        if equippedItem
+            if StorageUtil.FormListFind(None, lockKey, equippedItem) < 0
+                StorageUtil.FormListAdd(None, lockKey, equippedItem)
+                count += 1
+            endif
+        endif
+        i += 1
+    endwhile
+
+    StorageUtil.SetIntValue(akActor, "SeverOutfit_LockActive", 1)
+    Debug.Trace("[SeverActions_Outfit] Locked outfit for " + akActor.GetDisplayName() + " (" + count + " items)")
+EndFunction
+
+Function ReapplyLockedOutfit(Actor akActor)
+    {Silently re-equip all items from the locked outfit snapshot.
+     Called by FollowerManager on cell transitions — no animations.}
+    if !akActor || akActor.IsDead()
+        return
+    endif
+
+    if StorageUtil.GetIntValue(akActor, "SeverOutfit_LockActive", 0) != 1
+        return
+    endif
+
+    String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
+    Int count = StorageUtil.FormListCount(None, lockKey)
+
+    if count == 0
+        return
+    endif
+
+    Int equipped = 0
+    int i = 0
+    while i < count
+        Form item = StorageUtil.FormListGet(None, lockKey, i)
+        if item
+            akActor.EquipItem(item, false, true)
+            equipped += 1
+        endif
+        i += 1
+    endwhile
+
+    Debug.Trace("[SeverActions_Outfit] Reapplied locked outfit for " + akActor.GetDisplayName() + " (" + equipped + " items)")
+EndFunction
+
+Function ClearLockedOutfit(Actor akActor)
+    {Remove the outfit lock — follower will revert to engine-default behavior.}
+    if !akActor
+        return
+    endif
+
+    String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
+    StorageUtil.FormListClear(None, lockKey)
+    StorageUtil.SetIntValue(akActor, "SeverOutfit_LockActive", 0)
+    Debug.Trace("[SeverActions_Outfit] Cleared outfit lock for " + akActor.GetDisplayName())
 EndFunction
 
 ; =============================================================================

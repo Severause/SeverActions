@@ -94,6 +94,8 @@ Int Property LEVEL_SEVERE = 75 AutoReadOnly    ; Ravenous/Exhausted/Freezing
 Int Property HUNGER_COOKED_MEAL = 40 AutoReadOnly    ; Cooked food restores more
 Int Property HUNGER_RAW_FOOD = 25 AutoReadOnly       ; Raw food restores less
 Int Property HUNGER_INGREDIENT = 10 AutoReadOnly     ; Ingredients restore minimal
+Int Property HUNGER_BEVERAGE = 15 AutoReadOnly       ; Ales, meads, wines - not a meal but takes the edge off
+Int Property HUNGER_POTION = 10 AutoReadOnly         ; Regular potions - liquid counts for something
 
 ; Base accumulation per game hour
 Float Property BASE_HUNGER_PER_HOUR = 2.5 AutoReadOnly   ; ~40 hours to starving
@@ -1251,16 +1253,21 @@ Function OnFollowerAteFood(Actor akFollower, Form akFood = None)
     Int hungerRestore = HUNGER_COOKED_MEAL ; Default to cooked meal value
 
     If akFood
-        Potion foodItem = akFood as Potion
-        If foodItem
-            ; Check if raw food (restores less)
-            If VendorItemFoodRaw && foodItem.HasKeyword(VendorItemFoodRaw)
-                hungerRestore = HUNGER_RAW_FOOD
-            ElseIf VendorItemFood && foodItem.HasKeyword(VendorItemFood)
-                hungerRestore = HUNGER_COOKED_MEAL
-            Else
-                ; Ingredient or unknown food type
-                hungerRestore = HUNGER_INGREDIENT
+        ; Check if it's a beverage first (ales, meads, wines) — less hunger than real food
+        If IsBeverage(akFood)
+            hungerRestore = HUNGER_BEVERAGE
+        Else
+            Potion foodItem = akFood as Potion
+            If foodItem
+                ; Check if raw food (restores less)
+                If VendorItemFoodRaw && foodItem.HasKeyword(VendorItemFoodRaw)
+                    hungerRestore = HUNGER_RAW_FOOD
+                ElseIf VendorItemFood && foodItem.HasKeyword(VendorItemFood)
+                    hungerRestore = HUNGER_COOKED_MEAL
+                Else
+                    ; Ingredient or unknown food type
+                    hungerRestore = HUNGER_INGREDIENT
+                EndIf
             EndIf
         EndIf
     EndIf
@@ -1280,6 +1287,99 @@ Function OnFollowerAteFood(Actor akFollower, Form akFood = None)
         EndIf
         Debug.Trace("[SeverActions_Survival] OnFollowerAteFood: " + akFollower.GetDisplayName() + " ate " + foodName + ", hunger: " + currentHunger + " -> " + newHunger + " (restored " + hungerRestore + ")")
     EndIf
+EndFunction
+
+Function OnFollowerDrank(Actor akFollower, Form akPotion = None)
+    {Call this when a follower drinks a regular potion (health, stamina, magicka, etc.)
+     Beverages (ales, meads) go through OnFollowerAteFood since they're flagged as food.
+     Regular potions sate hunger slightly — liquid is liquid.}
+
+    If !Enabled || !HungerEnabled
+        Return
+    EndIf
+
+    If !akFollower
+        Return
+    EndIf
+
+    Int hungerRestore = HUNGER_POTION
+
+    ; Reduce hunger
+    Int currentHunger = GetFollowerHunger(akFollower)
+    Int newHunger = ClampInt(currentHunger - hungerRestore, 0, 100)
+    SetFollowerHunger(akFollower, newHunger)
+
+    If DebugMode
+        String potionName = "potion"
+        If akPotion
+            potionName = akPotion.GetName()
+        EndIf
+        Debug.Trace("[SeverActions_Survival] OnFollowerDrank: " + akFollower.GetDisplayName() + " drank " + potionName + ", hunger: " + currentHunger + " -> " + newHunger + " (restored " + hungerRestore + ")")
+    EndIf
+EndFunction
+
+Bool Function IsBeverage(Form akItem)
+    {Check if a food item is a beverage (ale, wine, mead, milk, etc.)
+     Uses name-based detection since vanilla Skyrim has no beverage keyword.
+     Items must also be IsFood() — regular potions are handled separately.}
+    If !akItem
+        Return false
+    EndIf
+
+    Potion potionForm = akItem as Potion
+    If !potionForm || !potionForm.IsFood()
+        Return false
+    EndIf
+
+    String itemName = SeverActionsNative.StringToLower(akItem.GetName())
+
+    ; Common Skyrim beverages
+    If SeverActionsNative.StringContains(itemName, "ale")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "wine")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "mead")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "milk")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "sujamma")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "flin")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "shein")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "mazte")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "brew")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "cider")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "grog")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "lager")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "stout")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "brandy")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "rum")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "whiskey")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "vodka")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "water")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "juice")
+        Return true
+    ElseIf SeverActionsNative.StringContains(itemName, "tea")
+        ; Avoid false positives: "steak" contains "tea"
+        If !SeverActionsNative.StringContains(itemName, "steak")
+            Return true
+        EndIf
+    EndIf
+
+    Return false
 EndFunction
 
 Int Function GetTrackedFollowerCount()

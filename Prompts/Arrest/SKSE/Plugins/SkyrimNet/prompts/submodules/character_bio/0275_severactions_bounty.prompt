@@ -21,6 +21,7 @@
 {% endif %}
 {# PERSUASION MODE - This guard is actively in a persuasion conversation #}
 {% if inPersuasionMode and isConfrontingGuard %}
+{% if actorUUID and actorUUID != 0 and player and player.UUID and player.UUID != 0 %}
 {% set actor = decnpc(actorUUID) %}
 {% set playerData = decnpc(player.UUID) %}
 {% set playerName = playerData.name %}
@@ -51,6 +52,7 @@ The bounty is very high ({{ confrontingBounty }} gold). This represents serious 
 The bounty is significant ({{ confrontingBounty }} gold). {{ actor.name }} should require solid reasoning, a good reputation, or worthwhile compensation to overlook this.
 {% else -%}
 The bounty is relatively minor ({{ confrontingBounty }} gold). {{ actor.name }} may be more open to reasonable explanations or small considerations.
+{% endif %}
 {% endif %}
 {# JUDGMENT MODE - Check if a prisoner has been brought before a sender for judgment #}
 {% elif inJudgmentMode %}
@@ -187,8 +189,10 @@ The bounty is relatively minor ({{ confrontingBounty }} gold). {{ actor.name }} 
 {% endif %}
 {# Only continue if this NPC is a guard of some hold #}
 {% if bountyKey != "" %}
+{% if player and player.UUID and player.UUID != 0 %}
 {% set bounty = papyrus_util("GetIntValue", player.UUID, bountyKey, 0) %}
 {% if bounty > 0 %}
+{% if actorUUID and actorUUID != 0 %}
 {% set actor = decnpc(actorUUID) %}
 {% set playerData = decnpc(player.UUID) %}
 {% set playerName = playerData.name %}
@@ -207,7 +211,11 @@ This is a minor bounty. {{ actor.name }} may demand payment or give a stern warn
 This is a trivial bounty. {{ actor.name }} might mention it but is unlikely to make a fuss.
 {% endif %}
 {% endif %}
+{# if actorUUID check #}
+{% endif %}
 {# if bounty > 0 #}
+{% endif %}
+{# if player.UUID check #}
 {% endif %}
 {# if bountyKey != "" #}
 {% endif %}

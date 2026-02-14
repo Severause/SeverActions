@@ -32,6 +32,8 @@ int Property StandUpKey = -1 Auto Hidden
 int Property YieldKey = -1 Auto Hidden
 int Property UndressKey = -1 Auto Hidden
 int Property DressKey = -1 Auto Hidden
+int Property SetCompanionKey = -1 Auto Hidden
+int Property CompanionWaitKey = -1 Auto Hidden
 int Property TargetMode = 0 Auto Hidden
 float Property NearestNPCRadius = 500.0 Auto Hidden
 
@@ -64,11 +66,13 @@ int OID_StandUpKey
 int OID_YieldKey
 int OID_UndressKey
 int OID_DressKey
+int OID_SetCompanionKey
+int OID_CompanionWaitKey
 int OID_TargetMode
 int OID_NearestNPCRadius
 int OID_WheelMenuKey
 
-; Crime page
+; Bounty page
 int OID_BountyWhiterun
 int OID_BountyRift
 int OID_BountyHaafingar
@@ -126,7 +130,7 @@ string PAGE_GENERAL = "General"
 string PAGE_HOTKEYS = "Hotkeys"
 string PAGE_CURRENCY = "Currency"
 string PAGE_TRAVEL = "Travel"
-string PAGE_CRIME = "Crime"
+string PAGE_BOUNTY = "Bounty"
 string PAGE_SURVIVAL = "Survival"
 string PAGE_FOLLOWERS = "Followers"
 
@@ -137,19 +141,25 @@ string[] TargetModeOptions
 ; INITIALIZATION
 ; =============================================================================
 
+Int Function GetVersion()
+    {Override SKI_ConfigBase. SkyUI compares this against the saved version
+     to trigger OnVersionUpdate. Increment when MCM structure changes.}
+    Return 114
+EndFunction
+
 Event OnConfigInit()
     ModName = "SeverActions"
 
     ; Set current version - increment this when you make MCM changes
     ; Format: major * 100 + minor (e.g., 107 = version 1.07)
-    CurrentVersion = 110
+    CurrentVersion = 114
 
     Pages = new string[7]
     Pages[0] = PAGE_GENERAL
     Pages[1] = PAGE_HOTKEYS
     Pages[2] = PAGE_CURRENCY
     Pages[3] = PAGE_TRAVEL
-    Pages[4] = PAGE_CRIME
+    Pages[4] = PAGE_BOUNTY
     Pages[5] = PAGE_SURVIVAL
     Pages[6] = PAGE_FOLLOWERS
 
@@ -178,7 +188,7 @@ Event OnVersionUpdate(int newVersion)
     Pages[1] = PAGE_HOTKEYS
     Pages[2] = PAGE_CURRENCY
     Pages[3] = PAGE_TRAVEL
-    Pages[4] = PAGE_CRIME
+    Pages[4] = PAGE_BOUNTY
     Pages[5] = PAGE_SURVIVAL
     Pages[6] = PAGE_FOLLOWERS
 
@@ -223,7 +233,7 @@ Event OnPageReset(string page)
         DrawCurrencyPage()
     elseif page == PAGE_TRAVEL
         DrawTravelPage()
-    elseif page == PAGE_CRIME
+    elseif page == PAGE_BOUNTY
         DrawCrimePage()
     elseif page == PAGE_SURVIVAL
         DrawSurvivalPage()
@@ -237,7 +247,7 @@ Function DrawGeneralPage()
 
     AddHeaderOption("SeverActions Configuration")
     AddEmptyOption()
-    OID_Version = AddTextOption("Version", "1.08")
+    OID_Version = AddTextOption("Version", "1.1")
     AddTextOption("Author", "Severause")
     AddEmptyOption()
     AddTextOption("", "Configure SeverActions modules")
@@ -251,7 +261,7 @@ Function DrawGeneralPage()
     AddTextOption("", "Hotkeys - Keyboard shortcuts")
     AddTextOption("", "Currency - Gold/payment settings")
     AddTextOption("", "Travel - NPC travel system")
-    AddTextOption("", "Crime - View/manage bounties")
+    AddTextOption("", "Bounty - View/manage bounties")
     AddTextOption("", "Survival - Follower survival needs")
     AddTextOption("", "Followers - Companion framework")
 EndFunction
@@ -268,6 +278,8 @@ Function DrawHotkeysPage()
     AddHeaderOption("Follow System Hotkeys")
     OID_FollowToggleKey = AddKeyMapOption("Toggle Follow", FollowToggleKey)
     OID_DismissAllKey = AddKeyMapOption("Dismiss All Followers", DismissAllKey)
+    OID_SetCompanionKey = AddKeyMapOption("Set Companion", SetCompanionKey)
+    OID_CompanionWaitKey = AddKeyMapOption("Wait Here / Resume", CompanionWaitKey)
 
     AddEmptyOption()
     AddHeaderOption("Furniture Hotkeys")
@@ -539,6 +551,44 @@ Function DrawFollowersPage()
                     String home = FollowerManagerScript.GetAssignedHome(follower)
 
                     AddHeaderOption(follower.GetDisplayName())
+
+                    ; Survival needs (read-only, only if survival is enabled)
+                    If SurvivalScript && SurvivalScript.Enabled && !SurvivalScript.IsFollowerExcluded(follower)
+                        If SurvivalScript.HungerEnabled
+                            Int hunger = SurvivalScript.GetFollowerHunger(follower)
+                            AddTextOption("Hunger", hunger + "% (" + SurvivalScript.GetHungerLevelName(hunger) + ")", OPTION_FLAG_DISABLED)
+                        EndIf
+                        If SurvivalScript.FatigueEnabled
+                            Int fatigue = SurvivalScript.GetFollowerFatigue(follower)
+                            AddTextOption("Fatigue", fatigue + "% (" + SurvivalScript.GetFatigueLevelName(fatigue) + ")", OPTION_FLAG_DISABLED)
+                        EndIf
+                        If SurvivalScript.ColdEnabled
+                            Int cold = SurvivalScript.GetFollowerCold(follower)
+                            AddTextOption("Cold", cold + "% (" + SurvivalScript.GetColdLevelName(cold) + ")", OPTION_FLAG_DISABLED)
+                        EndIf
+                    EndIf
+
+                    ; Outfit lock status (read-only, for troubleshooting)
+                    Int lockActive = StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0)
+                    If lockActive == 1
+                        String lockKey = "SeverOutfit_Locked_" + (follower.GetFormID() as String)
+                        Int itemCount = StorageUtil.FormListCount(None, lockKey)
+                        AddTextOption("Outfit Lock", "Active (" + itemCount + " items)", OPTION_FLAG_DISABLED)
+                        Int k = 0
+                        While k < itemCount && k < 6
+                            Form lockedItem = StorageUtil.FormListGet(None, lockKey, k)
+                            If lockedItem
+                                AddTextOption("  " + lockedItem.GetName(), "", OPTION_FLAG_DISABLED)
+                            EndIf
+                            k += 1
+                        EndWhile
+                        If itemCount > 6
+                            AddTextOption("  ... +" + (itemCount - 6) + " more", "", OPTION_FLAG_DISABLED)
+                        EndIf
+                    Else
+                        AddTextOption("Outfit Lock", "Inactive", OPTION_FLAG_DISABLED)
+                    EndIf
+
                     OID_FM_Rapport[j] = AddSliderOption("$Rapport", rapport, "{0}")
                     OID_FM_Trust[j] = AddSliderOption("$Trust", trust, "{0}")
                     OID_FM_Loyalty[j] = AddSliderOption("$Loyalty", loyalty, "{0}")
@@ -600,7 +650,7 @@ Event OnOptionSelect(int option)
     elseif option == OID_TravelSlot4
         ClearTravelSlotWithConfirm(4)
 
-    ; Crime page - clear individual bounties
+    ; Bounty page - clear individual bounties
     elseif option == OID_BountyWhiterun
         ClearBountyWithConfirm(ArrestScript.CrimeFactionWhiterun, "Whiterun")
     elseif option == OID_BountyRift
@@ -877,6 +927,16 @@ Event OnOptionKeyMapChange(int option, int keyCode, string conflictControl, stri
         SetKeyMapOptionValue(OID_DressKey, keyCode)
         ApplyHotkeySettings()
 
+    elseif option == OID_SetCompanionKey
+        SetCompanionKey = keyCode
+        SetKeyMapOptionValue(OID_SetCompanionKey, keyCode)
+        ApplyHotkeySettings()
+
+    elseif option == OID_CompanionWaitKey
+        CompanionWaitKey = keyCode
+        SetKeyMapOptionValue(OID_CompanionWaitKey, keyCode)
+        ApplyHotkeySettings()
+
     elseif option == OID_WheelMenuKey
         WheelMenuKey = keyCode
         SetKeyMapOptionValue(OID_WheelMenuKey, keyCode)
@@ -988,8 +1048,8 @@ Event OnOptionSliderOpen(int option)
     elseif option == OID_FM_MaxFollowers
         If FollowerManagerScript
             SetSliderDialogStartValue(FollowerManagerScript.MaxFollowers as Float)
-            SetSliderDialogDefaultValue(5.0)
-            SetSliderDialogRange(1.0, 10.0)
+            SetSliderDialogDefaultValue(10.0)
+            SetSliderDialogRange(1.0, 20.0)
             SetSliderDialogInterval(1.0)
         EndIf
     elseif option == OID_FM_RapportDecay
@@ -1140,7 +1200,13 @@ Event OnOptionHighlight(int option)
         
     elseif option == OID_DismissAllKey
         SetInfoText("Hotkey to dismiss ALL followers at once. Useful for quickly clearing all NPCs following you.")
-        
+
+    elseif option == OID_SetCompanionKey
+        SetInfoText("Hotkey to make the targeted NPC a companion. Registers them as a full companion with relationship tracking, survival needs, and outfit persistence.")
+
+    elseif option == OID_CompanionWaitKey
+        SetInfoText("Hotkey to tell an NPC to wait here. They'll sandbox around the area until you return. Press again on a waiting NPC to resume following. Works on any NPC, not just companions.")
+
     elseif option == OID_StandUpKey
         SetInfoText("Hotkey to make an NPC stand up from furniture. Look at the NPC and press this key to make them get up from chairs, beds, workstations, etc.")
         
@@ -1162,7 +1228,7 @@ Event OnOptionHighlight(int option)
     elseif option == OID_WheelMenuKey
         SetInfoText("Hotkey to open the wheel menu with all actions. Requires UIExtensions mod. The wheel always targets the NPC under your crosshair. Great for VR users or those who prefer a single hotkey.")
 
-    ; Crime page tooltips
+    ; Bounty page tooltips
     elseif option == OID_BountyWhiterun || option == OID_BountyRift || option == OID_BountyHaafingar || option == OID_BountyEastmarch || option == OID_BountyReach || option == OID_BountyFalkreath || option == OID_BountyPale || option == OID_BountyHjaalmarch || option == OID_BountyWinterhold
         SetInfoText("Your tracked bounty in this hold. Click to clear. These bounties are managed by SeverActions and won't trigger vanilla guard arrest dialogue.")
 
@@ -1318,6 +1384,11 @@ Event OnOptionDefault(int option)
         SetSliderOptionValue(OID_NearestNPCRadius, 500.0, "{0} units")
         ApplyHotkeySettings()
 
+    elseif option == OID_CompanionWaitKey
+        CompanionWaitKey = -1
+        SetKeyMapOptionValue(OID_CompanionWaitKey, CompanionWaitKey)
+        ApplyHotkeySettings()
+
     elseif option == OID_WheelMenuKey
         WheelMenuKey = -1
         SetKeyMapOptionValue(OID_WheelMenuKey, WheelMenuKey)
@@ -1391,8 +1462,8 @@ Event OnOptionDefault(int option)
     ; Follower Manager defaults
     elseif option == OID_FM_MaxFollowers
         If FollowerManagerScript
-            FollowerManagerScript.MaxFollowers = 5
-            SetSliderOptionValue(OID_FM_MaxFollowers, 5.0, "{0}")
+            FollowerManagerScript.MaxFollowers = 10
+            SetSliderOptionValue(OID_FM_MaxFollowers, 10.0, "{0}")
         EndIf
     elseif option == OID_FM_RapportDecay
         If FollowerManagerScript
@@ -1471,7 +1542,9 @@ Function ApplyHotkeySettings()
         HotkeyScript.UpdateYieldKey(YieldKey)
         HotkeyScript.UpdateUndressKey(UndressKey)
         HotkeyScript.UpdateDressKey(DressKey)
-        
+        HotkeyScript.UpdateSetCompanionKey(SetCompanionKey)
+        HotkeyScript.UpdateCompanionWaitKey(CompanionWaitKey)
+
         ; Update other settings directly
         HotkeyScript.TargetMode = TargetMode
         HotkeyScript.NearestNPCRadius = NearestNPCRadius
@@ -1483,6 +1556,8 @@ Function ApplyHotkeySettings()
         Debug.Trace("[SeverActions_MCM]   YieldKey: " + YieldKey)
         Debug.Trace("[SeverActions_MCM]   UndressKey: " + UndressKey)
         Debug.Trace("[SeverActions_MCM]   DressKey: " + DressKey)
+        Debug.Trace("[SeverActions_MCM]   SetCompanionKey: " + SetCompanionKey)
+        Debug.Trace("[SeverActions_MCM]   CompanionWaitKey: " + CompanionWaitKey)
         Debug.Trace("[SeverActions_MCM]   TargetMode: " + TargetMode)
         Debug.Trace("[SeverActions_MCM]   NearestNPCRadius: " + NearestNPCRadius)
     else

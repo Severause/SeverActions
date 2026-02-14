@@ -103,4 +103,11 @@ eligibilityRules:
         expectedValue: false
     logicalOperator: "AND"
     required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SeverActions_DispatchFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
 eventString: "{{ actor.name }} has been dispatched to search {{ targetName }}'s home for evidence related to {{ reason }}"

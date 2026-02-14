@@ -10,12 +10,15 @@ Scriptname SeverActions_FollowerManager extends Quest
     conversation - followers are recruited, dismissed, and managed
     through natural dialogue instead of static menu options.
 
-    Integrates with Nether's Follower Framework (NFF) when available:
-    - If NFF is installed, recruitment/dismissal routes through NFF's
-      controller so followers get proper alias slots, faction tracking,
-      and compatibility with NFF's systems.
-    - If NFF is NOT installed, uses vanilla Skyrim follower mechanics
-      (SetPlayerTeammate + CurrentFollowerFaction).
+    Follower framework integration (priority order):
+    1. Nether's Follower Framework (NFF) - if nwsFollowerFramework.esp is loaded,
+       recruitment/dismissal routes through NFF's controller for proper alias
+       slots, faction tracking, and compatibility with NFF's systems.
+    2. Extensible Follower Framework (EFF) - if EFFCore.esm is loaded,
+       recruitment/dismissal routes through EFF's XFL_AddFollower/XFL_RemoveFollower
+       for proper alias slots, faction tracking, and EFF plugin compatibility.
+    3. Vanilla - if neither framework is installed, uses vanilla Skyrim follower
+       mechanics (SetPlayerTeammate + CurrentFollowerFaction).
 
     Data is stored per-follower via StorageUtil:
     - SeverFollower_IsFollower (1 = active follower)
@@ -31,7 +34,7 @@ Scriptname SeverActions_FollowerManager extends Quest
 ; PROPERTIES - Settings (Can be modified via MCM)
 ; =============================================================================
 
-Int Property MaxFollowers = 5 Auto
+Int Property MaxFollowers = 10 Auto
 {Maximum number of followers allowed at once}
 
 Float Property RapportDecayRate = 1.0 Auto
@@ -58,6 +61,14 @@ SeverActions_Follow Property FollowScript Auto
 
 SeverActions_Travel Property TravelScript Auto
 {Reference to the Travel system for send-home functionality}
+
+SeverActions_Outfit Property OutfitScript Auto
+{Reference to the Outfit system for outfit persistence across cell transitions}
+
+ReferenceAlias[] Property OutfitSlots Auto
+{Array of 10 ReferenceAlias slots for per-follower outfit persistence.
+ Each slot has SeverActions_OutfitAlias attached, which handles OnLoad/OnCellLoad
+ events to re-equip locked outfits instantly. Fill in CK.}
 
 ; =============================================================================
 ; CONSTANTS
@@ -132,10 +143,15 @@ Function Maintenance()
     ; Auto-detect followers recruited outside our system (vanilla dialogue, NFF, other mods)
     DetectExistingFollowers()
 
+    ; Re-assign outfit alias slots after load (ForceRefTo doesn't survive save/load)
+    ReassignOutfitSlots()
+
     If HasNFF()
         Debug.Trace("[SeverActions_FollowerManager] Maintenance complete - NFF detected, using NFF integration")
+    ElseIf HasEFF()
+        Debug.Trace("[SeverActions_FollowerManager] Maintenance complete - EFF detected, using EFF integration")
     Else
-        Debug.Trace("[SeverActions_FollowerManager] Maintenance complete - NFF not found, using vanilla follower system")
+        Debug.Trace("[SeverActions_FollowerManager] Maintenance complete - no follower framework found, using vanilla follower system")
     EndIf
 EndFunction
 
@@ -156,6 +172,14 @@ Function DetectExistingFollowers()
     EndIf
 
     Faction currentFollowerFaction = Game.GetFormFromFile(0x0005C84E, "Skyrim.esm") as Faction
+
+    ; Also check EFF's faction if EFF is installed
+    Faction effFollowerFaction = None
+    EFFCore effController = GetEFFController()
+    If effController
+        effFollowerFaction = effController.XFL_FollowerFaction
+    EndIf
+
     Int numRefs = playerCell.GetNumRefs(43) ; 43 = kNPC
     Int detected = 0
     Int i = 0
@@ -169,6 +193,9 @@ Function DetectExistingFollowers()
             Bool isGameFollower = actorRef.IsPlayerTeammate()
             If !isGameFollower && currentFollowerFaction
                 isGameFollower = actorRef.IsInFaction(currentFollowerFaction)
+            EndIf
+            If !isGameFollower && effFollowerFaction
+                isGameFollower = actorRef.IsInFaction(effFollowerFaction)
             EndIf
 
             If isGameFollower && !IsRegisteredFollower(actorRef)
@@ -228,6 +255,33 @@ nwsFollowerControllerScript Function GetNFFController()
     nwsFollowerControllerScript controller = nwsFF as nwsFollowerControllerScript
     If !controller
         Debug.Trace("[SeverActions_FollowerManager] WARNING: NFF quest found but controller script cast failed")
+        Return None
+    EndIf
+    Return controller
+EndFunction
+
+; =============================================================================
+; EFF INTEGRATION
+; =============================================================================
+
+Bool Function HasEFF()
+    {Check if Extensible Follower Framework is installed}
+    Return Game.GetModByName("EFFCore.esm") != 255
+EndFunction
+
+EFFCore Function GetEFFController()
+    {Get the EFF controller script instance. Returns None if EFF not installed.}
+    If !HasEFF()
+        Return None
+    EndIf
+    Quest effQuest = Game.GetFormFromFile(0x00000EFF, "EFFCore.esm") as Quest
+    If !effQuest
+        Debug.Trace("[SeverActions_FollowerManager] WARNING: EFFCore.esm found but controller quest missing")
+        Return None
+    EndIf
+    EFFCore controller = effQuest as EFFCore
+    If !controller
+        Debug.Trace("[SeverActions_FollowerManager] WARNING: EFF quest found but controller script cast failed")
         Return None
     EndIf
     Return controller
@@ -339,12 +393,96 @@ Function TickFollowerRelationship(Actor akFollower, Float hoursPassed)
 EndFunction
 
 ; =============================================================================
+; OUTFIT SLOT MANAGEMENT - ReferenceAlias-based outfit persistence
+; =============================================================================
+
+Function AssignOutfitSlot(Actor akActor)
+    {Find an empty ReferenceAlias outfit slot and assign the actor to it.
+     The alias script (SeverActions_OutfitAlias) handles OnLoad/OnCellLoad
+     events to re-equip locked outfits with zero flicker.}
+    If !OutfitSlots
+        DebugMsg("WARNING: OutfitSlots array not set - outfit persistence disabled")
+        Return
+    EndIf
+
+    Int i = 0
+    While i < OutfitSlots.Length
+        If OutfitSlots[i] && !OutfitSlots[i].GetActorRef()
+            OutfitSlots[i].ForceRefTo(akActor)
+            DebugMsg("Outfit slot " + i + " assigned to " + akActor.GetDisplayName())
+
+            ; If the actor's 3D is already loaded (e.g. reassignment after save/load),
+            ; OnLoad won't fire again, so immediately reapply the locked outfit now.
+            If akActor.Is3DLoaded()
+                SeverActions_Outfit outfitSys = GetOutfitScript()
+                If outfitSys
+                    outfitSys.ReapplyLockedOutfit(akActor)
+                EndIf
+            EndIf
+            Return
+        EndIf
+        i += 1
+    EndWhile
+
+    DebugMsg("WARNING: No free outfit slots for " + akActor.GetDisplayName())
+EndFunction
+
+Function ClearOutfitSlot(Actor akActor)
+    {Find and clear the ReferenceAlias outfit slot for this actor.}
+    If !OutfitSlots
+        Return
+    EndIf
+
+    Int i = 0
+    While i < OutfitSlots.Length
+        If OutfitSlots[i] && OutfitSlots[i].GetActorRef() == akActor
+            OutfitSlots[i].Clear()
+            DebugMsg("Outfit slot " + i + " cleared for " + akActor.GetDisplayName())
+            Return
+        EndIf
+        i += 1
+    EndWhile
+EndFunction
+
+Function ReassignOutfitSlots()
+    {Re-assign outfit alias slots for all registered followers after a game load.
+     ForceRefTo is runtime-only and doesn't survive save/load, so we need to
+     repopulate the alias slots every time Maintenance() runs.}
+    If !OutfitSlots
+        Return
+    EndIf
+
+    ; Clear any stale alias data first
+    Int i = 0
+    While i < OutfitSlots.Length
+        If OutfitSlots[i]
+            OutfitSlots[i].Clear()
+        EndIf
+        i += 1
+    EndWhile
+
+    ; Re-assign slots for all current followers
+    Actor[] followers = GetAllFollowers()
+    i = 0
+    While i < followers.Length
+        If followers[i]
+            AssignOutfitSlot(followers[i])
+        EndIf
+        i += 1
+    EndWhile
+
+    If followers.Length > 0
+        DebugMsg("Reassigned outfit slots for " + followers.Length + " follower(s) after load")
+    EndIf
+EndFunction
+
+; =============================================================================
 ; ROSTER MANAGEMENT
 ; =============================================================================
 
 Function RegisterFollower(Actor akActor)
     {Add an actor to the follower roster and start them following.
-     Routes through NFF when available, otherwise uses vanilla mechanics.}
+     Routes through NFF/EFF when available, otherwise uses vanilla mechanics.}
     If !akActor || akActor.IsDead()
         Return
     EndIf
@@ -383,7 +521,12 @@ Function RegisterFollower(Actor akActor)
     ModifyTrust(akActor, 5.0)
 
     ; --- Make them a proper follower ---
+    ; Priority: NFF > EFF > Vanilla
     nwsFollowerControllerScript nffController = GetNFFController()
+    EFFCore effController = None
+    If !nffController
+        effController = GetEFFController()
+    EndIf
 
     If nffController
         ; NFF path: let NFF handle SetPlayerTeammate, factions, alias slots, packages
@@ -391,9 +534,14 @@ Function RegisterFollower(Actor akActor)
         nffController.RecruitFollower(akActor)
         ; NFF's RecruitFollower defers via RegisterForSingleUpdate(0.2)
         ; Our follow package will layer on top of NFF's package stack
+    ElseIf effController
+        ; EFF path: let EFF handle SetPlayerTeammate, factions, alias slots, relationship ranks
+        DebugMsg("EFF detected - recruiting " + akActor.GetDisplayName() + " through EFF")
+        effController.XFL_AddFollower(akActor as Form)
+        ; EFF's XFL_AddFollower handles faction, alias, teammate, friendly hits, relationships
     Else
         ; Vanilla path: handle follower mechanics ourselves
-        DebugMsg("No NFF - recruiting " + akActor.GetDisplayName() + " via vanilla mechanics")
+        DebugMsg("No follower framework - recruiting " + akActor.GetDisplayName() + " via vanilla mechanics")
 
         ; Save original AI values so we can restore on dismissal
         StorageUtil.SetFloatValue(akActor, KEY_ORIG_AGGRESSION, akActor.GetAV("Aggression"))
@@ -411,6 +559,9 @@ Function RegisterFollower(Actor akActor)
     If followSys
         followSys.StartFollowing(akActor)
     EndIf
+
+    ; Assign an outfit alias slot for zero-flicker outfit persistence
+    AssignOutfitSlot(akActor)
 
     If ShowNotifications
         Debug.Notification(akActor.GetDisplayName() + " has joined you as a companion.")
@@ -430,6 +581,11 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
         Return
     EndIf
 
+    ; --- Keep outfit alias slot active so outfit lock persists after dismiss ---
+    ; ClearOutfitSlot is NOT called here. The alias stays linked so OnCellLoad
+    ; can re-apply the locked outfit when the NPC loads at their home location.
+    ; The slot is only freed when the outfit lock is explicitly cleared (Dress action).
+
     ; --- Our own tracking cleanup (always) ---
     StorageUtil.SetIntValue(akActor, KEY_IS_FOLLOWER, 0)
 
@@ -438,16 +594,26 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
     ModifyTrust(akActor, -1.0)
 
     ; --- Remove proper follower status ---
+    ; Priority: NFF > EFF > Vanilla
     nwsFollowerControllerScript nffController = GetNFFController()
+    EFFCore effController = None
+    If !nffController
+        effController = GetEFFController()
+    EndIf
 
     If nffController
         ; NFF path: let NFF handle SetPlayerTeammate, factions, alias cleanup
         DebugMsg("NFF detected - dismissing " + akActor.GetDisplayName() + " through NFF")
         nffController.RemoveFollower(akActor, -1, 0)
         ; -1 = no message (we handle our own notification), 0 = no say line
+    ElseIf effController
+        ; EFF path: let EFF handle SetPlayerTeammate, factions, alias cleanup
+        DebugMsg("EFF detected - dismissing " + akActor.GetDisplayName() + " through EFF")
+        effController.XFL_RemoveFollower(akActor as Form, 0, 0)
+        ; 0 = standard dismiss message, 0 = no say line (we handle our own notification)
     Else
         ; Vanilla path: clean up follower mechanics ourselves
-        DebugMsg("No NFF - dismissing " + akActor.GetDisplayName() + " via vanilla mechanics")
+        DebugMsg("No follower framework - dismissing " + akActor.GetDisplayName() + " via vanilla mechanics")
 
         akActor.SetPlayerTeammate(false)
         Faction currentFollowerFaction = Game.GetFormFromFile(0x0005C84E, "Skyrim.esm") as Faction
@@ -468,6 +634,10 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
 
     ; Clear waiting state if set
     akActor.SetAV("WaitingForPlayer", 0)
+
+    ; NOTE: We intentionally do NOT clear the outfit lock on dismiss.
+    ; If the player told them to wear something, they should keep it
+    ; even after being sent home.
 
     ; Stop following via our system
     SeverActions_Follow followSys = GetFollowScript()
@@ -789,10 +959,10 @@ Function DismissCompanion(Actor akActor)
 EndFunction
 
 Function CompanionWait(Actor akActor)
-    {Tell a companion to wait and sandbox at the current location permanently.
-     Called by SkyrimNet via companionwait.yaml.
+    {Tell any NPC to wait and sandbox at the current location.
+     Called by SkyrimNet via companionwait.yaml. Works for both companions and non-companions.
      Unlike Relax (followSys.Sandbox), this does NOT register with SandboxManager,
-     so there is no distance check — the companion stays put until told otherwise.
+     so there is no distance check — the NPC stays put until told otherwise.
      Cleanup is handled by StartFollowing() or UnregisterFollower().}
     If !akActor
         Return
@@ -803,12 +973,12 @@ Function CompanionWait(Actor akActor)
         ; Set waiting state so follow package yields
         akActor.SetAV("WaitingForPlayer", 1)
 
-        ; Apply sandbox package directly — no SandboxManager registration means
-        ; no distance-based auto-return. They stay here until player says otherwise.
-        ActorUtil.AddPackageOverride(akActor, followSys.SandboxPackage, 90, 1)
+        ; Apply sandbox package — NPC wanders, sits, interacts with furniture for immersion
+        ; No SandboxManager registration = no distance-based auto-return
+        ActorUtil.AddPackageOverride(akActor, followSys.SandboxPackage, followSys.SandboxPackagePriority, 1)
 
         ; Register with SkyrimNet for package tracking (so StartFollowing cleanup finds it)
-        SkyrimNetApi.RegisterPackage(akActor, "Sandbox", 90, 0, false)
+        SkyrimNetApi.RegisterPackage(akActor, "Sandbox", followSys.SandboxPackagePriority, 0, false)
 
         akActor.EvaluatePackage()
     Else
@@ -987,6 +1157,14 @@ SeverActions_Travel Function GetTravelScript()
         Return myQuest as SeverActions_Travel
     EndIf
     Return None
+EndFunction
+
+SeverActions_Outfit Function GetOutfitScript()
+    If OutfitScript
+        Return OutfitScript
+    EndIf
+    ; Fallback: try to find on the quest
+    Return Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_Outfit
 EndFunction
 
 Float Function ClampFloat(Float value, Float minVal, Float maxVal)

@@ -65,16 +65,19 @@ Function ModifyArousal_Execute(Actor akActor, Float amount)
     ElseIf amount < -100.0
         amount = -100.0
     EndIf
-    
+
     slaFrameworkScr sla = Quest.GetQuest("sla_Framework") as slaFrameworkScr
     slaMainScr main = Quest.GetQuest("sla_Main") as slaMainScr
-    
+
     If sla && main
-        sla.SetActorExposure(akActor, (sla.GetActorArousal(akActor) + amount as Int))
+        ; Use UpdateActorExposure to add the delta directly to the exposure component.
+        ; Previously used SetActorExposure(GetActorArousal + amount) which treated total
+        ; arousal as the base, causing exposure to balloon when other sources were high.
+        sla.UpdateActorExposure(akActor, amount as Int)
         main.UpdateSingleActorArousal(akActor)
 
         String stateDesc = ArousalToDescription(sla.GetActorArousal(akActor))
-        
+
         If amount > 0
             SkyrimNetApi.RegisterEvent("arousal_increase", akActor.GetDisplayName() + " arousal increased to " + stateDesc, akActor, None)
         ElseIf amount < 0
@@ -93,19 +96,26 @@ Function SetArousal_Execute(Actor akActor, Float level)
     ElseIf level < 0.0
         level = 0.0
     EndIf
-    
+
     Int oldArousal = GetActorArousal(akActor)
-    
+
     slaFrameworkScr sla = Quest.GetQuest("sla_Framework") as slaFrameworkScr
     slaMainScr main = Quest.GetQuest("sla_Main") as slaMainScr
-    
+
     If sla && main
-        sla.SetActorExposure(akActor, level as Int)
+        ; Total arousal = exposure + other sources (TimeRate, Libido, keywords, etc.)
+        ; To reach a target total, set exposure to: target - (total - exposure)
+        ; This accounts for non-exposure contributions so the final total lands where intended.
+        Int currentTotal = sla.GetActorArousal(akActor)
+        Int currentExposure = sla.GetActorExposure(akActor)
+        Int nonExposure = currentTotal - currentExposure
+        Int targetExposure = (level as Int) - nonExposure
+        sla.SetActorExposure(akActor, targetExposure)
         main.UpdateSingleActorArousal(akActor)
 
         Int finalArousal = sla.GetActorArousal(akActor)
         String stateDesc = ArousalToDescription(finalArousal)
-        
+
         If finalArousal > oldArousal
             SkyrimNetApi.RegisterEvent("arousal_increase", akActor.GetDisplayName() + " arousal increased to " + stateDesc, akActor, None)
         ElseIf finalArousal < oldArousal

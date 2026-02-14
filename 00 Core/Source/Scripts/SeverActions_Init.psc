@@ -332,7 +332,9 @@ Function RegisterDecorators()
     ; -------------------------------------------------------------------------
     
     ; OSLAroused (if using OSLAroused.esp with native SKSE plugin)
-    If Game.GetModByName("OSLAroused.esp") != 255
+    ; SLO Aroused ships a dummy OSLAroused.esp for compatibility - if SexLabAroused.esm
+    ; is also loaded, it's SLO's dummy, not the real standalone OSL Aroused.
+    If Game.GetModByName("OSLAroused.esp") != 255 && Game.GetModByName("SexLabAroused.esm") == 255
         result = SkyrimNetApi.RegisterDecorator("get_arousal_state", "SeverActions_Arousal", "GetArousalState")
         Debug.Trace("[SeverActions] get_arousal_state (OSLAroused): " + (result == 0) as String)
     EndIf

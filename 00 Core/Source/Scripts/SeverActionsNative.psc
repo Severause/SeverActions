@@ -741,3 +741,39 @@ Int Function GetYieldHitCount(Actor akActor) Global Native
 
 Function SetYieldHitThreshold(Int threshold) Global Native
 {Set how many hits a yielded actor must take before auto-reverting surrender. Default: 3.}
+
+; =============================================================================
+; DEPARTURE DETECTION (extension of StuckDetector)
+; Verifies an NPC actually started moving after receiving a travel package.
+; Uses baseline position from Stuck_StartTracking. Grace period: 15s, recovery: 30s.
+; =============================================================================
+
+Int Function Stuck_CheckDeparture(Actor akActor, Float departureThreshold) Global Native
+{Check if a tracked actor has moved from their starting position.
+ Returns: 0=too_early (grace period), 1=departed successfully, 2=soft recovery needed (30s no movement).
+ departureThreshold: minimum distance from start to count as departed (default 100 units).}
+
+; =============================================================================
+; OFF-SCREEN TRAVEL ESTIMATION
+; Estimates travel time for unloaded NPCs based on distance to destination.
+; Uses ~18000 units/game-hour walking speed estimate.
+; =============================================================================
+
+Float Function OffScreen_InitTracking(Actor akActor, ObjectReference akDestination, Float minHours, Float maxHours) Global Native
+{Start tracking off-screen travel for an actor. Calculates estimated arrival time based on distance.
+ Returns the estimated arrival time in game-time format (days since epoch).
+ minHours/maxHours: bounds for the estimate in game-hours (e.g., 0.5 to 18.0).}
+
+Int Function OffScreen_CheckArrival(Actor akActor, Float currentGameTime) Global Native
+{Check if an off-screen actor's estimated travel time has elapsed.
+ currentGameTime: pass Utility.GetCurrentGameTime().
+ Returns: 0=in_transit, 1=estimated arrival (should teleport to destination).}
+
+Function OffScreen_StopTracking(Actor akActor) Global Native
+{Stop off-screen tracking for an actor. Call on dispatch completion or cancellation.}
+
+Float Function OffScreen_GetEstimatedArrival(Actor akActor) Global Native
+{Get the estimated arrival game-time for a tracked actor. Returns 0 if not tracked.}
+
+Function OffScreen_ClearAll() Global Native
+{Clear all off-screen tracking data.}

@@ -72,12 +72,16 @@ Allows NPCs to engage or disengage from combat.</description>
 
                         <plugin name="Outfit Actions">
                             <description>Clothing and armor management:
-• Equip Clothing Piece
-• Remove Clothing Piece
-• Get Dressed
-• Undress
+• Equip Item By Name - Equip any item from inventory by name
+• Unequip Item By Name - Remove a worn item by name
+• Equip Multiple Items - Batch equip from a comma-separated list
+• Unequip Multiple Items - Batch remove from a comma-separated list
+• Save Outfit Preset - Snapshot current outfit under a name
+• Apply Outfit Preset - Strip and re-equip a saved preset
+• Get Dressed - Re-equip previously removed clothing
+• Undress - Remove all worn armor and clothing
 
-Allows NPCs to change their equipment.</description>
+Outfits persist across cell transitions via ReferenceAlias-based locking.</description>
                             <files>
                                 <folder source="Actions/Outfit" destination="" priority="1"/>
                             </files>
@@ -154,14 +158,16 @@ Full cross-cell dispatch with off-screen escort, combat suppression, and judgmen
                             <description>Companion recruitment and management:
 • Set Companion - Make an NPC your companion (first time or re-recruit)
 • Dismiss Follower - Part ways with a companion
-• Companion Wait - Tell a companion to wait and sandbox at current location
+• Companion Wait - Tell a companion to wait at current location
+• Companion Follow - Resume following after waiting
 • Assign Home - Set where a follower lives when dismissed
 • Set Combat Style - Change follower tactics (aggressive, defensive, ranged, healer, balanced)
+• Adjust Relationship - AI-driven rapport/trust/loyalty/mood changes from conversation
 • Follower Leaves - Companion decides to leave on their own (very rare, severe mistreatment)
 
 Makes recruited NPCs proper Skyrim followers (teammate status, faction membership).
-Integrates with Nether's Follower Framework (NFF) when installed for full compatibility.
-Falls back to vanilla follower mechanics when NFF is not present.
+Integrates with Nether's Follower Framework (NFF) or Extensible Follower Framework (EFF) when installed.
+Falls back to vanilla follower mechanics when neither framework is present.
 Adds a relationship system with rapport, trust, loyalty, and mood that evolves over time.
 Install with Follower Prompts for full companion awareness.</description>
                             <files>
@@ -209,20 +215,6 @@ Recommended for immersion.</description>
 Helps NPCs respond appropriately during fights.</description>
                             <files>
                                 <folder source="Prompts/Combat" destination="" priority="1"/>
-                            </files>
-                            <typeDescriptor>
-                                <type name="Recommended"/>
-                            </typeDescriptor>
-                        </plugin>
-
-                        <plugin name="Travel Guidance Prompt">
-                            <description>Travel behavior rules:
-• Strict travel constraints - Prevents NPCs from traveling on their own initiative
-• NPCs will only travel when directly told to by the player
-
-Highly recommended if using Travel Actions.</description>
-                            <files>
-                                <folder source="Prompts/Travel" destination="" priority="1"/>
                             </files>
                             <typeDescriptor>
                                 <type name="Recommended"/>

@@ -23,8 +23,12 @@ Provides physical state info; emotional response depends on character personalit
 {% set obj = actor.objectivePronoun %}
 {% set poss = actor.possessivePronoun %}
 {% set refl = actor.reflexivePronoun %}
+{% if player and player.UUID and player.UUID != 0 %}
 {% set playerActor = decnpc(player.UUID) %}
 {% set playerName = playerActor.name %}
+{% else %}
+{% set playerName = "the player" %}
+{% endif %}
 {% set isPlayersChild = (fert_father == playerName) %}
 
 {# ========== FIRST PERSON VIEW ========== #}

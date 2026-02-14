@@ -17,6 +17,9 @@ SeverActions_Combat Property CombatScript Auto
 SeverActions_Outfit Property OutfitScript Auto
 {Reference to the outfit system script}
 
+SeverActions_FollowerManager Property FollowerManagerScript Auto
+{Reference to the follower manager script}
+
 ; =============================================================================
 ; HOTKEY SETTINGS - Configured via MCM
 ; =============================================================================
@@ -38,6 +41,12 @@ int Property UndressKey = -1 Auto Hidden
 
 int Property DressKey = -1 Auto Hidden
 {Key code for dressing target NPC. -1 = unset/disabled}
+
+int Property SetCompanionKey = -1 Auto Hidden
+{Key code for making target NPC a companion. -1 = unset/disabled}
+
+int Property CompanionWaitKey = -1 Auto Hidden
+{Key code for toggling wait state on target NPC. -1 = unset/disabled}
 
 ; =============================================================================
 ; TARGET MODE SETTINGS
@@ -114,7 +123,19 @@ Function RegisterKeys()
         RegisterForKey(DressKey)
         Debug.Trace("[SeverActions_Hotkeys] Registered dress key: " + DressKey)
     endif
-    
+
+    ; Register set companion key (only if set)
+    if SetCompanionKey > 0
+        RegisterForKey(SetCompanionKey)
+        Debug.Trace("[SeverActions_Hotkeys] Registered set companion key: " + SetCompanionKey)
+    endif
+
+    ; Register companion wait key (only if set)
+    if CompanionWaitKey > 0
+        RegisterForKey(CompanionWaitKey)
+        Debug.Trace("[SeverActions_Hotkeys] Registered companion wait key: " + CompanionWaitKey)
+    endif
+
     IsRegistered = true
 EndFunction
 
@@ -220,6 +241,36 @@ Function UpdateDressKey(int newKey)
     endif
 EndFunction
 
+Function UpdateSetCompanionKey(int newKey)
+    if SetCompanionKey > 0 && SetCompanionKey != newKey
+        UnregisterForKey(SetCompanionKey)
+    endif
+
+    SetCompanionKey = newKey
+
+    if newKey > 0
+        RegisterForKey(newKey)
+        Debug.Trace("[SeverActions_Hotkeys] Updated set companion key to: " + newKey)
+    else
+        Debug.Trace("[SeverActions_Hotkeys] Set companion key cleared")
+    endif
+EndFunction
+
+Function UpdateCompanionWaitKey(int newKey)
+    if CompanionWaitKey > 0 && CompanionWaitKey != newKey
+        UnregisterForKey(CompanionWaitKey)
+    endif
+
+    CompanionWaitKey = newKey
+
+    if newKey > 0
+        RegisterForKey(newKey)
+        Debug.Trace("[SeverActions_Hotkeys] Updated companion wait key to: " + newKey)
+    else
+        Debug.Trace("[SeverActions_Hotkeys] Companion wait key cleared")
+    endif
+EndFunction
+
 ; =============================================================================
 ; KEY EVENT HANDLING
 ; =============================================================================
@@ -249,6 +300,10 @@ Event OnKeyDown(int keyCode)
         HandleUndress()
     elseif keyCode == DressKey && DressKey > 0
         HandleDress()
+    elseif keyCode == SetCompanionKey && SetCompanionKey > 0
+        HandleSetCompanion()
+    elseif keyCode == CompanionWaitKey && CompanionWaitKey > 0
+        HandleCompanionWait()
     endif
 EndEvent
 
@@ -457,6 +512,73 @@ Function HandleDress()
         Debug.Notification(target.GetDisplayName() + " - dressed")
     else
         Debug.Notification(target.GetDisplayName() + " has no stored clothing")
+    endif
+EndFunction
+
+; =============================================================================
+; SET COMPANION HANDLER
+; =============================================================================
+
+Function HandleSetCompanion()
+    if !FollowerManagerScript
+        ; Fallback: try to get instance
+        FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+    endif
+
+    if !FollowerManagerScript
+        Debug.Notification("SeverActions: Follower Manager script not configured!")
+        return
+    endif
+
+    Actor target = GetTargetActor()
+
+    if !target
+        Debug.Notification("No valid target found")
+        return
+    endif
+
+    if target == Game.GetPlayer()
+        Debug.Notification("Cannot target yourself")
+        return
+    endif
+
+    ; Register as companion
+    FollowerManagerScript.RegisterFollower(target)
+EndFunction
+
+; =============================================================================
+; COMPANION WAIT HANDLER
+; =============================================================================
+
+Function HandleCompanionWait()
+    if !FollowerManagerScript
+        FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+    endif
+
+    if !FollowerManagerScript
+        Debug.Notification("SeverActions: Follower Manager not configured!")
+        return
+    endif
+
+    Actor target = GetTargetActor()
+
+    if !target
+        Debug.Notification("No valid target found")
+        return
+    endif
+
+    if target == Game.GetPlayer()
+        Debug.Notification("Cannot target yourself")
+        return
+    endif
+
+    ; Toggle: if waiting, resume following; if not, wait
+    if target.GetAV("WaitingForPlayer") > 0
+        if FollowScript
+            FollowScript.StartFollowing(target)
+        endif
+    else
+        FollowerManagerScript.CompanionWait(target)
     endif
 EndFunction
 

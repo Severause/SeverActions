@@ -1,8 +1,9 @@
 {# Survival Status - Tracks hunger, fatigue, and cold for followers #}
 {% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" %}
+{% if actorUUID and actorUUID != 0 %}
 {% set actor = decnpc(actorUUID) %}
 {% if actor and actor.UUID %}
-{% if is_follower(actor.UUID) %}
+{% if is_follower(actorUUID) %}
 {% set excluded = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Excluded", 0) %}
 {% if excluded == 0 %}
 {% set hunger = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Hunger", 0) %}
@@ -30,6 +31,7 @@ You can't stop shaking. Your fingers are numb and clumsy. You need to get warm b
 The cold's really getting to you now. You're shivering and stiff.
 {% elif cold >= 25 %}
 Bit cold out here.
+{% endif %}
 {% endif %}
 {% endif %}
 {% endif %}

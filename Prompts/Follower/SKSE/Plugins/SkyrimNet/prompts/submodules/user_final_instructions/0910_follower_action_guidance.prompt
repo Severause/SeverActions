@@ -1,19 +1,10 @@
-{# Follower Action Rules - Placed in user_final_instructions for enforcement at decision time #}
-## Companion Action Rules
-
-**SetCompanion:** Use when there is a CLEAR, MUTUAL agreement to travel together as companions. Also use when the player returns to a previously dismissed companion and asks them to rejoin. The NPC saying "I suppose I could" or "maybe someday" is NOT enough. They must genuinely agree or offer. Merely mentioning travel does NOT trigger this action.
-
-**DismissFollower:** Use when the player clearly tells the companion to leave, go home, or part ways. Also appropriate if the companion decides to leave on their own due to severe relationship breakdown.
-
-**CompanionWait:** Use when the player tells a companion to wait here, stay put, hold position, or hang out at the current location. The companion will relax and sandbox nearby until the player returns. This is ONLY for active companions.
-
-**CompanionFollow:** Use when the player returns to a waiting companion and tells them to follow again, come along, move out, or resume traveling. This is the counterpart to CompanionWait — it clears the wait and resumes the follow package. This is ONLY for active companions who are currently waiting.
-
-**AssignHome:** Only when the player explicitly tells the companion to "live here", "make this your home", "stay at [location] when I dismiss you", or similar direct home assignment commands.
-
-**SetCombatStyle:** When the player gives clear tactical direction about how the companion should fight. Casual conversation about combat is NOT enough.
-
-**FollowerLeaves:** EXTREMELY rare. Only when rapport has been severely negative for an extended period AND the player does something that is the final straw. This should feel like a dramatic, earned character moment - not a casual departure. The companion should clearly express their reasons for leaving.
+{# Companion relationship guidance - only for active companions #}
+{% if actorUUID and actorUUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% if actor and actor.UUID %}
+{% set is_fol = is_follower(actorUUID) %}
+{% if is_fol %}
+## Companion Relationship Guidance
 
 **AdjustRelationship:** Use after EVERY meaningful conversation exchange with this companion to reflect how the interaction affected the relationship. You MUST consider what was actually said and the tone of the exchange:
 - **Rapport** (-15 to +15): Did you like or dislike this interaction? Kind words, shared jokes, genuine interest → positive. Rudeness, dismissiveness, insults → negative.
@@ -23,4 +14,9 @@
 
 Use small values (1-5) for routine exchanges, medium (5-10) for significant moments, large (10-15) for major events. Use 0 for dimensions not affected. MOST conversations should result in small adjustments. Do NOT over-inflate values — a casual pleasant chat is rapport +2 or +3, not +10.
 
-IMPORTANT: These are companion management actions. Do NOT confuse them with the basic StartFollowing/StopFollowing/WaitHere actions which handle moment-to-moment follow behavior for non-companions. SetCompanion creates a lasting companion bond with relationship tracking. StartFollowing just makes a non-companion NPC walk behind you. CompanionWait/CompanionFollow are for companions; WaitHere is for non-companion NPCs.
+**FollowerLeaves:** EXTREMELY rare. Only when rapport has been severely negative for an extended period AND the player does something that is the final straw. This should feel like a dramatic, earned character moment — not a casual departure. The companion should clearly express their reasons for leaving.
+{% else %}
+**SetCompanion:** Only use when there is a CLEAR, MUTUAL agreement to travel together as companions. The NPC saying "I suppose I could" or "maybe someday" is NOT enough. They must genuinely agree or offer.
+{% endif %}
+{% endif %}
+{% endif %}

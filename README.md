@@ -6,14 +6,14 @@
 </p>
 
 <p align="center">
-  <code>52 Actions</code> &nbsp;·&nbsp; <code>18 Context Prompts</code> &nbsp;·&nbsp; <code>150+ Native C++ Functions</code> &nbsp;·&nbsp; <code>~19,000 Lines of Papyrus</code>
+  <code>55 Actions</code> &nbsp;&middot;&nbsp; <code>17 Context Prompts</code> &nbsp;&middot;&nbsp; <code>150+ Native C++ Functions</code> &nbsp;&middot;&nbsp; <code>~20,000 Lines of Papyrus</code>
 </p>
 
 ---
 
 ## Overview
 
-**SeverActions** extends SkyrimNet with a full suite of actions, prompts, and a native C++ SKSE plugin that together let NPCs interact with the game world in meaningful ways. NPCs can follow you, travel across Skyrim, craft items at forges, cook meals, brew potions, read books aloud, manage their outfits, handle gold, sit in chairs, fight enemies, get arrested and escorted to jail by guards, and much more — all driven naturally through conversation.
+**SeverActions** extends SkyrimNet with a full suite of actions, prompts, and a native C++ SKSE plugin that together let NPCs interact with the game world in meaningful ways. NPCs can follow you, travel across Skyrim, craft items at forges, cook meals, brew potions, read books aloud, manage their outfits with persistent outfit locking, handle gold, sit in chairs, fight enemies, get arrested and escorted to jail by guards, and much more — all driven naturally through conversation.
 
 Every system is designed around one principle: **the AI decides what to do, and the mod makes it happen in-game.**
 
@@ -25,11 +25,11 @@ Every system is designed around one principle: **the AI decides what to do, and 
 
 | Module | Actions | Description |
 |--------|---------|-------------|
-| **Basic** | `StartFollowing` `StopFollowing` `WaitHere` `Relax` `StopRelaxing` `PickUpItem` `UseItem` `GiveItem` `BringItem` `LootContainer` `LootCorpse` `ReadBook` `StopReading` | Core follower commands — follow, wait, relax, pick up items, loot, and read books aloud |
+| **Basic** | `StartFollowing` `StopFollowing` `Relax` `StopRelaxing` `PickUpItem` `UseItem` `GiveItem` `BringItem` `LootContainer` `LootCorpse` `ReadBook` `StopReading` | Core commands — follow, relax, pick up items, loot, and read books aloud |
 | **Travel** | `TravelToPlace` `TravelToLocation` `ChangeTravelSpeed` `CancelTravel` | NPCs navigate to named locations (cities, inns, dungeons) using a native travel marker database |
 | **Combat** | `AttackTarget` `CeaseFighting` `Yield` | Engage or disengage from combat based on conversation |
-| **Outfit** | `Undress` `GetDressed` `EquipItemByName` `UnequipItemByName` `EquipMultipleItems` `UnequipMultipleItems` `SaveOutfitPreset` `ApplyOutfitPreset` | Full outfit management — equip/unequip by name, batch equip multiple items, save and recall outfit presets |
-| **Follower** | `SetCompanion` `DismissFollower` `CompanionWait` `CompanionFollow` `AssignHome` `SetCombatStyle` `FollowerLeaves` `AdjustRelationship` | Companion framework with relationship tracking (rapport, trust, loyalty, mood), NFF integration, combat styles, and home assignment |
+| **Outfit** | `Undress` `GetDressed` `EquipItemByName` `UnequipItemByName` `EquipMultipleItems` `UnequipMultipleItems` `SaveOutfitPreset` `ApplyOutfitPreset` | Full outfit management — equip/unequip by name, batch equip, save/recall presets, persistent outfit locking across cell transitions |
+| **Follower** | `SetCompanion` `DismissFollower` `CompanionWait` `CompanionFollow` `AssignHome` `SetCombatStyle` `FollowerLeaves` `AdjustRelationship` | Companion framework with relationship tracking (rapport, trust, loyalty, mood), NFF/EFF integration, combat styles, home assignment. Wait/Follow work on any NPC |
 | **Furniture** | `SitOrLayDown` `StopUsingFurniture` | NPCs use chairs, benches, beds, and crafting stations with automatic cleanup |
 | **Economy** | `GiveGold` `CollectPayment` `ExtortGold` | Gold transactions — gifts, payments, tips, and extortion with conjured gold support |
 | **Crafting** | `CraftItem` `CookMeal` `BrewPotion` | Full crafting pipeline — NPC walks to the nearest workstation, crafts/cooks/brews, then delivers the item |
@@ -51,10 +51,9 @@ Prompts inject real-time game state into the AI's context so NPCs *know* about t
 | **Guard Bounty** | Player's bounty in the current hold |
 | **Jailed Status** | That they're imprisoned and why |
 | **Merchant Inventory** | Their shop stock and pricing (location-restricted or always-on) |
-| **Travel Guidance** | Rules preventing NPCs from traveling without being told to |
 | **Book Reading** | Strict reading rules — NPCs read only real book text, never fabricated content |
 | **Follower Context** | Relationship values (rapport/trust/loyalty/mood), morality, combat style, and companion behavior guidelines with relationship-influenced moral flexibility |
-| **Follower Action Guidance** | Rules for when and how to use follower framework actions |
+| **Follower Action Guidance** | Relationship value calibration (AdjustRelationship ranges), companion recruitment threshold, and FollowerLeaves emotional weight |
 
 ### Adult Content Modules (Optional)
 
@@ -102,20 +101,26 @@ The included SKSE plugin replaces slow Papyrus operations with native C++ implem
 
 A relationship-driven companion system where NPCs remember how they feel about the player and act accordingly:
 
-- **Relationship tracking** — Rapport, Trust, Loyalty, and Mood on -100/+100 scales (Mood 0–100), persisted via StorageUtil
+- **Relationship tracking** — Rapport, Trust, Loyalty, and Mood on -100/+100 scales (Mood 0-100), persisted via StorageUtil
 - **Morality system** — 4-tier morality (0=no morals, 1=violent but honest, 2=petty theft OK, 3=strict moral code) with relationship-based flexibility — NPCs with high rapport/trust/loyalty will bend their rules more for a player they care about
-- **NFF integration** — Automatically detects Nether's Follower Framework and routes recruit/dismiss through NFF's controller when present, falls back to vanilla teammate system when not
+- **Framework integration** — Automatically detects Nether's Follower Framework (NFF) or Extensible Follower Framework (EFF) and routes recruit/dismiss through the framework's controller when present, falls back to vanilla teammate system when neither is installed
+- **Auto-detection** — Followers recruited outside SeverActions (via vanilla dialogue, NFF, EFF, or other mods) are automatically detected and tracked on cell load
 - **Combat styles** — Aggressive, defensive, ranged, healer, or balanced — configurable per follower
 - **Home assignment** — NPCs can be assigned a home location and will return there when dismissed
-- **MCM configuration** — Per-follower sliders for all relationship values and combat style dropdown
+- **Relationship persistence** — All relationship data survives dismissal and re-recruitment; only the active follower flag is toggled
+- **Outfit persistence** — Outfit locks survive dismissal — dismissed followers keep their equipped outfits when sent home
+- **Up to 10 companions** — Default max of 10 simultaneous followers, configurable up to 20 via MCM
+- **Hotkeys and wheel menu** — Dedicated hotkeys for follow toggle, dismiss all, set companion, and wait/resume. UIExtensions wheel menu with all actions in one place
+- **MCM configuration** — Per-follower sliders for all relationship values, combat style dropdown, survival stats display, and outfit lock status
 
 ### Outfit Manager
 
-NPCs can equip and unequip items by name, handle multiple items in a single action, and save/recall outfit presets:
+NPCs can equip and unequip items by name, handle multiple items in a single action, save/recall outfit presets, and keep their outfits persistent across cell transitions:
 
 - **Name-based equipping** — "Put on the steel gauntlets" uses C++ `FindItemByName` for fast inventory search, Papyrus `EquipItem` for thread-safe equipping
 - **Batch operations** — "Put on steel gauntlets, iron helmet, and glass cuirass" in a single action via comma-separated item names
 - **Outfit presets** — "Save what you're wearing as your combat outfit" snapshots all worn items; "Change into your home clothes" strips current gear and equips the saved preset
+- **Persistent outfit locking** — Locked outfits survive cell transitions, save/load, dismissal, and engine auto-equip. Uses per-follower ReferenceAlias slots with `OnLoad`/`OnCellLoad`/`OnObjectUnequipped` events for zero-flicker re-equipping. Dismissed followers keep their outfits when sent home
 - **Animations** — Integrates with Immersive Equipping Animations for slot-appropriate dress/undress animations
 - **Hybrid architecture** — C++ for inventory searching (fast), Papyrus for equipping (thread-safe). Direct C++ `ActorEquipManager::EquipObject()` can silently fail from Papyrus worker threads.
 
@@ -137,13 +142,13 @@ A full cross-cell arrest system that works even when the guard and target are in
 
 ```
 Player tells guard to arrest someone
-        ↓
+        |
 Guard pathfinds to target (even through load doors)
-        ↓
+        |
 Arrest performed (cuffs, factions, follow package)
-        ↓
+        |
 Guard escorts prisoner back to sender or jail
-        ↓
+        |
 Judgment phase — sender decides release or jail
 ```
 
@@ -159,13 +164,13 @@ Judgment phase — sender decides release or jail
 
 ```
 Player says something in conversation
-        ↓
+        |
 SkyrimNet AI decides an action is appropriate
-        ↓
+        |
 Action YAML defines parameters and eligibility
-        ↓
+        |
 Papyrus script executes the action in-game
-        ↓
+        |
 Events are registered back to SkyrimNet for narration
 ```
 
@@ -177,14 +182,16 @@ Events are registered back to SkyrimNet for narration
 5. Crafting animation plays for a configurable duration
 6. NPC walks to the player and plays a give animation
 7. Iron sword is transferred to the player's inventory
-8. A narration event fires: *"Lydia hands Iron Sword to Dragonborn."*
+8. A narration event fires confirming the item was delivered
 
 ### Survival Tracking
 
-Followers track hunger, fatigue, and cold exposure on a 0–100 scale with native calculations:
+Followers track hunger, fatigue, and cold exposure on a 0-100 scale with native calculations:
 
 - **Cold exposure** factors in weather severity, geographic region, equipped armor warmth, and proximity to heat sources (campfires, forges, hearths)
+- **Hunger** — Food restores 40 points, beverages (ales, meads, wines) restore 15, and regular potions restore 10
 - **Auto-eat** triggers when hunger reaches threshold — followers consume food from their inventory
+- **MCM display** — Per-follower hunger, fatigue, and cold percentages with severity labels shown in the Followers MCM page
 - **All calculations native** — 100-200x faster than equivalent Papyrus loops
 
 ---
@@ -205,6 +212,7 @@ Followers track hunger, fatigue, and cold exposure on a 0–100 scale with nativ
 | Mod | Integration |
 |-----|-------------|
 | [Nether's Follower Framework](https://www.nexusmods.com/skyrimspecialedition/mods/55653) | Follower recruit/dismiss routed through NFF when detected — prevents faction conflicts |
+| [Extensible Follower Framework](https://www.nexusmods.com/skyrimspecialedition/mods/7003) | Follower recruit/dismiss routed through EFF when detected (NFF takes priority if both installed) |
 | [NPC Names Distributor](https://www.nexusmods.com/skyrimspecialedition/mods/81214) | Guard dispatch can find NPCs by their NND-assigned names |
 | [Immersive Equipping Animations](https://www.nexusmods.com/skyrimspecialedition/mods/70249) | Slot-appropriate equip/unequip animations for outfit actions |
 | [Fertility Mode Reloaded](https://www.loverslab.com/) | Pregnancy and fertility cycle awareness |
@@ -227,50 +235,49 @@ The **Core** files are always installed and include all Papyrus scripts, the nat
 
 ```
 SeverActions/
-├── 00 Core/                              # Always installed
-│   ├── SeverActions.esp                  # Plugin file
-│   ├── Interface/Translations/           # MCM translation strings
-│   ├── SKSE/Plugins/
-│   │   ├── SeverActionsNative.dll        # Native C++ SKSE plugin (150+ functions)
-│   │   └── SeverActionsNative.toml       # Plugin configuration
-│   ├── Scripts/                          # Compiled Papyrus scripts (.pex)
-│   └── Source/
-│       ├── Scripts/                      # Papyrus source scripts (.psc)
-│       └── BuildStubs/                   # Compile-time stubs for soft dependencies (NFF, etc.)
-│
-├── Actions/                              # Action YAML configs (selectable)
-│   ├── Basic/                            # Follow, wait, relax, items, loot, read books
-│   ├── Travel/                           # Travel to locations
-│   ├── Combat/                           # Attack, cease, yield
-│   ├── Outfit/                           # Equip/unequip by name, batch equip, presets
-│   ├── Follower/                         # Companion framework — recruit, dismiss, relationship, combat style
-│   ├── Furniture/                        # Sit, lay down, stand up
-│   ├── Economy/                          # Give gold, collect, extort
-│   ├── Crafting/                         # Craft, cook, brew
-│   ├── Arrest/                           # Arrest, dispatch, bounty, jail, judgment
-│   ├── Adult-OSLAroused/                 # OSL Aroused integration
-│   └── Adult-SLOAroused/                # SL Aroused integration
-│
-├── Prompts/                              # Context prompt templates (selectable)
-│   ├── Core/                             # Spells, gold, inventory, nearby, book reading
-│   ├── Combat/                           # Combat awareness
-│   ├── Travel/                           # Travel guidance rules
-│   ├── Survival/                         # Hunger, cold, fatigue
-│   ├── Faction/                          # Guild reputation
-│   ├── Arrest/                           # Bounty and jail status
-│   ├── Follower/                         # Relationship context and action guidance
-│   ├── Economy-Anywhere/                 # Merchant (always active)
-│   ├── Economy-LocationOnly/             # Merchant (location-restricted)
-│   ├── Adult-OSLAroused/                 # Arousal awareness (OSL)
-│   ├── Adult-SLOAroused/                # Arousal awareness (SLO)
-│   └── Adult-Fertility/                 # Fertility cycle awareness
-│
-├── Triggers/                             # Event triggers
-│   └── Adult/                            # Abort Pregnancy trigger
-│
-└── fomod/                                # FOMOD installer config
-    ├── info.xml
-    └── ModuleConfig.xml
++-- 00 Core/                              # Always installed
+|   +-- SeverActions.esp                  # Plugin file
+|   +-- Interface/Translations/           # MCM translation strings
+|   +-- SKSE/Plugins/
+|   |   +-- SeverActionsNative.dll        # Native C++ SKSE plugin (150+ functions)
+|   |   +-- SeverActionsNative.toml       # Plugin configuration
+|   +-- Scripts/                          # Compiled Papyrus scripts (.pex)
+|   +-- Source/
+|       +-- Scripts/                      # Papyrus source scripts (.psc)
+|       +-- BuildStubs/                   # Compile-time stubs for soft dependencies (NFF, EFF)
+|
++-- Actions/                              # Action YAML configs (selectable)
+|   +-- Basic/                            # Follow, wait, relax, items, loot, read books
+|   +-- Travel/                           # Travel to locations
+|   +-- Combat/                           # Attack, cease, yield
+|   +-- Outfit/                           # Equip/unequip by name, batch equip, presets
+|   +-- Follower/                         # Companion framework — recruit, dismiss, relationship, combat style
+|   +-- Furniture/                        # Sit, lay down, stand up
+|   +-- Economy/                          # Give gold, collect, extort
+|   +-- Crafting/                         # Craft, cook, brew
+|   +-- Arrest/                           # Arrest, dispatch, bounty, jail, judgment
+|   +-- Adult-OSLAroused/                 # OSL Aroused integration
+|   +-- Adult-SLOAroused/                 # SL Aroused integration
+|
++-- Prompts/                              # Context prompt templates (selectable)
+|   +-- Core/                             # Spells, gold, inventory, nearby, book reading
+|   +-- Combat/                           # Combat awareness
+|   +-- Survival/                         # Hunger, cold, fatigue
+|   +-- Faction/                          # Guild reputation
+|   +-- Arrest/                           # Bounty and jail status
+|   +-- Follower/                         # Relationship context and action guidance
+|   +-- Economy-Anywhere/                 # Merchant (always active)
+|   +-- Economy-LocationOnly/             # Merchant (location-restricted)
+|   +-- Adult-OSLAroused/                 # Arousal awareness (OSL)
+|   +-- Adult-SLOAroused/                 # Arousal awareness (SLO)
+|   +-- Adult-Fertility/                  # Fertility cycle awareness
+|
++-- Triggers/                             # Event triggers
+|   +-- Adult/                            # Abort Pregnancy trigger
+|
++-- fomod/                                # FOMOD installer config
+    +-- info.xml
+    +-- ModuleConfig.xml
 ```
 
 ---
@@ -279,28 +286,29 @@ SeverActions/
 
 | Script | Lines | Purpose |
 |--------|------:|---------|
-| `SeverActions_Arrest` | 4,466 | Crime system — bounty tracking, guard dispatch, cross-cell escort, persuasion, judgment, jail processing |
+| `SeverActions_Arrest` | 4,879 | Crime system — bounty tracking, guard dispatch, cross-cell escort, persuasion, judgment, jail processing |
 | `SeverActions_Travel` | 1,694 | Travel system — location lookup, walking packages, speed control, stuck recovery |
-| `SeverActions_Survival` | 1,341 | Follower survival — hunger, cold, fatigue tracking with native calculation |
-| `SeverActions_Loot` | 1,232 | Container looting, corpse searching, item pickup, flora harvesting, book reading |
-| `SeverActions_Crafting` | 1,161 | Full crafting pipeline — forge/cooking/alchemy with native DB integration |
-| `SeverActions_MCM` | 1,564 | Mod Configuration Menu — toggle features, adjust settings, per-follower relationship sliders |
-| `SeverActions_Combat` | 1,080 | Combat actions — attack, cease, yield with C++ aggression restoration monitor |
-| `SeverActions_FollowerManager` | 950+ | Follower framework — roster, relationships, NFF integration, combat styles, home assignment |
-| `SeverActionsNative` | 803 | Native DLL function declarations (150+ functions) |
-| `SeverActions_Outfit` | 740+ | Equipment management — equip/unequip by name, batch operations, outfit presets |
-| `SeverActions_Hotkeys` | 540 | Hotkey registration and handling |
+| `SeverActions_MCM` | 1,611 | Mod Configuration Menu — toggle features, adjust settings, per-follower relationship sliders, survival stats, outfit lock status |
+| `SeverActions_Survival` | 1,441 | Follower survival — hunger, cold, fatigue tracking with native calculation, beverage detection |
+| `SeverActions_Loot` | 1,236 | Container looting, corpse searching, item pickup, flora harvesting, book reading |
+| `SeverActions_Crafting` | 1,187 | Full crafting pipeline — forge/cooking/alchemy with native DB integration |
+| `SeverActions_FollowerManager` | 1,184 | Follower framework — roster, relationships, NFF/EFF integration, combat styles, home assignment, outfit slot management |
+| `SeverActions_Combat` | 1,076 | Combat actions — attack, cease, yield with C++ aggression restoration monitor |
+| `SeverActions_Outfit` | 1,012 | Equipment management — equip/unequip by name, batch operations, outfit presets, persistent outfit locking |
+| `SeverActionsNative` | 779 | Native DLL function declarations (150+ functions) |
+| `SeverActions_Hotkeys` | 662 | Hotkey registration and handling — follow, dismiss, wait, companion, yield, outfit, furniture |
 | `SeverActions_FertilityMode_Bridge` | 424 | Fertility Mode data caching bridge to native DLL |
-| `SeverActions_Init` | 420+ | Mod initialization, database loading, event registration, follower framework init |
+| `SeverActions_Init` | 424 | Mod initialization, database loading, event registration, follower framework init |
 | `SeverActions_SpellTeach` | 380 | Spell teaching system |
-| `SeverActions_WheelMenu` | 377 | Wheeler integration for quick actions |
+| `SeverActions_WheelMenu` | 420 | UIExtensions wheel menu — all actions in one radial interface with context-aware labels |
 | `SeverActions_EatingAnimations` | 338 | TaberuAnimation.esp integration — keyword-based food eating animations |
 | `SeverActions_Follow` | 318 | Follower management — start/stop following, wait, relax |
 | `SeverActions_Currency` | 271 | Gold transactions with conjured gold fallback |
 | `SeverActions_Furniture` | 237 | Furniture interaction with native auto-cleanup |
-| `SeverActions_SLOArousal` | 154 | SexLab Aroused integration |
+| `SeverActions_SLOArousal` | 164 | SexLab Aroused integration |
 | `SeverActions_Arousal` | 142 | OSL Aroused integration — arousal state decorator and modification |
-| | **~19,000** | **Total** |
+| `SeverActions_OutfitAlias` | 84 | Per-follower ReferenceAlias for zero-flicker outfit persistence across cell transitions |
+| | **~20,000** | **Total** |
 
 ---
 
@@ -312,7 +320,9 @@ The mod is configurable through the **MCM (Mod Configuration Menu)** in-game:
 - **Travel** — Travel speed, marker database selection
 - **Furniture** — Auto-stand distance (how far the player must move before NPCs stand up)
 - **Survival** — Hunger/cold/fatigue thresholds and update intervals
-- **Follower** — Per-follower Rapport, Trust, Loyalty, Mood sliders, Combat Style dropdown
+- **Hotkeys** — Configurable keybinds for follow, dismiss, wait/resume, set companion, yield, outfit, stand up. UIExtensions wheel menu key. Target mode selection (crosshair, nearest NPC, last talked to)
+- **Followers** — Per-follower Rapport, Trust, Loyalty, Mood sliders, Combat Style dropdown, survival stats (hunger/fatigue/cold percentages), outfit lock status. Max companions slider (up to 20)
+- **Crime** — Per-hold bounty display with clear options
 - **Dialogue Animations** — Enable/disable conversation idle animations
 - **Debug** — Verbose logging for troubleshooting dispatch and escort behavior
 
@@ -322,6 +332,7 @@ The mod is configurable through the **MCM (Mod Configuration Menu)** in-game:
 
 | Version | Changes |
 |---------|---------|
+| **0.95** | **Outfit Persistence** — ReferenceAlias-based outfit locking system. Per-follower alias slots with `OnLoad`/`OnCellLoad`/`OnEnable`/`OnObjectUnequipped` events for zero-flicker outfit re-equipping across cell transitions. Outfit lock survives save/load, dismissal, and engine auto-equip via StorageUtil persistence + automatic alias slot reassignment on game load. Dismissed followers keep their outfits when sent home. MCM shows outfit lock status and locked item list per follower. **Consolidated Wait System** — `WaitHere` removed; `CompanionWait` now works for any NPC (not just companions) and always applies sandbox package for immersive waiting behavior. `CompanionFollow` also universal. **Hotkeys & Wheel Menu** — Dedicated hotkeys for follow toggle, dismiss all, set companion, and wait/resume. UIExtensions wheel menu with 8 context-aware action slots (follow, dismiss, stand up, yield, undress, dress, wait, set companion). **Follow Priority Overhaul** — Follow package priority raised to 95 (from 10) so follow reliably overrides sandbox and other packages. Sandbox stays at 90. **Clearer Dismiss vs Wait vs Leave** — DismissFollower YAML rewritten with explicit USE/DON'T USE sections and KEY DISTINCTION block to prevent AI confusion between temporary dismissal, waiting, and permanent departure. **Prompt Null Safety** — All 6 prompts using `decnpc()` now have defensive null guards (`{% if actorUUID and actorUUID != 0 %}`) preventing `type_error.302` crashes when actor context is missing. Fixed `is_follower(actor.UUID)` → `is_follower(actorUUID)` across all prompts. **Streamlined Action Guidance** — Follower action guidance prompt trimmed to relationship calibration only (AdjustRelationship ranges, FollowerLeaves emotional weight, SetCompanion recruitment threshold); action routing now handled entirely by YAML descriptions. **EFF Integration** — Extensible Follower Framework support added alongside NFF. Priority order: NFF > EFF > Vanilla. Build stubs for both frameworks (compile-time only, never deployed). **Max Followers** — Default raised from 5 to 10, MCM slider expanded to 20. **Survival Improvements** — Beverages (ales, meads, wines) now restore 15 hunger; regular potions restore 10. Name-based beverage detection via native `StringContains`. MCM now displays per-follower hunger, fatigue, and cold percentages with severity labels. **Crafting Narrations** — Rewrote all DirectNarration calls to past tense to prevent LLMs from attempting duplicate item delivery. **MCM Fixes** — Added proper `GetVersion()` override for SkyUI version update system. Translation token support for page names. |
 | **0.91** | **Follower Framework** — Full companion system with relationship tracking (rapport/trust/loyalty/mood), 4-tier morality with relationship-influenced flexibility, NFF soft integration (auto-detect and route through NFF controller), combat styles (aggressive/defensive/ranged/healer/balanced), home assignment, MCM per-follower configuration. 8 new follower actions + 2 follower prompts. **Outfit Manager Overhaul** — Replaced slot-based equip/unequip with name-based system using C++ inventory search. New actions: `EquipItemByName`, `UnequipItemByName`, `EquipMultipleItems` (comma-separated batch), `UnequipMultipleItems`, `SaveOutfitPreset`, `ApplyOutfitPreset`. Removed old `EquipClothingPiece`/`RemoveClothingPiece`. Hybrid C++/Papyrus architecture (C++ searches, Papyrus equips for thread safety). **Combat** — Yield aggression restoration via C++ TESHitEvent monitor (yielded NPCs regain aggression when attacked again). **All YAML actions** updated with SexLab/OStim eligibility guards. |
 | **0.90** | Book reading system (`ReadBook`/`StopReading`) with native text extraction. Guard dispatch overhaul — tiered off-screen handling (trust AI → door nudge → teleport), combat suppression, rubber-band tethering, snapshot-based arrival detection, configurable `DispatchArrivalDistance`. Judgment phase (`OrderJailed`/`OrderRelease`). Home investigation dispatch (`DispatchGuardToHome`) with evidence generation. NPC Names Distributor integration — guards find NPCs by NND names. `SetActorBumpable` collision toggle for escorts. `FindExitDoorFromCell` for interior door navigation. Flora/ingredient scanning. Loot improvements (`LootCorpse`, selective looting). Book reading prompt with anti-hallucination rules. |
 | **0.88** | Native DLL: Recipe DB, Alchemy DB, Location Resolver, Actor Finder, Stuck Detector, Survival system, Fertility Mode bridge, Crime utilities. New actions: BrewPotion, CookMeal, Guard dispatch. Removed JSON databases — all data scanned natively from game forms. |
@@ -338,6 +349,7 @@ The mod is configurable through the **MCM (Mod Configuration Menu)** in-game:
 - **[JContainers](https://www.nexusmods.com/skyrimspecialedition/mods/16495)** — JSON data storage (NSFW module only)
 - **[NPC Names Distributor](https://www.nexusmods.com/skyrimspecialedition/mods/81214)** — Optional NPC naming integration
 - **[Nether's Follower Framework](https://www.nexusmods.com/skyrimspecialedition/mods/55653)** — Optional follower framework integration
+- **[Extensible Follower Framework](https://www.nexusmods.com/skyrimspecialedition/mods/7003)** — Optional follower framework integration
 
 ---
 

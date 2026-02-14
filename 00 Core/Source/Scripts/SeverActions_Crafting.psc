@@ -423,11 +423,11 @@ Function CraftItem_Internal(Actor akActor, string itemName, Actor akRecipient, b
     ; Remove from NPC and add to recipient
     akActor.RemoveItem(itemForm, itemCount, false, recipient)
 
-    ; Direct narration: Item handed over (triggers NPC response)
+    ; Direct narration: Item already transferred (past tense so LLM doesn't repeat the give)
     if itemCount > 1
-        SkyrimNetApi.DirectNarration(crafterName + " hands " + itemCount + " " + itemDisplayName + " to " + recipientName + ".", akActor, recipient)
+        SkyrimNetApi.DirectNarration(recipientName + " has received " + itemCount + " " + itemDisplayName + " from " + crafterName + ". The item is now in " + recipientName + "'s inventory.", akActor, recipient)
     else
-        SkyrimNetApi.DirectNarration(crafterName + " hands " + itemDisplayName + " to " + recipientName + ".", akActor, recipient)
+        SkyrimNetApi.DirectNarration(recipientName + " has received " + itemDisplayName + " from " + crafterName + ". The item is now in " + recipientName + "'s inventory.", akActor, recipient)
     endif
 
     ; Notify
@@ -589,12 +589,12 @@ Function CookMeal_Internal(Actor akActor, string recipeName, Actor akRecipient, 
     ; Transfer item(s) to recipient
     akActor.RemoveItem(itemForm, itemCount, false, recipient)
 
-    ; Direct narration
+    ; Direct narration (past tense so LLM doesn't repeat the give)
     if itemCount > 1
-        SkyrimNetApi.DirectNarration(crafterName + " hands " + itemCount + " " + itemDisplayName + " to " + recipientName + ".", akActor, recipient)
+        SkyrimNetApi.DirectNarration(recipientName + " has received " + itemCount + " " + itemDisplayName + " from " + crafterName + ". The item is now in " + recipientName + "'s inventory.", akActor, recipient)
         Debug.Notification("Received: " + itemDisplayName + " x" + itemCount)
     else
-        SkyrimNetApi.DirectNarration(crafterName + " hands " + itemDisplayName + " to " + recipientName + ".", akActor, recipient)
+        SkyrimNetApi.DirectNarration(recipientName + " has received " + itemDisplayName + " from " + crafterName + ". The item is now in " + recipientName + "'s inventory.", akActor, recipient)
         Debug.Notification("Received: " + itemDisplayName)
     endif
 
@@ -727,12 +727,12 @@ Function BrewPotion_Internal(Actor akActor, string potionName, Actor akRecipient
     ; Transfer item(s) to recipient
     akActor.RemoveItem(itemForm, itemCount, false, recipient)
 
-    ; Direct narration
+    ; Direct narration (past tense so LLM doesn't repeat the give)
     if itemCount > 1
-        SkyrimNetApi.DirectNarration(crafterName + " hands " + itemCount + " " + itemDisplayName + " to " + recipientName + ".", akActor, recipient)
+        SkyrimNetApi.DirectNarration(recipientName + " has received " + itemCount + " " + itemDisplayName + " from " + crafterName + ". The item is now in " + recipientName + "'s inventory.", akActor, recipient)
         Debug.Notification("Received: " + itemDisplayName + " x" + itemCount)
     else
-        SkyrimNetApi.DirectNarration(crafterName + " hands " + itemDisplayName + " to " + recipientName + ".", akActor, recipient)
+        SkyrimNetApi.DirectNarration(recipientName + " has received " + itemDisplayName + " from " + crafterName + ". The item is now in " + recipientName + "'s inventory.", akActor, recipient)
         Debug.Notification("Received: " + itemDisplayName)
     endif
 
@@ -841,7 +841,7 @@ Function BrewPoison_Internal(Actor akActor, string poisonName, Actor akRecipient
 
     akActor.RemoveItem(itemForm, 1, false, recipient)
 
-    SkyrimNetApi.DirectNarration(crafterName + " hands " + itemDisplayName + " to " + recipientName + ".", akActor, recipient)
+    SkyrimNetApi.DirectNarration(recipientName + " has received " + itemDisplayName + " from " + crafterName + ". The item is now in " + recipientName + "'s inventory.", akActor, recipient)
 
     Debug.Notification("Received: " + itemDisplayName)
     Debug.Trace("SeverActions_Crafting: BrewPoison complete")
@@ -1155,8 +1155,8 @@ Function DeliverItemToRecipient(Actor akActor, Form itemForm, Actor recipient)
     ; Transfer item
     akActor.RemoveItem(itemForm, 1, false, recipient)
 
-    ; Direct narration: Item handed over
-    SkyrimNetApi.DirectNarration(crafterName + " hands " + itemDisplayName + " to " + recipientName + ".", akActor, recipient)
+    ; Direct narration (past tense so LLM doesn't repeat the give)
+    SkyrimNetApi.DirectNarration(recipientName + " has received " + itemDisplayName + " from " + crafterName + ". The item is now in " + recipientName + "'s inventory.", akActor, recipient)
 
     ; Notify
     Debug.Notification("Received: " + itemDisplayName)

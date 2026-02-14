@@ -951,6 +951,10 @@ Function UseItem_Execute(Actor akActor, String itemName)
             ; Poison - they drank poison (intentionally or not)
             SkyrimNetApi.RegisterEvent("item_consumed", akActor.GetDisplayName() + " drank " + actualItemName + " (poison!)", akActor, None)
         else
+            ; Regular potion/drink — still sates hunger slightly (liquid is liquid)
+            If SurvivalScript
+                SurvivalScript.OnFollowerDrank(akActor, itemForm)
+            EndIf
             SkyrimNetApi.RegisterEvent("item_consumed", akActor.GetDisplayName() + " drank " + actualItemName, akActor, None)
         endif
         

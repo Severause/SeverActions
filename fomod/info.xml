@@ -2,8 +2,8 @@
 <fomod>
     <Name>SeverActions - SkyrimNet Action Pack</Name>
     <Author>Sever</Author>
-    <Version>0.90</Version>
-    <Description>A comprehensive action, prompt, and behavior pack for SkyrimNet. 44 actions, 16 context prompts, and a native C++ SKSE plugin. NPCs can follow, travel, craft, cook, brew, read books aloud, manage outfits, handle gold, use furniture, fight, get arrested and escorted to jail, and more — all driven naturally through conversation. Includes optional adult content modules.</Description>
+    <Version>0.95</Version>
+    <Description>A comprehensive action, prompt, and behavior pack for SkyrimNet. 57 actions, 17 context prompts, and a native C++ SKSE plugin. NPCs can follow, travel, craft, cook, brew, read books aloud, manage outfits with persistent outfit locking, handle gold, use furniture, fight, get arrested and escorted to jail, and more — all driven naturally through conversation. Includes a full companion framework with relationship tracking, EFF/NFF integration, and survival needs. Optional adult content modules included.</Description>
     <Groups>
         <element>Gameplay</element>
         <element>SkyrimNet</element>

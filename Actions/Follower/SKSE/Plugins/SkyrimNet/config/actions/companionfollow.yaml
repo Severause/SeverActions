@@ -1,21 +1,21 @@
 name: CompanionFollow
-description: "I will stop waiting and resume following {{ player.name }}.
-  Use this action when {{ player.name }} returns to me after telling me to wait
-  and asks me to follow them again, come along, move out, or resume traveling together.
+description: "Stop waiting and resume following {{ player.name }}.
+  Use this action when {{ player.name }} returns to a waiting NPC and asks them to follow
+  again, come along, move out, or resume traveling together.
 
-  I must be an active companion (follower) who is currently waiting to use this action.
+  The NPC must currently be waiting (told to wait earlier) to use this action.
 
   Do NOT use this action when:
-  - I am already following {{ player.name }} (I'm not waiting)
-  - {{ player.name }} is recruiting me for the first time (use SetCompanion instead)
-  - {{ player.name }} wants to dismiss me (use DismissFollower instead)"
+  - The NPC is already following {{ player.name }} (they're not waiting)
+  - {{ player.name }} is recruiting someone for the first time (use SetCompanion instead)
+  - {{ player.name }} wants to dismiss a companion (use DismissFollower instead)"
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: CompanionFollow
 parameterMapping:
   - type: speaker
     name: akActor
-    description: The companion resuming following
+    description: The NPC resuming following
 enabled: true
 defaultPriority: 7
 eligibilityRules:
@@ -24,13 +24,6 @@ eligibilityRules:
         arguments: ["currentActor"]
         comparisonOperator: "=="
         expectedValue: false
-    logicalOperator: "AND"
-    required: true
-  - conditions:
-      - decoratorName: "is_follower"
-        arguments: ["currentActor"]
-        comparisonOperator: "=="
-        expectedValue: true
     logicalOperator: "AND"
     required: true
   - conditions:

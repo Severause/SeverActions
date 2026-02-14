@@ -1,5 +1,6 @@
 {# Combat Awareness - Adds combat state context for NPC dialogue #}
 {% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" or render_mode == "target" %}
+{% if actorUUID and actorUUID != 0 %}
 {% set actor = decnpc(actorUUID) %}
 {% if actor and actor.UUID %}
 {# Read combat state from StorageUtil #}
@@ -71,6 +72,7 @@ Your responses should reflect the urgency and danger - short, reactive, focused 
 **Combat State:** {% if combat_target_name %}Fighting {{ combat_target_name }}{% else %}In active combat{% endif %}
 {% elif recent_ceasefire or recent_yield_given or recent_yield_received %}
 **Recent Status:** Recently stopped fighting - tension is high
+{% endif %}
 {% endif %}
 {% endif %}
 {% endif %}

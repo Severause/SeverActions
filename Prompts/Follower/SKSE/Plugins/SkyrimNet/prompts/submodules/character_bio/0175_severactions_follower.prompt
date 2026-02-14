@@ -1,8 +1,9 @@
 {# Follower Framework - Relationship, role, and behavioral context #}
 {% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" %}
+{% if actorUUID and actorUUID != 0 %}
 {% set actor = decnpc(actorUUID) %}
 {% if actor and actor.UUID %}
-{% set is_fol = is_follower(actor.UUID) %}
+{% set is_fol = is_follower(actorUUID) %}
 {% set rapport = papyrus_util("GetFloatValue", actor.UUID, "SeverFollower_Rapport", 0) %}
 {% set trust = papyrus_util("GetFloatValue", actor.UUID, "SeverFollower_Trust", 25) %}
 {% set loyalty = papyrus_util("GetFloatValue", actor.UUID, "SeverFollower_Loyalty", 50) %}
@@ -148,6 +149,7 @@ You have traveled with {{ player.name }} before ({{ was_follower }} time{% if wa
 You remember them fondly and might be open to traveling together again.
 {% else %}
 The previous experience wasn't great. You'd need some convincing to rejoin.
+{% endif %}
 {% endif %}
 {% endif %}
 
