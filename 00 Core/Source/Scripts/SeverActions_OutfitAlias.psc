@@ -42,10 +42,17 @@ EndEvent
 Event OnObjectUnequipped(Form akBaseObject, ObjectReference akReference)
     {Fires when the NPC unequips any item. If the outfit is locked and
      armor was unequipped (engine swapping to "best"), immediately re-equip
-     the locked outfit to override the engine's choice.}
+     the locked outfit to override the engine's choice.
+     Skipped when the outfit system itself is actively changing clothes
+     (SeverOutfit_Suspended flag set by SeverActions_Outfit action functions).}
     If akBaseObject as Armor
         Actor follower = self.GetActorRef()
         If follower && StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0) == 1
+            ; Don't fight our own outfit changes — suspend flag means the Outfit
+            ; system is mid-operation (applying preset, equipping/unequipping items)
+            If StorageUtil.GetIntValue(follower, "SeverOutfit_Suspended", 0) == 1
+                Return
+            EndIf
             ReequipIfLocked()
         EndIf
     EndIf

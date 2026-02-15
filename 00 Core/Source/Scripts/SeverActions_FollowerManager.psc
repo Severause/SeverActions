@@ -445,9 +445,10 @@ Function ClearOutfitSlot(Actor akActor)
 EndFunction
 
 Function ReassignOutfitSlots()
-    {Re-assign outfit alias slots for all registered followers after a game load.
+    {Re-assign outfit alias slots after a game load.
      ForceRefTo is runtime-only and doesn't survive save/load, so we need to
-     repopulate the alias slots every time Maintenance() runs.}
+     repopulate the alias slots every time Maintenance() runs.
+     Covers both active followers AND dismissed actors with outfit locks.}
     If !OutfitSlots
         Return
     EndIf
@@ -461,18 +462,50 @@ Function ReassignOutfitSlots()
         i += 1
     EndWhile
 
+    Int totalAssigned = 0
+
     ; Re-assign slots for all current followers
     Actor[] followers = GetAllFollowers()
     i = 0
     While i < followers.Length
         If followers[i]
             AssignOutfitSlot(followers[i])
+            totalAssigned += 1
         EndIf
         i += 1
     EndWhile
 
-    If followers.Length > 0
-        DebugMsg("Reassigned outfit slots for " + followers.Length + " follower(s) after load")
+    ; Also assign slots for dismissed actors who still have active outfit locks.
+    ; Without this, dismissed followers lose alias events on save/load and go naked.
+    SeverActions_Outfit outfitSys = GetOutfitScript()
+    If outfitSys
+        Actor[] lockedActors = outfitSys.GetOutfitLockedActors()
+        i = 0
+        While i < lockedActors.Length
+            If lockedActors[i]
+                ; Skip actors already assigned (they're still active followers)
+                Bool alreadyAssigned = false
+                Int j = 0
+                While j < followers.Length
+                    If followers[j] == lockedActors[i]
+                        alreadyAssigned = true
+                        j = followers.Length ; break
+                    EndIf
+                    j += 1
+                EndWhile
+
+                If !alreadyAssigned
+                    AssignOutfitSlot(lockedActors[i])
+                    totalAssigned += 1
+                    DebugMsg("Outfit slot assigned for dismissed actor: " + lockedActors[i].GetDisplayName())
+                EndIf
+            EndIf
+            i += 1
+        EndWhile
+    EndIf
+
+    If totalAssigned > 0
+        DebugMsg("Reassigned outfit slots for " + totalAssigned + " actor(s) after load (" + followers.Length + " followers + " + (totalAssigned - followers.Length) + " dismissed with outfits)")
     EndIf
 EndFunction
 
