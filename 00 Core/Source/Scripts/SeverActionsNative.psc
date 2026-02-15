@@ -777,3 +777,23 @@ Float Function OffScreen_GetEstimatedArrival(Actor akActor) Global Native
 
 Function OffScreen_ClearAll() Global Native
 {Clear all off-screen tracking data.}
+
+; =============================================================================
+; TEAMMATE MONITOR
+; Detects SetPlayerTeammate changes for instant follower onboarding.
+; Periodically scans loaded actors (~1 second intervals) and fires mod events
+; when new teammates are detected or existing teammates are removed.
+; Events: "SeverActions_NewTeammateDetected", "SeverActions_TeammateRemoved"
+; =============================================================================
+
+Function TeammateMonitor_SetEnabled(Bool enabled) Global Native
+{Enable or disable the teammate monitor. Enabled by default.}
+
+Bool Function TeammateMonitor_IsEnabled() Global Native
+{Check if the teammate monitor is currently enabled.}
+
+Int Function TeammateMonitor_GetTrackedCount() Global Native
+{Get the number of currently tracked teammates.}
+
+Function TeammateMonitor_ClearTracking() Global Native
+{Clear all tracked teammate data. Called automatically on game load/new game.}

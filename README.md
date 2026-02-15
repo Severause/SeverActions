@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <code>55 Actions</code> &nbsp;&middot;&nbsp; <code>17 Context Prompts</code> &nbsp;&middot;&nbsp; <code>150+ Native C++ Functions</code> &nbsp;&middot;&nbsp; <code>~20,000 Lines of Papyrus</code>
+  <code>55 Actions</code> &nbsp;&middot;&nbsp; <code>17 Context Prompts</code> &nbsp;&middot;&nbsp; <code>189 Native C++ Functions</code> &nbsp;&middot;&nbsp; <code>~20,000 Lines of Papyrus</code>
 </p>
 
 ---
@@ -68,7 +68,7 @@ Prompts inject real-time game state into the AI's context so NPCs *know* about t
 
 ## Native C++ Plugin — `SeverActionsNative.dll`
 
-The included SKSE plugin replaces slow Papyrus operations with native C++ implementations, providing 100-2000x performance improvements across all major systems:
+The included SKSE plugin (189 native functions) replaces slow Papyrus operations with native C++ implementations, providing 100-2000x performance improvements across all major systems:
 
 | System | What It Does |
 |--------|--------------|
@@ -90,6 +90,7 @@ The included SKSE plugin replaces slow Papyrus operations with native C++ implem
 | **Survival System** | Follower tracking, food detection, weather/cold calculation, heat source detection, armor warmth |
 | **Book Utilities** | Native book text extraction — `GetBookText`, `FindBookInInventory`, `ListBooks` |
 | **Yield Aggression Monitor** | TESHitEvent-based monitoring that restores yielded NPC aggression when attacked again |
+| **Teammate Monitor** | Periodic scanning of loaded actors for `SetPlayerTeammate` changes — fires mod events for instant follower onboarding without save/load |
 | **Fertility Mode Bridge** | Cached fertility state lookups, cycle tracking, pregnancy status |
 | **NSFW Utilities** | High-performance JSON assembly for SexLab event data (500-2000x faster than Papyrus) |
 
@@ -103,8 +104,10 @@ A relationship-driven companion system where NPCs remember how they feel about t
 
 - **Relationship tracking** — Rapport, Trust, Loyalty, and Mood on -100/+100 scales (Mood 0-100), persisted via StorageUtil
 - **Morality system** — 4-tier morality (0=no morals, 1=violent but honest, 2=petty theft OK, 3=strict moral code) with relationship-based flexibility — NPCs with high rapport/trust/loyalty will bend their rules more for a player they care about
-- **Framework integration** — Automatically detects Nether's Follower Framework (NFF) or Extensible Follower Framework (EFF) and routes recruit/dismiss through the framework's controller when present, falls back to vanilla teammate system when neither is installed
-- **Auto-detection** — Followers recruited outside SeverActions (via vanilla dialogue, NFF, EFF, or other mods) are automatically detected and tracked on cell load
+- **Framework integration** — Automatically detects Nether's Follower Framework (NFF) or Extensible Follower Framework (EFF) and routes recruit/dismiss through the framework's controller when present, falls back to vanilla teammate system when neither is installed. 4-way dismiss routing: NFF > EFF > custom (preserves pre-existing teammate status) > vanilla
+- **Dual follow system** — Casual follow (SkyrimNet package for guards and random NPCs) and companion follow (CK alias-based package with LinkedRef for formal companions) operate independently without interfering with each other
+- **Instant detection** — Native C++ teammate monitor scans loaded actors every second; followers recruited via vanilla dialogue or any mod are detected and onboarded within ~1 second, no save/load required
+- **Auto-detection on load** — Followers recruited outside SeverActions while the mod was inactive are automatically detected and tracked on game load
 - **Combat styles** — Aggressive, defensive, ranged, healer, or balanced — configurable per follower
 - **Home assignment** — NPCs can be assigned a home location and will return there when dismissed
 - **Relationship persistence** — All relationship data survives dismissal and re-recruitment; only the active follower flag is toggled
@@ -239,7 +242,7 @@ SeverActions/
 |   +-- SeverActions.esp                  # Plugin file
 |   +-- Interface/Translations/           # MCM translation strings
 |   +-- SKSE/Plugins/
-|   |   +-- SeverActionsNative.dll        # Native C++ SKSE plugin (150+ functions)
+|   |   +-- SeverActionsNative.dll        # Native C++ SKSE plugin (189 functions)
 |   |   +-- SeverActionsNative.toml       # Plugin configuration
 |   +-- Scripts/                          # Compiled Papyrus scripts (.pex)
 |   +-- Source/
@@ -292,17 +295,17 @@ SeverActions/
 | `SeverActions_Survival` | 1,441 | Follower survival — hunger, cold, fatigue tracking with native calculation, beverage detection |
 | `SeverActions_Loot` | 1,236 | Container looting, corpse searching, item pickup, flora harvesting, book reading |
 | `SeverActions_Crafting` | 1,187 | Full crafting pipeline — forge/cooking/alchemy with native DB integration |
-| `SeverActions_FollowerManager` | 1,217 | Follower framework — roster, relationships, NFF/EFF integration, combat styles, home assignment, outfit slot management |
+| `SeverActions_FollowerManager` | 1,363 | Follower framework — roster, relationships, NFF/EFF integration, 4-way dismiss routing, instant teammate detection via native DLL events, combat styles, home assignment, outfit slot management |
 | `SeverActions_Combat` | 1,076 | Combat actions — attack, cease, yield with C++ aggression restoration monitor |
 | `SeverActions_Outfit` | 1,141 | Equipment management — equip/unequip by name, batch operations, outfit presets, persistent outfit locking with suspend/resume |
-| `SeverActionsNative` | 779 | Native DLL function declarations (150+ functions) |
+| `SeverActionsNative` | 799 | Native DLL function declarations (189 functions) |
 | `SeverActions_Hotkeys` | 662 | Hotkey registration and handling — follow, dismiss, wait, companion, yield, outfit, furniture |
 | `SeverActions_FertilityMode_Bridge` | 424 | Fertility Mode data caching bridge to native DLL |
 | `SeverActions_Init` | 424 | Mod initialization, database loading, event registration, follower framework init |
 | `SeverActions_SpellTeach` | 380 | Spell teaching system |
 | `SeverActions_WheelMenu` | 420 | UIExtensions wheel menu — all actions in one radial interface with context-aware labels |
 | `SeverActions_EatingAnimations` | 338 | TaberuAnimation.esp integration — keyword-based food eating animations |
-| `SeverActions_Follow` | 318 | Follower management — start/stop following, wait, relax |
+| `SeverActions_Follow` | 506 | Dual follow system — casual follow (SkyrimNet package) and companion follow (CK alias-based with LinkedRef), sandbox management, alias slot assignment |
 | `SeverActions_Currency` | 271 | Gold transactions with conjured gold fallback |
 | `SeverActions_Furniture` | 237 | Furniture interaction with native auto-cleanup |
 | `SeverActions_SLOArousal` | 164 | SexLab Aroused integration |
@@ -332,6 +335,7 @@ The mod is configurable through the **MCM (Mod Configuration Menu)** in-game:
 
 | Version | Changes |
 |---------|---------|
+| **0.96** | **Instant Teammate Detection** — Native C++ `TeammateMonitor` periodically scans loaded actors (~1 second intervals) for `SetPlayerTeammate` flag changes and fires SKSE mod events (`SeverActions_NewTeammateDetected`, `SeverActions_TeammateRemoved`) for immediate Papyrus-side onboarding. Followers recruited via vanilla dialogue or any mod are detected and fully onboarded within ~1 second — no save/load required. External dismissals (another mod calling `SetPlayerTeammate(false)`) are also caught and cleaned up automatically. **Dual Follow System** — Two completely separate follow mechanisms: casual follow (SkyrimNet `RegisterPackage` at priority 50 for guards, random NPCs, and temporary follows) and companion follow (CK alias-based package with `ForceRefTo` + `PO3_SKSEFunctions.SetLinkedRef` for formal companions). Casual follows don't consume alias slots or set LinkedRef; companion follows don't use SkyrimNet's package system. **4-Way Dismiss Routing** — `UnregisterFollower` now routes through NFF > EFF > Custom (preserves pre-existing teammate status for modded followers like Serana/Inigo) > Vanilla, with `KEY_WAS_ALREADY_TEAMMATE` StorageUtil flag tracking. **Full Auto-Onboarding** — `DetectExistingFollowers` now fully onboards detected followers (faction, outfit slot, companion follow with alias + LinkedRef) instead of just setting StorageUtil keys. Re-runs every game load and catches previously missed followers. **Removed Debug Notifications** — Cleaned up in-game `Debug.Notification` calls for LinkedRef and alias slot assignment; `Debug.Trace` log messages retained for troubleshooting. |
 | **0.95** | **Outfit Persistence** — ReferenceAlias-based outfit locking system. Per-follower alias slots with `OnLoad`/`OnCellLoad`/`OnEnable`/`OnObjectUnequipped` events for zero-flicker outfit re-equipping across cell transitions. Outfit lock survives save/load, dismissal, and engine auto-equip via StorageUtil persistence + automatic alias slot reassignment on game load. Dismissed followers keep their outfits when sent home via persistent outfit-locked actor tracking list — alias slots are reassigned even for dismissed followers on save/load. MCM shows outfit lock status and locked item list per follower. **Outfit Lock Suspend/Resume** — All outfit action functions (Dress, Undress, EquipItemByName, UnequipItemByName, EquipMultiple, UnequipMultiple, ApplyOutfitPreset, RemoveClothingPiece) now suspend the `OnObjectUnequipped` re-equip guard before changing gear and resume it after. Prevents the alias from fighting the outfit system's own operations (e.g., switching between saved presets no longer snaps back to the previous outfit mid-swap). **Consolidated Wait System** — `WaitHere` removed; `CompanionWait` now works for any NPC (not just companions) and always applies sandbox package for immersive waiting behavior. `CompanionFollow` also universal. **Hotkeys & Wheel Menu** — Dedicated hotkeys for follow toggle, dismiss all, set companion, and wait/resume. UIExtensions wheel menu with 8 context-aware action slots (follow, dismiss, stand up, yield, undress, dress, wait, set companion). **Follow Priority Overhaul** — Follow package priority raised to 95 (from 10) so follow reliably overrides sandbox and other packages. Sandbox stays at 90. **Clearer Dismiss vs Wait vs Leave** — DismissFollower YAML rewritten with explicit USE/DON'T USE sections and KEY DISTINCTION block to prevent AI confusion between temporary dismissal, waiting, and permanent departure. **Prompt Null Safety** — All 6 prompts using `decnpc()` now have defensive null guards (`{% if actorUUID and actorUUID != 0 %}`) preventing `type_error.302` crashes when actor context is missing. Fixed `is_follower(actor.UUID)` → `is_follower(actorUUID)` across all prompts. **Streamlined Action Guidance** — Follower action guidance prompt trimmed to relationship calibration only (AdjustRelationship ranges, FollowerLeaves emotional weight, SetCompanion recruitment threshold); action routing now handled entirely by YAML descriptions. **EFF Integration** — Extensible Follower Framework support added alongside NFF. Priority order: NFF > EFF > Vanilla. Build stubs for both frameworks (compile-time only, never deployed). **Max Followers** — Default raised from 5 to 10, MCM slider expanded to 20. **Survival Improvements** — Beverages (ales, meads, wines) now restore 15 hunger; regular potions restore 10. Name-based beverage detection via native `StringContains`. MCM now displays per-follower hunger, fatigue, and cold percentages with severity labels. **Crafting Narrations** — Rewrote all DirectNarration calls to past tense to prevent LLMs from attempting duplicate item delivery. **MCM Fixes** — Added proper `GetVersion()` override for SkyUI version update system. Translation token support for page names. |
 | **0.91** | **Follower Framework** — Full companion system with relationship tracking (rapport/trust/loyalty/mood), 4-tier morality with relationship-influenced flexibility, NFF soft integration (auto-detect and route through NFF controller), combat styles (aggressive/defensive/ranged/healer/balanced), home assignment, MCM per-follower configuration. 8 new follower actions + 2 follower prompts. **Outfit Manager Overhaul** — Replaced slot-based equip/unequip with name-based system using C++ inventory search. New actions: `EquipItemByName`, `UnequipItemByName`, `EquipMultipleItems` (comma-separated batch), `UnequipMultipleItems`, `SaveOutfitPreset`, `ApplyOutfitPreset`. Removed old `EquipClothingPiece`/`RemoveClothingPiece`. Hybrid C++/Papyrus architecture (C++ searches, Papyrus equips for thread safety). **Combat** — Yield aggression restoration via C++ TESHitEvent monitor (yielded NPCs regain aggression when attacked again). **All YAML actions** updated with SexLab/OStim eligibility guards. |
 | **0.90** | Book reading system (`ReadBook`/`StopReading`) with native text extraction. Guard dispatch overhaul — tiered off-screen handling (trust AI → door nudge → teleport), combat suppression, rubber-band tethering, snapshot-based arrival detection, configurable `DispatchArrivalDistance`. Judgment phase (`OrderJailed`/`OrderRelease`). Home investigation dispatch (`DispatchGuardToHome`) with evidence generation. NPC Names Distributor integration — guards find NPCs by NND names. `SetActorBumpable` collision toggle for escorts. `FindExitDoorFromCell` for interior door navigation. Flora/ingredient scanning. Loot improvements (`LootCorpse`, selective looting). Book reading prompt with anti-hallucination rules. |

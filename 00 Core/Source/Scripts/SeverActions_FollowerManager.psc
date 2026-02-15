@@ -70,6 +70,13 @@ ReferenceAlias[] Property OutfitSlots Auto
  Each slot has SeverActions_OutfitAlias attached, which handles OnLoad/OnCellLoad
  events to re-equip locked outfits instantly. Fill in CK.}
 
+Faction Property SeverActions_FollowerFaction Auto
+{Our own follower faction — dedicated to SeverActions.
+ Added on recruit, removed on dismiss. Provides fast, unambiguous
+ "is this our follower?" checks without StorageUtil lookups.
+ Does not conflict with NFF/EFF/vanilla faction systems.
+ Create in CK — just a new faction, no special setup needed.}
+
 ; =============================================================================
 ; CONSTANTS
 ; =============================================================================
@@ -119,6 +126,11 @@ String Property KEY_MORALITY = "SeverFollower_Morality" AutoReadOnly
 String Property KEY_ORIG_AGGRESSION = "SeverFollower_OrigAggression" AutoReadOnly
 String Property KEY_ORIG_CONFIDENCE = "SeverFollower_OrigConfidence" AutoReadOnly
 
+; Key for tracking custom-framework followers (Serana, Inigo, Lucien, etc.)
+; Set to 1 on recruit if the actor was already IsPlayerTeammate() before we touched them.
+; On dismiss, if this is 1, we skip SetPlayerTeammate(false) to avoid breaking their mod's AI.
+String Property KEY_WAS_ALREADY_TEAMMATE = "SeverFollower_WasAlreadyTeammate" AutoReadOnly
+
 ; =============================================================================
 ; INTERNAL STATE
 ; =============================================================================
@@ -140,11 +152,26 @@ Function Maintenance()
     LastTickTime = GetGameTimeInSeconds()
     RegisterForSingleUpdate(30.0)
 
+    ; Register for native teammate detection events (instant onboarding)
+    RegisterForModEvent("SeverActions_NewTeammateDetected", "OnNativeTeammateDetected")
+    RegisterForModEvent("SeverActions_TeammateRemoved", "OnNativeTeammateRemoved")
+
     ; Auto-detect followers recruited outside our system (vanilla dialogue, NFF, other mods)
     DetectExistingFollowers()
 
     ; Re-assign outfit alias slots after load (ForceRefTo doesn't survive save/load)
     ReassignOutfitSlots()
+
+    ; Re-apply follow tracking after load (LinkedRef and SkyrimNet tracking are runtime-only)
+    ; The CK alias packages persist natively, but LinkedRef must be re-set
+    ; Skip if NFF or EFF is managing packages — they handle their own persistence
+    If !HasNFF() && !HasEFF()
+        SeverActions_Follow followSys = GetFollowScript()
+        If followSys
+            Actor[] followers = GetAllFollowers()
+            followSys.ReapplyFollowTracking(followers)
+        EndIf
+    EndIf
 
     If HasNFF()
         Debug.Trace("[SeverActions_FollowerManager] Maintenance complete - NFF detected, using NFF integration")
@@ -164,7 +191,11 @@ Function DetectExistingFollowers()
      CurrentFollowerFaction or IsPlayerTeammate) but don't have our
      SeverFollower_IsFollower tracking flag. Sets up our StorageUtil
      keys so the MCM and relationship system recognize them.
-     Does NOT touch faction/teammate status - they're already followers.}
+     Does NOT touch faction/teammate status - they're already followers.
+
+     NFF quirk: NFF sets CurrentFollowerFaction rank to -1 on dismiss
+     instead of removing from the faction. We must check faction rank >= 0
+     to avoid detecting dismissed NFF followers as active.}
     Actor player = Game.GetPlayer()
     Cell playerCell = player.GetParentCell()
     If !playerCell
@@ -191,15 +222,36 @@ Function DetectExistingFollowers()
         If actorRef && actorRef != player && !actorRef.IsDead()
             ; Check if they're a follower but NOT in our system yet
             Bool isGameFollower = actorRef.IsPlayerTeammate()
+
+            ; Check CurrentFollowerFaction — but require rank >= 0
+            ; NFF sets rank to -1 on dismiss instead of removing from faction,
+            ; so IsInFaction alone would false-positive on dismissed NFF followers
             If !isGameFollower && currentFollowerFaction
-                isGameFollower = actorRef.IsInFaction(currentFollowerFaction)
+                If actorRef.IsInFaction(currentFollowerFaction) && actorRef.GetFactionRank(currentFollowerFaction) >= 0
+                    isGameFollower = true
+                EndIf
             EndIf
+
             If !isGameFollower && effFollowerFaction
                 isGameFollower = actorRef.IsInFaction(effFollowerFaction)
             EndIf
 
+            ; Also check our own faction — catches followers whose StorageUtil
+            ; co-save data hasn't loaded yet or got corrupted
+            If !isGameFollower && SeverActions_FollowerFaction
+                If actorRef.IsInFaction(SeverActions_FollowerFaction)
+                    isGameFollower = true
+                EndIf
+            EndIf
+
             If isGameFollower && !IsRegisteredFollower(actorRef)
-                ; Found an untracked follower - set up our tracking keys
+                ; Found an untracked follower - fully onboard them into our system.
+                ; These are actors recruited via vanilla dialogue, another mod, or before
+                ; our plugin was installed. They already have a working follow system,
+                ; so we treat them like custom-framework followers: track everything
+                ; but don't override their AI packages.
+
+                ; --- StorageUtil tracking keys ---
                 StorageUtil.SetIntValue(actorRef, KEY_IS_FOLLOWER, 1)
                 StorageUtil.SetFloatValue(actorRef, KEY_RECRUIT_TIME, GetGameTimeInSeconds())
                 StorageUtil.SetFloatValue(actorRef, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
@@ -217,6 +269,33 @@ Function DetectExistingFollowers()
                 ; Snapshot vanilla Morality AV for prompt context
                 StorageUtil.SetIntValue(actorRef, KEY_MORALITY, actorRef.GetAV("Morality") as Int)
 
+                ; Mark as already-teammate so dismiss path doesn't undo their teammate status
+                StorageUtil.SetIntValue(actorRef, KEY_WAS_ALREADY_TEAMMATE, 1)
+
+                ; --- Faction ---
+                ; Add to our faction for fast detection (doesn't conflict with anything)
+                If SeverActions_FollowerFaction
+                    actorRef.AddToFaction(SeverActions_FollowerFaction)
+                EndIf
+
+                ; --- Outfit alias slot ---
+                ; Gives them outfit persistence via OnLoad/OnCellLoad events
+                AssignOutfitSlot(actorRef)
+
+                ; --- Follow system ---
+                ; If NFF/EFF is managing packages, just register SkyrimNet tracking.
+                ; Otherwise, bring them into our full alias-based follow system —
+                ; this replaces whatever vanilla/mod follow package they had with
+                ; our persistent alias package (better save/load survival).
+                ; If no follower framework, bring them into our alias-based companion follow.
+                ; NFF/EFF handle their own packages — we just track those.
+                If !HasNFF() && !effController
+                    SeverActions_Follow followSys = GetFollowScript()
+                    If followSys
+                        followSys.CompanionStartFollowing(actorRef)
+                    EndIf
+                EndIf
+
                 detected += 1
                 Debug.Trace("[SeverActions_FollowerManager] Auto-detected existing follower: " + actorRef.GetDisplayName())
             EndIf
@@ -232,6 +311,120 @@ Function DetectExistingFollowers()
         EndIf
     EndIf
 EndFunction
+
+; =============================================================================
+; NATIVE TEAMMATE DETECTION EVENT HANDLERS
+; Fired by TeammateMonitor in the DLL when SetPlayerTeammate(true/false) is detected
+; =============================================================================
+
+Event OnNativeTeammateDetected(string eventName, string strArg, float numArg, Form sender)
+    {Instant follower onboarding — fired ~1 second after any mod/vanilla dialogue
+     calls SetPlayerTeammate(true) on an actor we're not already tracking.}
+    Actor akActor = sender as Actor
+    if !akActor
+        akActor = Game.GetFormEx(numArg as int) as Actor
+    endif
+
+    if !akActor || akActor.IsDead()
+        return
+    endif
+
+    ; Already in our system? Skip.
+    If IsRegisteredFollower(akActor)
+        return
+    EndIf
+
+    ; Already in our faction? Also skip (co-save data might not be loaded yet).
+    If SeverActions_FollowerFaction && akActor.IsInFaction(SeverActions_FollowerFaction)
+        return
+    EndIf
+
+    ; This is a new teammate we don't know about — onboard them.
+    ; Same logic as DetectExistingFollowers but for a single actor.
+    Debug.Trace("[SeverActions_FollowerManager] Native teammate detected: " + akActor.GetDisplayName())
+
+    ; --- StorageUtil tracking keys ---
+    StorageUtil.SetIntValue(akActor, KEY_IS_FOLLOWER, 1)
+    StorageUtil.SetFloatValue(akActor, KEY_RECRUIT_TIME, GetGameTimeInSeconds())
+    StorageUtil.SetFloatValue(akActor, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
+
+    ; Only set defaults if they've never been in our system before
+    Int timesRecruited = StorageUtil.GetIntValue(akActor, KEY_TIMES_RECRUITED, 0)
+    If timesRecruited == 0
+        StorageUtil.SetFloatValue(akActor, KEY_RAPPORT, DEFAULT_RAPPORT)
+        StorageUtil.SetFloatValue(akActor, KEY_TRUST, DEFAULT_TRUST)
+        StorageUtil.SetFloatValue(akActor, KEY_LOYALTY, DEFAULT_LOYALTY)
+        StorageUtil.SetFloatValue(akActor, KEY_MOOD, DEFAULT_MOOD)
+        StorageUtil.SetStringValue(akActor, KEY_COMBAT_STYLE, "balanced")
+    EndIf
+
+    ; Snapshot vanilla Morality AV for prompt context
+    StorageUtil.SetIntValue(akActor, KEY_MORALITY, akActor.GetAV("Morality") as Int)
+
+    ; Mark as already-teammate so dismiss path doesn't undo their teammate status
+    StorageUtil.SetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE, 1)
+
+    ; --- Faction ---
+    If SeverActions_FollowerFaction
+        akActor.AddToFaction(SeverActions_FollowerFaction)
+    EndIf
+
+    ; --- Outfit alias slot ---
+    AssignOutfitSlot(akActor)
+
+    ; --- Follow system ---
+    ; If NFF/EFF is managing packages, they handle follow.
+    ; Otherwise, bring them into our alias-based companion follow.
+    If !HasNFF() && !HasEFF()
+        SeverActions_Follow followSys = GetFollowScript()
+        If followSys
+            followSys.CompanionStartFollowing(akActor)
+        EndIf
+    EndIf
+
+    If ShowNotifications
+        Debug.Notification(akActor.GetDisplayName() + " detected as new companion.")
+    EndIf
+
+    SkyrimNetApi.RegisterEvent("follower_recruited", \
+        akActor.GetDisplayName() + " has been detected and onboarded as a companion.", \
+        akActor, Game.GetPlayer())
+
+    DebugMsg("Native teammate detected and onboarded: " + akActor.GetDisplayName())
+EndEvent
+
+Event OnNativeTeammateRemoved(string eventName, string strArg, float numArg, Form sender)
+    {Fired when SetPlayerTeammate(false) is detected on a tracked actor.
+     Optional — our dismiss path already handles cleanup. This catches
+     cases where another mod dismisses a follower without going through us.}
+    Actor akActor = sender as Actor
+    if !akActor
+        akActor = Game.GetFormEx(numArg as int) as Actor
+    endif
+
+    if !akActor
+        return
+    endif
+
+    ; Only react if this is one of our followers
+    If !IsRegisteredFollower(akActor)
+        return
+    EndIf
+
+    ; If the actor is still a teammate (e.g., our own code just set it to false
+    ; then back to true during framework routing), don't react.
+    If akActor.IsPlayerTeammate()
+        return
+    EndIf
+
+    Debug.Trace("[SeverActions_FollowerManager] Native teammate removal detected: " + akActor.GetDisplayName())
+
+    ; Another mod removed this actor's teammate status — clean up our tracking.
+    ; Use sendHome=false since the other mod is presumably handling where they go.
+    UnregisterFollower(akActor, false)
+
+    DebugMsg("Native teammate removal detected and cleaned up: " + akActor.GetDisplayName())
+EndEvent
 
 ; =============================================================================
 ; NFF INTEGRATION
@@ -528,10 +721,15 @@ Function RegisterFollower(Actor akActor)
         Return
     EndIf
 
-    ; --- Our own tracking (always) ---
+    ; --- Our own tracking (always, regardless of framework) ---
     StorageUtil.SetIntValue(akActor, KEY_IS_FOLLOWER, 1)
     StorageUtil.SetFloatValue(akActor, KEY_RECRUIT_TIME, GetGameTimeInSeconds())
     StorageUtil.SetFloatValue(akActor, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
+
+    ; Add to our own faction for fast, unambiguous detection
+    If SeverActions_FollowerFaction
+        akActor.AddToFaction(SeverActions_FollowerFaction)
+    EndIf
 
     ; Increment recruitment count
     Int timesRecruited = StorageUtil.GetIntValue(akActor, KEY_TIMES_RECRUITED, 0)
@@ -554,7 +752,13 @@ Function RegisterFollower(Actor akActor)
     ModifyTrust(akActor, 5.0)
 
     ; --- Make them a proper follower ---
-    ; Priority: NFF > EFF > Vanilla
+    ; Check if this actor is already a teammate BEFORE we touch anything.
+    ; If they are, they likely have their own follow system (custom follower mod,
+    ; Serana's DawnguardFollowerScript, Inigo, Lucien, etc.) — we should track them
+    ; for our purposes but NOT override their existing follow packages.
+    Bool wasAlreadyTeammate = akActor.IsPlayerTeammate()
+
+    ; Priority: NFF > EFF > Custom (already teammate) > Vanilla
     nwsFollowerControllerScript nffController = GetNFFController()
     EFFCore effController = None
     If !nffController
@@ -566,31 +770,45 @@ Function RegisterFollower(Actor akActor)
         DebugMsg("NFF detected - recruiting " + akActor.GetDisplayName() + " through NFF")
         nffController.RecruitFollower(akActor)
         ; NFF's RecruitFollower defers via RegisterForSingleUpdate(0.2)
-        ; Our follow package will layer on top of NFF's package stack
     ElseIf effController
         ; EFF path: let EFF handle SetPlayerTeammate, factions, alias slots, relationship ranks
         DebugMsg("EFF detected - recruiting " + akActor.GetDisplayName() + " through EFF")
         effController.XFL_AddFollower(akActor as Form)
-        ; EFF's XFL_AddFollower handles faction, alias, teammate, friendly hits, relationships
+    ElseIf wasAlreadyTeammate
+        ; Custom framework path: actor is already a teammate from another mod
+        ; (Serana, Inigo, Lucien, Sofia, etc.) — they have their own follow packages.
+        ; We just track them for relationship/MCM/outfit purposes, don't touch their AI.
+        ; Store the flag so UnregisterFollower knows not to undo SetPlayerTeammate.
+        StorageUtil.SetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE, 1)
+        DebugMsg("Custom follower detected - " + akActor.GetDisplayName() + " is already a teammate, tracking only")
     Else
         ; Vanilla path: handle follower mechanics ourselves
         DebugMsg("No follower framework - recruiting " + akActor.GetDisplayName() + " via vanilla mechanics")
+
+        ; Clear any stale custom-follower flag (in case they were previously custom and re-recruited)
+        StorageUtil.UnsetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE)
 
         ; Save original AI values so we can restore on dismissal
         StorageUtil.SetFloatValue(akActor, KEY_ORIG_AGGRESSION, akActor.GetAV("Aggression"))
         StorageUtil.SetFloatValue(akActor, KEY_ORIG_CONFIDENCE, akActor.GetAV("Confidence"))
 
+        ; SetPlayerTeammate handles combat alliance, sneak sync, weapon draw sync, crime sharing.
+        ; We intentionally do NOT add to CurrentFollowerFaction — that faction is monitored by
+        ; NFF (8-second CheckFollowers tick) and other mods. Adding to it causes conflicts if
+        ; a user later installs a follower framework. Our own SeverActions_FollowerFaction
+        ; handles detection instead.
         akActor.SetPlayerTeammate(true)
-        Faction currentFollowerFaction = Game.GetFormFromFile(0x0005C84E, "Skyrim.esm") as Faction
-        If currentFollowerFaction
-            akActor.AddToFaction(currentFollowerFaction)
-        EndIf
+        akActor.IgnoreFriendlyHits(true)
     EndIf
 
-    ; Start following via the SeverActions Follow system (works on top of NFF or vanilla)
-    SeverActions_Follow followSys = GetFollowScript()
-    If followSys
-        followSys.StartFollowing(akActor)
+    ; Start companion following via our CK alias-based package
+    ; Skip for NFF/EFF (they manage their own packages) and custom followers
+    ; (they already have follow packages from their mod)
+    If !nffController && !effController && !wasAlreadyTeammate
+        SeverActions_Follow followSys = GetFollowScript()
+        If followSys
+            followSys.CompanionStartFollowing(akActor)
+        EndIf
     EndIf
 
     ; Assign an outfit alias slot for zero-flicker outfit persistence
@@ -619,40 +837,55 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
     ; can re-apply the locked outfit when the NPC loads at their home location.
     ; The slot is only freed when the outfit lock is explicitly cleared (Dress action).
 
-    ; --- Our own tracking cleanup (always) ---
+    ; --- Our own tracking cleanup (always, regardless of framework) ---
     StorageUtil.SetIntValue(akActor, KEY_IS_FOLLOWER, 0)
+
+    ; Remove from our faction
+    If SeverActions_FollowerFaction
+        akActor.RemoveFromFaction(SeverActions_FollowerFaction)
+    EndIf
 
     ; Dismissal rapport hit
     ModifyRapport(akActor, -3.0)
     ModifyTrust(akActor, -1.0)
 
     ; --- Remove proper follower status ---
-    ; Priority: NFF > EFF > Vanilla
+    ; Priority: NFF > EFF > Custom (was already teammate) > Vanilla
     nwsFollowerControllerScript nffController = GetNFFController()
     EFFCore effController = None
     If !nffController
         effController = GetEFFController()
     EndIf
 
+    ; Check if this was a custom-framework follower (Serana, Inigo, Lucien, etc.)
+    ; who was already a teammate before we recruited them.
+    Bool wasAlreadyTeammate = StorageUtil.GetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE, 0) == 1
+
     If nffController
         ; NFF path: let NFF handle SetPlayerTeammate, factions, alias cleanup
         DebugMsg("NFF detected - dismissing " + akActor.GetDisplayName() + " through NFF")
         nffController.RemoveFollower(akActor, -1, 0)
         ; -1 = no message (we handle our own notification), 0 = no say line
+        StorageUtil.UnsetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE)
     ElseIf effController
         ; EFF path: let EFF handle SetPlayerTeammate, factions, alias cleanup
         DebugMsg("EFF detected - dismissing " + akActor.GetDisplayName() + " through EFF")
         effController.XFL_RemoveFollower(akActor as Form, 0, 0)
         ; 0 = standard dismiss message, 0 = no say line (we handle our own notification)
+        StorageUtil.UnsetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE)
+    ElseIf wasAlreadyTeammate
+        ; Custom framework path: this actor was already a teammate from another mod
+        ; (Serana, Inigo, Lucien, Sofia, etc.) when we recruited them.
+        ; Do NOT undo SetPlayerTeammate or IgnoreFriendlyHits — their mod manages that.
+        ; We only clean up our tracking layer.
+        DebugMsg("Custom follower dismiss - " + akActor.GetDisplayName() + " was already a teammate, leaving teammate status intact")
+        StorageUtil.UnsetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE)
     Else
         ; Vanilla path: clean up follower mechanics ourselves
         DebugMsg("No follower framework - dismissing " + akActor.GetDisplayName() + " via vanilla mechanics")
 
         akActor.SetPlayerTeammate(false)
-        Faction currentFollowerFaction = Game.GetFormFromFile(0x0005C84E, "Skyrim.esm") as Faction
-        If currentFollowerFaction
-            akActor.RemoveFromFaction(currentFollowerFaction)
-        EndIf
+        akActor.IgnoreFriendlyHits(false)
 
         ; Restore original AI values
         Float origAggression = StorageUtil.GetFloatValue(akActor, KEY_ORIG_AGGRESSION, -1.0)
@@ -672,10 +905,12 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
     ; If the player told them to wear something, they should keep it
     ; even after being sent home.
 
-    ; Stop following via our system
+    ; Stop companion following via our alias system
+    ; CompanionStopFollowing clears alias slot + LinkedRef.
+    ; Safe to call for NFF/EFF/custom followers — ClearFollowerSlot finds nothing and returns.
     SeverActions_Follow followSys = GetFollowScript()
     If followSys
-        followSys.StopFollowing(akActor)
+        followSys.CompanionStopFollowing(akActor)
     EndIf
 
     ; Send home or sandbox
@@ -711,13 +946,15 @@ Bool Function CanRecruitMore()
 EndFunction
 
 Actor[] Function GetAllFollowers()
-    {Get all currently registered followers by scanning nearby teammates}
-    ; Use the Survival system's approach - scan cell for player teammates,
-    ; then filter to those with our IsFollower flag
+    {Get all currently registered followers.
+     Scans two sources:
+     1. Current cell — finds followers physically nearby
+     2. Follower alias slots — finds followers in other cells (aliases persist across save/load)
+     Both sources are filtered to actors with our IsFollower StorageUtil flag.}
     Actor player = Game.GetPlayer()
     Actor[] result = PapyrusUtil.ActorArray(0)
 
-    ; First check nearby actors
+    ; Source 1: Scan current cell for registered followers
     Cell playerCell = player.GetParentCell()
     If playerCell
         Int numRefs = playerCell.GetNumRefs(43) ; 43 = kNPC
@@ -727,6 +964,33 @@ Actor[] Function GetAllFollowers()
             Actor actorRef = ref as Actor
             If actorRef && actorRef != player && IsRegisteredFollower(actorRef)
                 result = PapyrusUtil.PushActor(result, actorRef)
+            EndIf
+            i += 1
+        EndWhile
+    EndIf
+
+    ; Source 2: Check follower alias slots (catches followers in other cells)
+    SeverActions_Follow followSys = GetFollowScript()
+    If followSys && followSys.FollowerSlots
+        Int i = 0
+        While i < followSys.FollowerSlots.Length
+            If followSys.FollowerSlots[i]
+                Actor slotActor = followSys.FollowerSlots[i].GetActorRef()
+                If slotActor && slotActor != player && !slotActor.IsDead() && IsRegisteredFollower(slotActor)
+                    ; Check if already in result (avoid duplicates from cell scan)
+                    Bool alreadyFound = false
+                    Int j = 0
+                    While j < result.Length
+                        If result[j] == slotActor
+                            alreadyFound = true
+                            j = result.Length ; break
+                        EndIf
+                        j += 1
+                    EndWhile
+                    If !alreadyFound
+                        result = PapyrusUtil.PushActor(result, slotActor)
+                    EndIf
+                EndIf
             EndIf
             i += 1
         EndWhile
@@ -1038,8 +1302,8 @@ Function CompanionFollow(Actor akActor)
 
     SeverActions_Follow followSys = GetFollowScript()
     If followSys
-        ; StartFollowing already handles: clear sandbox, clear WaitingForPlayer, re-register follow package
-        followSys.StartFollowing(akActor)
+        ; CompanionStartFollowing handles: clear sandbox, clear WaitingForPlayer, re-set LinkedRef + alias
+        followSys.CompanionStartFollowing(akActor)
     Else
         ; Fallback: just clear waiting flag
         akActor.SetAV("WaitingForPlayer", 0)
