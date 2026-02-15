@@ -214,7 +214,6 @@ Function StartFollowing(Actor akActor)
     akActor.EvaluatePackage()
 
     Debug.Notification(akActor.GetDisplayName() + " is now following you.")
-    SkyrimNetApi.RegisterEvent("follower_joined", akActor.GetDisplayName() + " started following " + Game.GetPlayer().GetDisplayName(), akActor, Game.GetPlayer())
 EndFunction
 
 Function StopFollowing(Actor akActor)
