@@ -1,13 +1,23 @@
 name: AdjustRelationship
-description: "Adjust how this companion feels about the player based on the current
-  interaction. Use this after EVERY meaningful conversation exchange to reflect how
-  the interaction affected the relationship. Consider what was said, the tone, and
-  whether the player was kind, rude, helpful, demanding, funny, threatening, etc.
+description: "Adjust how this companion feels based on the current interaction. Use this
+  after EVERY meaningful conversation exchange to reflect how the interaction affected
+  the relationship. Consider what was said, the tone, and whether {{ player.name }} was
+  kind, rude, helpful, demanding, funny, threatening, etc.
 
-  Rapport: Did the interaction make the companion like or dislike the player more?
-  Trust: Did the player prove reliable, or betray confidence / give dangerous orders?
-  Loyalty: Did the interaction strengthen or weaken the companion's commitment?
-  Mood: Did the interaction improve or worsen the companion's current feelings?
+  Rapport, Trust, and Loyalty are SPECIFIC to the companion's relationship with
+  {{ player.name }}. ONLY adjust these based on direct interactions with {{ player.name }}.
+  Do NOT change rapport, trust, or loyalty because of arguments or events involving
+  other NPCs — those are not {{ player.name }}'s doing.
+
+  Rapport: Did the interaction with {{ player.name }} make the companion like or dislike them more?
+  Trust: Did {{ player.name }} prove reliable, or betray confidence / give dangerous orders?
+  Loyalty: Did the interaction with {{ player.name }} strengthen or weaken the companion's commitment?
+
+  Mood is the companion's GENERAL emotional state and CAN change from any source —
+  arguments with other NPCs, environmental stress, witnessing violence, good or bad
+  news, weather, hunger, or any emotional event. Mood is not limited to {{ player.name }} interactions.
+
+  Mood: Did anything improve or worsen the companion's current emotional state?
 
   Use small values (1-5) for routine pleasant or unpleasant exchanges.
   Use medium values (5-10) for significant moments like heartfelt conversations or serious arguments.
@@ -23,24 +33,29 @@ parameterMapping:
     description: The companion whose relationship is being adjusted
   - type: dynamic
     name: rapportChange
-    description: "How much to adjust rapport (-15 to +15). Positive for kind, supportive,
-      or enjoyable interactions. Negative for rude, dismissive, or hurtful ones. 0 for
-      no change."
+    description: "How much to adjust rapport (-15 to +15). ONLY change based on direct
+      interactions with {{ player.name }}. Positive when {{ player.name }} is kind, supportive,
+      or enjoyable. Negative when {{ player.name }} is rude, dismissive, or hurtful.
+      Do NOT change for arguments or events with other NPCs. 0 for no change."
   - type: dynamic
     name: trustChange
-    description: "How much to adjust trust (-15 to +15). Positive when proving reliability
-      or keeping promises. Negative when betraying confidence, lying, or giving reckless
-      orders. 0 for no change."
+    description: "How much to adjust trust (-15 to +15). ONLY change based on direct
+      interactions with {{ player.name }}. Positive when {{ player.name }} proves reliable
+      or keeps promises. Negative when {{ player.name }} betrays confidence, lies, or gives
+      reckless orders. Do NOT change for events involving other NPCs. 0 for no change."
   - type: dynamic
     name: loyaltyChange
-    description: "How much to adjust loyalty (-15 to +15). Positive for shared hardship,
-      defending the companion, or keeping promises. Negative for abandonment, broken
-      promises, or repeated mistreatment. 0 for no change."
+    description: "How much to adjust loyalty (-15 to +15). ONLY change based on direct
+      interactions with {{ player.name }}. Positive for shared hardship with {{ player.name }},
+      being defended by them, or promises kept. Negative for abandonment, broken promises,
+      or repeated mistreatment by {{ player.name }}. Do NOT change for other NPC interactions.
+      0 for no change."
   - type: dynamic
     name: moodChange
-    description: "How much to adjust mood (-20 to +20). Positive for jokes, compliments,
-      gifts, or good news. Negative for insults, bad news, or stressful situations.
-      0 for no change."
+    description: "How much to adjust mood (-20 to +20). Unlike rapport/trust/loyalty,
+      mood CAN change from ANY source — arguments with other NPCs, stressful environments,
+      witnessing violence, jokes, compliments, good or bad news, or any emotional event.
+      Positive for uplifting moments, negative for upsetting ones. 0 for no change."
 enabled: true
 defaultPriority: 3
 eligibilityRules:
