@@ -95,7 +95,7 @@ Float Property LOYALTY_MAX = 100.0 AutoReadOnly
 Float Property MOOD_MIN = -100.0 AutoReadOnly
 Float Property MOOD_MAX = 100.0 AutoReadOnly
 
-Float Property MOOD_DECAY_RATE = 2.0 AutoReadOnly
+Float Property MOOD_DECAY_RATE = 1.0 AutoReadOnly
 {Mood points per game hour drifting toward baseline}
 
 ; Time conversion constant: 3631 seconds per game hour at default 20:1 timescale
@@ -256,9 +256,9 @@ Function DetectExistingFollowers()
                 StorageUtil.SetFloatValue(actorRef, KEY_RECRUIT_TIME, GetGameTimeInSeconds())
                 StorageUtil.SetFloatValue(actorRef, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
 
-                ; Only set defaults if they've never been in our system before
-                Int timesRecruited = StorageUtil.GetIntValue(actorRef, KEY_TIMES_RECRUITED, 0)
-                If timesRecruited == 0
+                ; Only set defaults if they've never had relationship values set
+                ; Uses HasFloatValue instead of timesRecruited — survives co-save issues
+                If !StorageUtil.HasFloatValue(actorRef, KEY_RAPPORT)
                     StorageUtil.SetFloatValue(actorRef, KEY_RAPPORT, DEFAULT_RAPPORT)
                     StorageUtil.SetFloatValue(actorRef, KEY_TRUST, DEFAULT_TRUST)
                     StorageUtil.SetFloatValue(actorRef, KEY_LOYALTY, DEFAULT_LOYALTY)
@@ -348,9 +348,9 @@ Event OnNativeTeammateDetected(string eventName, string strArg, float numArg, Fo
     StorageUtil.SetFloatValue(akActor, KEY_RECRUIT_TIME, GetGameTimeInSeconds())
     StorageUtil.SetFloatValue(akActor, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
 
-    ; Only set defaults if they've never been in our system before
-    Int timesRecruited = StorageUtil.GetIntValue(akActor, KEY_TIMES_RECRUITED, 0)
-    If timesRecruited == 0
+    ; Only set defaults if they've never had relationship values set
+    ; Uses HasFloatValue instead of timesRecruited — survives co-save issues
+    If !StorageUtil.HasFloatValue(akActor, KEY_RAPPORT)
         StorageUtil.SetFloatValue(akActor, KEY_RAPPORT, DEFAULT_RAPPORT)
         StorageUtil.SetFloatValue(akActor, KEY_TRUST, DEFAULT_TRUST)
         StorageUtil.SetFloatValue(akActor, KEY_LOYALTY, DEFAULT_LOYALTY)
@@ -383,7 +383,7 @@ Event OnNativeTeammateDetected(string eventName, string strArg, float numArg, Fo
     EndIf
 
     If ShowNotifications
-        Debug.Notification(akActor.GetDisplayName() + " detected as new companion.")
+        Debug.Notification(akActor.GetDisplayName() + " detected as a follower.")
     EndIf
 
     SkyrimNetApi.RegisterEvent("follower_recruited", \
@@ -731,12 +731,10 @@ Function RegisterFollower(Actor akActor)
         akActor.AddToFaction(SeverActions_FollowerFaction)
     EndIf
 
-    ; Increment recruitment count
-    Int timesRecruited = StorageUtil.GetIntValue(akActor, KEY_TIMES_RECRUITED, 0)
-    StorageUtil.SetIntValue(akActor, KEY_TIMES_RECRUITED, timesRecruited + 1)
-
-    ; Set default relationship values (only if first time)
-    If timesRecruited == 0
+    ; Set default relationship values only if they've never been set
+    ; Uses HasFloatValue — the actual rapport key on the actor is the ground truth,
+    ; not a counter that can desync from co-save timing
+    If !StorageUtil.HasFloatValue(akActor, KEY_RAPPORT)
         StorageUtil.SetFloatValue(akActor, KEY_RAPPORT, DEFAULT_RAPPORT)
         StorageUtil.SetFloatValue(akActor, KEY_TRUST, DEFAULT_TRUST)
         StorageUtil.SetFloatValue(akActor, KEY_LOYALTY, DEFAULT_LOYALTY)
@@ -822,7 +820,7 @@ Function RegisterFollower(Actor akActor)
         akActor.GetDisplayName() + " has been recruited as a companion by " + Game.GetPlayer().GetDisplayName() + ".", \
         akActor, Game.GetPlayer())
 
-    DebugMsg("Registered follower: " + akActor.GetDisplayName() + " (recruited " + (timesRecruited + 1) + " times)")
+    DebugMsg("Registered follower: " + akActor.GetDisplayName())
 EndFunction
 
 Function UnregisterFollower(Actor akActor, Bool sendHome = true)
@@ -844,10 +842,6 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
     If SeverActions_FollowerFaction
         akActor.RemoveFromFaction(SeverActions_FollowerFaction)
     EndIf
-
-    ; Dismissal rapport hit
-    ModifyRapport(akActor, -3.0)
-    ModifyTrust(akActor, -1.0)
 
     ; --- Remove proper follower status ---
     ; Priority: NFF > EFF > Custom (was already teammate) > Vanilla
