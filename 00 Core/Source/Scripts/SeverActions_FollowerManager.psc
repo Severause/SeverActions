@@ -52,6 +52,10 @@ Bool Property ShowNotifications = true Auto
 Bool Property DebugMode = false Auto
 {Enable debug tracing for troubleshooting}
 
+Float Property RelationshipCooldown = 120.0 Auto
+{Real-time seconds between allowed AdjustRelationship calls per actor. Default 120 (2 minutes).
+Prevents the LLM from spamming relationship changes every dialogue line.}
+
 ; =============================================================================
 ; SCRIPT REFERENCES
 ; =============================================================================
@@ -130,6 +134,9 @@ String Property KEY_ORIG_CONFIDENCE = "SeverFollower_OrigConfidence" AutoReadOnl
 ; Set to 1 on recruit if the actor was already IsPlayerTeammate() before we touched them.
 ; On dismiss, if this is 1, we skip SetPlayerTeammate(false) to avoid breaking their mod's AI.
 String Property KEY_WAS_ALREADY_TEAMMATE = "SeverFollower_WasAlreadyTeammate" AutoReadOnly
+
+; Cooldown tracking for AdjustRelationship (real-time seconds via Utility.GetCurrentRealTime)
+String Property KEY_LAST_REL_ADJUST = "SeverFollower_LastRelAdjust" AutoReadOnly
 
 ; =============================================================================
 ; INTERNAL STATE
@@ -219,7 +226,7 @@ Function DetectExistingFollowers()
         ObjectReference ref = playerCell.GetNthRef(i, 43)
         Actor actorRef = ref as Actor
 
-        If actorRef && actorRef != player && !actorRef.IsDead()
+        If actorRef && actorRef != player && !actorRef.IsDead() && !actorRef.IsCommandedActor()
             ; Check if they're a follower but NOT in our system yet
             Bool isGameFollower = actorRef.IsPlayerTeammate()
 
@@ -251,14 +258,16 @@ Function DetectExistingFollowers()
                 ; so we treat them like custom-framework followers: track everything
                 ; but don't override their AI packages.
 
+                ; Check if this is a returning follower (has relationship values from before)
+                Bool isFirstRecruit = !StorageUtil.HasFloatValue(actorRef, KEY_RAPPORT)
+
                 ; --- StorageUtil tracking keys ---
                 StorageUtil.SetIntValue(actorRef, KEY_IS_FOLLOWER, 1)
-                StorageUtil.SetFloatValue(actorRef, KEY_RECRUIT_TIME, GetGameTimeInSeconds())
                 StorageUtil.SetFloatValue(actorRef, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
 
                 ; Only set defaults if they've never had relationship values set
-                ; Uses HasFloatValue instead of timesRecruited — survives co-save issues
-                If !StorageUtil.HasFloatValue(actorRef, KEY_RAPPORT)
+                If isFirstRecruit
+                    StorageUtil.SetFloatValue(actorRef, KEY_RECRUIT_TIME, GetGameTimeInSeconds())
                     StorageUtil.SetFloatValue(actorRef, KEY_RAPPORT, DEFAULT_RAPPORT)
                     StorageUtil.SetFloatValue(actorRef, KEY_TRUST, DEFAULT_TRUST)
                     StorageUtil.SetFloatValue(actorRef, KEY_LOYALTY, DEFAULT_LOYALTY)
@@ -329,6 +338,11 @@ Event OnNativeTeammateDetected(string eventName, string strArg, float numArg, Fo
         return
     endif
 
+    ; Skip summoned creatures (conjuration, Durnehviir, etc.)
+    If akActor.IsCommandedActor()
+        return
+    EndIf
+
     ; Already in our system? Skip.
     If IsRegisteredFollower(akActor)
         return
@@ -339,18 +353,23 @@ Event OnNativeTeammateDetected(string eventName, string strArg, float numArg, Fo
         return
     EndIf
 
-    ; This is a new teammate we don't know about — onboard them.
-    ; Same logic as DetectExistingFollowers but for a single actor.
-    Debug.Trace("[SeverActions_FollowerManager] Native teammate detected: " + akActor.GetDisplayName())
+    ; Check if this actor has been in our system before (has relationship values)
+    ; If so, they're a returning follower — not a new recruit
+    Bool isFirstRecruit = !StorageUtil.HasFloatValue(akActor, KEY_RAPPORT)
+
+    If isFirstRecruit
+        Debug.Trace("[SeverActions_FollowerManager] Native teammate detected (NEW): " + akActor.GetDisplayName())
+    Else
+        Debug.Trace("[SeverActions_FollowerManager] Native teammate detected (RETURNING): " + akActor.GetDisplayName())
+    EndIf
 
     ; --- StorageUtil tracking keys ---
     StorageUtil.SetIntValue(akActor, KEY_IS_FOLLOWER, 1)
-    StorageUtil.SetFloatValue(akActor, KEY_RECRUIT_TIME, GetGameTimeInSeconds())
     StorageUtil.SetFloatValue(akActor, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
 
     ; Only set defaults if they've never had relationship values set
-    ; Uses HasFloatValue instead of timesRecruited — survives co-save issues
-    If !StorageUtil.HasFloatValue(akActor, KEY_RAPPORT)
+    If isFirstRecruit
+        StorageUtil.SetFloatValue(akActor, KEY_RECRUIT_TIME, GetGameTimeInSeconds())
         StorageUtil.SetFloatValue(akActor, KEY_RAPPORT, DEFAULT_RAPPORT)
         StorageUtil.SetFloatValue(akActor, KEY_TRUST, DEFAULT_TRUST)
         StorageUtil.SetFloatValue(akActor, KEY_LOYALTY, DEFAULT_LOYALTY)
@@ -382,48 +401,40 @@ Event OnNativeTeammateDetected(string eventName, string strArg, float numArg, Fo
         EndIf
     EndIf
 
-    If ShowNotifications
-        Debug.Notification(akActor.GetDisplayName() + " detected as a follower.")
+    ; --- Notifications and events differ for new vs returning followers ---
+    If isFirstRecruit
+        If ShowNotifications
+            Debug.Notification(akActor.GetDisplayName() + " detected as a follower.")
+        EndIf
+
+        SkyrimNetApi.RegisterEvent("follower_recruited", \
+            akActor.GetDisplayName() + " has been detected and onboarded as a companion.", \
+            akActor, Game.GetPlayer())
+
+        DebugMsg("Native teammate detected and onboarded: " + akActor.GetDisplayName())
+    Else
+        If ShowNotifications
+            Debug.Notification(akActor.GetDisplayName() + " has returned.")
+        EndIf
+
+        DebugMsg("Returning follower re-registered: " + akActor.GetDisplayName())
     EndIf
-
-    SkyrimNetApi.RegisterEvent("follower_recruited", \
-        akActor.GetDisplayName() + " has been detected and onboarded as a companion.", \
-        akActor, Game.GetPlayer())
-
-    DebugMsg("Native teammate detected and onboarded: " + akActor.GetDisplayName())
 EndEvent
 
 Event OnNativeTeammateRemoved(string eventName, string strArg, float numArg, Form sender)
     {Fired when SetPlayerTeammate(false) is detected on a tracked actor.
-     Optional — our dismiss path already handles cleanup. This catches
-     cases where another mod dismisses a follower without going through us.}
+     DISABLED: Other mods (IntelEngine, etc.) may temporarily strip teammate status
+     and restore it later. Reacting here causes followers to be fully unregistered,
+     then re-detected as brand new — losing relationship history.
+     Our own DismissFollower path handles cleanup when WE dismiss followers.}
     Actor akActor = sender as Actor
     if !akActor
         akActor = Game.GetFormEx(numArg as int) as Actor
     endif
 
-    if !akActor
-        return
+    if akActor
+        Debug.Trace("[SeverActions_FollowerManager] Native teammate removal detected (ignored): " + akActor.GetDisplayName())
     endif
-
-    ; Only react if this is one of our followers
-    If !IsRegisteredFollower(akActor)
-        return
-    EndIf
-
-    ; If the actor is still a teammate (e.g., our own code just set it to false
-    ; then back to true during framework routing), don't react.
-    If akActor.IsPlayerTeammate()
-        return
-    EndIf
-
-    Debug.Trace("[SeverActions_FollowerManager] Native teammate removal detected: " + akActor.GetDisplayName())
-
-    ; Another mod removed this actor's teammate status — clean up our tracking.
-    ; Use sendHome=false since the other mod is presumably handling where they go.
-    UnregisterFollower(akActor, false)
-
-    DebugMsg("Native teammate removal detected and cleaned up: " + akActor.GetDisplayName())
 EndEvent
 
 ; =============================================================================
@@ -721,9 +732,11 @@ Function RegisterFollower(Actor akActor)
         Return
     EndIf
 
+    ; Check if this is a returning follower (has relationship values from before)
+    Bool isFirstRecruit = !StorageUtil.HasFloatValue(akActor, KEY_RAPPORT)
+
     ; --- Our own tracking (always, regardless of framework) ---
     StorageUtil.SetIntValue(akActor, KEY_IS_FOLLOWER, 1)
-    StorageUtil.SetFloatValue(akActor, KEY_RECRUIT_TIME, GetGameTimeInSeconds())
     StorageUtil.SetFloatValue(akActor, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
 
     ; Add to our own faction for fast, unambiguous detection
@@ -731,10 +744,9 @@ Function RegisterFollower(Actor akActor)
         akActor.AddToFaction(SeverActions_FollowerFaction)
     EndIf
 
-    ; Set default relationship values only if they've never been set
-    ; Uses HasFloatValue — the actual rapport key on the actor is the ground truth,
-    ; not a counter that can desync from co-save timing
-    If !StorageUtil.HasFloatValue(akActor, KEY_RAPPORT)
+    ; Set default relationship values and recruit time only on first recruit
+    If isFirstRecruit
+        StorageUtil.SetFloatValue(akActor, KEY_RECRUIT_TIME, GetGameTimeInSeconds())
         StorageUtil.SetFloatValue(akActor, KEY_RAPPORT, DEFAULT_RAPPORT)
         StorageUtil.SetFloatValue(akActor, KEY_TRUST, DEFAULT_TRUST)
         StorageUtil.SetFloatValue(akActor, KEY_LOYALTY, DEFAULT_LOYALTY)
@@ -745,9 +757,11 @@ Function RegisterFollower(Actor akActor)
     ; Snapshot vanilla Morality AV for prompt context (0=Any Crime, 1=Violence, 2=Property, 3=None)
     StorageUtil.SetIntValue(akActor, KEY_MORALITY, akActor.GetAV("Morality") as Int)
 
-    ; Recruitment rapport bonus
-    ModifyRapport(akActor, 5.0)
-    ModifyTrust(akActor, 5.0)
+    ; Recruitment rapport bonus (only on first recruit — don't stack on re-recruit)
+    If isFirstRecruit
+        ModifyRapport(akActor, 5.0)
+        ModifyTrust(akActor, 5.0)
+    EndIf
 
     ; --- Make them a proper follower ---
     ; Check if this actor is already a teammate BEFORE we touch anything.
@@ -812,15 +826,23 @@ Function RegisterFollower(Actor akActor)
     ; Assign an outfit alias slot for zero-flicker outfit persistence
     AssignOutfitSlot(akActor)
 
-    If ShowNotifications
-        Debug.Notification(akActor.GetDisplayName() + " has joined you as a companion.")
+    If isFirstRecruit
+        If ShowNotifications
+            Debug.Notification(akActor.GetDisplayName() + " has joined you as a companion.")
+        EndIf
+
+        SkyrimNetApi.RegisterEvent("follower_recruited", \
+            akActor.GetDisplayName() + " has been recruited as a companion by " + Game.GetPlayer().GetDisplayName() + ".", \
+            akActor, Game.GetPlayer())
+
+        DebugMsg("Registered follower (NEW): " + akActor.GetDisplayName())
+    Else
+        If ShowNotifications
+            Debug.Notification(akActor.GetDisplayName() + " has returned.")
+        EndIf
+
+        DebugMsg("Registered follower (RETURNING): " + akActor.GetDisplayName())
     EndIf
-
-    SkyrimNetApi.RegisterEvent("follower_recruited", \
-        akActor.GetDisplayName() + " has been recruited as a companion by " + Game.GetPlayer().GetDisplayName() + ".", \
-        akActor, Game.GetPlayer())
-
-    DebugMsg("Registered follower: " + akActor.GetDisplayName())
 EndFunction
 
 Function UnregisterFollower(Actor akActor, Bool sendHome = true)
@@ -1205,6 +1227,15 @@ Function AdjustRelationship(Actor akActor, Int rapportChange, Int trustChange, I
     If !akActor || !IsRegisteredFollower(akActor)
         Return
     EndIf
+
+    ; Rate-limit: skip if cooldown hasn't elapsed since the last adjustment for this actor
+    Float now = Utility.GetCurrentRealTime()
+    Float lastAdjust = StorageUtil.GetFloatValue(akActor, KEY_LAST_REL_ADJUST, 0.0)
+    If RelationshipCooldown > 0.0 && (now - lastAdjust) < RelationshipCooldown
+        DebugMsg(akActor.GetDisplayName() + " relationship adjustment skipped (cooldown: " + ((RelationshipCooldown - (now - lastAdjust)) as Int) + "s remaining)")
+        Return
+    EndIf
+    StorageUtil.SetFloatValue(akActor, KEY_LAST_REL_ADJUST, now)
 
     ; Apply adjustments (Modify* functions handle clamping to valid ranges)
     If rapportChange != 0

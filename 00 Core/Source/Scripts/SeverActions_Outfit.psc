@@ -19,6 +19,11 @@ Float Property AnimDelayGeneric = 2.0 Auto
 Bool Property UseAnimations = true Auto
 {Set to false to disable all animations}
 
+Bool Property OutfitLockEnabled = true Auto
+{Master toggle for the outfit lock system. When disabled, outfits will not be
+snapshotted or re-applied on cell transitions. Existing locks are preserved
+but inactive until re-enabled.}
+
 ; =============================================================================
 ; ANIMATION EVENT NAMES
 ; These match Immersive Equipping Animations by default
@@ -746,6 +751,11 @@ Function SnapshotLockedOutfit(Actor akActor)
         return
     endif
 
+    ; Master toggle — skip if outfit lock system is disabled
+    if !OutfitLockEnabled
+        return
+    endif
+
     ; Only lock outfits for registered followers
     if StorageUtil.GetIntValue(akActor, "SeverFollower_IsFollower", 0) != 1
         return
@@ -800,6 +810,11 @@ Function ReapplyLockedOutfit(Actor akActor)
     {Silently re-equip all items from the locked outfit snapshot.
      Called by FollowerManager on cell transitions — no animations.}
     if !akActor || akActor.IsDead()
+        return
+    endif
+
+    ; Master toggle — skip if outfit lock system is disabled
+    if !OutfitLockEnabled
         return
     endif
 

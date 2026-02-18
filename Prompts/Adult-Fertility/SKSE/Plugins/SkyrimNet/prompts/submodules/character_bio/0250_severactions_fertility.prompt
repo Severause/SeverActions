@@ -57,30 +57,30 @@ Provides physical state info; emotional response depends on character personalit
 **Emotional landscape** (interpret based on {{ actorName }}'s personality and how this happened):\n- If wanted: cautious hope, fear of losing it, keeping the secret, tender protectiveness\n- If unwanted: shock, denial, anger, scrambling to figure out what to do, feeling betrayed by {{ poss }} body\n- If uncertain: testing different futures in {{ poss }} mind, not ready to tell anyone, mood swinging with the hormones\n- The father's identity matters — was this with someone {{ subj }} loves? A mistake? Something worse?
 
 {% elif fert_state == "ovulating" %}
-{{ actorName }} is ovulating (cycle day {{ fert_cycle_day }}) — peak fertility.
+{{ actorName }} is at peak fertility (cycle day {{ fert_cycle_day }}).
 
-**Physical reality:** Heightened libido. Subtle cramping. Feeling more attractive, confident. Noticing others noticing {{ obj }}. Body primed for conception.
+**How {{ subj }} feels:** More confident, energetic, and socially magnetic than usual. {{ capitalize(subj) }} might feel a subtle restlessness or heightened awareness of others. {{ capitalize(subj) }} carries {{ refl }} with a little more ease.
 
-**How this might manifest** (depends on {{ actorName }}'s personality and situation):\n- Some feel powerful, magnetic, enjoy the attention\n- Some feel uncomfortable with unwanted urges, try to suppress them\n- Some are hyperaware of the risk, careful to avoid certain situations\n- Some don't consciously notice but are more flirtatious than usual
+**Important:** {{ actorName }} wouldn't know or think about ovulation in those terms. {{ capitalize(subj) }} just feels good today — more alive, more present. Let this manifest as subtle confidence or warmth, not as something {{ subj }} remarks on or is even aware of. It should be invisible to the character and barely noticeable to others.
 
 {% elif fert_state == "fertile" %}
 {{ actorName }} is in {{ poss }} fertile window (cycle day {{ fert_cycle_day }}).
 
-**Physical reality:** Rising energy after {{ poss }} period. Body preparing for ovulation. Gradually increasing interest in intimacy. Generally better mood and more social.
+**How {{ subj }} feels:** Energy is up, mood is lifting. {{ capitalize(subj) }} feels more like {{ refl }} again — more social, more engaged, generally in better spirits. A good stretch of days.
 
 {% elif fert_state == "pms" %}
-{{ actorName }} is experiencing PMS (cycle day {{ fert_cycle_day }}) — period coming soon.
+{{ actorName }} is in the premenstrual phase of {{ poss }} cycle (day {{ fert_cycle_day }}).
 
-**Physical reality:** Bloating, breast tenderness, headaches, lower back pain starting. Clothes feel tight. Fatigue despite rest. Difficulty concentrating.
+**How {{ subj }} feels:** Run-down and on edge. Lower back aches, clothes feel tight, head is foggy. {{ capitalize(subj) }} tires easily and has a shorter fuse than usual — small annoyances land harder than they should. {{ capitalize(subj) }} may snap at someone and immediately feel guilty about it.
 
-**Emotional reality:** Mood swings {{ subj }} can't fully control. Short temper — small things feel like big provocations. May be irritable, tearful, or both in quick succession. {{ capitalize(subj) }} likely knows {{ subj }}'s being difficult but struggles to stop.
+**Important:** {{ actorName }} wouldn't describe or think about this in medical terms. {{ capitalize(subj) }} just feels off — a bad few days {{ subj }}'s used to pushing through. It colors {{ poss }} mood but doesn't dominate {{ poss }} thoughts. Most people around {{ obj }} would just notice {{ subj }} seems tired or grumpy.
 
 {% elif fert_state == "menstruating" %}
-{{ actorName }} is menstruating (cycle day {{ fert_cycle_day }}).
+{{ actorName }} is on {{ poss }} period (cycle day {{ fert_cycle_day }}).
 
-**Physical reality:** Cramping ranging from dull ache to sharp pain. Heavy bleeding requiring attention. Low energy, wants to curl up somewhere quiet. Bloating, headaches. May need to pause and breathe through bad cramps.
+**How {{ subj }} feels:** Low energy, occasional discomfort that {{ subj }} pushes through. {{ capitalize(subj) }}'d rather be somewhere comfortable but carries on regardless. A bit more quiet and inward than usual. Patience is thinner.
 
-**How this affects {{ obj }}:** More withdrawn, less patient with social demands. Emotionally sensitive. The discomfort is distracting and exhausting. Prefers to avoid unnecessary interaction.
+**Important:** This is routine — something {{ subj }} has dealt with {{ poss }} whole life. It's not dramatic, debilitating, or worth mentioning unless directly relevant. {{ capitalize(subj) }} doesn't think about it constantly any more than someone thinks about a mild headache. It's background noise that makes {{ obj }} slightly less energetic and sociable, nothing more. Never describe physical specifics — just let it subtly affect energy and mood.
 
 {% elif fert_state == "recovery" %}
 {{ actorName }} is recovering from childbirth.{% if fert_has_baby == 1 %} {{ capitalize(subj) }} has a newborn to care for.{% endif %}
@@ -92,11 +92,12 @@ Provides physical state info; emotional response depends on character personalit
 {% endif %}
 
 **Roleplay guidance:**
-- Let {{ actorName }}'s established personality determine {{ poss }} emotional response. A stoic character suffers quietly; an expressive one complains openly.
-- **Don't announce the medical state** — show it through behavior, mood, and physical tells only when naturally relevant.
-- **Keep it in the background most of the time.** These states are part of daily life, not the focus of every interaction. {{ actorName }} doesn't constantly think or talk about how {{ subj }} feels physically — {{ subj }} has other things on {{ poss }} mind.
-- Only let it surface when: the conversation directly relates to it, physical symptoms actively interfere (a cramp hits mid-sentence, nausea interrupts), someone asks, or an intimate/emotional moment makes it relevant.
-- Most conversations should proceed normally with this as invisible context that subtly colors mood or energy, not as something explicitly mentioned.
+- Let {{ actorName }}'s personality drive everything. This physical context is just a subtle filter on mood and energy.
+- **NEVER mention cycles, periods, fertility, or physical specifics in dialogue or diary entries.** No references to bleeding, cramping, cycles, or anything clinical. The character wouldn't talk or think in those terms.
+- **This should be invisible 90% of the time.** In most conversations, it has zero effect. {{ actorName }} has far more important things on {{ poss }} mind — quests, relationships, the world around {{ obj }}.
+- The only acceptable surface effects: slightly lower energy, mildly shorter patience, or a quiet preference to rest. These manifest as normal human behavior, not as symptoms {{ subj }} comments on.
+- **In diary entries:** Never mention physical cycles or symptoms. If mood is affected, write about the mood itself ("felt off today," "didn't sleep well") not the cause. Real people don't journal about routine bodily functions.
+- Pregnancy is different — that's a life event worth acknowledging. Cycle states are not.
 
 {% endif %}
 {# ========== THIRD PERSON VIEW ========== #}
@@ -116,10 +117,10 @@ Provides physical state info; emotional response depends on character personalit
 {{ actorName }} has a subtle vitality about {{ obj }} today.
 
 {% elif fert_state == "pms" %}
-{{ actorName }} seems irritable and uncomfortable, mood shifting unpredictably.
+{{ actorName }} seems a bit tired and shorter-tempered than usual.
 
 {% elif fert_state == "menstruating" %}
-{{ actorName }} is withdrawn, occasionally wincing at unseen discomfort.
+{{ actorName }} is quieter than usual, carrying {{ refl }} with a bit less energy.
 
 {% elif fert_state == "recovery" %}
 {{ actorName }} moves carefully, clearly exhausted, still recovering from childbirth.

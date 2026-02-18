@@ -261,10 +261,29 @@ Function UpdateFollowerSurvival(Actor akFollower, Float hoursPassed)
         currentHunger = ClampInt(currentHunger + hungerIncrease as Int, 0, 100)
         SetFollowerHunger(akFollower, currentHunger)
 
-        ; Check for auto-eat
+        ; Check for auto-eat at staggered thresholds
+        ; First attempt at AutoEatThreshold (default 50), then retry every 10 points
+        ; (60, 70, 80, 90, 100) if previous attempts found no food.
         If currentHunger >= AutoEatThreshold
-            TryAutoEat(akFollower)
-            currentHunger = GetFollowerHunger(akFollower) ; Re-get after eating
+            Int lastAttemptThreshold = StorageUtil.GetIntValue(akFollower, "SeverActions_Survival_LastEatAttempt", 0)
+            ; Calculate which threshold bracket we're in (50, 60, 70, 80, 90, 100)
+            Int currentBracket = (currentHunger / 10) * 10
+            If currentBracket < AutoEatThreshold
+                currentBracket = AutoEatThreshold
+            EndIf
+            ; Only attempt if we've crossed into a new bracket since last attempt
+            If currentBracket > lastAttemptThreshold
+                StorageUtil.SetIntValue(akFollower, "SeverActions_Survival_LastEatAttempt", currentBracket)
+                TryAutoEat(akFollower)
+                currentHunger = GetFollowerHunger(akFollower) ; Re-get after eating
+                ; If eating succeeded, reset the attempt tracker so it works fresh next time
+                If currentHunger < AutoEatThreshold
+                    StorageUtil.SetIntValue(akFollower, "SeverActions_Survival_LastEatAttempt", 0)
+                EndIf
+            EndIf
+        Else
+            ; Below threshold, reset the attempt tracker
+            StorageUtil.SetIntValue(akFollower, "SeverActions_Survival_LastEatAttempt", 0)
         EndIf
 
         ; Notification on level change
@@ -1276,6 +1295,9 @@ Function OnFollowerAteFood(Actor akFollower, Form akFood = None)
     Int currentHunger = GetFollowerHunger(akFollower)
     Int newHunger = ClampInt(currentHunger - hungerRestore, 0, 100)
     SetFollowerHunger(akFollower, newHunger)
+
+    ; Reset auto-eat attempt tracker since they ate
+    StorageUtil.SetIntValue(akFollower, "SeverActions_Survival_LastEatAttempt", 0)
 
     ; Stamina recovers naturally, no penalties to update
     ; (we no longer reduce max stamina, just drain it over time)

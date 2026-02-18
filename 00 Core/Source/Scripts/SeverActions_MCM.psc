@@ -112,6 +112,8 @@ int OID_FM_AllowLeaving
 int OID_FM_LeavingThreshold
 int OID_FM_Notifications
 int OID_FM_Debug
+int OID_FM_RelCooldown
+int OID_FM_OutfitLock
 int OID_FM_ResetAll
 int[] OID_FM_DismissFollower
 int[] OID_FM_ClearHome
@@ -518,6 +520,10 @@ Function DrawFollowersPage()
         OID_FM_RapportDecay = AddSliderOption("Rapport Decay Rate", FollowerManagerScript.RapportDecayRate, "{1}x")
         OID_FM_AllowLeaving = AddToggleOption("Allow Autonomous Leaving", FollowerManagerScript.AllowAutonomousLeaving)
         OID_FM_LeavingThreshold = AddSliderOption("Leaving Threshold", FollowerManagerScript.LeavingThreshold, "{0}")
+        OID_FM_RelCooldown = AddSliderOption("Relationship Cooldown", FollowerManagerScript.RelationshipCooldown, "{0} sec")
+        If OutfitScript
+            OID_FM_OutfitLock = AddToggleOption("Outfit Lock System", OutfitScript.OutfitLockEnabled)
+        EndIf
         OID_FM_Notifications = AddToggleOption("Show Notifications", FollowerManagerScript.ShowNotifications)
         OID_FM_Debug = AddToggleOption("Debug Mode", FollowerManagerScript.DebugMode)
 
@@ -714,6 +720,11 @@ Event OnOptionSelect(int option)
         If FollowerManagerScript
             FollowerManagerScript.AllowAutonomousLeaving = !FollowerManagerScript.AllowAutonomousLeaving
             SetToggleOptionValue(OID_FM_AllowLeaving, FollowerManagerScript.AllowAutonomousLeaving)
+        EndIf
+    elseif option == OID_FM_OutfitLock
+        If OutfitScript
+            OutfitScript.OutfitLockEnabled = !OutfitScript.OutfitLockEnabled
+            SetToggleOptionValue(OID_FM_OutfitLock, OutfitScript.OutfitLockEnabled)
         EndIf
     elseif option == OID_FM_Notifications
         If FollowerManagerScript
@@ -1066,6 +1077,13 @@ Event OnOptionSliderOpen(int option)
             SetSliderDialogRange(-100.0, -10.0)
             SetSliderDialogInterval(5.0)
         EndIf
+    elseif option == OID_FM_RelCooldown
+        If FollowerManagerScript
+            SetSliderDialogStartValue(FollowerManagerScript.RelationshipCooldown)
+            SetSliderDialogDefaultValue(120.0)
+            SetSliderDialogRange(60.0, 300.0)
+            SetSliderDialogInterval(15.0)
+        EndIf
 
     ; Per-follower relationship sliders
     else
@@ -1150,6 +1168,11 @@ Event OnOptionSliderAccept(int option, float value)
         If FollowerManagerScript
             FollowerManagerScript.LeavingThreshold = value
             SetSliderOptionValue(OID_FM_LeavingThreshold, value, "{0}")
+        EndIf
+    elseif option == OID_FM_RelCooldown
+        If FollowerManagerScript
+            FollowerManagerScript.RelationshipCooldown = value
+            SetSliderOptionValue(OID_FM_RelCooldown, value, "{0} sec")
         EndIf
 
     ; Per-follower relationship sliders
@@ -1281,10 +1304,14 @@ Event OnOptionHighlight(int option)
         SetInfoText("When enabled, companions with very low rapport may decide to leave on their own. Disable for companions that never leave regardless of treatment.")
     elseif option == OID_FM_LeavingThreshold
         SetInfoText("Rapport level at which companions may decide to leave. Lower values (closer to -100) mean they tolerate more mistreatment. Default: -60")
+    elseif option == OID_FM_OutfitLock
+        SetInfoText("When enabled, companion outfits are locked after dressing them and automatically re-applied on cell transitions. Disable if you want the game to handle companion gear normally.")
     elseif option == OID_FM_Notifications
         SetInfoText("Show notifications when companions are recruited, dismissed, or when relationship milestones occur.")
     elseif option == OID_FM_Debug
         SetInfoText("Enable debug messages for companion framework. Shows relationship value changes in the console.")
+    elseif option == OID_FM_RelCooldown
+        SetInfoText("Minimum real-time seconds between relationship changes per companion. Prevents the AI from adjusting rapport/trust/loyalty/mood too frequently during conversation. Default: 120 seconds (2 minutes).")
     elseif option == OID_FM_ResetAll
         SetInfoText("Emergency reset: dismisses all companions and clears all relationship data. Use if the system is stuck or broken.")
 
@@ -1479,6 +1506,16 @@ Event OnOptionDefault(int option)
         If FollowerManagerScript
             FollowerManagerScript.LeavingThreshold = -60.0
             SetSliderOptionValue(OID_FM_LeavingThreshold, -60.0, "{0}")
+        EndIf
+    elseif option == OID_FM_RelCooldown
+        If FollowerManagerScript
+            FollowerManagerScript.RelationshipCooldown = 120.0
+            SetSliderOptionValue(OID_FM_RelCooldown, 120.0, "{0} sec")
+        EndIf
+    elseif option == OID_FM_OutfitLock
+        If OutfitScript
+            OutfitScript.OutfitLockEnabled = true
+            SetToggleOptionValue(OID_FM_OutfitLock, true)
         EndIf
     elseif option == OID_FM_Notifications
         If FollowerManagerScript
