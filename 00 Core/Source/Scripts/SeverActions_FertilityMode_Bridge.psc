@@ -145,19 +145,23 @@ Function UpdateActorFertilityData(Actor akActor)
         return
     endif
 
-    ; Safety check - FM's arrays may not be initialized yet or FM was removed
-    if FertStorage.TrackedActors == None
-        Debug.Trace("[SeverActions_FM] TrackedActors array is None - FM may not be fully loaded")
+    ; Cache TrackedActors locally — FM's property getter can throw
+    ; "Cannot cast from None to Form[]" if FM hasn't fully initialized its arrays yet.
+    ; The error is logged but Papyrus continues, so we grab the result and guard on it.
+    Form[] trackedActors = FertStorage.TrackedActors
+    if trackedActors == None || trackedActors.Length == 0
         return
     endif
 
     ; Find actor in FM's tracked array
-    int actorIndex = FertStorage.TrackedActors.Find(akActor)
+    int actorIndex = trackedActors.Find(akActor)
     if actorIndex == -1
         return
     endif
 
-    ; Extract raw data from FM arrays
+    ; Extract raw data from FM arrays.
+    ; Cache each array locally to avoid repeated property access and potential
+    ; "Cannot cast from None to <type>[]" errors if FM is mid-reinitialization.
     float lastConception = 0.0
     float lastBirth = 0.0
     float babyAdded = 0.0
@@ -166,26 +170,34 @@ Function UpdateActorFertilityData(Actor akActor)
     int lastGameHoursDelta = 0
     String currentFather = ""
 
-    if actorIndex < FertStorage.LastConception.Length
-        lastConception = FertStorage.LastConception[actorIndex]
+    float[] arrConception = FertStorage.LastConception
+    float[] arrBirth = FertStorage.LastBirth
+    float[] arrBabyAdded = FertStorage.BabyAdded
+    float[] arrOvulation = FertStorage.LastOvulation
+    float[] arrGameHours = FertStorage.LastGameHours
+    int[] arrGameHoursDelta = FertStorage.LastGameHoursDelta
+    string[] arrFather = FertStorage.CurrentFather
+
+    if arrConception != None && actorIndex < arrConception.Length
+        lastConception = arrConception[actorIndex]
     endif
-    if actorIndex < FertStorage.LastBirth.Length
-        lastBirth = FertStorage.LastBirth[actorIndex]
+    if arrBirth != None && actorIndex < arrBirth.Length
+        lastBirth = arrBirth[actorIndex]
     endif
-    if actorIndex < FertStorage.BabyAdded.Length
-        babyAdded = FertStorage.BabyAdded[actorIndex]
+    if arrBabyAdded != None && actorIndex < arrBabyAdded.Length
+        babyAdded = arrBabyAdded[actorIndex]
     endif
-    if actorIndex < FertStorage.LastOvulation.Length
-        lastOvulation = FertStorage.LastOvulation[actorIndex]
+    if arrOvulation != None && actorIndex < arrOvulation.Length
+        lastOvulation = arrOvulation[actorIndex]
     endif
-    if actorIndex < FertStorage.LastGameHours.Length
-        lastGameHours = FertStorage.LastGameHours[actorIndex]
+    if arrGameHours != None && actorIndex < arrGameHours.Length
+        lastGameHours = arrGameHours[actorIndex]
     endif
-    if actorIndex < FertStorage.LastGameHoursDelta.Length
-        lastGameHoursDelta = FertStorage.LastGameHoursDelta[actorIndex]
+    if arrGameHoursDelta != None && actorIndex < arrGameHoursDelta.Length
+        lastGameHoursDelta = arrGameHoursDelta[actorIndex]
     endif
-    if actorIndex < FertStorage.CurrentFather.Length
-        currentFather = FertStorage.CurrentFather[actorIndex]
+    if arrFather != None && actorIndex < arrFather.Length
+        currentFather = arrFather[actorIndex]
     endif
 
     ; Push to native cache if available
@@ -234,11 +246,11 @@ Function UpdateNearbyActors()
         return
     endif
 
-    ; Verify FM arrays are available before scanning
-    if FertStorage.TrackedActors == None
-        Debug.Trace("[SeverActions_FM] TrackedActors array is None - skipping nearby scan")
-        return
-    endif
+    ; Verify FM arrays are available before scanning.
+    ; Don't access FertStorage.TrackedActors here — each call to UpdateActorFertilityData
+    ; already caches and guards it locally. Avoids redundant property access that can
+    ; throw "Cannot cast from None to Form[]" when FM hasn't initialized yet.
+
 
     ; Update player if female
     if PlayerRef.GetActorBase().GetSex() == 1
