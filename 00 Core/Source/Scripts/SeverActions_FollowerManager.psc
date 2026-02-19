@@ -56,6 +56,11 @@ Float Property RelationshipCooldown = 120.0 Auto
 {Real-time seconds between allowed AdjustRelationship calls per actor. Default 120 (2 minutes).
 Prevents the LLM from spamming relationship changes every dialogue line.}
 
+Int Property FrameworkMode = 0 Auto
+{Recruitment mode: 0 = Auto (use NFF/EFF when installed, respect ignore tokens),
+ 1 = SeverActions Only (bypass NFF/EFF, use our alias-based follow for all).
+ Changed via MCM. Takes effect on next recruit, not live.}
+
 ; =============================================================================
 ; SCRIPT REFERENCES
 ; =============================================================================
@@ -169,10 +174,11 @@ Function Maintenance()
     ; Re-assign outfit alias slots after load (ForceRefTo doesn't survive save/load)
     ReassignOutfitSlots()
 
-    ; Re-apply follow tracking after load (LinkedRef and SkyrimNet tracking are runtime-only)
+    ; Re-apply follow tracking after load (LinkedRef is runtime-only)
     ; The CK alias packages persist natively, but LinkedRef must be re-set
-    ; Skip if NFF or EFF is managing packages — they handle their own persistence
-    If !HasNFF() && !HasEFF()
+    ; Run if: SeverActions Only mode, OR no framework installed
+    ; Skip if: Auto mode with NFF/EFF managing packages
+    If FrameworkMode == 1 || (!HasNFF() && !HasEFF())
         SeverActions_Follow followSys = GetFollowScript()
         If followSys
             Actor[] followers = GetAllFollowers()
@@ -292,16 +298,15 @@ Function DetectExistingFollowers()
                 AssignOutfitSlot(actorRef)
 
                 ; --- Follow system ---
-                ; If NFF/EFF is managing packages, just register SkyrimNet tracking.
-                ; Otherwise, bring them into our full alias-based follow system —
-                ; this replaces whatever vanilla/mod follow package they had with
-                ; our persistent alias package (better save/load survival).
-                ; If no follower framework, bring them into our alias-based companion follow.
-                ; NFF/EFF handle their own packages — we just track those.
-                If !HasNFF() && !effController
-                    SeverActions_Follow followSys = GetFollowScript()
-                    If followSys
-                        followSys.CompanionStartFollowing(actorRef)
+                ; Route through ShouldUseFramework for consistent routing
+                If !ShouldUseFramework(actorRef)
+                    ; Only inject our follow package if they don't have an ignore token
+                    ; (token holders are track-only — their own mod handles follow)
+                    If !HasNFFIgnoreToken(actorRef)
+                        SeverActions_Follow followSys = GetFollowScript()
+                        If followSys
+                            followSys.CompanionStartFollowing(actorRef)
+                        EndIf
                     EndIf
                 EndIf
 
@@ -392,12 +397,15 @@ Event OnNativeTeammateDetected(string eventName, string strArg, float numArg, Fo
     AssignOutfitSlot(akActor)
 
     ; --- Follow system ---
-    ; If NFF/EFF is managing packages, they handle follow.
-    ; Otherwise, bring them into our alias-based companion follow.
-    If !HasNFF() && !HasEFF()
-        SeverActions_Follow followSys = GetFollowScript()
-        If followSys
-            followSys.CompanionStartFollowing(akActor)
+    ; Route through ShouldUseFramework for consistent routing
+    If !ShouldUseFramework(akActor)
+        ; Only inject our follow package if they don't have an ignore token
+        ; (token holders are track-only — their own mod handles follow)
+        If !HasNFFIgnoreToken(akActor)
+            SeverActions_Follow followSys = GetFollowScript()
+            If followSys
+                followSys.CompanionStartFollowing(akActor)
+            EndIf
         EndIf
     EndIf
 
@@ -462,6 +470,38 @@ nwsFollowerControllerScript Function GetNFFController()
         Return None
     EndIf
     Return controller
+EndFunction
+
+Bool Function HasNFFIgnoreToken(Actor akActor)
+    {Check if an actor has NFF's nwsIgnoreToken in their inventory.
+     The token is a MISC item (FormID 0x051CFC8D in nwsFollowerFramework.esp)
+     distributed by SPID to custom AI followers (Inigo, Lucien, Kaidan, etc.)
+     so NFF doesn't try to manage them.}
+    If !HasNFF()
+        Return false
+    EndIf
+    Form ignoreToken = Game.GetFormFromFile(0x051CFC8D, "nwsFollowerFramework.esp")
+    If !ignoreToken
+        Return false
+    EndIf
+    Return akActor.GetItemCount(ignoreToken) > 0
+EndFunction
+
+Bool Function ShouldUseFramework(Actor akActor)
+    {Centralized routing decision: should this actor go through NFF/EFF?
+     Returns false if:
+     - FrameworkMode == 1 (SeverActions Only)
+     - Actor has NFF ignore token (custom AI follower)
+     Returns true if NFF or EFF is installed and none of the above apply.}
+    If FrameworkMode == 1
+        Return false
+    EndIf
+    ; In Auto mode, check for ignore token before routing through framework
+    If HasNFFIgnoreToken(akActor)
+        DebugMsg(akActor.GetDisplayName() + " has NFF ignore token - track-only mode")
+        Return false
+    EndIf
+    Return HasNFF() || HasEFF()
 EndFunction
 
 ; =============================================================================
@@ -765,39 +805,40 @@ Function RegisterFollower(Actor akActor)
 
     ; --- Make them a proper follower ---
     ; Check if this actor is already a teammate BEFORE we touch anything.
-    ; If they are, they likely have their own follow system (custom follower mod,
-    ; Serana's DawnguardFollowerScript, Inigo, Lucien, etc.) — we should track them
-    ; for our purposes but NOT override their existing follow packages.
     Bool wasAlreadyTeammate = akActor.IsPlayerTeammate()
 
-    ; Priority: NFF > EFF > Custom (already teammate) > Vanilla
-    nwsFollowerControllerScript nffController = GetNFFController()
+    ; Determine routing: framework vs our system vs track-only
+    Bool useFramework = ShouldUseFramework(akActor)
+    Bool hasIgnoreToken = HasNFFIgnoreToken(akActor)
+
+    nwsFollowerControllerScript nffController = None
     EFFCore effController = None
-    If !nffController
-        effController = GetEFFController()
+
+    If useFramework
+        nffController = GetNFFController()
+        If !nffController
+            effController = GetEFFController()
+        EndIf
     EndIf
 
     If nffController
         ; NFF path: let NFF handle SetPlayerTeammate, factions, alias slots, packages
-        DebugMsg("NFF detected - recruiting " + akActor.GetDisplayName() + " through NFF")
+        DebugMsg("NFF routing: " + akActor.GetDisplayName())
         nffController.RecruitFollower(akActor)
-        ; NFF's RecruitFollower defers via RegisterForSingleUpdate(0.2)
     ElseIf effController
         ; EFF path: let EFF handle SetPlayerTeammate, factions, alias slots, relationship ranks
-        DebugMsg("EFF detected - recruiting " + akActor.GetDisplayName() + " through EFF")
+        DebugMsg("EFF routing: " + akActor.GetDisplayName())
         effController.XFL_AddFollower(akActor as Form)
-    ElseIf wasAlreadyTeammate
-        ; Custom framework path: actor is already a teammate from another mod
-        ; (Serana, Inigo, Lucien, Sofia, etc.) — they have their own follow packages.
-        ; We just track them for relationship/MCM/outfit purposes, don't touch their AI.
-        ; Store the flag so UnregisterFollower knows not to undo SetPlayerTeammate.
+    ElseIf wasAlreadyTeammate || hasIgnoreToken
+        ; Track-only: custom framework follower OR NFF-ignore-token holder
+        ; They keep their own follow system. We just track for relationships/outfit/survival.
         StorageUtil.SetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE, 1)
-        DebugMsg("Custom follower detected - " + akActor.GetDisplayName() + " is already a teammate, tracking only")
+        DebugMsg("Track-only: " + akActor.GetDisplayName() + " (wasTeammate=" + wasAlreadyTeammate + ", ignoreToken=" + hasIgnoreToken + ")")
     Else
-        ; Vanilla path: handle follower mechanics ourselves
-        DebugMsg("No follower framework - recruiting " + akActor.GetDisplayName() + " via vanilla mechanics")
+        ; Vanilla/SeverActions path: handle follower mechanics ourselves
+        DebugMsg("SeverActions routing: " + akActor.GetDisplayName())
 
-        ; Clear any stale custom-follower flag (in case they were previously custom and re-recruited)
+        ; Clear any stale custom-follower flag
         StorageUtil.UnsetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE)
 
         ; Save original AI values so we can restore on dismissal
@@ -805,18 +846,14 @@ Function RegisterFollower(Actor akActor)
         StorageUtil.SetFloatValue(akActor, KEY_ORIG_CONFIDENCE, akActor.GetAV("Confidence"))
 
         ; SetPlayerTeammate handles combat alliance, sneak sync, weapon draw sync, crime sharing.
-        ; We intentionally do NOT add to CurrentFollowerFaction — that faction is monitored by
-        ; NFF (8-second CheckFollowers tick) and other mods. Adding to it causes conflicts if
-        ; a user later installs a follower framework. Our own SeverActions_FollowerFaction
-        ; handles detection instead.
         akActor.SetPlayerTeammate(true)
         akActor.IgnoreFriendlyHits(true)
     EndIf
 
     ; Start companion following via our CK alias-based package
-    ; Skip for NFF/EFF (they manage their own packages) and custom followers
-    ; (they already have follow packages from their mod)
-    If !nffController && !effController && !wasAlreadyTeammate
+    ; Skip for NFF/EFF (they manage their own packages), custom followers,
+    ; and ignore-token holders (they have their own follow system)
+    If !nffController && !effController && !wasAlreadyTeammate && !hasIgnoreToken
         SeverActions_Follow followSys = GetFollowScript()
         If followSys
             followSys.CompanionStartFollowing(akActor)
@@ -866,39 +903,39 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
     EndIf
 
     ; --- Remove proper follower status ---
-    ; Priority: NFF > EFF > Custom (was already teammate) > Vanilla
-    nwsFollowerControllerScript nffController = GetNFFController()
+    ; Determine routing (mirrors RegisterFollower logic)
+    Bool useFramework = ShouldUseFramework(akActor)
+
+    nwsFollowerControllerScript nffController = None
     EFFCore effController = None
-    If !nffController
-        effController = GetEFFController()
+
+    If useFramework
+        nffController = GetNFFController()
+        If !nffController
+            effController = GetEFFController()
+        EndIf
     EndIf
 
-    ; Check if this was a custom-framework follower (Serana, Inigo, Lucien, etc.)
-    ; who was already a teammate before we recruited them.
     Bool wasAlreadyTeammate = StorageUtil.GetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE, 0) == 1
 
     If nffController
         ; NFF path: let NFF handle SetPlayerTeammate, factions, alias cleanup
-        DebugMsg("NFF detected - dismissing " + akActor.GetDisplayName() + " through NFF")
+        DebugMsg("NFF dismiss: " + akActor.GetDisplayName())
         nffController.RemoveFollower(akActor, -1, 0)
-        ; -1 = no message (we handle our own notification), 0 = no say line
         StorageUtil.UnsetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE)
     ElseIf effController
         ; EFF path: let EFF handle SetPlayerTeammate, factions, alias cleanup
-        DebugMsg("EFF detected - dismissing " + akActor.GetDisplayName() + " through EFF")
+        DebugMsg("EFF dismiss: " + akActor.GetDisplayName())
         effController.XFL_RemoveFollower(akActor as Form, 0, 0)
-        ; 0 = standard dismiss message, 0 = no say line (we handle our own notification)
         StorageUtil.UnsetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE)
     ElseIf wasAlreadyTeammate
-        ; Custom framework path: this actor was already a teammate from another mod
-        ; (Serana, Inigo, Lucien, Sofia, etc.) when we recruited them.
-        ; Do NOT undo SetPlayerTeammate or IgnoreFriendlyHits — their mod manages that.
-        ; We only clean up our tracking layer.
-        DebugMsg("Custom follower dismiss - " + akActor.GetDisplayName() + " was already a teammate, leaving teammate status intact")
+        ; Track-only cleanup: custom framework follower or NFF-ignore-token holder
+        ; Don't touch their teammate status or AI — their mod manages that.
+        DebugMsg("Track-only dismiss: " + akActor.GetDisplayName())
         StorageUtil.UnsetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE)
     Else
-        ; Vanilla path: clean up follower mechanics ourselves
-        DebugMsg("No follower framework - dismissing " + akActor.GetDisplayName() + " via vanilla mechanics")
+        ; Vanilla/SeverActions path: clean up follower mechanics ourselves
+        DebugMsg("SeverActions dismiss: " + akActor.GetDisplayName())
 
         akActor.SetPlayerTeammate(false)
         akActor.IgnoreFriendlyHits(false)

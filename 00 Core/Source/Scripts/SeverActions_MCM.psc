@@ -114,6 +114,7 @@ int OID_FM_Notifications
 int OID_FM_Debug
 int OID_FM_RelCooldown
 int OID_FM_OutfitLock
+int OID_FM_FrameworkMode
 int OID_FM_ResetAll
 int[] OID_FM_DismissFollower
 int[] OID_FM_ClearHome
@@ -126,6 +127,9 @@ Actor[] CachedManagedFollowers
 
 ; Combat style dropdown options
 string[] CombatStyleOptions
+
+; Framework mode dropdown options
+string[] FrameworkModeOptions
 
 ; Page names
 string PAGE_GENERAL = "General"
@@ -146,7 +150,7 @@ string[] TargetModeOptions
 Int Function GetVersion()
     {Override SKI_ConfigBase. SkyUI compares this against the saved version
      to trigger OnVersionUpdate. Increment when MCM structure changes.}
-    Return 114
+    Return 115
 EndFunction
 
 Event OnConfigInit()
@@ -154,7 +158,7 @@ Event OnConfigInit()
 
     ; Set current version - increment this when you make MCM changes
     ; Format: major * 100 + minor (e.g., 107 = version 1.07)
-    CurrentVersion = 114
+    CurrentVersion = 115
 
     Pages = new string[7]
     Pages[0] = PAGE_GENERAL
@@ -178,6 +182,11 @@ Event OnConfigInit()
     CombatStyleOptions[2] = "defensive"
     CombatStyleOptions[3] = "ranged"
     CombatStyleOptions[4] = "healer"
+
+    ; Initialize framework mode dropdown options
+    FrameworkModeOptions = new string[2]
+    FrameworkModeOptions[0] = "Auto"
+    FrameworkModeOptions[1] = "SeverActions Only"
 EndEvent
 
 Event OnVersionUpdate(int newVersion)
@@ -207,6 +216,11 @@ Event OnVersionUpdate(int newVersion)
     CombatStyleOptions[2] = "defensive"
     CombatStyleOptions[3] = "ranged"
     CombatStyleOptions[4] = "healer"
+
+    ; Re-initialize framework mode dropdown options
+    FrameworkModeOptions = new string[2]
+    FrameworkModeOptions[0] = "Auto"
+    FrameworkModeOptions[1] = "SeverActions Only"
 EndEvent
 
 ; Force MCM to rebuild - call this on game load
@@ -524,6 +538,7 @@ Function DrawFollowersPage()
         If OutfitScript
             OID_FM_OutfitLock = AddToggleOption("Outfit Lock System", OutfitScript.OutfitLockEnabled)
         EndIf
+        OID_FM_FrameworkMode = AddMenuOption("Recruitment Mode", FrameworkModeOptions[FollowerManagerScript.FrameworkMode])
         OID_FM_Notifications = AddToggleOption("Show Notifications", FollowerManagerScript.ShowNotifications)
         OID_FM_Debug = AddToggleOption("Debug Mode", FollowerManagerScript.DebugMode)
 
@@ -964,6 +979,12 @@ Event OnOptionMenuOpen(int option)
         SetMenuDialogStartIndex(TargetMode)
         SetMenuDialogDefaultIndex(0)
         SetMenuDialogOptions(TargetModeOptions)
+    elseif option == OID_FM_FrameworkMode
+        If FollowerManagerScript
+            SetMenuDialogStartIndex(FollowerManagerScript.FrameworkMode)
+            SetMenuDialogDefaultIndex(0)
+            SetMenuDialogOptions(FrameworkModeOptions)
+        EndIf
     else
         ; Per-follower combat style menus
         If FollowerManagerScript && CachedManagedFollowers && OID_FM_CombatStyle
@@ -989,6 +1010,11 @@ Event OnOptionMenuAccept(int option, int index)
         ApplyHotkeySettings()
         ; Force page refresh to show/hide radius slider
         ForcePageReset()
+    elseif option == OID_FM_FrameworkMode
+        If FollowerManagerScript
+            FollowerManagerScript.FrameworkMode = index
+            SetMenuOptionValue(OID_FM_FrameworkMode, FrameworkModeOptions[index])
+        EndIf
     else
         ; Per-follower combat style menus
         If FollowerManagerScript && CachedManagedFollowers && OID_FM_CombatStyle
@@ -1306,6 +1332,8 @@ Event OnOptionHighlight(int option)
         SetInfoText("Rapport level at which companions may decide to leave. Lower values (closer to -100) mean they tolerate more mistreatment. Default: -60")
     elseif option == OID_FM_OutfitLock
         SetInfoText("When enabled, companion outfits are locked after dressing them and automatically re-applied on cell transitions. Disable if you want the game to handle companion gear normally.")
+    elseif option == OID_FM_FrameworkMode
+        SetInfoText("How new followers are recruited.\nAuto: Uses NFF/EFF when installed. Followers with NFF ignore tokens are tracked only (no package injection).\nSeverActions Only: Bypasses NFF/EFF entirely, uses our own follow system for all followers.\nTakes effect on next recruit.")
     elseif option == OID_FM_Notifications
         SetInfoText("Show notifications when companions are recruited, dismissed, or when relationship milestones occur.")
     elseif option == OID_FM_Debug
@@ -1516,6 +1544,11 @@ Event OnOptionDefault(int option)
         If OutfitScript
             OutfitScript.OutfitLockEnabled = true
             SetToggleOptionValue(OID_FM_OutfitLock, true)
+        EndIf
+    elseif option == OID_FM_FrameworkMode
+        If FollowerManagerScript
+            FollowerManagerScript.FrameworkMode = 0
+            SetMenuOptionValue(OID_FM_FrameworkMode, FrameworkModeOptions[0])
         EndIf
     elseif option == OID_FM_Notifications
         If FollowerManagerScript
