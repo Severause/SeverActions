@@ -237,13 +237,17 @@ Function DetectExistingFollowers()
         Actor actorRef = ref as Actor
 
         If actorRef && actorRef != player && !actorRef.IsDead() && !actorRef.IsCommandedActor()
-            ; Check if they're a follower but NOT in our system yet
-            Bool isGameFollower = actorRef.IsPlayerTeammate()
+            ; Check if they're a follower but NOT in our system yet.
+            ; IMPORTANT: IsPlayerTeammate() alone is NOT sufficient for detection.
+            ; Many mods (Katana, Inigo, Lucien, IntelEngine, etc.) set teammate status
+            ; for their own purposes without the actor being a "recruited follower."
+            ; We require membership in a recognized follower FACTION to trigger auto-detection.
+            Bool isGameFollower = false
 
             ; Check CurrentFollowerFaction — but require rank >= 0
             ; NFF sets rank to -1 on dismiss instead of removing from faction,
             ; so IsInFaction alone would false-positive on dismissed NFF followers
-            If !isGameFollower && currentFollowerFaction
+            If currentFollowerFaction
                 If actorRef.IsInFaction(currentFollowerFaction) && actorRef.GetFactionRank(currentFollowerFaction) >= 0
                     isGameFollower = true
                 EndIf
@@ -360,6 +364,36 @@ Event OnNativeTeammateDetected(string eventName, string strArg, float numArg, Fo
 
     ; Already in our faction? Also skip (co-save data might not be loaded yet).
     If SeverActions_FollowerFaction && akActor.IsInFaction(SeverActions_FollowerFaction)
+        return
+    EndIf
+
+    ; Skip actors with NFF ignore token (custom AI followers: Inigo, Lucien, Kaidan, etc.)
+    If HasNFFIgnoreToken(akActor)
+        Debug.Trace("[SeverActions_FollowerManager] Native teammate has NFF ignore token, skipping: " + akActor.GetDisplayName())
+        return
+    EndIf
+
+    ; Require membership in a recognized follower faction before onboarding.
+    ; SetPlayerTeammate(true) alone is NOT sufficient — many mods (IntelEngine,
+    ; Katana, Inigo, etc.) toggle teammate status for their own mechanics.
+    ; Only actors in CurrentFollowerFaction (rank >= 0) or EFF's faction are
+    ; considered legitimate recruits from vanilla dialogue, NFF, or EFF.
+    Faction currentFollowerFaction = Game.GetFormFromFile(0x0005C84E, "Skyrim.esm") as Faction
+    Bool inFollowerFaction = false
+
+    If currentFollowerFaction && akActor.IsInFaction(currentFollowerFaction) && akActor.GetFactionRank(currentFollowerFaction) >= 0
+        inFollowerFaction = true
+    EndIf
+
+    If !inFollowerFaction
+        EFFCore effController = GetEFFController()
+        If effController && effController.XFL_FollowerFaction
+            inFollowerFaction = akActor.IsInFaction(effController.XFL_FollowerFaction)
+        EndIf
+    EndIf
+
+    If !inFollowerFaction
+        Debug.Trace("[SeverActions_FollowerManager] Native teammate not in any follower faction, skipping: " + akActor.GetDisplayName())
         return
     EndIf
 

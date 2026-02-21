@@ -38,8 +38,10 @@ Create in CK — just a new faction, no special setup needed.}
 Package Property SandboxPackage Auto
 {Sandbox package for relaxing in place - NPC wanders and interacts with nearby furniture}
 
-int Property SandboxPackagePriority = 90 AutoReadOnly
-{Lower than follow (95) so sandbox yields when follow resumes, but higher than vanilla packages}
+int Property SandboxPackagePriority = 60 AutoReadOnly
+{Above follow (50) so sandbox takes over when active, but close enough that
+ cleanup and follow resumption override it cleanly. Below 70 to avoid competing
+ with important mod packages.}
 
 float Property SandboxAutoStandDistance = 2000.0 Auto
 {Distance at which sandboxing actors auto-resume following when player moves away}

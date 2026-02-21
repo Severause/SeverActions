@@ -11,7 +11,7 @@ Determine which NPC the player is addressing and who should respond. Analyze the
 
 {% if crosshairTarget %}
 {{ "## Player's Crosshair Target" }}
-The player is looking directly at: **{{ crosshairTarget.name }}** ({{ units_to_meters(crosshairTarget.distance) }}m away){% if is_follower(crosshairTarget.UUID) %} [COMPANION]{% endif %}{% if is_in_faction(crosshairTarget.UUID, "SeverActions_ActivelyFollowing") %} [ENGAGED]{% endif %}
+The player is looking directly at: **{{ crosshairTarget.name }}** ({{ units_to_meters(crosshairTarget.distance) }}m away){% if is_follower(crosshairTarget.UUID) %} [COMPANION]{% endif %}{% if is_in_faction(crosshairTarget.UUID, "SeverActions_ActivelyFollowing") %} [ENGAGED]{% endif %}{% if is_in_faction(crosshairTarget.UUID, "SexLabAnimatingFaction") or is_in_faction(crosshairTarget.UUID, "OStimExcitementFaction") %} [IN SCENE]{% endif %}
 {% endif %}
 
 {{ "## Recent Dialogue" }}
