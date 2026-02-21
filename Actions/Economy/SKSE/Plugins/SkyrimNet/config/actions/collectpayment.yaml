@@ -1,3 +1,4 @@
+customCategory: economy
 name: CollectPayment
 description: |
   The actor collects gold owed to them after providing goods or services. Use this when:

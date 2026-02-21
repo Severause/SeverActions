@@ -86,6 +86,9 @@ Faction Property SeverActions_FollowerFaction Auto
  Does not conflict with NFF/EFF/vanilla faction systems.
  Create in CK — just a new faction, no special setup needed.}
 
+SeverActions_Debt Property DebtScript Auto
+{Reference to the Debt tracking system for tick-based processing}
+
 ; =============================================================================
 ; CONSTANTS
 ; =============================================================================
@@ -176,9 +179,10 @@ Function Maintenance()
 
     ; Re-apply follow tracking after load (LinkedRef is runtime-only)
     ; The CK alias packages persist natively, but LinkedRef must be re-set
-    ; Run if: SeverActions Only mode, OR no framework installed
+    ; Run if: SeverActions Only mode, OR no framework installed (Auto mode without NFF/EFF)
     ; Skip if: Auto mode with NFF/EFF managing packages
-    If FrameworkMode == 1 || (!HasNFF() && !HasEFF())
+    ; Skip if: Tracking Only mode — we don't manage follow packages at all
+    If FrameworkMode != 2 && (FrameworkMode == 1 || (!HasNFF() && !HasEFF()))
         SeverActions_Follow followSys = GetFollowScript()
         If followSys
             Actor[] followers = GetAllFollowers()
@@ -299,7 +303,8 @@ Function DetectExistingFollowers()
 
                 ; --- Follow system ---
                 ; Route through ShouldUseFramework for consistent routing
-                If !ShouldUseFramework(actorRef)
+                ; Skip entirely in Tracking Only mode — their mod handles follow
+                If FrameworkMode != 2 && !ShouldUseFramework(actorRef)
                     ; Only inject our follow package if they don't have an ignore token
                     ; (token holders are track-only — their own mod handles follow)
                     If !HasNFFIgnoreToken(actorRef)
@@ -398,7 +403,8 @@ Event OnNativeTeammateDetected(string eventName, string strArg, float numArg, Fo
 
     ; --- Follow system ---
     ; Route through ShouldUseFramework for consistent routing
-    If !ShouldUseFramework(akActor)
+    ; Skip entirely in Tracking Only mode — their mod handles follow
+    If FrameworkMode != 2 && !ShouldUseFramework(akActor)
         ; Only inject our follow package if they don't have an ignore token
         ; (token holders are track-only — their own mod handles follow)
         If !HasNFFIgnoreToken(akActor)
@@ -491,9 +497,10 @@ Bool Function ShouldUseFramework(Actor akActor)
     {Centralized routing decision: should this actor go through NFF/EFF?
      Returns false if:
      - FrameworkMode == 1 (SeverActions Only)
+     - FrameworkMode == 2 (Tracking Only — no package/teammate manipulation at all)
      - Actor has NFF ignore token (custom AI follower)
      Returns true if NFF or EFF is installed and none of the above apply.}
-    If FrameworkMode == 1
+    If FrameworkMode == 1 || FrameworkMode == 2
         Return false
     EndIf
     ; In Auto mode, check for ignore token before routing through framework
@@ -550,6 +557,9 @@ Event OnUpdate()
     ; Only update if meaningful time has passed (at least 0.5 game hours)
     If hoursPassed >= 0.5
         TickRelationships(hoursPassed)
+        If DebtScript
+            DebtScript.TickDebts(hoursPassed)
+        EndIf
         LastTickTime = currentTime
     EndIf
 
@@ -806,6 +816,14 @@ Function RegisterFollower(Actor akActor)
     ; --- Make them a proper follower ---
     ; Check if this actor is already a teammate BEFORE we touch anything.
     Bool wasAlreadyTeammate = akActor.IsPlayerTeammate()
+
+    ; Tracking Only mode: treat ALL followers as track-only.
+    ; We still register them for relationships, outfits, survival, debt, etc.
+    ; but we don't touch their teammate status, AI values, or follow packages.
+    ; Their existing mod (NFF, EFF, custom framework, etc.) handles all of that.
+    If FrameworkMode == 2
+        wasAlreadyTeammate = true
+    EndIf
 
     ; Determine routing: framework vs our system vs track-only
     Bool useFramework = ShouldUseFramework(akActor)

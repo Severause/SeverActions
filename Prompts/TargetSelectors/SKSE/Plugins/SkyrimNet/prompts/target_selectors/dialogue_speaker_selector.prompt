@@ -1,0 +1,67 @@
+[ system ]
+## Task
+Select which NPC should speak next, if anyone. Output only: `0` (silence) or `[speaker]>[target]`
+
+## Output Format
+- `0` = No one speaks
+- `Lydia>player` = Lydia speaks to player
+- `Ulfric Stormcloak>Galmar Stone-Fist` = Ulfric speaks to Galmar
+
+## Selection Criteria
+Evaluate candidates using these factors (highest priority first):
+
+1. **Direct involvement**: Was this NPC explicitly addressed, referenced by name, or directly involved in what just happened?
+2. **Conversation momentum**: Is there an active back-and-forth dialogue? If someone just spoke TO or ABOUT this NPC, they should likely respond. Conversations naturally continue — don't cut them short.
+3. **Authority/duty**: Does their role (guard, merchant, innkeeper, jarl) demand a response in this situation?
+4. **Companion awareness**: Is this NPC a follower/companion of the player? Companions naturally react to events affecting their leader — combat, insults, danger, interesting discoveries.
+5. **Personal stakes**: Are they emotionally affected (friend, family, ally, rival involved)?
+6. **Witnessed event**: Did they clearly witness something noteworthy that they'd realistically react to?
+7. **Interjection profile**: Does their Interjection guidance indicate they'd speak here?
+
+## When to Choose Silence (0)
+Choose silence when:
+- The last exchange was a natural conclusion (farewell, transaction complete, question answered fully)
+- No NPC has a compelling reason to speak — don't force dialogue
+- The scene is winding down with no new stimulus
+
+Do NOT default to silence when:
+- Someone was just asked a question or addressed directly
+- A conversation is actively flowing between NPCs
+- Something dramatic just happened that nearby NPCs would react to
+- A companion/follower witnessed something significant involving the player
+
+**Restrictions:**
+- Do NOT select {{ lastSpeaker.name }} as speaker (they just spoke — but they CAN be selected as target)
+- Regular NPCs cannot hear Virtual NPCs. Do not select an NPC to respond directly to a Virtual NPC.
+- Virtual NPCs may be selected as speaker but may NOT be selected as a target unless the speaker is also a Virtual NPC.
+
+{{ get_scene_context(0, 0, "full")}}
+[ end system ]
+
+[ user ]
+## Location
+{{ location }}
+
+## Recent Dialogue
+{{ render_template("components\\event_history_compact") }}
+
+## Candidates
+{% for candidate in candidateDialogues %}
+{% set cinfo = decnpc(candidate.UUID) %}
+{% if cinfo.isVirtual %}
+{{ candidate.id }}. **{{ cinfo.name }}**{% if cinfo.isVirtualPrivate %} (Virtual NPC){% endif %}
+   - {{ render_character_profile("short_inline", candidate.UUID) }}
+   - **Interjection**: {{ render_character_profile("interject_inline", candidate.UUID) }}
+{% else %}
+{{ candidate.id }}. **{{ cinfo.name }}** ({{ cinfo.gender }} {{ cinfo.race }}, {{ units_to_meters(candidate.distance) }}m){% if is_follower(candidate.UUID) %} **[COMPANION]**{% endif %}{% if is_in_faction(candidate.UUID, "SeverActions_ActivelyFollowing") %} **[ENGAGED]**{% endif %}
+   - {{ render_character_profile("short_inline", candidate.UUID) }}
+   - **Interjection**: {{ render_character_profile("interject_inline", candidate.UUID) }}
+{% endif %}
+{% endfor %}
+
+**Tag meanings:**
+- `[COMPANION]` — Player's active follower. More invested in the player's affairs and naturally reacts to things around the player.
+- `[ENGAGED]` — This NPC has heightened conversational engagement. They are more likely to interject, comment, or continue conversation. Lower threshold to speak.
+
+Who speaks next? Output: `0` or `[Name]>[target]`
+[ end user ]

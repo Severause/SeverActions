@@ -34,7 +34,7 @@ bool Property IsRegistered = false Auto Hidden
 ; =============================================================================
 
 int Property OPT_TOGGLE_FOLLOW = 0 AutoReadOnly
-int Property OPT_DISMISS_ALL = 1 AutoReadOnly
+int Property OPT_DISMISS = 1 AutoReadOnly
 int Property OPT_STAND_UP = 2 AutoReadOnly
 int Property OPT_YIELD = 3 AutoReadOnly
 int Property OPT_UNDRESS = 4 AutoReadOnly
@@ -157,9 +157,9 @@ Function OpenWheelMenu()
     endif
     UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_TOGGLE_FOLLOW, "Follow")
 
-    ; Option 1 - Dismiss All
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_DISMISS_ALL, "Dismiss All")
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_DISMISS_ALL, "Dismiss")
+    ; Option 1 - Dismiss Companion
+    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_DISMISS, "Dismiss")
+    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_DISMISS, "Dismiss")
 
     ; Option 2 - Stand Up
     UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_STAND_UP, "Stand Up")
@@ -209,8 +209,8 @@ Function HandleWheelSelection(int selection, Actor target)
         return
     endif
 
-    ; For most actions, we need a target
-    if selection != OPT_DISMISS_ALL && !target
+    ; All actions need a target
+    if !target
         Debug.Notification("No valid target - look at an NPC")
         return
     endif
@@ -222,8 +222,8 @@ Function HandleWheelSelection(int selection, Actor target)
 
     if selection == OPT_TOGGLE_FOLLOW
         HandleFollowToggle(target)
-    elseif selection == OPT_DISMISS_ALL
-        HandleDismissAll()
+    elseif selection == OPT_DISMISS
+        HandleDismiss(target)
     elseif selection == OPT_STAND_UP
         HandleStandUp(target)
     elseif selection == OPT_YIELD
@@ -267,38 +267,23 @@ Function HandleFollowToggle(Actor target)
     endif
 EndFunction
 
-Function HandleDismissAll()
-    if !FollowScript
-        Debug.Notification("SeverActions: Follow script not configured!")
+Function HandleDismiss(Actor target)
+    if !FollowerManagerScript
+        FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+    endif
+
+    if !FollowerManagerScript
+        Debug.Notification("SeverActions: Follower Manager not configured!")
         return
     endif
 
-    ; Find all followers and dismiss them
-    Actor player = Game.GetPlayer()
-    int dismissed = 0
-
-    ; Search nearby actors
-    Cell currentCell = player.GetParentCell()
-    if currentCell
-        int numRefs = currentCell.GetNumRefs(43) ; kActorCharacter
-        int i = 0
-        while i < numRefs
-            Actor npc = currentCell.GetNthRef(i, 43) as Actor
-            if npc && npc != player && !npc.IsDead()
-                if FollowScript.HasFollowPackage(npc)
-                    FollowScript.StopFollowing(npc)
-                    dismissed += 1
-                endif
-            endif
-            i += 1
-        endwhile
+    ; Check if the target is a registered companion
+    if StorageUtil.GetIntValue(target, "SeverFollower_IsFollower", 0) != 1
+        Debug.Notification(target.GetDisplayName() + " is not your companion")
+        return
     endif
 
-    if dismissed > 0
-        Debug.Notification("Dismissed " + dismissed + " follower(s)")
-    else
-        Debug.Notification("No followers to dismiss")
-    endif
+    FollowerManagerScript.DismissCompanion(target)
 EndFunction
 
 Function HandleStandUp(Actor target)

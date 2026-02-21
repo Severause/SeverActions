@@ -1,3 +1,4 @@
+customCategory: follower
 name: AssignHome
 description: "Assign a location as this companion's home. When dismissed, they
   will travel back to this location. Use this action when:

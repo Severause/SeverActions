@@ -1,3 +1,4 @@
+customCategory: economy
 name: GiveGold
 description: |
   The actor gives gold/septims to another person. Use this when:

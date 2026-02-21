@@ -150,6 +150,36 @@ Function GiveGold_Execute(Actor akGiver, Actor akRecipient, Int aiAmount)
 EndFunction
 
 ; =============================================================================
+; ACTION: GiveGoldTrue - TEMPORARY TEST: GiveGold but resolves recipient by name
+; Use for: testing string-based actor resolution for gold giving
+; Remove this function when testing is complete
+; =============================================================================
+
+Function GiveGoldTrue_Execute(Actor akGiver, String asRecipient, Int aiAmount)
+    if !akGiver || asRecipient == "" || !Gold001
+        return
+    endif
+
+    Actor akRecipient = SeverActionsNative.FindActorByName(asRecipient)
+    if !akRecipient
+        Debug.Trace("[SeverActions_Currency] GiveGoldTrue: Could not find actor named '" + asRecipient + "'")
+        SkyrimNetApi.RegisterEvent("gold_failed", akGiver.GetDisplayName() + " tried to give gold to " + asRecipient + " but could not find them", akGiver, None)
+        return
+    endif
+
+    Debug.Trace("[SeverActions_Currency] GiveGoldTrue: " + akGiver.GetDisplayName() + " giving " + aiAmount + " gold to " + akRecipient.GetDisplayName() + " (resolved from '" + asRecipient + "')")
+
+    PlayGiveAnimation(akGiver)
+    Int moved = TransferGold(akGiver, akRecipient, aiAmount, True)
+
+    if moved > 0
+        SkyrimNetApi.RegisterEvent("gold_given", akGiver.GetDisplayName() + " gave " + moved + " gold to " + akRecipient.GetDisplayName(), akGiver, akRecipient)
+    else
+        SkyrimNetApi.RegisterEvent("gold_failed", akGiver.GetDisplayName() + " has no gold to give", akGiver, akRecipient)
+    endif
+EndFunction
+
+; =============================================================================
 ; ACTION: CollectPayment - NPC receives gold owed to them
 ; Use for: receiving payment after sales, services, trades, settling debts
 ; The PAYER (target) gives gold to the COLLECTOR (actor)
@@ -183,45 +213,55 @@ Function CollectPayment_Execute(Actor akCollector, Actor akPayer, Int aiAmount)
     if akPayer == player
         String collectorName = akCollector.GetDisplayName()
         String promptText = collectorName + " is requesting " + aiAmount + " gold. Pay them?"
-        
+
         String result = SkyMessage.Show(promptText, "Yes", "No", "No (Silent)")
-        
+
         if result == "Yes"
             ; Player agrees to pay
             PlayTakeAnimation(akCollector)
             Int moved = TransferGold(akPayer, akCollector, aiAmount, False)
-            
+
             if moved > 0
                 if moved < aiAmount
                     SkyrimNetApi.RegisterEvent("payment_collected", collectorName + " collected " + moved + " gold from " + akPayer.GetDisplayName() + " (partial payment)", akCollector, akPayer)
                 else
                     SkyrimNetApi.RegisterEvent("payment_collected", collectorName + " collected " + moved + " gold from " + akPayer.GetDisplayName(), akCollector, akPayer)
                 endif
+                ; Auto-reduce debt if payer owes collector
+                SeverActions_Debt debtScript = SeverActions_Debt.GetInstance()
+                if debtScript
+                    debtScript.ReduceDebtByPayment(akCollector, akPayer, moved)
+                endif
             else
                 SkyrimNetApi.RegisterEvent("payment_failed", akPayer.GetDisplayName() + " has no gold to pay", akCollector, akPayer)
             endif
-            
+
         elseif result == "No"
             ; Player refuses - send direct narration so NPC reacts
             SkyrimNetApi.DirectNarration(akPayer.GetDisplayName() + " refused to pay " + collectorName, akCollector)
-            
+
         else
             ; "No (Silent)" or timeout - just silently cancel, no event
             Debug.Trace("[SeverActions_Currency] CollectPayment: Player silently declined payment to " + collectorName)
         endif
-        
+
         return
     endif
-    
+
     ; Non-player payer - proceed as normal
     PlayTakeAnimation(akCollector)
     Int moved = TransferGold(akPayer, akCollector, aiAmount, False)
-    
+
     if moved > 0
         if moved < aiAmount
             SkyrimNetApi.RegisterEvent("payment_collected", akCollector.GetDisplayName() + " collected " + moved + " gold from " + akPayer.GetDisplayName() + " (partial payment)", akCollector, akPayer)
         else
             SkyrimNetApi.RegisterEvent("payment_collected", akCollector.GetDisplayName() + " collected " + moved + " gold from " + akPayer.GetDisplayName(), akCollector, akPayer)
+        endif
+        ; Auto-reduce debt if payer owes collector
+        SeverActions_Debt debtScript = SeverActions_Debt.GetInstance()
+        if debtScript
+            debtScript.ReduceDebtByPayment(akCollector, akPayer, moved)
         endif
     else
         SkyrimNetApi.RegisterEvent("payment_failed", akPayer.GetDisplayName() + " has no gold to pay", akCollector, akPayer)

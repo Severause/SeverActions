@@ -1,3 +1,4 @@
+customCategory: basic
 name: StopFollowing
 description: Stop following {{ player.name }} when appropriate
 questEditorId: SeverActions

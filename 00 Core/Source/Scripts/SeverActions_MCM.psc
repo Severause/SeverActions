@@ -27,7 +27,7 @@ bool Property DialogueAnimEnabled = true Auto Hidden
 
 ; Hotkey Settings (stored here, applied to HotkeyScript)
 int Property FollowToggleKey = -1 Auto Hidden
-int Property DismissAllKey = -1 Auto Hidden
+int Property DismissKey = -1 Auto Hidden
 int Property StandUpKey = -1 Auto Hidden
 int Property YieldKey = -1 Auto Hidden
 int Property UndressKey = -1 Auto Hidden
@@ -49,6 +49,9 @@ int OID_Version
 
 ; Currency page
 int OID_AllowConjuredGold
+int OID_DebtActiveCount
+int OID_DebtPlayerOwes
+int OID_DebtOwedToPlayer
 
 ; Travel page
 int OID_ResetTravelSlots
@@ -61,7 +64,7 @@ int OID_ActiveSlotCount
 
 ; Hotkeys page
 int OID_FollowToggleKey
-int OID_DismissAllKey
+int OID_DismissKey
 int OID_StandUpKey
 int OID_YieldKey
 int OID_UndressKey
@@ -150,7 +153,7 @@ string[] TargetModeOptions
 Int Function GetVersion()
     {Override SKI_ConfigBase. SkyUI compares this against the saved version
      to trigger OnVersionUpdate. Increment when MCM structure changes.}
-    Return 115
+    Return 116
 EndFunction
 
 Event OnConfigInit()
@@ -158,7 +161,7 @@ Event OnConfigInit()
 
     ; Set current version - increment this when you make MCM changes
     ; Format: major * 100 + minor (e.g., 107 = version 1.07)
-    CurrentVersion = 115
+    CurrentVersion = 116
 
     Pages = new string[7]
     Pages[0] = PAGE_GENERAL
@@ -184,9 +187,10 @@ Event OnConfigInit()
     CombatStyleOptions[4] = "healer"
 
     ; Initialize framework mode dropdown options
-    FrameworkModeOptions = new string[2]
+    FrameworkModeOptions = new string[3]
     FrameworkModeOptions[0] = "Auto"
     FrameworkModeOptions[1] = "SeverActions Only"
+    FrameworkModeOptions[2] = "Tracking Only"
 EndEvent
 
 Event OnVersionUpdate(int newVersion)
@@ -218,9 +222,10 @@ Event OnVersionUpdate(int newVersion)
     CombatStyleOptions[4] = "healer"
 
     ; Re-initialize framework mode dropdown options
-    FrameworkModeOptions = new string[2]
+    FrameworkModeOptions = new string[3]
     FrameworkModeOptions[0] = "Auto"
     FrameworkModeOptions[1] = "SeverActions Only"
+    FrameworkModeOptions[2] = "Tracking Only"
 EndEvent
 
 ; Force MCM to rebuild - call this on game load
@@ -293,7 +298,7 @@ Function DrawHotkeysPage()
     AddEmptyOption()
     AddHeaderOption("Follow System Hotkeys")
     OID_FollowToggleKey = AddKeyMapOption("Toggle Follow", FollowToggleKey)
-    OID_DismissAllKey = AddKeyMapOption("Dismiss All Followers", DismissAllKey)
+    OID_DismissKey = AddKeyMapOption("Dismiss Companion", DismissKey)
     OID_SetCompanionKey = AddKeyMapOption("Set Companion", SetCompanionKey)
     OID_CompanionWaitKey = AddKeyMapOption("Wait Here / Resume", CompanionWaitKey)
 
@@ -360,6 +365,20 @@ Function DrawCurrencyPage()
     AddEmptyOption()
     AddTextOption("", "Disable for more realistic economy")
     AddTextOption("", "where NPCs need actual gold to give.")
+
+    AddEmptyOption()
+    AddHeaderOption("Debt Tracking")
+    If FollowerManagerScript && FollowerManagerScript.DebtScript
+        SeverActions_Debt debtSys = FollowerManagerScript.DebtScript
+        Int totalPlayerOwes = debtSys.GetTotalOwedBy(Game.GetPlayer())
+        Int totalOwedToPlayer = debtSys.GetTotalOwedTo(Game.GetPlayer())
+        Int activeDebts = debtSys.GetDebtCount()
+        OID_DebtActiveCount = AddTextOption("Active Debts", activeDebts)
+        OID_DebtPlayerOwes = AddTextOption("You Owe", totalPlayerOwes + " gold")
+        OID_DebtOwedToPlayer = AddTextOption("Owed to You", totalOwedToPlayer + " gold")
+    Else
+        AddTextOption("", "Debt system not connected")
+    EndIf
 EndFunction
 
 Function DrawTravelPage()
@@ -928,9 +947,9 @@ Event OnOptionKeyMapChange(int option, int keyCode, string conflictControl, stri
         SetKeyMapOptionValue(OID_FollowToggleKey, keyCode)
         ApplyHotkeySettings()
 
-    elseif option == OID_DismissAllKey
-        DismissAllKey = keyCode
-        SetKeyMapOptionValue(OID_DismissAllKey, keyCode)
+    elseif option == OID_DismissKey
+        DismissKey = keyCode
+        SetKeyMapOptionValue(OID_DismissKey, keyCode)
         ApplyHotkeySettings()
 
     elseif option == OID_StandUpKey
@@ -1237,7 +1256,14 @@ Event OnOptionHighlight(int option)
 
     elseif option == OID_AllowConjuredGold
         SetInfoText("Allow NPCs to give gold they don't actually have. Useful for rewards and quest payments. Disable for hardcore economy.")
-        
+
+    elseif option == OID_DebtActiveCount
+        SetInfoText("Number of active debt records between you and NPCs.")
+    elseif option == OID_DebtPlayerOwes
+        SetInfoText("Total gold you owe to all NPCs combined.")
+    elseif option == OID_DebtOwedToPlayer
+        SetInfoText("Total gold all NPCs owe to you combined.")
+
     elseif option == OID_ResetTravelSlots
         SetInfoText("Emergency reset: Clears all travel slots and cancels any active NPC travel. Use if travel slots appear stuck or show incorrect status.")
         
@@ -1247,8 +1273,8 @@ Event OnOptionHighlight(int option)
     elseif option == OID_FollowToggleKey
         SetInfoText("Hotkey to toggle NPC following. Look at an NPC and press this key to make them follow you or stop following. Also resumes following if they were waiting.")
         
-    elseif option == OID_DismissAllKey
-        SetInfoText("Hotkey to dismiss ALL followers at once. Useful for quickly clearing all NPCs following you.")
+    elseif option == OID_DismissKey
+        SetInfoText("Hotkey to dismiss the targeted companion. Look at a companion and press this key to send them home.")
 
     elseif option == OID_SetCompanionKey
         SetInfoText("Hotkey to make the targeted NPC a companion. Registers them as a full companion with relationship tracking, survival needs, and outfit persistence.")
@@ -1333,7 +1359,7 @@ Event OnOptionHighlight(int option)
     elseif option == OID_FM_OutfitLock
         SetInfoText("When enabled, companion outfits are locked after dressing them and automatically re-applied on cell transitions. Disable if you want the game to handle companion gear normally.")
     elseif option == OID_FM_FrameworkMode
-        SetInfoText("How new followers are recruited.\nAuto: Uses NFF/EFF when installed. Followers with NFF ignore tokens are tracked only (no package injection).\nSeverActions Only: Bypasses NFF/EFF entirely, uses our own follow system for all followers.\nTakes effect on next recruit.")
+        SetInfoText("How followers are managed.\nAuto: Uses NFF/EFF when installed. Ignore-token holders are tracked only.\nSeverActions Only: Bypasses NFF/EFF, uses our follow system for all.\nTracking Only: Never touches packages, AI, or teammate status. Followers are tracked for relationships, outfits, survival, and debt only — your other framework handles everything else.\nTakes effect on next recruit.")
     elseif option == OID_FM_Notifications
         SetInfoText("Show notifications when companions are recruited, dismissed, or when relationship milestones occur.")
     elseif option == OID_FM_Debug
@@ -1403,9 +1429,9 @@ Event OnOptionDefault(int option)
         SetKeyMapOptionValue(OID_FollowToggleKey, FollowToggleKey)
         ApplyHotkeySettings()
         
-    elseif option == OID_DismissAllKey
-        DismissAllKey = -1
-        SetKeyMapOptionValue(OID_DismissAllKey, DismissAllKey)
+    elseif option == OID_DismissKey
+        DismissKey = -1
+        SetKeyMapOptionValue(OID_DismissKey, DismissKey)
         ApplyHotkeySettings()
         
     elseif option == OID_StandUpKey
@@ -1607,7 +1633,7 @@ Function ApplyHotkeySettings()
     if HotkeyScript
         ; Update individual keys (handles re-registration)
         HotkeyScript.UpdateFollowToggleKey(FollowToggleKey)
-        HotkeyScript.UpdateDismissAllKey(DismissAllKey)
+        HotkeyScript.UpdateDismissKey(DismissKey)
         HotkeyScript.UpdateStandUpKey(StandUpKey)
         HotkeyScript.UpdateYieldKey(YieldKey)
         HotkeyScript.UpdateUndressKey(UndressKey)
@@ -1621,7 +1647,7 @@ Function ApplyHotkeySettings()
         
         Debug.Trace("[SeverActions_MCM] Applied hotkey settings")
         Debug.Trace("[SeverActions_MCM]   FollowToggleKey: " + FollowToggleKey)
-        Debug.Trace("[SeverActions_MCM]   DismissAllKey: " + DismissAllKey)
+        Debug.Trace("[SeverActions_MCM]   DismissKey: " + DismissKey)
         Debug.Trace("[SeverActions_MCM]   StandUpKey: " + StandUpKey)
         Debug.Trace("[SeverActions_MCM]   YieldKey: " + YieldKey)
         Debug.Trace("[SeverActions_MCM]   UndressKey: " + UndressKey)

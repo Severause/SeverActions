@@ -1,3 +1,4 @@
+customCategory: outfit
 name: EquipMultipleItems
 description: "Equip multiple items from inventory at once. Use when told to put on several pieces of armor, clothing, or weapons in one request. Provide a comma-separated list of item names. For example: 'steel gauntlets, iron helmet, glass cuirass'. Also works for full sets like 'daedric helmet, daedric armor, daedric gauntlets, daedric boots'. For a single item use EquipItemByName instead."
 questEditorId: SeverActions

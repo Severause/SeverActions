@@ -1,3 +1,4 @@
+customCategory: basic
 name: LootCorpse
 description: "Loot items from a dead body nearby. Use when you want to search a corpse and take items from it."
 questEditorId: SeverActions

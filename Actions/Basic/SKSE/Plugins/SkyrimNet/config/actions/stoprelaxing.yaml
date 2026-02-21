@@ -1,3 +1,4 @@
+customCategory: basic
 name: StopRelaxing
 description: "Stop relaxing and resume following {{ player.name }}. Use this when:
   - {{ player.name }} tells the actor to stop relaxing and come along

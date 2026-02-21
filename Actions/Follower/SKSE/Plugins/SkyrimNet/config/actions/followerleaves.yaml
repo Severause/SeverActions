@@ -1,3 +1,4 @@
+customCategory: follower
 name: FollowerLeaves
 description: "The companion decides to leave {{ player.name }}'s service on their
   own. This is a dramatic, meaningful moment. Use ONLY when:

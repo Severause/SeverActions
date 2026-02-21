@@ -1,3 +1,4 @@
+customCategory: furniture
 name: StopUsingFurniture
 description: |
   The actor stands up and stops using furniture. Use this when:

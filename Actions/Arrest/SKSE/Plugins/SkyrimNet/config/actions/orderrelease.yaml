@@ -1,3 +1,4 @@
+customCategory: arrest
 name: OrderRelease
 description: "Order a prisoner to be released. The sender commands the guard to free the
   prisoner from their restraints and let them go.

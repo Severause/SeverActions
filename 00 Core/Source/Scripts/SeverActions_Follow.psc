@@ -28,6 +28,13 @@ Keyword Property SeverActions_FollowerFollowKW Auto
 {Dedicated keyword for companion linked ref targeting. Created in CK for this system only.
 Set on companion pointing to the player, so FollowPlayerPackage knows who to follow.}
 
+Faction Property SeverActions_ActivelyFollowing Auto
+{Dynamic faction: added when a companion is actively following the player,
+removed when they wait, sandbox, stop following, or get dismissed.
+Used by SkyrimNet target selector prompts to identify engaged companions
+who should have a lower threshold to speak in conversations.
+Create in CK — just a new faction, no special setup needed.}
+
 Package Property SandboxPackage Auto
 {Sandbox package for relaxing in place - NPC wanders and interacts with nearby furniture}
 
@@ -83,6 +90,10 @@ Event OnNativeSandboxCleanup(string eventName, string strArg, float numArg, Form
 
     ; Resume following
     akActor.SetAV("WaitingForPlayer", 0)
+
+    ; Back to actively following
+    SetActivelyFollowing(akActor, true)
+
     akActor.EvaluatePackage()
 
     Debug.Notification(akActor.GetDisplayName() + " stopped relaxing.")
@@ -95,6 +106,23 @@ EndEvent
 
 Bool Function HasFollowPackage(Actor akActor)
     return SkyrimNetApi.HasPackage(akActor, "FollowPlayer")
+EndFunction
+
+; =============================================================================
+; ACTIVELY FOLLOWING FACTION — dynamic state for SkyrimNet prompt integration
+; =============================================================================
+
+Function SetActivelyFollowing(Actor akActor, Bool active)
+    {Add or remove the SeverActions_ActivelyFollowing faction.
+     Called whenever a companion's follow state changes.}
+    If !SeverActions_ActivelyFollowing || !akActor
+        Return
+    EndIf
+    If active
+        akActor.AddToFaction(SeverActions_ActivelyFollowing)
+    Else
+        akActor.RemoveFromFaction(SeverActions_ActivelyFollowing)
+    EndIf
 EndFunction
 
 ; =============================================================================
@@ -175,6 +203,9 @@ Function ReapplyFollowTracking(Actor[] followers)
                 ActorUtil.AddPackageOverride(akActor, SandboxPackage, SandboxPackagePriority, 1)
                 SkyrimNetApi.RegisterPackage(akActor, "Sandbox", SandboxPackagePriority, 0, false)
             EndIf
+
+            ; Re-apply actively following faction based on current state
+            SetActivelyFollowing(akActor, !isWaiting)
 
             akActor.EvaluatePackage()
             Debug.Trace("[SeverActions_Follow] Reapplied companion follow tracking for: " + akActor.GetDisplayName() + " (waiting=" + isWaiting + ")")
@@ -278,6 +309,9 @@ Function CompanionStartFollowing(Actor akActor)
     ; No SkyrimNetApi.RegisterPackage — our CK alias package handles the AI.
     ; Companion eligibility uses SeverActions_FollowerFaction, not HasPackage.
 
+    ; Mark as actively following for SkyrimNet prompt integration
+    SetActivelyFollowing(akActor, true)
+
     akActor.EvaluatePackage()
 EndFunction
 
@@ -307,6 +341,9 @@ Function CompanionStopFollowing(Actor akActor)
     ; Also unregister from SkyrimNet in case they had a casual follow registered too
     SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
 
+    ; No longer actively following
+    SetActivelyFollowing(akActor, false)
+
     akActor.EvaluatePackage()
 EndFunction
 
@@ -321,6 +358,9 @@ Function WaitHere(Actor akActor)
 
     ; Set waiting state - package condition will make them stop following
     akActor.SetAV("WaitingForPlayer", 1)
+
+    ; No longer actively following (waiting in place)
+    SetActivelyFollowing(akActor, false)
 
     akActor.EvaluatePackage()
 
@@ -350,6 +390,9 @@ Function Sandbox(Actor akActor)
     ; Register with native SandboxManager for auto-cleanup when player moves away/changes cells
     SeverActionsNative.RegisterSandboxUser(akActor, SandboxPackage, SandboxAutoStandDistance)
 
+    ; No longer actively following (relaxing in place)
+    SetActivelyFollowing(akActor, false)
+
     akActor.EvaluatePackage()
 
     Debug.Notification(akActor.GetDisplayName() + " is relaxing.")
@@ -374,6 +417,9 @@ Function StopSandbox(Actor akActor)
 
     ; Resume following
     akActor.SetAV("WaitingForPlayer", 0)
+
+    ; Back to actively following
+    SetActivelyFollowing(akActor, true)
 
     akActor.EvaluatePackage()
 

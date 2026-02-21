@@ -1,3 +1,4 @@
+customCategory: crafting
 name: BrewPotion
 description: Brew a potion at an alchemy lab. The NPC will walk to the nearest alchemy lab, brew the potion(s), then deliver them to the recipient.
 questEditorId: SeverActions

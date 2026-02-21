@@ -1,0 +1,50 @@
+customCategory: economy
+name: ForgiveDebt
+description: |
+  Forgive a debt — cancel what someone owes without requiring payment. Use when:
+  - A creditor decides to cancel a debt out of generosity or goodwill
+  - Someone says "don't worry about the money" or "consider it a gift"
+  - A debt is written off
+
+  The speaker must be the creditor (the one owed money) to forgive.
+  Common triggers: "forget about the gold", "don't worry about paying me back", "consider it paid", "on the house"
+questEditorId: SeverActions
+scriptName: SeverActions_Debt
+executionFunctionName: ForgiveDebt_Execute
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: The speaking actor (must be the creditor — the one forgiving)
+  - type: dynamic
+    name: akTarget
+    description: The debtor whose debt is being forgiven
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SeverActions_CreditorFaction"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

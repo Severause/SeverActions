@@ -1,3 +1,4 @@
+customCategory: crafting
 name: CraftItem
 description: Craft a weapon or piece of armor at a forge. The NPC will walk to the nearest forge, craft the item(s), then deliver them to the recipient.
 questEditorId: SeverActions

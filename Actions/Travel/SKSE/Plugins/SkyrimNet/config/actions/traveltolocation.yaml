@@ -1,3 +1,4 @@
+customCategory: travel
 name: TravelToLocation
 description: "Travel to a named location, relative direction, or nearby feature. STRICT RULES - Only use this action when ALL of the following are true:
   1. The PLAYER has directly and clearly told the actor to go somewhere (e.g. 'Go to Whiterun', 'Head to the Bannered Mare', 'Go outside', 'Wait upstairs', 'Go to the bar', 'Wait by the shrine')

@@ -1,3 +1,4 @@
+customCategory: travel
 name: ChangeTravelSpeed
 description: "Change the travel speed of an actor who is currently traveling.\n  Use when dialogue suggests a change in urgency, like \"hurry up\", \"slow down\", \"we need to run\", etc.\n  Only works if the actor is actively traveling (not yet arrived/sandboxing)."
 questEditorId: SeverActions

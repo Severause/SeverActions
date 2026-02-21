@@ -1,0 +1,62 @@
+customCategory: economy
+name: CreateDebt
+description: |
+  Record a debt — someone owes gold to someone else. Use when:
+  - An NPC states a price the other party can't or won't pay now ("put it on my tab")
+  - Someone borrows gold with intent to repay later
+  - A service was rendered on credit
+  - Someone acknowledges owing money
+
+  The creditor is who is OWED money. The debtor is who OWES money.
+  Optional: set a due date (aiDueDays) and/or credit limit (aiCreditLimit).
+  Due dates create urgency — the debtor is expected to pay before the deadline.
+  Credit limits cap how much can be owed before the creditor cuts off further credit.
+  Common triggers: "put it on my tab", "I'll pay you back", "you owe me", "I'll cover it for now"
+questEditorId: SeverActions
+scriptName: SeverActions_Debt
+executionFunctionName: CreateDebt_Execute
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: The speaking actor
+  - type: dynamic
+    name: akCreditor
+    description: Who is owed the gold (the lender/seller/provider)
+  - type: dynamic
+    name: akDebtor
+    description: Who owes the gold (the borrower/buyer/recipient)
+  - type: dynamic
+    name: aiAmount
+    description: Amount of gold owed
+  - type: dynamic
+    name: asReason
+    description: Brief reason for the debt (e.g. "tavern tab", "borrowed gold", "armor repair")
+  - type: dynamic
+    name: aiDueDays
+    description: Days until the debt is due (0 or omit for open-ended, no deadline)
+  - type: dynamic
+    name: aiCreditLimit
+    description: Maximum gold this debt can reach before credit is cut off (0 or omit for unlimited)
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

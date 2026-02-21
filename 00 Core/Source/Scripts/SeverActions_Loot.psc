@@ -388,7 +388,18 @@ Function GiveItem_Execute(Actor akActor, Actor akTarget, String itemName, Int ai
         endif
         
         ResetToDefaultIdle(akActor)
-        
+
+        ; Auto-debt growth: if giver is creditor for a debt with receiver, add item gold value
+        if transferred > 0 && itemForm
+            SeverActions_Debt debtSys = SeverActions_Debt.GetInstance()
+            if debtSys
+                int goldValue = GetFormValue(itemForm) * transferred
+                if goldValue > 0
+                    debtSys.AutoAddToDebt(akActor, akTarget, goldValue)
+                endif
+            endif
+        endif
+
         ; Build event string
         if transferred > 1
             SkyrimNetApi.RegisterEvent("item_given", akActor.GetDisplayName() + " gave " + transferred + " " + actualName + " to " + akTarget.GetDisplayName(), akActor, akTarget)

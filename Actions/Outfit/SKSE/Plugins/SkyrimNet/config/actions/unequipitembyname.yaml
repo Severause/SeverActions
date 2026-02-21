@@ -1,3 +1,4 @@
+customCategory: outfit
 name: UnequipItemByName
 description: "Remove a specific currently worn item by name. Use when told to take off a particular piece of armor, weapon, or clothing. The item is stored so it can be re-equipped later with Dress. Use the exact or partial item name (e.g., 'steel gauntlets', 'iron helmet', 'glass cuirass', 'ebony sword'). For removing all clothing use Undress instead."
 questEditorId: SeverActions

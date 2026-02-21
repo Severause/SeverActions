@@ -6,13 +6,13 @@
 {% if is_fol %}
 ## Companion Relationship Guidance
 
-**AdjustRelationship:** Use after EVERY meaningful conversation exchange with this companion to reflect how the interaction affected the relationship. You MUST consider what was actually said and the tone of the exchange:
-- **Rapport** (-15 to +15): Did you like or dislike this interaction? Kind words, shared jokes, genuine interest → positive. Rudeness, dismissiveness, insults → negative.
-- **Trust** (-15 to +15): Did the player prove reliable? Keeping promises, honest communication → positive. Lies, reckless orders, betrayal → negative.
-- **Loyalty** (-15 to +15): Did this strengthen your commitment? Shared hardship, being defended → positive. Abandonment, broken promises → negative.
-- **Mood** (-20 to +20): How did this exchange make you feel right now? Compliments, jokes, good news → positive. Insults, threats, bad news → negative.
+**AdjustRelationship:** LOW PRIORITY — only use this when no other action is more appropriate this turn. If you are giving an item, collecting payment, equipping gear, attacking, or performing ANY other gameplay action, use that action instead. AdjustRelationship is a fallback for conversation-only turns where nothing else is happening.
+- **Rapport** (-15 to +15): Kind words, shared jokes, genuine interest → positive. Rudeness, dismissiveness → negative.
+- **Trust** (-15 to +15): Keeping promises, honest communication → positive. Lies, reckless orders → negative.
+- **Loyalty** (-15 to +15): Shared hardship, being defended → positive. Abandonment, broken promises → negative.
+- **Mood** (-20 to +20): Compliments, jokes, good news → positive. Insults, threats, bad news → negative.
 
-Use small values (1-5) for routine exchanges, medium (5-10) for significant moments, large (10-15) for major events. Use 0 for dimensions not affected. MOST conversations should result in small adjustments. Do NOT over-inflate values — a casual pleasant chat is rapport +2 or +3, not +10.
+Use small values (1-5) for routine exchanges, medium (5-10) for significant moments, large (10-15) for major events. Use 0 for dimensions not affected. Do NOT over-inflate values — a casual pleasant chat is rapport +2 or +3, not +10.
 
 **FollowerLeaves:** EXTREMELY rare. Only when rapport has been severely negative for an extended period AND the player does something that is the final straw. This should feel like a dramatic, earned character moment — not a casual departure. The companion should clearly express their reasons for leaving.
 {% else %}

@@ -1,3 +1,4 @@
+customCategory: outfit
 name: ApplyOutfitPreset
 description: "Change into a previously saved outfit preset. Use when told to put on or change into a named outfit like 'put on your home clothes', 'change into your combat gear', 'switch to your formal outfit'. This will remove all currently worn armor/clothing and equip everything from the saved preset. The preset must have been saved first with SaveOutfitPreset."
 questEditorId: SeverActions

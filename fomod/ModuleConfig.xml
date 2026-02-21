@@ -105,12 +105,17 @@ Allows NPCs to use chairs, beds, and other furniture.</description>
                         </plugin>
 
                         <plugin name="Economy Actions">
-                            <description>Economic interactions:
-• Give Gold
-• Collect Payment
-• Extort Gold
+                            <description>Economic interactions and debt system:
+• Give Gold - NPC gives gold as gift, tip, or reward
+• Collect Payment - NPC receives gold owed to them (automatically reduces open debts)
+• Extort Gold - NPC forcibly takes gold through intimidation
+• Create Debt - Establish a one-time debt with optional due dates and credit limits
+• Create Recurring Debt - Set up recurring charges (rent, protection money, subscriptions)
+• Forgive Debt - Creditor forgives what is owed
+• Add to Debt - Add charges to existing debts (e.g. "another round on my tab")
 
-Allows NPCs to handle money transactions.</description>
+Full debt tracking with credit limits, due dates, recurring charges, auto-growth from item gifts, and automatic guard reporting when debts go severely overdue.
+Install with Merchant Prompts for full economy awareness including debt context.</description>
                             <files>
                                 <folder source="Actions/Economy" destination="" priority="1"/>
                             </files>
@@ -248,11 +253,15 @@ Large prompt with detailed guild information.</description>
                         </plugin>
 
                         <plugin name="Arrest/Crime Prompts">
-                            <description>Crime and imprisonment awareness:
-• Guard Bounty Awareness - Guards know player's bounty
+                            <description>Crime, imprisonment, and debt enforcement awareness:
+• Guard Bounty Awareness - Guards know player's bounty per hold
+• Debt Complaint Awareness - Guards see complaints from creditors when debts go severely overdue
 • Jailed NPC Status - Imprisoned NPCs aware of situation
+• Persuasion Mode - Guards evaluate player arguments during confrontations
+• Judgment Mode - Authority figures preside over arrested NPCs
 
-Works with Arrest Actions for full crime system.</description>
+Works with Arrest Actions for full crime system.
+Debt complaints integrate with Economy Actions — guards can confront players about unpaid debts.</description>
                             <files>
                                 <folder source="Prompts/Arrest" destination="" priority="1"/>
                             </files>
@@ -276,6 +285,34 @@ Install with Follower Actions for the full companion system.</description>
                             </typeDescriptor>
                         </plugin>
 
+                        <plugin name="Strict Action Selector (Anti-Duplicate)">
+                            <description>Replaces SkyrimNet's native action selector prompt with a stricter version that reinforces the one-action-per-turn rule.
+
+Helps prevent models (especially non-Claude models like Grok) from outputting duplicate or multiple actions in a single turn. The modified prompt explicitly tells models that extra action lines are discarded by the game engine.
+
+Install this if you experience double or triple action calls from the same NPC turn.</description>
+                            <files>
+                                <folder source="Prompts/ActionSelector" destination="" priority="2"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Enhanced Target Selectors">
+                            <description>Replaces SkyrimNet's default target selector prompts with improved versions:
+• Dialogue Speaker Selector - Better criteria for choosing who speaks next, with companion awareness and conversation momentum
+• Player Dialogue Target Selector - Smarter routing of player speech using crosshair target, distance, name references, and NPC-to-NPC dialogue support
+
+Improves conversation flow and reduces cases where the wrong NPC responds or conversations stall prematurely.</description>
+                            <files>
+                                <folder source="Prompts/TargetSelectors" destination="" priority="2"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
                     </plugins>
                 </group>
 
@@ -283,9 +320,12 @@ Install with Follower Actions for the full companion system.</description>
                     <plugins order="Explicit">
 
                         <plugin name="Merchant Prompt - Show Anywhere">
-                            <description>Merchants display their inventory and pricing at all times, regardless of location.
+                            <description>Merchant inventory and debt awareness:
+• Merchant Inventory - Merchants display their inventory and pricing at all times, regardless of location
+• Debt Context - NPCs involved in debts see their financial obligations (who owes what, due dates, credit limits)
 
-Use this if you want merchants to always be ready to trade no matter where you encounter them.</description>
+Use this if you want merchants to always be ready to trade no matter where you encounter them.
+Includes debt awareness for the Economy Actions debt system.</description>
                             <files>
                                 <folder source="Prompts/Economy-Anywhere" destination="" priority="1"/>
                             </files>
@@ -295,9 +335,12 @@ Use this if you want merchants to always be ready to trade no matter where you e
                         </plugin>
 
                         <plugin name="Merchant Prompt - Location Restricted">
-                            <description>Merchants only display their inventory when inside recognized shop locations (inns, stores, market stalls, etc.).
+                            <description>Merchant inventory and debt awareness:
+• Merchant Inventory - Merchants only display their inventory when inside recognized shop locations (inns, stores, market stalls, etc.)
+• Debt Context - NPCs involved in debts see their financial obligations (who owes what, due dates, credit limits)
 
-More immersive - merchants won't try to sell you things while walking down the road.</description>
+More immersive - merchants won't try to sell you things while walking down the road.
+Includes debt awareness for the Economy Actions debt system.</description>
                             <files>
                                 <folder source="Prompts/Economy-LocationOnly" destination="" priority="1"/>
                             </files>

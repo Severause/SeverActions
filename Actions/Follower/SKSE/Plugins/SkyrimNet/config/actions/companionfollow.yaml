@@ -1,3 +1,4 @@
+customCategory: follower
 name: CompanionFollow
 description: "Stop waiting and resume following {{ player.name }}.
   Use this action when {{ player.name }} returns to a waiting NPC and asks them to follow

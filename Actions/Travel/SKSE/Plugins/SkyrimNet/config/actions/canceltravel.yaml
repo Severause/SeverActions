@@ -1,3 +1,4 @@
+customCategory: travel
 name: CancelTravel
 description: |
   The actor stops traveling and cancels any pending trip. Use this when:

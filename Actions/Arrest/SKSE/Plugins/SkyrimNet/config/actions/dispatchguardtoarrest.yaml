@@ -1,3 +1,4 @@
+customCategory: arrest
 name: DispatchGuardToArrest
 description: "A guard dispatches themselves to find and arrest an NPC by name, anywhere
   in the game world. The guard will walk the entire way to the target, approach and

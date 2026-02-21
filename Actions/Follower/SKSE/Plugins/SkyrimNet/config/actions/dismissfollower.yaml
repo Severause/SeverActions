@@ -1,3 +1,4 @@
+customCategory: follower
 name: DismissFollower
 description: "End the current traveling arrangement and send this companion on their way.
   The companion leaves {{ player.name }}'s active party and returns to their assigned home

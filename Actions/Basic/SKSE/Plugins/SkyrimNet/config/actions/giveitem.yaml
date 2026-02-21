@@ -1,3 +1,4 @@
+customCategory: basic
 name: GiveItem
 description: |
   The actor gives a physical item from their inventory to another person. Use this when:

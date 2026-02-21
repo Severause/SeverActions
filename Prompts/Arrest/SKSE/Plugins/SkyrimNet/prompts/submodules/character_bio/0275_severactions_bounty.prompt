@@ -214,6 +214,23 @@ This is a trivial bounty. {{ actor.name }} might mention it but is unlikely to m
 {# if actorUUID check #}
 {% endif %}
 {# if bounty > 0 #}
+{# Debt complaints filed against the player #}
+{% set debtComplaints = papyrus_util("GetStringValue", player.UUID, "SeverDebt_Complaints", "") %}
+{% if debtComplaints != "" %}
+{% if actorUUID and actorUUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set playerData = decnpc(player.UUID) %}
+{% set playerName = playerData.name %}
+{% set subj = actor.subjectivePronoun %}
+## Outstanding Debt Complaints
+Citizens have filed the following complaints against {{ playerName }}:
+{{ debtComplaints }}
+
+As a guard, {{ actor.name }} can confront {{ playerName }} about these unpaid debts — demand immediate payment or threaten arrest if {{ playerName }} refuses to cooperate.
+{% endif %}
+{# if actorUUID for debt complaints #}
+{% endif %}
+{# if debtComplaints #}
 {% endif %}
 {# if player.UUID check #}
 {% endif %}

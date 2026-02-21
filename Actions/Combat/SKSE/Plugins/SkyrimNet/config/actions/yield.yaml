@@ -1,3 +1,4 @@
+customCategory: combat
 name: Yield
 description: |
   The actor surrenders and stops fighting. Use this when:

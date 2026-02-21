@@ -1,3 +1,4 @@
+customCategory: arrest
 name: FreeFromJail
 description: "Free a jailed NPC from prison. The NPC will be released from their cell,\n  have their prison clothes removed, and return to normal behavior. Use this\n  when a guard or authority figure pardons or releases a prisoner."
 questEditorId: SeverActions

@@ -53,6 +53,7 @@ Function Initialize(Bool isFirstInit)
     InitializeFollowSystem()
     InitializeWheelMenuSystem()
     InitializeFollowerManagerSystem()
+    InitializeDebtSystem()
     SyncMCMSettings()
 
     Debug.Trace("[SeverActions] Initialization complete!")
@@ -231,6 +232,24 @@ SeverActions_FollowerManager Function GetFollowerManagerSystem()
     EndIf
 
     Return None
+EndFunction
+
+; =============================================================================
+; DEBT SYSTEM INITIALIZATION
+; =============================================================================
+
+Function InitializeDebtSystem()
+    Debug.Trace("[SeverActions] Initializing Debt System...")
+
+    ; DebtScript is wired via CK property on FollowerManager
+    SeverActions_FollowerManager fmSys = GetFollowerManagerSystem()
+    If fmSys && fmSys.DebtScript
+        fmSys.DebtScript.Maintenance()
+        Int debtCount = fmSys.DebtScript.GetDebtCount()
+        Debug.Trace("[SeverActions] Debt System initialized - " + debtCount + " active debts")
+    Else
+        Debug.Trace("[SeverActions] Debt System not found (optional)")
+    EndIf
 EndFunction
 
 ; =============================================================================

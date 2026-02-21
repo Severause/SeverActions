@@ -1,3 +1,4 @@
+customCategory: follower
 name: CompanionWait
 description: "Wait here and relax until {{ player.name }} returns.
   Use this action when {{ player.name }} tells an NPC to wait, stay here, hold position,

@@ -1,3 +1,4 @@
+customCategory: combat
 name: CeaseFighting
 description: |
   The actor stops fighting and calls for a truce. Use this when:

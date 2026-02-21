@@ -1,3 +1,4 @@
+customCategory: combat
 name: AttackTarget
 description: |
   The actor attacks someone and starts combat. Use this when:

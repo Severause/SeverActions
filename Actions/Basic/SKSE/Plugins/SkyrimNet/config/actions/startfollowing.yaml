@@ -1,3 +1,4 @@
+customCategory: basic
 name: StartFollowing
 description: Follow {{ player.name }} when asked. Use your best judgement on whether or not following through would make sense.
 questEditorId: SeverActions

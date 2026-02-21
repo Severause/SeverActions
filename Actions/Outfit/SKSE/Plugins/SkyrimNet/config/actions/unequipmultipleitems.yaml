@@ -1,3 +1,4 @@
+customCategory: outfit
 name: UnequipMultipleItems
 description: "Unequip multiple currently worn items at once. Use when told to take off several pieces of armor, clothing, or weapons in one request. Provide a comma-separated list of item names. For example: 'steel gauntlets, iron helmet, glass cuirass'. For removing all clothing use Undress instead. For a single item use UnequipItemByName instead."
 questEditorId: SeverActions

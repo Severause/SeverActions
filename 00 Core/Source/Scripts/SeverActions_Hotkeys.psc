@@ -27,8 +27,8 @@ SeverActions_FollowerManager Property FollowerManagerScript Auto
 int Property FollowToggleKey = -1 Auto Hidden
 {Key code for toggling follow state. -1 = unset/disabled}
 
-int Property DismissAllKey = -1 Auto Hidden
-{Key code for dismissing all followers. -1 = unset/disabled}
+int Property DismissKey = -1 Auto Hidden
+{Key code for dismissing target companion. -1 = unset/disabled}
 
 int Property StandUpKey = -1 Auto Hidden
 {Key code for making target NPC stand up from furniture. -1 = unset/disabled}
@@ -94,10 +94,10 @@ Function RegisterKeys()
         Debug.Trace("[SeverActions_Hotkeys] Registered follow toggle key: " + FollowToggleKey)
     endif
     
-    ; Register dismiss all key (only if set)
-    if DismissAllKey > 0
-        RegisterForKey(DismissAllKey)
-        Debug.Trace("[SeverActions_Hotkeys] Registered dismiss all key: " + DismissAllKey)
+    ; Register dismiss key (only if set)
+    if DismissKey > 0
+        RegisterForKey(DismissKey)
+        Debug.Trace("[SeverActions_Hotkeys] Registered dismiss key: " + DismissKey)
     endif
     
     ; Register stand up key (only if set)
@@ -156,20 +156,20 @@ Function UpdateFollowToggleKey(int newKey)
     endif
 EndFunction
 
-Function UpdateDismissAllKey(int newKey)
+Function UpdateDismissKey(int newKey)
     ; Unregister old key if it was valid
-    if DismissAllKey > 0 && DismissAllKey != newKey
-        UnregisterForKey(DismissAllKey)
+    if DismissKey > 0 && DismissKey != newKey
+        UnregisterForKey(DismissKey)
     endif
-    
-    DismissAllKey = newKey
-    
+
+    DismissKey = newKey
+
     ; Register new key (only if valid)
     if newKey > 0
         RegisterForKey(newKey)
-        Debug.Trace("[SeverActions_Hotkeys] Updated dismiss all key to: " + newKey)
+        Debug.Trace("[SeverActions_Hotkeys] Updated dismiss key to: " + newKey)
     else
-        Debug.Trace("[SeverActions_Hotkeys] Dismiss all key cleared")
+        Debug.Trace("[SeverActions_Hotkeys] Dismiss key cleared")
     endif
 EndFunction
 
@@ -290,8 +290,8 @@ Event OnKeyDown(int keyCode)
     
     if keyCode == FollowToggleKey && FollowToggleKey > 0
         HandleFollowToggle()
-    elseif keyCode == DismissAllKey && DismissAllKey > 0
-        HandleDismissAll()
+    elseif keyCode == DismissKey && DismissKey > 0
+        HandleDismiss()
     elseif keyCode == StandUpKey && StandUpKey > 0
         HandleStandUp()
     elseif keyCode == YieldKey && YieldKey > 0
@@ -354,41 +354,38 @@ Function HandleFollowToggle()
 EndFunction
 
 ; =============================================================================
-; DISMISS ALL HANDLER
+; DISMISS HANDLER (single target)
 ; =============================================================================
 
-Function HandleDismissAll()
-    if !FollowScript
-        Debug.Notification("SeverActions: Follow script not configured!")
+Function HandleDismiss()
+    if !FollowerManagerScript
+        FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+    endif
+
+    if !FollowerManagerScript
+        Debug.Notification("SeverActions: Follower Manager not configured!")
         return
     endif
-    
-    ; Find all followers and dismiss them
-    Actor player = Game.GetPlayer()
-    int dismissed = 0
-    
-    ; Search nearby actors
-    Cell currentCell = player.GetParentCell()
-    if currentCell
-        int numRefs = currentCell.GetNumRefs(43) ; kActorCharacter
-        int i = 0
-        while i < numRefs
-            Actor npc = currentCell.GetNthRef(i, 43) as Actor
-            if npc && npc != player && !npc.IsDead()
-                if FollowScript.HasFollowPackage(npc)
-                    FollowScript.StopFollowing(npc)
-                    dismissed += 1
-                endif
-            endif
-            i += 1
-        endwhile
+
+    Actor target = GetTargetActor()
+
+    if !target
+        Debug.Notification("No valid target found")
+        return
     endif
-    
-    if dismissed > 0
-        Debug.Notification("Dismissed " + dismissed + " follower(s)")
-    else
-        Debug.Notification("No followers to dismiss")
+
+    if target == Game.GetPlayer()
+        Debug.Notification("Cannot target yourself")
+        return
     endif
+
+    ; Check if the target is a registered companion
+    if StorageUtil.GetIntValue(target, "SeverFollower_IsFollower", 0) != 1
+        Debug.Notification(target.GetDisplayName() + " is not your companion")
+        return
+    endif
+
+    FollowerManagerScript.DismissCompanion(target)
 EndFunction
 
 ; =============================================================================

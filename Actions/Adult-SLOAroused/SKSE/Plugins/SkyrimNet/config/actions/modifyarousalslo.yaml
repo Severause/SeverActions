@@ -1,3 +1,4 @@
+customCategory: adult
 name: ModifyArousalSLO
 description: "Adjust an actor's arousal level. Use negative values to decrease (calming), positive to increase\nDECREASE arousal (-2 to -20) when:\n  - Conversation turns awkward, uncomfortable, or unpleasant\n  - Actor is rejected or rebuffed\n  - Something disgusting, scary, or mood-killing happens\n  - Actor consciously tries to calm themselves\n  - Time passes without stimulation\n  - Actor is distracted by other concerns (danger, work, etc.)\n  - The romantic/sexual tension breaks\n  \n  INCREASE arousal (only +2 to +15) when:\n  - Genuinely flirtatious or intimate interaction occurs\n  - Actor sees something specifically arousing to them\n  - Physical closeness or touch happens\n  - Romantic tension builds naturally"
 questEditorId: SeverActions

@@ -1,3 +1,4 @@
+customCategory: arrest
 name: OrderJailed
 description: "Order a prisoner to be taken to jail. The sender commands the guard to escort
   the prisoner to the nearest hold jail cell.

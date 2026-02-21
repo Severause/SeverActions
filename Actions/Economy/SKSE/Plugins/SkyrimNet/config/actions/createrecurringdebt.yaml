@@ -1,0 +1,60 @@
+customCategory: economy
+name: CreateRecurringDebt
+description: |
+  Record a recurring payment arrangement — a debt that automatically accumulates on a schedule. Use when:
+  - Renting a room or property on a regular basis
+  - Arranging regular protection money or tribute
+  - Setting up a weekly/daily business arrangement
+  - Any ongoing financial obligation with regular payments
+
+  The creditor is who receives payments. The debtor is who makes payments.
+  interval_days is how many days between each charge (1 = daily, 7 = weekly, 30 = monthly).
+  Common triggers: "100 gold a week", "daily rate of", "monthly rent", "regular payments"
+questEditorId: SeverActions
+scriptName: SeverActions_Debt
+executionFunctionName: CreateRecurringDebt_Execute
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: The speaking actor
+  - type: dynamic
+    name: akCreditor
+    description: Who receives the payments
+  - type: dynamic
+    name: akDebtor
+    description: Who makes the payments
+  - type: dynamic
+    name: aiAmount
+    description: Amount of gold per payment cycle
+  - type: dynamic
+    name: asReason
+    description: Brief reason (e.g. "room rental", "protection money", "weekly wages")
+  - type: dynamic
+    name: aiIntervalDays
+    description: Days between each payment (1=daily, 7=weekly, 30=monthly)
+  - type: dynamic
+    name: aiCreditLimit
+    description: Maximum total gold this recurring debt can accumulate to (0 or omit for unlimited)
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

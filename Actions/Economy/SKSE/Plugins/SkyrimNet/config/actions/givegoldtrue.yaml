@@ -1,0 +1,47 @@
+customCategory: economy
+name: GiveGoldTrue
+description: |
+  The actor gives gold/septims to another person by name. Use this when:
+  - The actor offers money as a gift, tip, or reward
+  - The actor hands over coins to someone
+  - The actor is being generous or charitable
+  - The actor pays someone for a favor or good deed
+
+  Common triggers: "here's some gold", "take this coin", "a reward for you", "let me pay you", "here's 50 septims", "for your trouble"
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: GiveGoldTrue_Execute
+parameterMapping:
+  - type: speaker
+    name: akGiver
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: asRecipient
+    description: The name of the person receiving gold (e.g. "Lydia", "Hulda")
+  - type: dynamic
+    name: aiAmount
+    description: Amount of gold to give (use number from dialogue, or estimate based on context)
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

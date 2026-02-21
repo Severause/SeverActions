@@ -1,0 +1,52 @@
+[ system ]
+Determine which NPC the player is addressing and who should respond. Analyze the player's input, nearby NPCs, and recent context.
+{{ get_scene_context(player.UUID, 0, "target_selection")}}
+[ end system ]
+
+
+[ user ]
+{{ "## Player Input" }}
+- **Type**: {{ triggeringEvent.type }}
+- **Data**: {{ format_event(triggeringEvent, "verbose") }}
+
+{% if crosshairTarget %}
+{{ "## Player's Crosshair Target" }}
+The player is looking directly at: **{{ crosshairTarget.name }}** ({{ units_to_meters(crosshairTarget.distance) }}m away){% if is_follower(crosshairTarget.UUID) %} [COMPANION]{% endif %}{% if is_in_faction(crosshairTarget.UUID, "SeverActions_ActivelyFollowing") %} [ENGAGED]{% endif %}
+{% endif %}
+
+{{ "## Recent Dialogue" }}
+{{ render_template("components\\event_history_compact") }}
+
+{{ "## Instructions" }}
+Determine the interaction type:
+1. **Direct address**: Player is speaking to a specific NPC (by name, pronoun, or context).
+2. **NPC-to-NPC prompt**: Player wants one NPC to talk to another (e.g., "What do you think about him?" or "Ask her about...").
+3. **Group address**: Player is speaking to everyone nearby or prompting group discussion.
+
+**Selection factors** (strongest first):
+{% if crosshairTarget %}
+- **Crosshair target**: The player is looking at {{ crosshairTarget.name }} — strong indicator they're addressing {{ decnpc(crosshairTarget.UUID).objectivePronoun }}.
+{% endif %}
+- **Name/reference**: Does the player's dialogue directly name or reference a specific NPC?
+- **Distance**: Strongly favor NPCs closer to the player. This is a very strong factor.
+- **Recent interaction**: Has the player recently been talking to a specific NPC? Ongoing conversations should continue naturally.
+- **Companion priority**: Companions (followers) are more likely to be addressed for general comments, opinions, or reactions.
+- **Role match**: Does the dialogue content match an NPC's background, role, or recent actions?
+
+**For NPC-to-NPC dialogue**, determine:
+- Which NPC the player is primarily addressing (the speaker)
+- Which NPC they want that speaker to talk to (the target)
+
+Virtual NPC rules:
+- Regular NPCs cannot hear Virtual NPCs. Do not route dialogue from a Virtual NPC to a regular NPC.
+- Virtual NPCs may speak but may NOT be targeted unless the speaker is also Virtual.
+
+If there is no clear target or the dialogue is general speech not directed at anyone, respond with `0`.
+
+Output format:
+- `0` = No clear target
+- `Lydia>player` = Lydia speaks to the player
+- `Ulfric Stormcloak>Galmar Stone-Fist` = Ulfric speaks to Galmar
+
+Output ONLY the result, nothing else.
+[ end user ]

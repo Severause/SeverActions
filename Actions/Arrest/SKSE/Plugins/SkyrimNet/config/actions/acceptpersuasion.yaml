@@ -1,3 +1,4 @@
+customCategory: arrest
 name: AcceptPersuasion
 description: " Accept the player's persuasive argument and let them go free.\n\n  ONLY use this action when ALL of these conditions are true:\n  1. You are currently in a persuasion conversation with the player about their bounty\n  2. The player has made a genuinely compelling argument\n  3. You feel convinced to overlook their crime\n\n  Good reasons to accept persuasion:\n  - The player provided a convincing alibi or explanation\n  - The player appealed to your emotions or shared values\n  - The player offered to make amends in a meaningful way\n  - The crime was minor and the player showed genuine remorse\n  - You believe the player was wrongly accused\n  - The player appeals to your baser instincts or greed\n  - The player threatens you and you genuinely fear them\n  - The player has genuine leverage over you"
 questEditorId: SeverActions

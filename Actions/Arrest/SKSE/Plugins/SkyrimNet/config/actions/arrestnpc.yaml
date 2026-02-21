@@ -1,3 +1,4 @@
+customCategory: arrest
 name: ArrestNPC
 description: "A guard arrests an NPC and escorts them to jail. The guard will approach
   the target, restrain them, and escort them to the appropriate hold's jail cell.

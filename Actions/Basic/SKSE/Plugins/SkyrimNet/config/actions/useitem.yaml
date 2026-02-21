@@ -1,3 +1,4 @@
+customCategory: basic
 name: UseItem
 description: Consume a potion, food, or ingredient from your inventory. Use when you want to heal yourself, gain a buff, satisfy hunger, or drink something.
 questEditorId: SeverActions

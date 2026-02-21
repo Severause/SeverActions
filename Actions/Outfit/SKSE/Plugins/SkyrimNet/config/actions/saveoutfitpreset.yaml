@@ -1,3 +1,4 @@
+customCategory: outfit
 name: SaveOutfitPreset
 description: "Save the current outfit as a named preset. Use when told to remember or save what they're currently wearing. The preset name should be descriptive like 'home', 'combat', 'formal', 'casual', 'travel', etc. This snapshots all currently worn armor and clothing. The preset persists across saves and can be applied later with ApplyOutfitPreset. If a preset with that name already exists it will be overwritten."
 questEditorId: SeverActions

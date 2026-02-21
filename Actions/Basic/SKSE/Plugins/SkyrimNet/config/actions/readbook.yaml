@@ -1,3 +1,4 @@
+customCategory: basic
 name: ReadBook
 description: "Read a specific book aloud from your inventory. You must specify which
   book to read by name. If someone asks you to read a book but doesn't say which one,

@@ -1,3 +1,4 @@
+customCategory: arrest
 name: DispatchGuardToHome
 description: "A guard dispatches themselves to search an NPC's home for evidence. The guard
   will travel to the target NPC's home, spend time searching through their belongings,

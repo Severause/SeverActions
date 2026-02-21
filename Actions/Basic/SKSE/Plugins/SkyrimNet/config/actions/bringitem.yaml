@@ -1,3 +1,4 @@
+customCategory: basic
 name: BringItem
 description: "Fetch a nearby item and bring it to someone. Use only when asked to get something and bring it, fetch an item, or retrieve something for someone from somewhere else. do not use unless explicitly told to bring something or if you really feel they would like it "
 questEditorId: SeverActions
