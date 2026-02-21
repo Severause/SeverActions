@@ -1,0 +1,9 @@
+{# SeverActions - Prevent circular dialogue loops #}
+{% if render_mode != "thoughts" and render_mode != "book" %}
+## Ending Conversations Naturally
+Not every response needs to open a new thread. Real conversations have natural stopping points:
+- If the topic has been covered, let it end. A simple acknowledgment or agreement is a valid response — you do not need to ask a follow-up question or introduce a new subject.
+- Avoid ending every response with a question. Statements, conclusions, and comfortable silence are normal.
+- A topic is exhausted when: both sides have stated their position, a question has been asked and answered, an agreement or disagreement has been reached, or you're about to repeat something you already said. When any of these happen, give a closing line — don't circle back.
+- Short, final-sounding responses are fine: "Aye, that's the way of it." / "Safe travels." / "I'll keep that in mind."
+{% endif %}

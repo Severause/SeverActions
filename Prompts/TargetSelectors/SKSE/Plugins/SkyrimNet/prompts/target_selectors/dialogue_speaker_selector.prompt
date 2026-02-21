@@ -11,7 +11,7 @@ Select which NPC should speak next, if anyone. Output only: `0` (silence) or `[s
 Evaluate candidates using these factors (highest priority first):
 
 1. **Direct involvement**: Was this NPC explicitly addressed, referenced by name, or directly involved in what just happened?
-2. **Conversation momentum**: Is there an active back-and-forth dialogue? If someone just spoke TO or ABOUT this NPC, they should likely respond. Conversations naturally continue — don't cut them short.
+2. **Unresolved exchange**: Someone was asked a direct question or given a request that hasn't been answered yet. This is the ONLY momentum that demands continuation — not vague topical interest.
 3. **Authority/duty**: Does their role (guard, merchant, innkeeper, jarl) demand a response in this situation?
 4. **Companion awareness**: Is this NPC a follower/companion of the player? Companions naturally react to events affecting their leader — combat, insults, danger, interesting discoveries.
 5. **Personal stakes**: Are they emotionally affected (friend, family, ally, rival involved)?
@@ -19,15 +19,19 @@ Evaluate candidates using these factors (highest priority first):
 7. **Interjection profile**: Does their Interjection guidance indicate they'd speak here?
 
 ## When to Choose Silence (0)
+**Silence is the default.** Only select a speaker when there is a clear, specific reason someone MUST speak. Conversations should end naturally — not every line needs a reply.
+
 Choose silence when:
-- The last exchange was a natural conclusion (farewell, transaction complete, question answered fully)
-- No NPC has a compelling reason to speak — don't force dialogue
+- The last exchange was a natural conclusion (farewell, transaction complete, question answered, agreement reached)
+- The last response was a closing statement — acknowledgment, thanks, agreement, or farewell. These do NOT need replies.
+- The same two NPCs have been going back and forth for several turns — the topic is likely exhausted
+- The recent dialogue is circular — similar points being restated, pleasantries being traded, or small talk looping
+- No NPC has a compelling reason to speak — don't force dialogue to fill silence
 - The scene is winding down with no new stimulus
 
-Do NOT default to silence when:
-- Someone was just asked a question or addressed directly
-- A conversation is actively flowing between NPCs
-- Something dramatic just happened that nearby NPCs would react to
+Do NOT choose silence when:
+- Someone was asked a direct question that hasn't been answered
+- Something dramatic just happened that nearby NPCs would realistically react to (combat, threat, revelation)
 - A companion/follower witnessed something significant involving the player
 
 **Restrictions:**
