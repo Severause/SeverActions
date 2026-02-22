@@ -52,7 +52,6 @@ Prompts inject real-time game state into the AI's context so NPCs *know* about t
 | **Jailed Status** | That they're imprisoned and why |
 | **Merchant Inventory** | Their shop stock and pricing (location-restricted or always-on) |
 | **Debt Context** | Financial obligations — who owes what, due dates, credit limits, payment rules |
-| **Dialogue Rules** | Anti-hallucination — prevents NPCs from echoing system/action text in dialogue |
 | **Book Reading** | Strict reading rules — NPCs read only real book text, never fabricated content |
 | **Follower Context** | Relationship values (rapport/trust/loyalty/mood), morality, combat style, and companion behavior guidelines with relationship-influenced moral flexibility |
 | **Follower Action Guidance** | Relationship value calibration (AdjustRelationship ranges), companion recruitment threshold, and FollowerLeaves emotional weight |
@@ -291,7 +290,7 @@ SeverActions/
 |   +-- Adult-SLOAroused/                 # SL Aroused integration
 |
 +-- Prompts/                              # Context prompt templates (selectable)
-|   +-- Core/                             # Spells, gold, inventory, nearby, book reading, dialogue rules
+|   +-- Core/                             # Spells, gold, inventory, nearby, book reading
 |   +-- Combat/                           # Combat awareness
 |   +-- Survival/                         # Hunger, cold, fatigue
 |   +-- Faction/                          # Guild reputation
