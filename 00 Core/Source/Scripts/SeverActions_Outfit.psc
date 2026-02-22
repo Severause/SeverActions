@@ -885,7 +885,9 @@ EndFunction
 
 Function ReapplyLockedOutfit(Actor akActor)
     {Silently re-equip all items from the locked outfit snapshot.
-     Called by FollowerManager on cell transitions — no animations.}
+     Called by FollowerManager on cell transitions — no animations.
+     Suspends the lock during reapply so OnObjectUnequipped doesn't
+     trigger recursive calls when equipping displaces other items.}
     if !akActor || akActor.IsDead()
         return
     endif
@@ -899,12 +901,19 @@ Function ReapplyLockedOutfit(Actor akActor)
         return
     endif
 
+    ; Already mid-operation — don't re-enter
+    if StorageUtil.GetIntValue(akActor, "SeverOutfit_Suspended", 0) == 1
+        return
+    endif
+
     String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
     Int count = StorageUtil.FormListCount(None, lockKey)
 
     if count == 0
         return
     endif
+
+    SuspendOutfitLock(akActor)
 
     Int equipped = 0
     int i = 0
@@ -916,6 +925,8 @@ Function ReapplyLockedOutfit(Actor akActor)
         endif
         i += 1
     endwhile
+
+    ResumeOutfitLock(akActor)
 
     Debug.Trace("[SeverActions_Outfit] Reapplied locked outfit for " + akActor.GetDisplayName() + " (" + equipped + " items)")
 EndFunction
@@ -965,6 +976,9 @@ Function LockEquippedOutfit(Actor akActor, Form[] equippedItems, Int equippedCou
     EndWhile
 
     ; 2) Also scan GetWornForm for items in OTHER slots (preserves unchanged gear)
+    ;    Skip any item that shares a slot with something we just equipped —
+    ;    GetWornForm can return stale data for displaced items, causing both
+    ;    old and new to end up in the lock list and fight each other.
     int[] slots = new int[18]
     slots[0] = 0x00000001   ; Head (30)
     slots[1] = 0x00000004   ; Body (32)
@@ -987,10 +1001,25 @@ Function LockEquippedOutfit(Actor akActor, Form[] equippedItems, Int equippedCou
 
     i = 0
     while i < slots.Length
-        Armor equippedItem = akActor.GetWornForm(slots[i]) as Armor
-        if equippedItem
-            if StorageUtil.FormListFind(None, lockKey, equippedItem) < 0
-                StorageUtil.FormListAdd(None, lockKey, equippedItem)
+        Armor wornItem = akActor.GetWornForm(slots[i]) as Armor
+        if wornItem
+            if StorageUtil.FormListFind(None, lockKey, wornItem) < 0
+                ; Check this worn item doesn't share a slot with any newly equipped item
+                Bool conflicts = false
+                Int wornSlotMask = wornItem.GetSlotMask()
+                Int k = 0
+                While k < equippedCount && !conflicts
+                    Armor newItem = equippedItems[k] as Armor
+                    If newItem && newItem != wornItem
+                        If Math.LogicalAnd(wornSlotMask, newItem.GetSlotMask()) > 0
+                            conflicts = true
+                        EndIf
+                    EndIf
+                    k += 1
+                EndWhile
+                if !conflicts
+                    StorageUtil.FormListAdd(None, lockKey, wornItem)
+                endif
             endif
         endif
         i += 1

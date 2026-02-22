@@ -134,6 +134,10 @@ string[] CombatStyleOptions
 ; Framework mode dropdown options
 string[] FrameworkModeOptions
 
+; Companion selector
+int OID_FM_CompanionSelect
+int SelectedCompanionIdx = 0
+
 ; Page names
 string PAGE_GENERAL = "General"
 string PAGE_HOTKEYS = "Hotkeys"
@@ -153,7 +157,7 @@ string[] TargetModeOptions
 Int Function GetVersion()
     {Override SKI_ConfigBase. SkyUI compares this against the saved version
      to trigger OnVersionUpdate. Increment when MCM structure changes.}
-    Return 116
+    Return 117
 EndFunction
 
 Event OnConfigInit()
@@ -161,7 +165,7 @@ Event OnConfigInit()
 
     ; Set current version - increment this when you make MCM changes
     ; Format: major * 100 + minor (e.g., 107 = version 1.07)
-    CurrentVersion = 116
+    CurrentVersion = 117
 
     Pages = new string[7]
     Pages[0] = PAGE_GENERAL
@@ -563,7 +567,7 @@ Function DrawFollowersPage()
 
         AddEmptyOption()
 
-        ; Current companions
+        ; Current companions - dropdown selector
         AddHeaderOption("Current Companions")
         CachedManagedFollowers = FollowerManagerScript.GetAllFollowers()
         OID_FM_DismissFollower = new int[10]
@@ -579,72 +583,68 @@ Function DrawFollowersPage()
             AddTextOption("", "Adjust values here for mid-playthrough", OPTION_FLAG_DISABLED)
             AddTextOption("", "followers once they are recruited.", OPTION_FLAG_DISABLED)
         Else
-            Int j = 0
-            While j < CachedManagedFollowers.Length && j < 10
-                Actor follower = CachedManagedFollowers[j]
-                If follower
-                    Float rapport = FollowerManagerScript.GetRapport(follower)
-                    Float trust = FollowerManagerScript.GetTrust(follower)
-                    Float loyalty = FollowerManagerScript.GetLoyalty(follower)
-                    Float mood = FollowerManagerScript.GetMood(follower)
-                    String style = FollowerManagerScript.GetCombatStyle(follower)
-                    String home = FollowerManagerScript.GetAssignedHome(follower)
+            ; Clamp selection to valid range
+            If SelectedCompanionIdx >= CachedManagedFollowers.Length
+                SelectedCompanionIdx = 0
+            EndIf
 
-                    AddHeaderOption(follower.GetDisplayName())
+            AddTextOption("Companions", CachedManagedFollowers.Length + " recruited", OPTION_FLAG_DISABLED)
+            OID_FM_CompanionSelect = AddMenuOption("Select Companion", CachedManagedFollowers[SelectedCompanionIdx].GetDisplayName())
 
-                    ; Survival needs (read-only, only if survival is enabled)
-                    If SurvivalScript && SurvivalScript.Enabled && !SurvivalScript.IsFollowerExcluded(follower)
-                        If SurvivalScript.HungerEnabled
-                            Int hunger = SurvivalScript.GetFollowerHunger(follower)
-                            AddTextOption("Hunger", hunger + "% (" + SurvivalScript.GetHungerLevelName(hunger) + ")", OPTION_FLAG_DISABLED)
-                        EndIf
-                        If SurvivalScript.FatigueEnabled
-                            Int fatigue = SurvivalScript.GetFollowerFatigue(follower)
-                            AddTextOption("Fatigue", fatigue + "% (" + SurvivalScript.GetFatigueLevelName(fatigue) + ")", OPTION_FLAG_DISABLED)
-                        EndIf
-                        If SurvivalScript.ColdEnabled
-                            Int cold = SurvivalScript.GetFollowerCold(follower)
-                            AddTextOption("Cold", cold + "% (" + SurvivalScript.GetColdLevelName(cold) + ")", OPTION_FLAG_DISABLED)
-                        EndIf
+            AddEmptyOption()
+
+            ; Draw only the selected companion's details
+            Int j = SelectedCompanionIdx
+            Actor follower = CachedManagedFollowers[j]
+            If follower
+                Float rapport = FollowerManagerScript.GetRapport(follower)
+                Float trust = FollowerManagerScript.GetTrust(follower)
+                Float loyalty = FollowerManagerScript.GetLoyalty(follower)
+                Float mood = FollowerManagerScript.GetMood(follower)
+                String style = FollowerManagerScript.GetCombatStyle(follower)
+                String home = FollowerManagerScript.GetAssignedHome(follower)
+
+                AddHeaderOption(follower.GetDisplayName())
+
+                ; Survival needs (read-only, only if survival is enabled)
+                If SurvivalScript && SurvivalScript.Enabled && !SurvivalScript.IsFollowerExcluded(follower)
+                    If SurvivalScript.HungerEnabled
+                        Int hunger = SurvivalScript.GetFollowerHunger(follower)
+                        AddTextOption("Hunger", hunger + "% (" + SurvivalScript.GetHungerLevelName(hunger) + ")", OPTION_FLAG_DISABLED)
                     EndIf
-
-                    ; Outfit lock status (read-only, for troubleshooting)
-                    Int lockActive = StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0)
-                    If lockActive == 1
-                        String lockKey = "SeverOutfit_Locked_" + (follower.GetFormID() as String)
-                        Int itemCount = StorageUtil.FormListCount(None, lockKey)
-                        AddTextOption("Outfit Lock", "Active (" + itemCount + " items)", OPTION_FLAG_DISABLED)
-                        Int k = 0
-                        While k < itemCount && k < 6
-                            Form lockedItem = StorageUtil.FormListGet(None, lockKey, k)
-                            If lockedItem
-                                AddTextOption("  " + lockedItem.GetName(), "", OPTION_FLAG_DISABLED)
-                            EndIf
-                            k += 1
-                        EndWhile
-                        If itemCount > 6
-                            AddTextOption("  ... +" + (itemCount - 6) + " more", "", OPTION_FLAG_DISABLED)
-                        EndIf
-                    Else
-                        AddTextOption("Outfit Lock", "Inactive", OPTION_FLAG_DISABLED)
+                    If SurvivalScript.FatigueEnabled
+                        Int fatigue = SurvivalScript.GetFollowerFatigue(follower)
+                        AddTextOption("Fatigue", fatigue + "% (" + SurvivalScript.GetFatigueLevelName(fatigue) + ")", OPTION_FLAG_DISABLED)
                     EndIf
-
-                    OID_FM_Rapport[j] = AddSliderOption("$Rapport", rapport, "{0}")
-                    OID_FM_Trust[j] = AddSliderOption("$Trust", trust, "{0}")
-                    OID_FM_Loyalty[j] = AddSliderOption("$Loyalty", loyalty, "{0}")
-                    OID_FM_Mood[j] = AddSliderOption("Mood", mood, "{0}")
-                    OID_FM_CombatStyle[j] = AddMenuOption("Combat Style", style)
-                    If home != ""
-                        AddTextOption("Home", home, OPTION_FLAG_DISABLED)
-                        OID_FM_ClearHome[j] = AddTextOption("Clear Home", "CLICK")
-                    Else
-                        AddTextOption("Home", "Not assigned", OPTION_FLAG_DISABLED)
+                    If SurvivalScript.ColdEnabled
+                        Int cold = SurvivalScript.GetFollowerCold(follower)
+                        AddTextOption("Cold", cold + "% (" + SurvivalScript.GetColdLevelName(cold) + ")", OPTION_FLAG_DISABLED)
                     EndIf
-                    OID_FM_DismissFollower[j] = AddTextOption("Dismiss", "CLICK")
-                    AddEmptyOption()
                 EndIf
-                j += 1
-            EndWhile
+
+                ; Outfit lock status (read-only)
+                Int lockActive = StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0)
+                If lockActive == 1
+                    String lockKey = "SeverOutfit_Locked_" + (follower.GetFormID() as String)
+                    Int itemCount = StorageUtil.FormListCount(None, lockKey)
+                    AddTextOption("Outfit Lock", "Active (" + itemCount + " items)", OPTION_FLAG_DISABLED)
+                Else
+                    AddTextOption("Outfit Lock", "Inactive", OPTION_FLAG_DISABLED)
+                EndIf
+
+                OID_FM_Rapport[j] = AddSliderOption("Rapport", rapport, "{0}")
+                OID_FM_Trust[j] = AddSliderOption("Trust", trust, "{0}")
+                OID_FM_Loyalty[j] = AddSliderOption("Loyalty", loyalty, "{0}")
+                OID_FM_Mood[j] = AddSliderOption("Mood", mood, "{0}")
+                OID_FM_CombatStyle[j] = AddMenuOption("Combat Style", style)
+                If home != ""
+                    AddTextOption("Home", home, OPTION_FLAG_DISABLED)
+                    OID_FM_ClearHome[j] = AddTextOption("Clear Home", "CLICK")
+                Else
+                    AddTextOption("Home", "Not assigned", OPTION_FLAG_DISABLED)
+                EndIf
+                OID_FM_DismissFollower[j] = AddTextOption("Dismiss", "CLICK")
+            EndIf
         EndIf
 
         AddEmptyOption()
@@ -1004,6 +1004,30 @@ Event OnOptionMenuOpen(int option)
             SetMenuDialogDefaultIndex(0)
             SetMenuDialogOptions(FrameworkModeOptions)
         EndIf
+    elseif option == OID_FM_CompanionSelect
+        ; Build companion name list for the dropdown
+        If CachedManagedFollowers && CachedManagedFollowers.Length > 0
+            string[] names = new string[10]
+            Int j = 0
+            Int count = 0
+            While j < CachedManagedFollowers.Length && j < 10
+                If CachedManagedFollowers[j]
+                    names[count] = CachedManagedFollowers[j].GetDisplayName()
+                    count += 1
+                EndIf
+                j += 1
+            EndWhile
+            ; Trim to actual count
+            string[] trimmed = PapyrusUtil.StringArray(count)
+            j = 0
+            While j < count
+                trimmed[j] = names[j]
+                j += 1
+            EndWhile
+            SetMenuDialogStartIndex(SelectedCompanionIdx)
+            SetMenuDialogDefaultIndex(0)
+            SetMenuDialogOptions(trimmed)
+        EndIf
     else
         ; Per-follower combat style menus
         If FollowerManagerScript && CachedManagedFollowers && OID_FM_CombatStyle
@@ -1034,6 +1058,9 @@ Event OnOptionMenuAccept(int option, int index)
             FollowerManagerScript.FrameworkMode = index
             SetMenuOptionValue(OID_FM_FrameworkMode, FrameworkModeOptions[index])
         EndIf
+    elseif option == OID_FM_CompanionSelect
+        SelectedCompanionIdx = index
+        ForcePageReset()
     else
         ; Per-follower combat style menus
         If FollowerManagerScript && CachedManagedFollowers && OID_FM_CombatStyle
@@ -1366,6 +1393,8 @@ Event OnOptionHighlight(int option)
         SetInfoText("Enable debug messages for companion framework. Shows relationship value changes in the console.")
     elseif option == OID_FM_RelCooldown
         SetInfoText("Minimum real-time seconds between relationship changes per companion. Prevents the AI from adjusting rapport/trust/loyalty/mood too frequently during conversation. Default: 120 seconds (2 minutes).")
+    elseif option == OID_FM_CompanionSelect
+        SetInfoText("Select which companion to view and edit. Use the dropdown to switch between your recruited companions.")
     elseif option == OID_FM_ResetAll
         SetInfoText("Emergency reset: dismisses all companions and clears all relationship data. Use if the system is stuck or broken.")
 

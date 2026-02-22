@@ -73,6 +73,21 @@ Faction Property DLC1VampireFaction Auto
 {Dawnguard vampire faction - 0x02003376}
 
 ; ============================================================================
+; YIELD PERSISTENCE ALIASES
+; ============================================================================
+
+ReferenceAlias[] Property YieldSlots Auto
+{Array of 5 ReferenceAlias slots for yielded generic NPC persistence.
+ When a hostile NPC (bandit, necromancer, etc.) surrenders, they're placed
+ into a YieldSlot to prevent the engine from recycling them across cells.
+ Each slot has SeverActions_YieldAlias attached for OnDeath cleanup.
+ Fill in CK: Optional, Allow Reuse, Initially Cleared.}
+
+Bool Property YieldPersistenceEnabled = true Auto
+{Enable/disable yield alias persistence. When disabled, yielded generic NPCs
+ may be recycled by the engine when crossing cells. Default: true.}
+
+; ============================================================================
 ; STORAGEUTIL KEYS
 ; ============================================================================
 ; SeverCombat_CeasefireTime - Float (gameTimeNumeric when ceasefire occurred, auto-expires)
@@ -90,6 +105,9 @@ Faction Property DLC1VampireFaction Auto
 ; SeverCombat_OriginalFactions - FormList ID (if they were in multiple hostile factions)
 ; SeverCombat_NeedsAggroRestore - Int (1 = aggression was zeroed, needs delayed restore)
 ; SeverCombat_CeasefirePartner - Form (the other actor in the ceasefire pair)
+;
+; YIELD PERSISTENCE KEYS (stored on None via StorageUtil):
+; SeverCombat_YieldedGenericActors - FormList (all yielded generic NPCs needing persistence)
 ;
 ; DEPRECATED KEYS (cleaned up for backwards compatibility):
 ; - SeverCombat_AddedToFaction - No longer used, we don't add to combat factions anymore
@@ -460,7 +478,16 @@ Function Yield_Execute(Actor akYielder)
     ; FACTION CONVERSION - Replace hostile faction with surrendered faction
     ; ========================================================================
     ConvertToSurrendered(akYielder)
-    
+
+    ; ========================================================================
+    ; YIELD PERSISTENCE - Make generic NPCs persistent via alias
+    ; ========================================================================
+    ; If the actor was in a hostile faction (bandit, necromancer, etc.),
+    ; assign them a YieldSlot so the engine doesn't recycle them across cells.
+    If YieldPersistenceEnabled && StorageUtil.FormListCount(akYielder, "SeverCombat_RemovedFactions") > 0
+        AssignYieldSlot(akYielder)
+    EndIf
+
     ; Apply cooldown to both
     ApplyCooldown(akYielder, akStoredTarget)
     
@@ -667,6 +694,9 @@ Function ReturnToCrime_Execute(Actor akActor)
     
     Debug.Trace("[SeverCombat] ReturnToCrime: " + akActor.GetDisplayName() + " returning to hostile faction")
 
+    ; Release yield persistence alias — no longer surrendered
+    ClearYieldSlot(akActor)
+
     ; Stop yield hit monitoring — they're returning to crime voluntarily
     SeverActionsNative.UnregisterYieldedActor(akActor)
 
@@ -868,6 +898,9 @@ Function FullCleanup(Actor akActor)
     
     Debug.Trace("[SeverCombat] FullCleanup starting for " + akActor.GetDisplayName())
 
+    ; Release yield persistence alias if active
+    ClearYieldSlot(akActor)
+
     ; Stop yield hit monitoring if active
     SeverActionsNative.UnregisterYieldedActor(akActor)
 
@@ -952,6 +985,9 @@ Event OnPlayerLoadGame()
     ; Re-register for native yield monitor mod event
     RegisterForModEvent("SeverActionsNative_YieldBroken", "OnYieldBroken")
 
+    ; Re-assign yield persistence aliases (ForceRefTo doesn't survive save/load)
+    ReassignYieldSlots()
+
     ; Check if there are actors that need aggression restored from a ceasefire
     ; that was in progress when the game was saved
     If CeasefireActor1 && StorageUtil.GetIntValue(CeasefireActor1, "SeverCombat_NeedsAggroRestore", 0) == 1
@@ -1032,6 +1068,9 @@ Event OnYieldBroken(string eventName, string strArg, float numArg, Form sender)
 
     Debug.Trace("[SeverCombat] YieldBroken: " + akActor.GetDisplayName() + " was attacked after surrendering")
 
+    ; Release yield persistence alias — no longer surrendered
+    ClearYieldSlot(akActor)
+
     ; Restore original hostile factions from StorageUtil (C++ only removed SeverSurrenderedFaction)
     Int factionCount = StorageUtil.FormListCount(akActor, "SeverCombat_RemovedFactions")
     Int i = 0
@@ -1074,3 +1113,133 @@ Event OnYieldBroken(string eventName, string strArg, float numArg, Form sender)
 
     Debug.Trace("[SeverCombat] YieldBroken complete for " + akActor.GetDisplayName())
 EndEvent
+
+; ============================================================================
+; YIELD PERSISTENCE - Alias slot management for generic NPCs
+; ============================================================================
+
+Function AssignYieldSlot(Actor akActor)
+    {Find an empty YieldSlot and assign the actor to it for persistence.
+     Also adds the actor to the global tracking FormList so the slot can
+     be re-assigned after save/load (ForceRefTo is runtime-only).}
+    If !akActor || !YieldSlots
+        Return
+    EndIf
+
+    ; Don't double-assign — check if already in a yield slot
+    Int j = 0
+    While j < YieldSlots.Length
+        If YieldSlots[j] && YieldSlots[j].GetActorRef() == akActor
+            Debug.Trace("[SeverCombat] YieldSlot: " + akActor.GetDisplayName() + " already in slot " + j)
+            Return
+        EndIf
+        j += 1
+    EndWhile
+
+    ; Find an empty slot
+    Int i = 0
+    While i < YieldSlots.Length
+        If YieldSlots[i] && !YieldSlots[i].GetActorRef()
+            YieldSlots[i].ForceRefTo(akActor)
+
+            ; Track in StorageUtil for save/load re-assignment
+            StorageUtil.FormListAdd(None, "SeverCombat_YieldedGenericActors", akActor, false)
+
+            Debug.Trace("[SeverCombat] YieldSlot " + i + " assigned to " + akActor.GetDisplayName() + " (now persistent)")
+            Return
+        EndIf
+        i += 1
+    EndWhile
+
+    Debug.Trace("[SeverCombat] WARNING: No free yield slots for " + akActor.GetDisplayName() + " — NPC may not persist across cells")
+EndFunction
+
+Function ClearYieldSlot(Actor akActor)
+    {Find and clear the YieldSlot for this actor. Removes from tracking FormList.}
+    If !akActor || !YieldSlots
+        Return
+    EndIf
+
+    ; Remove from global tracking list
+    StorageUtil.FormListRemove(None, "SeverCombat_YieldedGenericActors", akActor)
+
+    ; Find and clear their alias slot
+    Int i = 0
+    While i < YieldSlots.Length
+        If YieldSlots[i] && YieldSlots[i].GetActorRef() == akActor
+            YieldSlots[i].Clear()
+            Debug.Trace("[SeverCombat] YieldSlot " + i + " cleared for " + akActor.GetDisplayName())
+            Return
+        EndIf
+        i += 1
+    EndWhile
+EndFunction
+
+Function ReassignYieldSlots()
+    {Re-assign yield alias slots after a game load.
+     ForceRefTo is runtime-only and doesn't survive save/load, so we need to
+     repopulate the alias slots every time the game loads.
+     Uses the StorageUtil FormList to track which actors need persistence.}
+    If !YieldSlots || !YieldPersistenceEnabled
+        Return
+    EndIf
+
+    ; Clear any stale alias data first
+    Int i = 0
+    While i < YieldSlots.Length
+        If YieldSlots[i]
+            YieldSlots[i].Clear()
+        EndIf
+        i += 1
+    EndWhile
+
+    ; Get the list of yielded generic actors
+    Int count = StorageUtil.FormListCount(None, "SeverCombat_YieldedGenericActors")
+    If count == 0
+        Return
+    EndIf
+
+    Int assigned = 0
+    Int slotIdx = 0
+    i = count - 1 ; Iterate backwards since we may remove entries
+
+    While i >= 0
+        Actor npc = StorageUtil.FormListGet(None, "SeverCombat_YieldedGenericActors", i) as Actor
+
+        ; Clean up invalid entries (dead, None, or no longer surrendered)
+        If !npc || npc.IsDead() || StorageUtil.GetIntValue(npc, "SeverCombat_WasSurrendered", 0) != 1
+            StorageUtil.FormListRemoveAt(None, "SeverCombat_YieldedGenericActors", i)
+            If npc
+                Debug.Trace("[SeverCombat] YieldSlot: Removing invalid entry: " + npc.GetDisplayName())
+            EndIf
+        Else
+            ; Find an empty slot and assign
+            While slotIdx < YieldSlots.Length && (!YieldSlots[slotIdx] || YieldSlots[slotIdx].GetActorRef())
+                slotIdx += 1
+            EndWhile
+
+            If slotIdx < YieldSlots.Length
+                YieldSlots[slotIdx].ForceRefTo(npc)
+                assigned += 1
+
+                ; Re-zero aggression — generic NPCs can have actor values reset by template on load
+                npc.SetActorValue("Aggression", 0)
+
+                ; Re-register with C++ yield monitor (runtime-only map, doesn't survive save/load)
+                Float origAggro = StorageUtil.GetFloatValue(npc, "SeverCombat_OriginalAggression", 1.0)
+                SeverActionsNative.RegisterYieldedActor(npc, origAggro, SeverSurrenderedFaction)
+
+                Debug.Trace("[SeverCombat] YieldSlot " + slotIdx + " reassigned to " + npc.GetDisplayName() + " after load (Aggression=0, monitor re-registered)")
+                slotIdx += 1
+            Else
+                Debug.Trace("[SeverCombat] WARNING: Not enough yield slots for all yielded NPCs")
+            EndIf
+        EndIf
+
+        i -= 1
+    EndWhile
+
+    If assigned > 0
+        Debug.Trace("[SeverCombat] Reassigned " + assigned + " yield slot(s) after load")
+    EndIf
+EndFunction

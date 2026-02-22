@@ -198,6 +198,11 @@ Function Maintenance()
     ; Re-assign outfit alias slots after load (ForceRefTo doesn't survive save/load)
     ReassignOutfitSlots()
 
+    ; Re-apply combat style actor values after load
+    ; NFF/EFF or the dismiss/recruit cycle can revert Confidence/Aggression to defaults.
+    ; The StorageUtil string persists, but the actor value effects may not.
+    ReapplyCombatStyles()
+
     ; Re-apply follow tracking after load (LinkedRef is runtime-only)
     ; The CK alias packages persist natively, but LinkedRef must be re-set
     ; Run if: SeverActions Only mode, OR no framework installed (Auto mode without NFF/EFF)
@@ -211,6 +216,9 @@ Function Maintenance()
         EndIf
     EndIf
 
+    ; Register for sleep events — clear sandbox packages when player sleeps
+    RegisterForSleep()
+
     If HasNFF()
         Debug.Trace("[SeverActions_FollowerManager] Maintenance complete - NFF detected, using NFF integration")
     ElseIf HasEFF()
@@ -219,6 +227,30 @@ Function Maintenance()
         Debug.Trace("[SeverActions_FollowerManager] Maintenance complete - no follower framework found, using vanilla follower system")
     EndIf
 EndFunction
+
+; =============================================================================
+; SLEEP EVENT — CLEAR SANDBOX PACKAGES
+; =============================================================================
+
+Event OnSleepStart(Float afSleepStartTime, Float afDesiredSleepEndTime)
+    {When the player goes to bed, clear any active sandbox packages (relax/wait)
+     on followers. Generic sandbox overrides can produce odd runtime packages
+     during the sleep time-skip, so we clean them up preemptively.}
+    SeverActions_Follow followSys = GetFollowScript()
+    If !followSys
+        Return
+    EndIf
+
+    Actor[] followers = GetAllFollowers()
+    Int i = 0
+    While i < followers.Length
+        If followers[i] && SkyrimNetApi.HasPackage(followers[i], "Sandbox")
+            followSys.StopSandbox(followers[i])
+            Debug.Trace("[SeverActions_FollowerManager] Cleared sandbox for " + followers[i].GetDisplayName() + " on sleep")
+        EndIf
+        i += 1
+    EndWhile
+EndEvent
 
 ; =============================================================================
 ; AUTO-DETECTION OF EXISTING FOLLOWERS
@@ -973,6 +1005,16 @@ Function RegisterFollower(Actor akActor)
     ; Assign an outfit alias slot for zero-flicker outfit persistence
     AssignOutfitSlot(akActor)
 
+    ; Re-apply combat style actor values for returning followers
+    ; The dismiss path restores original AI values, so we need to re-set them
+    If !isFirstRecruit
+        String style = StorageUtil.GetStringValue(akActor, KEY_COMBAT_STYLE, "balanced")
+        If style != "balanced"
+            ApplyCombatStyleValues(akActor, style)
+            DebugMsg("Reapplied combat style '" + style + "' on re-recruit for " + akActor.GetDisplayName())
+        EndIf
+    EndIf
+
     If isFirstRecruit
         If ShowNotifications
             Debug.Notification(akActor.GetDisplayName() + " has joined you as a companion.")
@@ -1322,21 +1364,8 @@ Function SetCombatStyle(Actor akActor, String style)
     If normalized == "aggressive" || normalized == "defensive" || normalized == "ranged" || normalized == "healer" || normalized == "balanced"
         StorageUtil.SetStringValue(akActor, KEY_COMBAT_STYLE, normalized)
 
-        ; Apply actor value adjustments based on style
-        ; (NFF saves/restores originals on its own; for vanilla, we saved them on recruit)
-        If normalized == "aggressive"
-            akActor.SetAV("Confidence", 4) ; Foolhardy
-            akActor.SetAV("Aggression", 1) ; Aggressive
-        ElseIf normalized == "defensive"
-            akActor.SetAV("Confidence", 2) ; Average
-            akActor.SetAV("Aggression", 0) ; Unaggressive
-        ElseIf normalized == "healer"
-            akActor.SetAV("Confidence", 2) ; Average
-            akActor.SetAV("Aggression", 0) ; Unaggressive
-        Else ; balanced or ranged
-            akActor.SetAV("Confidence", 3) ; Brave
-            akActor.SetAV("Aggression", 1) ; Aggressive
-        EndIf
+        ; Apply actor value adjustments
+        ApplyCombatStyleValues(akActor, normalized)
 
         If ShowNotifications
             Debug.Notification(akActor.GetDisplayName() + " will now fight " + normalized + "ly.")
@@ -1350,6 +1379,45 @@ Function SetCombatStyle(Actor akActor, String style)
     Else
         Debug.Notification("Unknown combat style: " + style)
     EndIf
+EndFunction
+
+Function ApplyCombatStyleValues(Actor akActor, String style)
+    {Apply Confidence/Aggression actor values for a combat style.
+     Extracted so it can be called from SetCombatStyle and ReapplyCombatStyles.}
+    If !akActor
+        Return
+    EndIf
+
+    If style == "aggressive"
+        akActor.SetAV("Confidence", 4) ; Foolhardy
+        akActor.SetAV("Aggression", 1) ; Aggressive
+    ElseIf style == "defensive" || style == "healer"
+        akActor.SetAV("Confidence", 2) ; Average
+        akActor.SetAV("Aggression", 0) ; Unaggressive
+    Else ; balanced or ranged
+        akActor.SetAV("Confidence", 3) ; Brave
+        akActor.SetAV("Aggression", 1) ; Aggressive
+    EndIf
+EndFunction
+
+Function ReapplyCombatStyles()
+    {Re-apply combat style actor values for all registered followers.
+     StorageUtil strings persist across save/load, but the actor value
+     effects (Confidence, Aggression) may be reverted by NFF/EFF restoring
+     their own saved values, or by the dismiss/recruit cycle.
+     Called from Maintenance() on every game load.}
+    Actor[] followers = GetAllFollowers()
+    Int i = 0
+    While i < followers.Length
+        If followers[i]
+            String style = StorageUtil.GetStringValue(followers[i], KEY_COMBAT_STYLE, "balanced")
+            If style != "balanced"
+                ApplyCombatStyleValues(followers[i], style)
+                DebugMsg("Reapplied combat style '" + style + "' for " + followers[i].GetDisplayName())
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
 EndFunction
 
 String Function GetCombatStyle(Actor akActor)

@@ -25,6 +25,8 @@
             {% endif %} {# end left hand / right hand check #}
         {% endif %}{# end is item enabled #}
     {% endfor %}
+
+    This list is the ground truth of what you are currently wearing. If an item is not listed above, you are NOT wearing it regardless of what was discussed. Never claim to have put on or be wearing something that does not appear in your Worn Equipment.
 {% endif %} {# End render_mode check #}
 
 {% if render_mode == "dialogue_target" %}
