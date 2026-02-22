@@ -7,7 +7,6 @@ Provides physical state info; emotional response depends on character personalit
 {% set third_person = (render_mode == "dialogue_target" or render_mode == "target") %}
 {% if isValidActor(actorUUID) %}
 {# ========== FERTILITY DATA PARSING - Using StorageUtil ========== #}
-{# Your Papyrus script stores all fertility data in StorageUtil with these keys #}
 {% set fert_state = papyrus_util("GetStringValue", actorUUID, "SkyrimNet_FM_State", "normal") | lower %}
 {% set fert_father = papyrus_util("GetStringValue", actorUUID, "SkyrimNet_FM_Father", "") %}
 {% set fert_cycle_day = papyrus_util("GetIntValue", actorUUID, "SkyrimNet_FM_CycleDay", -1) %}
@@ -58,10 +57,11 @@ Provides physical state info; emotional response depends on character personalit
 
 {% elif fert_state == "ovulating" %}
 {{ actorName }} is at peak fertility (cycle day {{ fert_cycle_day }}).
-
-**How {{ subj }} feels:** More confident, energetic, and socially magnetic than usual. {{ capitalize(subj) }} might feel a subtle restlessness or heightened awareness of others. {{ capitalize(subj) }} carries {{ refl }} with a little more ease.
-
-**Important:** {{ actorName }} wouldn't know or think about ovulation in those terms. {{ capitalize(subj) }} just feels good today — more alive, more present. Let this manifest as subtle confidence or warmth, not as something {{ subj }} remarks on or is even aware of. It should be invisible to the character and barely noticeable to others.
+{% if fert_cycle_day == 13 or fert_cycle_day == 14 %}
+**How {{ subj }} feels:** A sharp, restless energy — more confident, more aware of others, carrying {{ refl }} with an effortless magnetism. {{ capitalize(subj) }} feels alive in a way {{ subj }} can't quite explain.
+{% else %}
+**How {{ subj }} feels:** High energy, good mood, more socially present than usual. {{ capitalize(subj) }} feels like {{ refl }} at {{ poss }} best today.
+{% endif %}
 
 {% elif fert_state == "fertile" %}
 {{ actorName }} is in {{ poss }} fertile window (cycle day {{ fert_cycle_day }}).
@@ -70,17 +70,21 @@ Provides physical state info; emotional response depends on character personalit
 
 {% elif fert_state == "pms" %}
 {{ actorName }} is in the premenstrual phase of {{ poss }} cycle (day {{ fert_cycle_day }}).
-
-**How {{ subj }} feels:** Run-down and on edge. Lower back aches, clothes feel tight, head is foggy. {{ capitalize(subj) }} tires easily and has a shorter fuse than usual — small annoyances land harder than they should. {{ capitalize(subj) }} may snap at someone and immediately feel guilty about it.
-
-**Important:** {{ actorName }} wouldn't describe or think about this in medical terms. {{ capitalize(subj) }} just feels off — a bad few days {{ subj }}'s used to pushing through. It colors {{ poss }} mood but doesn't dominate {{ poss }} thoughts. Most people around {{ obj }} would just notice {{ subj }} seems tired or grumpy.
+{% if fert_cycle_day >= 27 %}
+**How {{ subj }} feels:** The crash has hit. Bloated, lower back aching, head foggy. {{ capitalize(subj) }} has a short fuse — small things land harder than they should. {{ capitalize(subj) }} may snap and immediately regret it.
+{% else %}
+**How {{ subj }} feels:** Early signs of fatigue setting in. A bit more distracted than usual, slightly on edge, but mostly functioning normally. {{ capitalize(subj) }} just feels a little off.
+{% endif %}
 
 {% elif fert_state == "menstruating" %}
 {{ actorName }} is on {{ poss }} period (cycle day {{ fert_cycle_day }}).
-
-**How {{ subj }} feels:** Low energy, occasional discomfort that {{ subj }} pushes through. {{ capitalize(subj) }}'d rather be somewhere comfortable but carries on regardless. A bit more quiet and inward than usual. Patience is thinner.
-
-**Important:** This is routine — something {{ subj }} has dealt with {{ poss }} whole life. It's not dramatic, debilitating, or worth mentioning unless directly relevant. {{ capitalize(subj) }} doesn't think about it constantly any more than someone thinks about a mild headache. It's background noise that makes {{ obj }} slightly less energetic and sociable, nothing more. Never describe physical specifics — just let it subtly affect energy and mood.
+{% if fert_cycle_day <= 2 %}
+**How {{ subj }} feels:** The worst of it — low energy, real discomfort that {{ subj }} pushes through. {{ capitalize(subj) }} needs to sit more often and winces at sudden movements. {{ capitalize(subj) }}'d rather be anywhere comfortable.
+{% elif fert_cycle_day == 3 or fert_cycle_day == 4 %}
+**How {{ subj }} feels:** The worst has passed but a dull ache lingers. Low stamina, patience still thin. {{ capitalize(subj) }} carries on but doesn't have much to spare.
+{% else %}
+**How {{ subj }} feels:** Tapering off. Energy is starting to return and the discomfort is mostly gone. {{ capitalize(subj) }} feels {{ refl }} coming back to normal.
+{% endif %}
 
 {% elif fert_state == "recovery" %}
 {{ actorName }} is recovering from childbirth.{% if fert_has_baby == 1 %} {{ capitalize(subj) }} has a newborn to care for.{% endif %}
@@ -91,13 +95,7 @@ Provides physical state info; emotional response depends on character personalit
 
 {% endif %}
 
-**Roleplay guidance:**
-- Let {{ actorName }}'s personality drive everything. This physical context is just a subtle filter on mood and energy.
-- **NEVER mention cycles, periods, fertility, or physical specifics in dialogue or diary entries.** No references to bleeding, cramping, cycles, or anything clinical. The character wouldn't talk or think in those terms.
-- **This should be invisible 90% of the time.** In most conversations, it has zero effect. {{ actorName }} has far more important things on {{ poss }} mind — quests, relationships, the world around {{ obj }}.
-- The only acceptable surface effects: slightly lower energy, mildly shorter patience, or a quiet preference to rest. These manifest as normal human behavior, not as symptoms {{ subj }} comments on.
-- **In diary entries:** Never mention physical cycles or symptoms. If mood is affected, write about the mood itself ("felt off today," "didn't sleep well") not the cause. Real people don't journal about routine bodily functions.
-- Pregnancy is different — that's a life event worth acknowledging. Cycle states are not.
+**Guidance:** Personality drives everything — this is a subtle filter on mood and energy, invisible most of the time. Never mention cycles, periods, or physical specifics in dialogue or thoughts. Show it only through behavior: lower energy, shorter patience, preference to rest. Pregnancy is a life event worth acknowledging in character. Cycle states are not.
 
 {% endif %}
 {# ========== THIRD PERSON VIEW ========== #}
@@ -120,7 +118,11 @@ Provides physical state info; emotional response depends on character personalit
 {{ actorName }} seems a bit tired and shorter-tempered than usual.
 
 {% elif fert_state == "menstruating" %}
+{% if fert_cycle_day <= 2 %}
+{{ actorName }} looks noticeably drained, moving with a slight wince of discomfort.
+{% else %}
 {{ actorName }} is quieter than usual, carrying {{ refl }} with a bit less energy.
+{% endif %}
 
 {% elif fert_state == "recovery" %}
 {{ actorName }} moves carefully, clearly exhausted, still recovering from childbirth.
