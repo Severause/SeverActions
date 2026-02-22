@@ -1,0 +1,59 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "equipment" %}
+    ### Worn Equipment
+    {% set npc_equipment = get_worn_equipment(npc.UUID) %}
+    {% for slot, item in npc_equipment %}
+        {% if is_item_enabled(item.formID) %}
+            {# Try OmniSight name/description (gender-aware) first, then fall back to item customization #}
+            {% set omnisight_name = get_item_name_for_wearer(item.formID, npc.UUID) %}
+            {% set omnisight_desc = get_item_description_for_wearer(item.formID, npc.UUID) %}
+            {% if length(omnisight_name) > 0 %}
+                {% set item_name = omnisight_name %}
+                {% set original_name = get_item_customization(item.formID).originalName %}
+            {% else %}
+                {% set item_name = get_item_name(item.formID) %}
+                {% set original_name = "" %}
+            {% endif %}
+            {% if length(omnisight_desc) > 0 %}
+                {% set item_desc = omnisight_desc %}
+            {% else %}
+                {% set item_desc = get_item_description(item.formID) %}
+            {% endif %}
+            {% if item.equipment_slot == "leftHand" or item.equipment_slot == "rightHand" %}
+                - {% if length(item_desc) > 0 %}{{ item_name }}{% if length(original_name) > 0 and original_name != item_name %} ({{ original_name }}){% endif %} - {{ item_desc }}{% else %}**{{ item.equipment_slot }}**: {{ item_name }}{% if length(original_name) > 0 and original_name != item_name %} ({{ original_name }}){% endif %}{% endif %} {% if has_weapon_drawn(npc.UUID) %}(drawn){% else %}(sheathed){% endif %}
+            {% else %}
+                - {% if length(item_desc) > 0 %}{{ item_name }}{% if length(original_name) > 0 and original_name != item_name %} ({{ original_name }}){% endif %} - {{ item_desc }}{% else %}**{{ item.slot_body_area }}**: {{ item_name }}{% if length(original_name) > 0 and original_name != item_name %} ({{ original_name }}){% endif %}{% endif %}
+            {% endif %} {# end left hand / right hand check #}
+        {% endif %}{# end is item enabled #}
+    {% endfor %}
+{% endif %} {# End render_mode check #}
+
+{% if render_mode == "dialogue_target" %}
+    {% if responseTarget and responseTarget.UUID != 0 %}
+        ### Worn Equipment
+        {% set target_equipment = get_worn_equipment(responseTarget.UUID) %}
+        {% for slot, item in target_equipment %}
+            {% if is_item_enabled(item.formID) %}
+                {# Try OmniSight name/description (gender-aware) first, then fall back to item customization #}
+                {% set omnisight_name = get_item_name_for_wearer(item.formID, responseTarget.UUID) %}
+                {% set omnisight_desc = get_item_description_for_wearer(item.formID, responseTarget.UUID) %}
+                {% if length(omnisight_name) > 0 %}
+                    {% set item_name = omnisight_name %}
+                    {% set original_name = get_item_customization(item.formID).originalName %}
+                {% else %}
+                    {% set item_name = get_item_name(item.formID) %}
+                    {% set original_name = "" %}
+                {% endif %}
+                {% if length(omnisight_desc) > 0 %}
+                    {% set item_desc = omnisight_desc %}
+                {% else %}
+                    {% set item_desc = get_item_description(item.formID) %}
+                {% endif %}
+                {% if item.equipment_slot == "leftHand" or item.equipment_slot == "rightHand" %}
+                    - {% if length(item_desc) > 0 %}{{ item_name }}{% if length(original_name) > 0 and original_name != item_name %} ({{ original_name }}){% endif %} - {{ item_desc }}{% else %}**{{ item.equipment_slot }}**: {{ item_name }}{% if length(original_name) > 0 and original_name != item_name %} ({{ original_name }}){% endif %}{% endif %} {% if has_weapon_drawn(responseTarget.UUID) %}(drawn){% else %}(sheathed){% endif %}
+                {% else %}
+                    - {% if length(item_desc) > 0 %}{{ item_name }}{% if length(original_name) > 0 and original_name != item_name %} ({{ original_name }}){% endif %} - {{ item_desc }}{% else %}**{{ item.slot_body_area }}**: {{ item_name }}{% if length(original_name) > 0 and original_name != item_name %} ({{ original_name }}){% endif %}{% endif %}
+                {% endif %} {# end left hand / right hand check #}
+            {% endif %}{# end is item enabled #}
+        {% endfor %}
+    {% endif %}
+{% endif %} {# end render mode check #}
