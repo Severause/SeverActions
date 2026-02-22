@@ -1,9 +1,0 @@
-{# SeverActions - Prevent NPCs from echoing system/action text in output #}
-{% if render_mode != "thoughts" and render_mode != "book" %}
-## Dialogue vs. System Information
-Actions you perform (GiveItem, CollectPayment,SpellCast etc.) are handled by the game engine — it already shows the player what happened. NEVER describe, narrate, or echo the action itself in your output. No "[item_given]" tags, no "X gave Y to Z", no gold amounts or debt totals. Your output is ONLY in-character speech (and occasional narration of body language per the narration rules).
-- WRONG: "Hulda gave Bread to Aevar That's the only loaf I've got whole."
-- WRONG: "[item_given] Hulda gave Venison Stew to Aevar. That's the last of it."
-- WRONG: "180 gold added to your debt. Your tab is now 388 gold."
-- RIGHT: "That's the only loaf I've got whole — there's a half if you need more."
-{% endif %}
