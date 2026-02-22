@@ -234,19 +234,26 @@ EndFunction
 
 Event OnSleepStart(Float afSleepStartTime, Float afDesiredSleepEndTime)
     {When the player goes to bed, clear any active sandbox packages (relax/wait)
-     on followers. Generic sandbox overrides can produce odd runtime packages
-     during the sleep time-skip, so we clean them up preemptively.}
+     on followers IN THE SAME CELL. Generic sandbox overrides can produce odd
+     runtime packages during the sleep time-skip, so we clean them up preemptively.
+     Only affects followers in the player's cell — followers waiting in other cells
+     keep their sandbox/wait package intact.}
     SeverActions_Follow followSys = GetFollowScript()
     If !followSys
+        Return
+    EndIf
+
+    Cell playerCell = Game.GetPlayer().GetParentCell()
+    If !playerCell
         Return
     EndIf
 
     Actor[] followers = GetAllFollowers()
     Int i = 0
     While i < followers.Length
-        If followers[i] && SkyrimNetApi.HasPackage(followers[i], "Sandbox")
+        If followers[i] && followers[i].GetParentCell() == playerCell && SkyrimNetApi.HasPackage(followers[i], "Sandbox")
             followSys.StopSandbox(followers[i])
-            Debug.Trace("[SeverActions_FollowerManager] Cleared sandbox for " + followers[i].GetDisplayName() + " on sleep")
+            Debug.Trace("[SeverActions_FollowerManager] Cleared sandbox for " + followers[i].GetDisplayName() + " on sleep (same cell)")
         EndIf
         i += 1
     EndWhile
