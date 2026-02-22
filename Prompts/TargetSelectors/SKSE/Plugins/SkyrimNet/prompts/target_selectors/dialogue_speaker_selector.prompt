@@ -28,6 +28,7 @@ Evaluate candidates using these factors (highest priority first):
 {% if random < zerochance %}
 ## When to Choose Silence (0)
 Choose silence (`0`) when there is genuinely nothing worth saying:
+- **Waiting for the player** — An NPC just spoke to the player (asked a question, made a statement, gave a greeting) and the player hasn't responded yet. The conversation is waiting for player input. Choose silence and let the player speak. Do NOT have other NPCs fill this gap with commentary about the player's silence, urging them to respond, or narrating the wait ("we're waiting," "he's stalling," "say something," "talk to us," etc.)
 - A conversation just reached a natural endpoint (farewell, sale complete, question answered) and no companion has a reaction
 - Continuing would feel forced, repetitive, or circular — the moment has run its course
 - Nothing interesting, new, or noteworthy has happened — the moment is truly uneventful
@@ -47,6 +48,7 @@ Do NOT choose silence when:
 **Restrictions:**
 {% if random < zerochance %}- Never select a non-companion NPC just because they're listed — proximity alone is not a reason for bystanders to speak{% endif %}
 - Do NOT select {{ lastSpeaker.name }} as speaker (they just spoke — but they CAN be selected as target)
+- **No meta-commentary about silence** — If the recent dialogue shows an NPC spoke to the player and the player hasn't replied, choose `0`. Never select an NPC to comment on the player not talking, to urge the player to speak, or to narrate the waiting. NPCs do not have awareness that "the player is taking too long to respond" — they simply wait.
 - Regular NPCs cannot hear Virtual NPCs. Do not select an NPC to respond directly to a Virtual NPC.
 - Virtual NPCs may be selected as speaker but may NOT be selected as a target unless the speaker is also a Virtual NPC.
 
