@@ -358,8 +358,12 @@ Function EquipItemByName_Execute(Actor akActor, String itemName)
 
     Debug.Trace("[SeverActions_Outfit] EquipItemByName: " + akActor.GetDisplayName() + " equipping '" + itemName + "'")
 
-    ; Use native C++ for fast inventory search
-    Form foundForm = SeverActionsNative.FindItemByName(akActor, itemName)
+    ; Use native C++ for fast inventory search (resolve OmniSight names)
+    String searchName = ResolveItemName(itemName)
+    Form foundForm = SeverActionsNative.FindItemByName(akActor, searchName)
+    if !foundForm && searchName != itemName
+        foundForm = SeverActionsNative.FindItemByName(akActor, itemName)
+    endif
 
     if !foundForm
         Debug.Trace("[SeverActions_Outfit] EquipItemByName: Item '" + itemName + "' not found in inventory")
@@ -416,8 +420,12 @@ Function UnequipItemByName_Execute(Actor akActor, String itemName)
 
     Debug.Trace("[SeverActions_Outfit] UnequipItemByName: " + akActor.GetDisplayName() + " removing '" + itemName + "'")
 
-    ; Use native C++ for fast worn item search (InventoryChanges.IsWorn + name match)
-    Form foundForm = SeverActionsNative.FindWornItemByName(akActor, itemName)
+    ; Use native C++ for fast worn item search (resolve OmniSight names)
+    String searchName = ResolveItemName(itemName)
+    Form foundForm = SeverActionsNative.FindWornItemByName(akActor, searchName)
+    if !foundForm && searchName != itemName
+        foundForm = SeverActionsNative.FindWornItemByName(akActor, itemName)
+    endif
 
     if !foundForm
         Debug.Trace("[SeverActions_Outfit] UnequipItemByName: '" + itemName + "' not found on " + akActor.GetDisplayName())
@@ -705,9 +713,33 @@ EndFunction
 ; INTERNAL HELPERS - C++ search + Papyrus equip (thread-safe)
 ; =============================================================================
 
+String Function ResolveItemName(String itemName)
+{If the LLM sends an OmniSight name like 'Black Leather Gauntlets (Akasha Gloves)',
+ extract the original game name from parentheses for C++ item search.
+ Returns the parenthetical content if present, otherwise the original string.}
+    Int parenStart = StringUtil.Find(itemName, "(")
+    If parenStart >= 0
+        Int parenEnd = StringUtil.Find(itemName, ")", parenStart)
+        If parenEnd > parenStart + 1
+            String originalName = StringUtil.Substring(itemName, parenStart + 1, parenEnd - parenStart - 1)
+            originalName = TrimString(originalName)
+            If originalName != ""
+                Debug.Trace("[SeverActions_Outfit] ResolveItemName: '" + itemName + "' -> '" + originalName + "'")
+                return originalName
+            EndIf
+        EndIf
+    EndIf
+    return itemName
+EndFunction
+
 Int Function EquipSingleItemInternal(Actor akActor, String itemName)
 {Search inventory in C++, equip via Papyrus EquipItem. Returns 1 on success, 0 on failure.}
-    Form foundForm = SeverActionsNative.FindItemByName(akActor, itemName)
+    String searchName = ResolveItemName(itemName)
+    Form foundForm = SeverActionsNative.FindItemByName(akActor, searchName)
+    if !foundForm && searchName != itemName
+        ; Parenthetical didn't match, try the full original string
+        foundForm = SeverActionsNative.FindItemByName(akActor, itemName)
+    endif
     if !foundForm
         Debug.Trace("[SeverActions_Outfit] EquipMultiple: '" + itemName + "' not found in inventory")
         return 0
@@ -720,7 +752,11 @@ EndFunction
 
 Form Function EquipSingleItemAndReturn(Actor akActor, String itemName)
 {Search inventory in C++, equip via Papyrus EquipItem. Returns the equipped Form, or None on failure.}
-    Form foundForm = SeverActionsNative.FindItemByName(akActor, itemName)
+    String searchName = ResolveItemName(itemName)
+    Form foundForm = SeverActionsNative.FindItemByName(akActor, searchName)
+    if !foundForm && searchName != itemName
+        foundForm = SeverActionsNative.FindItemByName(akActor, itemName)
+    endif
     if !foundForm
         Debug.Trace("[SeverActions_Outfit] EquipMultiple: '" + itemName + "' not found in inventory")
         return None
@@ -733,7 +769,11 @@ EndFunction
 
 Int Function UnequipSingleItemInternal(Actor akActor, String itemName)
 {Search worn items in C++, unequip via Papyrus UnequipItem. Returns 1 on success, 0 on failure.}
-    Form foundForm = SeverActionsNative.FindWornItemByName(akActor, itemName)
+    String searchName = ResolveItemName(itemName)
+    Form foundForm = SeverActionsNative.FindWornItemByName(akActor, searchName)
+    if !foundForm && searchName != itemName
+        foundForm = SeverActionsNative.FindWornItemByName(akActor, itemName)
+    endif
     if !foundForm
         Debug.Trace("[SeverActions_Outfit] UnequipMultiple: '" + itemName + "' not worn")
         return 0

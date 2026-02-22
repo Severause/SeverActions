@@ -314,6 +314,9 @@ Function CompanionStartFollowing(Actor akActor)
     ; Mark as actively following for SkyrimNet prompt integration
     SetActivelyFollowing(akActor, true)
 
+    ; Register with native orphan cleanup so stale follow packages get detected
+    SeverActionsNative.OrphanCleanup_RegisterFollower(akActor)
+
     akActor.EvaluatePackage()
 EndFunction
 
@@ -334,6 +337,9 @@ Function CompanionStopFollowing(Actor akActor)
 
     ; Clear alias slot — CK package auto-removes
     ClearFollowerSlot(akActor)
+
+    ; Unregister from orphan cleanup tracking
+    SeverActionsNative.OrphanCleanup_UnregisterFollower(akActor)
 
     ; Clear linked ref
     If SeverActions_FollowerFollowKW

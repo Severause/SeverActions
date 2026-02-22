@@ -1,6 +1,6 @@
 customCategory: travel
 name: ChangeTravelSpeed
-description: "Change the travel speed of an actor who is currently traveling.\n  Use when dialogue suggests a change in urgency, like \"hurry up\", \"slow down\", \"we need to run\", etc.\n  Only works if the actor is actively traveling (not yet arrived/sandboxing)."
+description: "Change travel speed of a currently traveling actor."
 questEditorId: SeverActions
 scriptName: SeverActions_Travel
 executionFunctionName: SetTravelSpeedNatural
@@ -10,7 +10,7 @@ parameterMapping:
     description: Speaker Actor parameter (triggering entity)
   - type: dynamic
     name: speedText
-    description: "Natural language indicating desired speed. Keywords detected:\n        - Run (fastest): hurry, urgent, rush, quick, fast, run, emergency, immediate, asap, sprint\n        - Jog (medium): jog, brisk, steady, pace\n        - Walk (slowest): walk, slow, stroll, leisurely, casual (or any other text)"
+    description: "Speed: run/hurry (fastest), jog/brisk (medium), walk/slow (slowest)"
 enabled: false
 eligibilityRules:
   - conditions:

@@ -1,15 +1,6 @@
 customCategory: follower
 name: CompanionFollow
-description: "Stop waiting and resume following {{ player.name }}.
-  Use this action when {{ player.name }} returns to a waiting NPC and asks them to follow
-  again, come along, move out, or resume traveling together.
-
-  The NPC must currently be waiting (told to wait earlier) to use this action.
-
-  Do NOT use this action when:
-  - The NPC is already following {{ player.name }} (they're not waiting)
-  - {{ player.name }} is recruiting someone for the first time (use SetCompanion instead)
-  - {{ player.name }} wants to dismiss a companion (use DismissFollower instead)"
+description: "Resume following {{ player.name }} after waiting. Use when returning to a waiting companion and asking them to come along."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: CompanionFollow

@@ -1,14 +1,13 @@
 customCategory: basic
 name: StopReading
-description: "Stop reading a book aloud. Use this action when you have finished reading the
-  entire book, or when asked to stop reading. This closes the book and ends the reading session."
+description: "Stop reading a book aloud and close it."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: StopReading_Execute
 parameterMapping:
   - type: dynamic
     name: akActor
-    description: The person who is stopping their reading
+    description: The person stopping their reading
 enabled: true
 eligibilityRules:
   - conditions:

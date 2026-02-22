@@ -797,3 +797,34 @@ Int Function TeammateMonitor_GetTrackedCount() Global Native
 
 Function TeammateMonitor_ClearTracking() Global Native
 {Clear all tracked teammate data. Called automatically on game load/new game.}
+
+; =============================================================================
+; ORPHAN CLEANUP - Detects stale LinkedRef keywords from crashed scripts
+; Scans loaded actors (~5 second intervals) for SeverActions LinkedRef keywords
+; that aren't tracked by any management system. Fires "SeverActions_OrphanCleanup"
+; mod event with strArg = keyword type ("travel", "furniture", "follow").
+; =============================================================================
+
+Function OrphanCleanup_Initialize(Keyword travelKW, Keyword furnitureKW, Keyword followKW) Global Native
+{Set the LinkedRef keywords to scan for. Call once during Maintenance.}
+
+Function OrphanCleanup_RegisterTraveler(Actor akActor) Global Native
+{Register an actor as actively traveling. Call when travel starts.}
+
+Function OrphanCleanup_UnregisterTraveler(Actor akActor) Global Native
+{Unregister an actor from travel tracking. Call when travel ends/clears.}
+
+Function OrphanCleanup_RegisterFollower(Actor akActor) Global Native
+{Register an actor as actively following. Call when follow starts.}
+
+Function OrphanCleanup_UnregisterFollower(Actor akActor) Global Native
+{Unregister an actor from follow tracking. Call when follow stops.}
+
+Function OrphanCleanup_SetEnabled(Bool enabled) Global Native
+{Enable or disable the orphan cleanup scanner. Enabled by default.}
+
+Bool Function OrphanCleanup_IsEnabled() Global Native
+{Check if the orphan cleanup scanner is currently enabled.}
+
+Function OrphanCleanup_ClearTracking() Global Native
+{Clear all tracked actor data. Called automatically on game load/new game.}

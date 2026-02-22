@@ -1,6 +1,6 @@
 customCategory: basic
 name: BringItem
-description: "Fetch a nearby item and bring it to someone. Use only when asked to get something and bring it, fetch an item, or retrieve something for someone from somewhere else. do not use unless explicitly told to bring something or if you really feel they would like it "
+description: "Fetch a nearby item and bring it to someone. Use only when explicitly asked to retrieve something."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: BringItem_Execute
@@ -13,7 +13,7 @@ parameterMapping:
     description: The person being given the item
   - type: dynamic
     name: itemType
-    description: "The name or type of item to fetch and bring (e.g. \"sword\", \"potion\", \"book\")\n"
+    description: "The name or type of item to fetch (e.g. 'sword', 'potion', 'book')"
 enabled: false
 eligibilityRules:
   - conditions:

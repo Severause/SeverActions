@@ -1,13 +1,6 @@
 customCategory: basic
 name: GiveItem
-description: |
-  The actor gives a physical item from their inventory to another person. Use this when:
-  - The actor hands over an object they own
-  - The actor gives someone a weapon, armor, potion, or other item
-  - The actor completes a delivery or trade of goods
-  - The actor shares supplies or equipment
-
-  Common triggers: "here's your sword", "take this potion", "I made this for you", "have this armor", "let me give you"
+description: "Give a physical item from inventory to another person."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: GiveItem_Execute
@@ -23,7 +16,7 @@ parameterMapping:
     description: The name of the item to give (e.g. "Iron Sword", "Health Potion")
   - type: dynamic
     name: aiCount
-    description: Number of items to give (default 1, use higher if multiple mentioned)
+    description: Number of items to give (default 1)
 enabled: true
 eligibilityRules:
   - conditions:

@@ -1,16 +1,16 @@
 customCategory: outfit
-name: UnequipItemByName
-description: "Remove a specific currently worn item by name. Use when told to take off a particular piece of armor, weapon, or clothing. The item is stored so it can be re-equipped later with Dress. Use the exact or partial item name (e.g., 'steel gauntlets', 'iron helmet', 'glass cuirass', 'ebony sword'). For removing all clothing use Undress instead."
+name: EquipArmor
+description: "Equip one or more items from inventory by name. Comma-separate for multiple."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
-executionFunctionName: UnequipItemByName_Execute
+executionFunctionName: EquipMultipleItems_Execute
 parameterMapping:
   - type: speaker
     name: akActor
     description: Speaker Actor parameter (triggering entity)
   - type: dynamic
-    name: itemName
-    description: "The name of the currently worn item to remove (e.g., 'steel gauntlets', 'iron helmet', 'glass cuirass', 'ebony sword', 'hide armor')"
+    name: itemNames
+    description: "Item name(s) to equip, comma-separated for multiple (e.g. 'steel gauntlets, iron helmet')"
 enabled: true
 eligibilityRules:
   - conditions:

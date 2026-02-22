@@ -72,10 +72,8 @@ Allows NPCs to engage or disengage from combat.</description>
 
                         <plugin name="Outfit Actions">
                             <description>Clothing and armor management:
-• Equip Item By Name - Equip any item from inventory by name
-• Unequip Item By Name - Remove a worn item by name
-• Equip Multiple Items - Batch equip from a comma-separated list
-• Unequip Multiple Items - Batch remove from a comma-separated list
+• Equip Armor - Equip one or more items from inventory by name (comma-separate for multiple)
+• Unequip Armor - Remove one or more worn items by name (comma-separate for multiple)
 • Save Outfit Preset - Snapshot current outfit under a name
 • Apply Outfit Preset - Strip and re-equip a saved preset
 • Get Dressed - Re-equip previously removed clothing
@@ -285,12 +283,17 @@ Install with Follower Actions for the full companion system.</description>
                             </typeDescriptor>
                         </plugin>
 
-                        <plugin name="Strict Action Selector (Anti-Duplicate)">
-                            <description>Replaces SkyrimNet's native action selector prompt with a stricter version that reinforces the one-action-per-turn rule.
+                        <plugin name="Enhanced Action Selector">
+                            <description>Replaces SkyrimNet's native action selector prompt with an improved version optimized for SeverActions' streamlined YAML descriptions.
 
-Helps prevent models (especially non-Claude models like Grok) from outputting duplicate or multiple actions in a single turn. The modified prompt explicitly tells models that extra action lines are discarded by the game engine.
+Features:
+• Reads the full player-NPC exchange (pulls player speech from event history) for better action matching
+• Shows parameter schemas so the LLM uses correct parameter names
+• Player-intent and implicit-agreement guidelines reduce missed actions
+• One-action-per-turn enforcement prevents duplicate action calls
+• Exchange-centric design works better across all model backends (Claude, Grok, etc.)
 
-Install this if you experience double or triple action calls from the same NPC turn.</description>
+Recommended if you are using SeverActions' action YAMLs. Ensures the LLM picks the right action with the right parameters.</description>
                             <files>
                                 <folder source="Prompts/ActionSelector" destination="" priority="2"/>
                             </files>

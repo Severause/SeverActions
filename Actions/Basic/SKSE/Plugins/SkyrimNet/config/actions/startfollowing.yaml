@@ -1,6 +1,6 @@
 customCategory: basic
 name: StartFollowing
-description: Follow {{ player.name }} when asked. Use your best judgement on whether or not following through would make sense.
+description: "Follow {{ player.name }} when asked. Use your best judgement on whether following would make sense."
 questEditorId: SeverActions
 scriptName: SeverActions_Follow
 executionFunctionName: StartFollowing

@@ -1,6 +1,6 @@
 customCategory: outfit
 name: GetDressed
-description: Put back on previously removed armor and clothing. Use when getting dressed, putting clothes back on, or re-equipping gear.
+description: "Put back on previously removed armor and clothing."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: Dress_Execute

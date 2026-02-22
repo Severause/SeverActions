@@ -1,23 +1,6 @@
 customCategory: follower
 name: DismissFollower
-description: "End the current traveling arrangement and send this companion on their way.
-  The companion leaves {{ player.name }}'s active party and returns to their assigned home
-  (or stays at the current location if no home is set). They can be recruited again later.
-
-  USE THIS ACTION when:
-  - {{ player.name }} says 'you're dismissed', 'head home', 'I don't need you right now', 'we should part ways for now'
-  - {{ player.name }} ends the current traveling arrangement but not the relationship itself
-  - The companion is being sent back to their home or post
-
-  DO NOT USE THIS ACTION when:
-  - {{ player.name }} tells them to wait somewhere temporarily (use CompanionWait — they stay in the party)
-  - {{ player.name }} asks them to go somewhere specific for an errand (use Travel)
-  - {{ player.name }} is just expressing frustration but hasn't actually told them to leave
-  - The conversation is about potentially parting ways but no decision was made
-
-  KEY DISTINCTION: DismissFollower = leave the party and go home (can rejoin later).
-  CompanionWait = stay here temporarily while still in the party.
-  FollowerLeaves = the companion permanently abandons {{ player.name }} due to a broken relationship."
+description: "Dismiss this companion from the active party. They return to their assigned home and can be recruited again later. DismissFollower = leave party. CompanionWait = stay temporarily. FollowerLeaves = permanent departure."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: DismissCompanion

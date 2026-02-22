@@ -1,31 +1,16 @@
 customCategory: arrest
 name: ArrestNPC
-description: "A guard arrests an NPC and escorts them to jail. The guard will approach
-  the target, restrain them, and escort them to the appropriate hold's jail cell.
-  The prisoner will be dressed in prison clothes and confined to the jail.
-
-  Use this action when:
-  - A guard needs to arrest an NPC for a crime
-  - An authority figure is taking someone into custody
-  - Someone needs to be imprisoned for their actions
-
-  This action is for NPCs only - use ArrestPlayer for confronting the player about
-  their bounty.
-
-  Do NOT use this action when:
-  - A guard has already been dispatched to arrest the same target via DispatchGuardToArrest
-  - The target is already under arrest, being escorted, or in jail
-  - Another arrest action was just performed on the same target"
+description: "Arrest an NPC and escort them to jail. For NPCs only — use ArrestPlayer for the player."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: ArrestNPC_Internal
 parameterMapping:
   - type: speaker
     name: akGuard
-    description: The guard or authority figure making the arrest
+    description: The guard making the arrest
   - type: dynamic
     name: akTarget
-    description: The NPC to be arrested and taken to jail
+    description: The NPC to be arrested
 enabled: true
 eligibilityRules:
   - conditions:

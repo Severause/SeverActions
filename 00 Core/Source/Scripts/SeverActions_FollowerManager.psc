@@ -89,6 +89,9 @@ Faction Property SeverActions_FollowerFaction Auto
 SeverActions_Debt Property DebtScript Auto
 {Reference to the Debt tracking system for tick-based processing}
 
+SeverActions_Furniture Property FurnitureScript Auto
+{Reference to the Furniture system for orphan package cleanup}
+
 ; =============================================================================
 ; CONSTANTS
 ; =============================================================================
@@ -170,6 +173,24 @@ Function Maintenance()
     ; Register for native teammate detection events (instant onboarding)
     RegisterForModEvent("SeverActions_NewTeammateDetected", "OnNativeTeammateDetected")
     RegisterForModEvent("SeverActions_TeammateRemoved", "OnNativeTeammateRemoved")
+
+    ; Register for native orphan package cleanup events
+    RegisterForModEvent("SeverActions_OrphanCleanup", "OnOrphanCleanup")
+
+    ; Initialize the native orphan scanner with our LinkedRef keywords
+    Keyword travelKW = None
+    Keyword furnitureKW = None
+    Keyword followKW = None
+    If TravelScript
+        travelKW = TravelScript.TravelTargetKeyword
+    EndIf
+    If FurnitureScript
+        furnitureKW = FurnitureScript.SeverActions_FurnitureTargetKeyword
+    EndIf
+    If FollowScript
+        followKW = FollowScript.SeverActions_FollowerFollowKW
+    EndIf
+    SeverActionsNative.OrphanCleanup_Initialize(travelKW, furnitureKW, followKW)
 
     ; Auto-detect followers recruited outside our system (vanilla dialogue, NFF, other mods)
     DetectExistingFollowers()
@@ -483,6 +504,43 @@ Event OnNativeTeammateRemoved(string eventName, string strArg, float numArg, For
     if akActor
         Debug.Trace("[SeverActions_FollowerManager] Native teammate removal detected (ignored): " + akActor.GetDisplayName())
     endif
+EndEvent
+
+Event OnOrphanCleanup(string eventName, string keywordType, float numArg, Form sender)
+    {Fired by native OrphanCleanup when an actor has a SeverActions LinkedRef keyword
+     but is NOT tracked by any management system. Clears the orphaned LinkedRef,
+     removes package overrides, and forces AI re-evaluation so the NPC returns to
+     their default routine instead of standing around with an FE runtime package.}
+    Actor npc = sender as Actor
+    If !npc
+        npc = Game.GetFormEx(numArg as Int) as Actor
+    EndIf
+    If !npc
+        Return
+    EndIf
+
+    If keywordType == "travel"
+        If TravelScript
+            PO3_SKSEFunctions.SetLinkedRef(npc, None, TravelScript.TravelTargetKeyword)
+            TravelScript.RemoveAllTravelPackages(npc)
+            If TravelScript.SandboxPackage
+                ActorUtil.RemovePackageOverride(npc, TravelScript.SandboxPackage)
+            EndIf
+        EndIf
+    ElseIf keywordType == "furniture"
+        If FurnitureScript
+            PO3_SKSEFunctions.SetLinkedRef(npc, None, FurnitureScript.SeverActions_FurnitureTargetKeyword)
+            ActorUtil.RemovePackageOverride(npc, FurnitureScript.SeverActions_UseFurniturePackage)
+            SeverActionsNative.UnregisterFurnitureUser(npc)
+        EndIf
+    ElseIf keywordType == "follow"
+        If FollowScript
+            PO3_SKSEFunctions.SetLinkedRef(npc, None, FollowScript.SeverActions_FollowerFollowKW)
+        EndIf
+    EndIf
+
+    npc.EvaluatePackage()
+    Debug.Trace("[SeverActions_FollowerManager] OrphanCleanup: cleared " + keywordType + " orphan on " + npc.GetDisplayName())
 EndEvent
 
 ; =============================================================================

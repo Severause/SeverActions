@@ -1,13 +1,6 @@
 customCategory: furniture
 name: StopUsingFurniture
-description: |
-  The actor stands up and stops using furniture. Use this when:
-  - The actor is instructed to stand up, get up, or stop sitting
-  - The actor needs to leave a bed, chair, bench, or crafting station
-  - The actor is done resting, sleeping, or crafting
-  - The actor wants to resume normal activity after using furniture
-
-  Common triggers: "stand up", "get up", "stop sitting", "get out of bed", "wake up", "I'm done here", "let's go", "time to leave"
+description: "Stand up and stop using furniture."
 questEditorId: SeverActions
 scriptName: SeverActions_Furniture
 executionFunctionName: StopUsingFurniture_Execute

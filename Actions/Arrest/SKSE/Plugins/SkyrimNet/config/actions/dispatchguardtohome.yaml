@@ -1,46 +1,22 @@
 customCategory: arrest
 name: DispatchGuardToHome
-description: "A guard dispatches themselves to search an NPC's home for evidence. The guard
-  will travel to the target NPC's home, spend time searching through their belongings,
-  pick up an item as evidence, and then return to whoever sent them.
-
-  The guard physically walks the entire journey - to the home, investigates inside,
-  collects evidence, and walks all the way back.
-
-  Use this action when:
-  - A guard wants to search someone's home for evidence of a crime
-  - A guard has been ordered to investigate an NPC's residence
-  - A guard needs to collect evidence from a suspect's home
-  - Information about a crime leads a guard to search a home for proof
-  - A Jarl or authority figure orders a home search
-
-  Do NOT use this action when:
-  - The guard wants to arrest someone directly (use ArrestNPC or DispatchGuardToArrest)
-  - The target is the player (cannot search player's home)
-  - The guard doesn't know whose home to search"
+description: "Self-dispatch to search an NPC's home for evidence. The guard travels to the home, investigates, collects evidence, and returns to whoever sent them."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: DispatchGuardToHome_Execute
 parameterMapping:
   - type: speaker
     name: akGuard
-    description: The guard being dispatched to search the home
+    description: The guard being dispatched
   - type: dynamic
     name: targetName
-    description: "The full name of the NPC whose home to search (e.g. 'Hulda', 'Nazeem', 'Belethor').
-      Must be the display name of a unique NPC in the game world."
+    description: "Full display name of the NPC whose home to search"
   - type: dynamic
     name: senderName
-    description: "The full name of the NPC who ordered the home search (e.g. 'Balgruuf the Greater',
-      'Irileth', 'Proventus Avenicci'). The guard will return to this person with any
-      evidence found. Must be the display name of an NPC in the game world."
+    description: "Who ordered the search — guard returns to them with evidence"
   - type: dynamic
     name: reason
-    description: "The reason for the investigation - what the suspect is accused of or what the guard
-      is looking for. This determines what kind of evidence the guard finds. Examples:
-      'dibella worship', 'thieving', 'skooma dealing', 'necromancy', 'daedra worship',
-      'poisoning', 'weapon smuggling', 'talos worship', 'vampire activity', 'forsworn ties'.
-      Be specific about the nature of the suspicion so the guard finds relevant evidence."
+    description: "What to investigate (e.g. 'skooma dealing', 'necromancy', 'talos worship', 'thieving')"
 enabled: true
 defaultPriority: 6
 eligibilityRules:

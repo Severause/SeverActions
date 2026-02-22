@@ -1,50 +1,19 @@
 customCategory: arrest
 name: DispatchGuardToArrest
-description: "A guard dispatches themselves to find and arrest an NPC by name, anywhere
-  in the game world. The guard will walk the entire way to the target, approach and
-  arrest them, then walk all the way back escorting the prisoner.
-
-  This action works for targets that are far away or in different cells - the guard
-  travels directly to the target Actor and Skyrim's AI handles cross-cell pathfinding.
-  The guard physically walks the entire journey with no shortcuts.
-
-  If a sender is specified (e.g. a Jarl or authority figure who ordered the arrest),
-  the guard will bring the prisoner back to that person for judgment instead of
-  taking them directly to jail. If no sender is specified, the guard takes the
-  prisoner to the nearest hold jail.
-
-  Use this action when:
-  - A guard needs to arrest someone who is not in the immediate area
-  - A guard has been told about a criminal who is elsewhere (another building, district)
-  - A guard wants to track down and arrest a named NPC
-  - Information about a crime leads a guard to go find the perpetrator
-  - A Jarl or authority figure orders a guard to go fetch someone for judgment
-  - A guard is dispatching themselves after receiving orders from someone
-
-  Do NOT use this action when:
-  - The target NPC is already nearby in the same cell (use ArrestNPC instead)
-  - The target is the player (use ArrestPlayer instead)
-  - The guard doesn't know the name of who to arrest
-  - Another guard or the same guard is already dispatched or arresting the same target
-  - The target is already under arrest or in jail"
+description: "Self-dispatch to find and arrest an NPC anywhere in the game world. The guard walks to the target and arrests them. If a sender is specified, the prisoner is brought back for judgment instead of jail."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: DispatchGuardToArrest_Execute
 parameterMapping:
   - type: speaker
     name: akGuard
-    description: The guard being dispatched to make the arrest
+    description: The guard being dispatched
   - type: dynamic
     name: targetName
-    description: "The full name of the NPC to arrest (e.g. 'Hulda', 'Nazeem', 'Belethor').
-      Must be the display name of a unique NPC in the game world."
+    description: "Full display name of the NPC to arrest"
   - type: dynamic
     name: senderName
-    description: "Optional. The name of the person who ordered the arrest (e.g. 'Balgruuf',
-      'Elisif'). If provided, the guard will bring the prisoner back to this person for
-      judgment. If empty or omitted, the guard takes the prisoner directly to the nearest
-      hold jail. Only provide a sender when a Jarl, steward, or other authority figure
-      is actively ordering the arrest and wants the prisoner brought before them."
+    description: "Optional. Who ordered the arrest — prisoner is brought to them for judgment. Omit to take prisoner directly to jail."
 enabled: true
 defaultPriority: 7
 eligibilityRules:

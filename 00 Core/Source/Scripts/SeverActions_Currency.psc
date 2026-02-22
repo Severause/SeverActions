@@ -144,6 +144,11 @@ Function GiveGold_Execute(Actor akGiver, Actor akRecipient, Int aiAmount)
     
     if moved > 0
         SkyrimNetApi.RegisterEvent("gold_given", akGiver.GetDisplayName() + " gave " + moved + " gold to " + akRecipient.GetDisplayName(), akGiver, akRecipient)
+        ; Auto-reduce debt if giver owes recipient
+        SeverActions_Debt debtScript = SeverActions_Debt.GetInstance()
+        if debtScript
+            debtScript.ReduceDebtByPayment(akRecipient, akGiver, moved)
+        endif
     else
         SkyrimNetApi.RegisterEvent("gold_failed", akGiver.GetDisplayName() + " has no gold to give", akGiver, akRecipient)
     endif
@@ -174,6 +179,11 @@ Function GiveGoldTrue_Execute(Actor akGiver, String asRecipient, Int aiAmount)
 
     if moved > 0
         SkyrimNetApi.RegisterEvent("gold_given", akGiver.GetDisplayName() + " gave " + moved + " gold to " + akRecipient.GetDisplayName(), akGiver, akRecipient)
+        ; Auto-reduce debt if giver owes recipient
+        SeverActions_Debt debtScript = SeverActions_Debt.GetInstance()
+        if debtScript
+            debtScript.ReduceDebtByPayment(akRecipient, akGiver, moved)
+        endif
     else
         SkyrimNetApi.RegisterEvent("gold_failed", akGiver.GetDisplayName() + " has no gold to give", akGiver, akRecipient)
     endif

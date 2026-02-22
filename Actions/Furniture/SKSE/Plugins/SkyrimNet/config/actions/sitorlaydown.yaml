@@ -1,6 +1,6 @@
 customCategory: furniture
 name: SitOrLayDown
-description: "The actor sits, sleeps, or interacts with furniture objects nearby. Use this when:\n  - The actor is instructed to sit, rest, lay down, or sleep\n  - The actor needs to use a crafting station (forge, workbench, alchemy lab, etc.)\n  - The actor wants to relax on a chair, bench, stool, bed, bedroll, or other furniture\n  - Nearby objects list includes furniture with a FormID\n  \n  Common triggers: \"sit down\", \"have a seat\", \"take a seat\", \"rest\", \"relax\", \"lay down\", \"go to sleep\", \"use the [crafting station]\", \"sleep in the bed\""
+description: "Sit, sleep, or use nearby furniture by FormID from the nearby objects list."
 questEditorId: SeverActions
 scriptName: SeverActions_Furniture
 executionFunctionName: UseFurniture_Execute
@@ -10,7 +10,7 @@ parameterMapping:
     description: Speaker Actor parameter (triggering entity)
   - type: dynamic
     name: furnitureFormId
-    description: The FormID number of the furniture from the nearby objects list
+    description: The FormID number of the furniture from nearby objects
 enabled: true
 eligibilityRules:
   - conditions:

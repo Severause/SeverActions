@@ -1,6 +1,6 @@
 customCategory: basic
 name: StopFollowing
-description: Stop following {{ player.name }} when appropriate
+description: "Stop following {{ player.name }}."
 questEditorId: SeverActions
 scriptName: SeverActions_Follow
 executionFunctionName: StopFollowing

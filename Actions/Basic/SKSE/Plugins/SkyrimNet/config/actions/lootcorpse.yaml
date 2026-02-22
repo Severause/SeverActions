@@ -1,6 +1,6 @@
 customCategory: basic
 name: LootCorpse
-description: "Loot items from a dead body nearby. Use when you want to search a corpse and take items from it."
+description: "Loot items from a dead body nearby."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: LootCorpse_Execute
@@ -13,7 +13,7 @@ parameterMapping:
     description: The name of the dead person to loot (e.g. "Bandit", "Stormcloak Soldier")
   - type: dynamic
     name: itemsToTake
-    description: "What to take: 'all', 'valuables', 'gold', or comma-separated item names. Default to 'all' if unsure."
+    description: "'all', 'valuables', 'gold', or comma-separated item names"
 enabled: true
 eligibilityRules:
   - conditions:

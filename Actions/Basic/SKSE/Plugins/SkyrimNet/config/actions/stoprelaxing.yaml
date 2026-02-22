@@ -1,12 +1,6 @@
 customCategory: basic
 name: StopRelaxing
-description: "Stop relaxing and resume following {{ player.name }}. Use this when:
-  - {{ player.name }} tells the actor to stop relaxing and come along
-  - The actor decides it's time to leave or move on
-  - {{ player.name }} says let's go, follow me, come on, or time to leave
-  - Only use if the actor is currently relaxing/sandboxing
-
-  Common triggers: \"let's go\", \"follow me\", \"come on\", \"time to go\", \"stop relaxing\", \"we're leaving\", \"move out\""
+description: "Stop relaxing and resume following {{ player.name }}. Use when told to come along or leave."
 questEditorId: SeverActions
 scriptName: SeverActions_Follow
 executionFunctionName: StopSandbox

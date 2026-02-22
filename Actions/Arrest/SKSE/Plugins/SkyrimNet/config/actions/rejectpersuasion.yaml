@@ -1,6 +1,6 @@
 customCategory: arrest
 name: RejectPersuasion
-description: "Reject the player's persuasion attempt and demand they face justice.\n\n  Use this action when you are in a persuasion conversation with the player about their\n  bounty but their arguments have NOT convinced you to let them go.\n\n  Reasons to reject persuasion:\n  - The player's excuses are weak or unconvincing\n  - The player is lying or their story doesn't add up\n  - The crime was too serious to overlook (murder, major theft)\n  - The player is being disrespectful or wasting your time\n  - You've heard enough and want to end the conversation\n  - The player hasn't offered any real argument, just stalling"
+description: "Reject the player's persuasion attempt about their bounty and demand they face justice."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: RejectPersuasion_Internal

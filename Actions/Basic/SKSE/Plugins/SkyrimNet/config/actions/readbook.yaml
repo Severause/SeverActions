@@ -1,28 +1,16 @@
 customCategory: basic
 name: ReadBook
-description: "Read a specific book aloud from your inventory. You must specify which
-  book to read by name. If someone asks you to read a book but doesn't say which one,
-  ask them first — do NOT use this action until you know the exact book name.
-
-  Use this action when:
-  - Someone tells you to read a specific book by name
-  - You want to read a specific book, note, journal, or letter you are carrying
-
-  Do NOT use this action when:
-  - You don't know which book to read yet (ask first, then use ReadBook once you know)
-  - You don't have the book in your inventory (pick it up first with PickUpItem)
-
-  You must have the book in your inventory to read it."
+description: "Read a specific book aloud from inventory by name. Must know the exact book name first � ask if unsure. Must have the book in inventory."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: ReadBook_Execute
 parameterMapping:
   - type: dynamic
     name: akActor
-    description: The person who will read the book aloud
+    description: The person who will read the book
   - type: dynamic
     name: bookName
-    description: The exact name of the book to read (e.g. "The Lusty Argonian Maid", "mysterious note", "Nords Arise!")
+    description: The exact name of the book to read
 enabled: true
 eligibilityRules:
   - conditions:

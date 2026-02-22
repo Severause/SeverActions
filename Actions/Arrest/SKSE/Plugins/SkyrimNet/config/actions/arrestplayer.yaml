@@ -1,6 +1,6 @@
 customCategory: arrest
 name: ArrestPlayer
-description: " A guard confronts a person about their EXISTING bounty in the hold.\n\n  IMPORTANT: This action only works if the person already has bounty in this hold.\n  If the player has no bounty, use ReportCrime first to add bounty for witnessed crimes.\n\n  When the guard confronts the person, they are presented with options:\n  - Under 300 gold bounty: Pay fine or refuse (refusing leads to combat)\n  - 300+ gold bounty: Submit to arrest, resist arrest, bribe the guard, or attempt to persuade\n\n  If that person chooses to persuade, the guard will follow them temporarily while\n  they attempt to talk their way out. If the person's arguments are convincing,\n  use the AcceptPersuasion action to let them go free."
+description: "Confront the player about their existing bounty. Only works if bounty exists — use AddBountyToPlayer first. Under 300g: pay or refuse. Over 300g: submit, resist, bribe, or persuade."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: ArrestPlayer_Internal

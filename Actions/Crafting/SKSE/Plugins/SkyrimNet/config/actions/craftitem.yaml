@@ -1,6 +1,6 @@
 customCategory: crafting
 name: CraftItem
-description: Craft a weapon or piece of armor at a forge. The NPC will walk to the nearest forge, craft the item(s), then deliver them to the recipient.
+description: "Craft a weapon or armor at the nearest forge and deliver it to the recipient."
 questEditorId: SeverActions
 scriptName: SeverActions_Crafting
 executionFunctionName: CraftItem_Internal
@@ -10,10 +10,10 @@ parameterMapping:
     description: Speaker Actor parameter (triggering entity)
   - type: dynamic
     name: itemName
-    description: The name of the weapon or armor to craft (e.g., 'iron sword', 'steel armor', 'leather boots')
+    description: "Weapon or armor to craft (e.g. 'iron sword', 'steel armor')"
   - type: dynamic
     name: akRecipient
-    description: The recipient of the crafted item (defaults to player if not specified)
+    description: Recipient of the crafted item
   - type: static
     value: false
     name: requireMaterials

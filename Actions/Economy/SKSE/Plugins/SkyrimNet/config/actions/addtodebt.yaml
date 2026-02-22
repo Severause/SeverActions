@@ -1,33 +1,22 @@
 customCategory: economy
 name: AddToDebt
-description: |
-  Add charges to an existing debt — increase the amount owed. Use when:
-  - Adding another item to an existing tab ("another round on my tab")
-  - Additional charges accrue on an existing debt
-  - A service or item is added to what's already owed
-  - Increasing a loan amount
-
-  The speaker must be involved in the existing debt (creditor or debtor).
-  If asReason matches an existing debt reason, adds to that specific debt.
-  If asReason is empty or doesn't match, adds to the first debt found between the parties.
-  Respects credit limits — will not exceed the debt's credit limit.
-  Common triggers: "add it to my tab", "another round", "put that on my bill too", "I'll need more gold"
+description: "Add charges to an existing debt. Speaker must be creditor or debtor. Respects credit limits."
 questEditorId: SeverActions
 scriptName: SeverActions_Debt
 executionFunctionName: AddToDebt_Execute
 parameterMapping:
   - type: speaker
     name: akSpeaker
-    description: The speaking actor (must be creditor or debtor on an existing debt)
+    description: The speaking actor (must be creditor or debtor)
   - type: dynamic
     name: akTarget
     description: The other party in the debt
   - type: dynamic
     name: aiAmount
-    description: Amount of gold to add to the existing debt
+    description: Gold to add to the existing debt
   - type: dynamic
     name: asReason
-    description: Reason to match specific debt (e.g. "tavern tab"). Empty to add to first debt found.
+    description: "Reason to match specific debt (empty for first debt found)"
 enabled: true
 eligibilityRules:
   - conditions:

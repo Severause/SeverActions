@@ -1,15 +1,6 @@
 customCategory: follower
 name: AssignHome
-description: "Assign a location as this companion's home. When dismissed, they
-  will travel back to this location. Use this action when:
-  - The player tells the companion to 'live here' or 'make this your home'
-  - The player assigns the companion to a specific location
-  - The player says something like 'stay at Breezehome when I dismiss you'
-
-  Do NOT use this action when:
-  - The companion merely mentions liking a place
-  - There is no clear instruction to make a location their home
-  - The player is telling them to travel somewhere temporarily"
+description: "Assign the current location as this companion's home. When dismissed, they return here."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: AssignHome
@@ -19,9 +10,7 @@ parameterMapping:
     description: The companion getting a home assignment
   - type: dynamic
     name: locationName
-    description: "The location name to assign as home. Must be a real, specific
-      location in the game world (e.g., 'Breezehome', 'Lakeview Manor',
-      'Bannered Mare', 'Dragonsreach'). Do NOT use vague terms."
+    description: "Specific location name (e.g. 'Breezehome', 'Lakeview Manor', 'Bannered Mare')"
 enabled: true
 defaultPriority: 5
 eligibilityRules:

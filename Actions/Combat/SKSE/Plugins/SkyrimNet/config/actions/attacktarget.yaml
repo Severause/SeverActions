@@ -1,13 +1,6 @@
 customCategory: combat
 name: AttackTarget
-description: |
-  The actor attacks someone and starts combat. Use this when:
-  - The actor decides to fight or kill someone
-  - The actor is provoked beyond words
-  - The actor needs to defend themselves or others
-  - The actor is carrying out a threat
-
-  Common triggers: "I'll kill you", "die!", "you'll pay for that", *attacks*, *draws weapon and strikes*, "that's it, you're dead"
+description: "Attack someone and initiate combat."
 questEditorId: SeverActions
 scriptName: SeverActions_Combat
 executionFunctionName: AttackTarget_Execute

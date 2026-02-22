@@ -1,22 +1,6 @@
 customCategory: follower
 name: SetCompanion
-description: "Make this person your companion. Use this action when:
-  - The person genuinely agrees to travel with or accompany the player
-  - The person offers their services as a companion
-  - A mutual agreement to journey together is clearly reached
-  - The player successfully convinces someone to join them
-  - The player returns to a previously dismissed companion and asks them to follow again
-  - A former companion agrees to rejoin the player
-
-  Do NOT use this action when:
-  - The person merely mentions they could travel somewhere
-  - The person is reluctant, hesitant, or hasn't clearly agreed
-  - There was no explicit agreement to join as a companion
-  - The person is just being polite or making conversation about travel
-  - The person is already an active companion following the player
-
-  This is a significant commitment - the NPC must genuinely want to or clearly
-  agree to become a traveling companion. A vague 'maybe' is NOT enough."
+description: "Register this person as a companion. Use only when they genuinely agree to travel with {{ player.name }}. Also for re-recruiting a previously dismissed companion."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: RegisterFollower

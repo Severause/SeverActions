@@ -1,13 +1,6 @@
 customCategory: combat
 name: CeaseFighting
-description: |
-  The actor stops fighting and calls for a truce. Use this when:
-  - The actor wants to stop the fight without surrendering
-  - The actor calls for peace or a ceasefire
-  - The actor decides the conflict should end
-  - Both parties agree to stop fighting
-
-  Common triggers: "stop", "wait", "let's stop this", "enough", "truce", "hold", "this fight is over", "let's talk instead"
+description: "Stop fighting and call for a truce."
 questEditorId: SeverActions
 scriptName: SeverActions_Combat
 executionFunctionName: CeaseFire_Execute

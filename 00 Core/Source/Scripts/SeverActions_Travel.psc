@@ -386,6 +386,9 @@ Bool Function TravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0
     DebugMsg("Applying travel package with priority " + TravelPackagePriority)
     ActorUtil.AddPackageOverride(akNPC, travelPkg, TravelPackagePriority, 1)
 
+    ; Register with native orphan cleanup so stale travel packages get detected
+    SeverActionsNative.OrphanCleanup_RegisterTraveler(akNPC)
+
     ; Small delay to ensure linked ref is processed before package evaluation
     Utility.Wait(0.1)
 
@@ -570,6 +573,9 @@ Bool Function TravelToReference(Actor akNPC, ObjectReference akDestination, Floa
 
     DebugMsg("TravelToReference: Applying travel package with priority " + TravelPackagePriority)
     ActorUtil.AddPackageOverride(akNPC, travelPkg, TravelPackagePriority, 1)
+
+    ; Register with native orphan cleanup
+    SeverActionsNative.OrphanCleanup_RegisterTraveler(akNPC)
 
     ; Small delay to ensure linked ref is processed before package evaluation
     Utility.Wait(0.1)
@@ -1117,6 +1123,9 @@ Function ClearSlot(Int slot, Bool restoreFollower = false)
             ; Restore normal NPC-NPC collision
             SeverActionsNative.SetActorBumpable(npc, true)
 
+            ; Unregister from native orphan cleanup tracking
+            SeverActionsNative.OrphanCleanup_UnregisterTraveler(npc)
+
             ; CRITICAL: Remove all travel/sandbox packages so NPC doesn't get stuck
             RemoveAllTravelPackages(npc)
             If SandboxPackage
@@ -1191,6 +1200,9 @@ Function ForceResetAllSlots(Bool restoreFollowers = true)
 
                 ; Restore normal NPC-NPC collision
                 SeverActionsNative.SetActorBumpable(npc, true)
+
+                ; Unregister from native orphan cleanup tracking
+                SeverActionsNative.OrphanCleanup_UnregisterTraveler(npc)
 
                 ; Remove all packages
                 RemoveAllTravelPackages(npc)

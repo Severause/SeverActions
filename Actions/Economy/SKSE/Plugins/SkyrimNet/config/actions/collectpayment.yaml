@@ -1,13 +1,6 @@
 customCategory: economy
 name: CollectPayment
-description: |
-  The actor collects gold owed to them after providing goods or services. Use this when:
-  - The actor states a price for something they sold
-  - The actor expects payment after completing work
-  - The actor is a merchant completing a transaction
-  - The actor is owed money and requests payment
-
-  Common triggers: "that'll be 50 gold", "pay up", "you owe me", "the price is", "that costs", "hand over the septims"
+description: "Collect gold owed for goods or services provided."
 questEditorId: SeverActions
 scriptName: SeverActions_Currency
 executionFunctionName: CollectPayment_Execute
@@ -20,7 +13,7 @@ parameterMapping:
     description: The person who owes payment
   - type: dynamic
     name: aiAmount
-    description: The price or amount owed as stated in dialogue
+    description: Amount owed
 enabled: true
 eligibilityRules:
   - conditions:

@@ -1,6 +1,6 @@
 customCategory: crafting
 name: CookMeal
-description: "Cook a meal "
+description: "Cook a meal at a cooking station and deliver it to the recipient."
 questEditorId: SeverActions
 scriptName: SeverActions_Crafting
 executionFunctionName: CookMeal_Internal
@@ -10,10 +10,10 @@ parameterMapping:
     description: Speaker Actor parameter (triggering entity)
   - type: dynamic
     name: recipeName
-    description: Name of the meal you are cooking
+    description: Name of the meal to cook
   - type: dynamic
     name: akRecipient
-    description: The recipient of the food
+    description: Recipient of the food
   - type: static
     value: 1
     name: itemCount

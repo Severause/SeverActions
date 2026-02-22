@@ -1,6 +1,6 @@
 customCategory: outfit
-name: UnequipMultipleItems
-description: "Unequip multiple currently worn items at once. Use when told to take off several pieces of armor, clothing, or weapons in one request. Provide a comma-separated list of item names. For example: 'steel gauntlets, iron helmet, glass cuirass'. For removing all clothing use Undress instead. For a single item use UnequipItemByName instead."
+name: UnequipArmor
+description: "Remove one or more currently worn items by name. Comma-separate for multiple. For removing ALL clothing use Undress."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: UnequipMultipleItems_Execute
@@ -10,7 +10,7 @@ parameterMapping:
     description: Speaker Actor parameter (triggering entity)
   - type: dynamic
     name: itemNames
-    description: "Comma-separated list of item names to unequip (e.g., 'steel gauntlets, iron helmet, glass cuirass'). Use partial name matches."
+    description: "Item name(s) to unequip, comma-separated for multiple (e.g. 'steel gauntlets, iron helmet')"
 enabled: true
 eligibilityRules:
   - conditions:

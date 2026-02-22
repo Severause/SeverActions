@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <code>60 Actions</code> &nbsp;&middot;&nbsp; <code>20 Context Prompts</code> &nbsp;&middot;&nbsp; <code>189 Native C++ Functions</code> &nbsp;&middot;&nbsp; <code>~21,000 Lines of Papyrus</code>
+  <code>58 Actions</code> &nbsp;&middot;&nbsp; <code>20 Context Prompts</code> &nbsp;&middot;&nbsp; <code>197 Native C++ Functions</code> &nbsp;&middot;&nbsp; <code>~22,500 Lines of Papyrus</code>
 </p>
 
 ---
@@ -28,7 +28,7 @@ Every system is designed around one principle: **the AI decides what to do, and 
 | **Basic** | `StartFollowing` `StopFollowing` `Relax` `StopRelaxing` `PickUpItem` `UseItem` `GiveItem` `BringItem` `LootContainer` `LootCorpse` `ReadBook` `StopReading` | Core commands — follow, relax, pick up items, loot, and read books aloud |
 | **Travel** | `TravelToPlace` `TravelToLocation` `ChangeTravelSpeed` `CancelTravel` | NPCs navigate to named locations (cities, inns, dungeons) using a native travel marker database |
 | **Combat** | `AttackTarget` `CeaseFighting` `Yield` | Engage or disengage from combat based on conversation |
-| **Outfit** | `Undress` `GetDressed` `EquipItemByName` `UnequipItemByName` `EquipMultipleItems` `UnequipMultipleItems` `SaveOutfitPreset` `ApplyOutfitPreset` | Full outfit management — equip/unequip by name, batch equip, save/recall presets, persistent outfit locking across cell transitions |
+| **Outfit** | `Undress` `GetDressed` `EquipArmor` `UnequipArmor` `SaveOutfitPreset` `ApplyOutfitPreset` | Full outfit management — equip/unequip by name (comma-separate for multiple), save/recall presets, persistent outfit locking across cell transitions |
 | **Follower** | `SetCompanion` `DismissFollower` `CompanionWait` `CompanionFollow` `AssignHome` `SetCombatStyle` `FollowerLeaves` `AdjustRelationship` | Companion framework with relationship tracking (rapport, trust, loyalty, mood), NFF/EFF integration, combat styles, home assignment. Wait/Follow work on any NPC |
 | **Furniture** | `SitOrLayDown` `StopUsingFurniture` | NPCs use chairs, benches, beds, and crafting stations with automatic cleanup |
 | **Economy** | `GiveGold` `GiveGoldTrue` `CollectPayment` `ExtortGold` `AddToDebt` `CreateDebt` `CreateRecurringDebt` `ForgiveDebt` | Gold transactions and debt system — gifts, payments, extortion, tabs, credit limits, due dates, auto-growth, and faction-aware guard reporting. CollectPayment auto-reduces open debts |
@@ -72,14 +72,14 @@ These replace SkyrimNet's default prompts with improved versions. Install via FO
 
 | Module | What It Replaces | Why |
 |--------|-----------------|-----|
-| **Strict Action Selector** | `native_action_selector.prompt` | Reinforces one-action-per-turn rule. Prevents models (especially Grok, non-Claude) from outputting duplicate or triple actions |
+| **Enhanced Action Selector** | `native_action_selector.prompt` | Optimized for SeverActions' streamlined YAML descriptions. Reads the full player-NPC exchange, shows parameter schemas, and includes player-intent and implicit-agreement guidelines for better action matching across all model backends |
 | **Enhanced Target Selectors** | `dialogue_speaker_selector.prompt` `player_dialogue_target_selector.prompt` | Improved speaker/target routing with companion awareness tags, conversation momentum, crosshair weighting, and NPC-to-NPC dialogue support |
 
 ---
 
 ## Native C++ Plugin — `SeverActionsNative.dll`
 
-The included SKSE plugin (189 native functions) replaces slow Papyrus operations with native C++ implementations, providing 100-2000x performance improvements across all major systems:
+The included SKSE plugin (197 native functions) replaces slow Papyrus operations with native C++ implementations, providing 100-2000x performance improvements across all major systems:
 
 | System | What It Does |
 |--------|--------------|
@@ -102,6 +102,7 @@ The included SKSE plugin (189 native functions) replaces slow Papyrus operations
 | **Book Utilities** | Native book text extraction — `GetBookText`, `FindBookInInventory`, `ListBooks` |
 | **Yield Aggression Monitor** | TESHitEvent-based monitoring that restores yielded NPC aggression when attacked again |
 | **Teammate Monitor** | Periodic scanning of loaded actors for `SetPlayerTeammate` changes — fires mod events for instant follower onboarding without save/load |
+| **Orphan Cleanup** | Periodic scanning of loaded actors for stale SeverActions LinkedRef keywords (travel, furniture, follow) not backed by any tracking system — fires mod events to clear orphaned packages and LinkedRefs that cause NPCs to stand around doing nothing |
 | **Fertility Mode Bridge** | Cached fertility state lookups, cycle tracking, pregnancy status |
 | **NSFW Utilities** | High-performance JSON assembly for SexLab event data (500-2000x faster than Papyrus) |
 
@@ -132,7 +133,7 @@ A relationship-driven companion system where NPCs remember how they feel about t
 
 NPCs can equip and unequip items by name, handle multiple items in a single action, save/recall outfit presets, and keep their outfits persistent across cell transitions:
 
-- **Name-based equipping** — "Put on the steel gauntlets" uses C++ `FindItemByName` for fast inventory search, Papyrus `EquipItem` for thread-safe equipping
+- **Name-based equipping** — `EquipArmor` / `UnequipArmor` use C++ `FindItemByName` for fast inventory search, Papyrus `EquipItem` for thread-safe equipping
 - **Batch operations** — "Put on steel gauntlets, iron helmet, and glass cuirass" in a single action via comma-separated item names
 - **Outfit presets** — "Save what you're wearing as your combat outfit" snapshots all worn items; "Change into your home clothes" strips current gear and equips the saved preset
 - **Persistent outfit locking** — Locked outfits survive cell transitions, save/load, dismissal, and engine auto-equip. Uses per-follower ReferenceAlias slots with `OnLoad`/`OnCellLoad`/`OnObjectUnequipped` events for zero-flicker re-equipping. Outfit-locked actors are tracked in a persistent list so alias slots are reassigned even for dismissed followers after save/load. Suspend/resume mechanism prevents the alias re-equip guard from fighting the outfit system's own equip/unequip operations (e.g., switching presets)
@@ -269,7 +270,7 @@ SeverActions/
 |   +-- SeverActions.esp                  # Plugin file
 |   +-- Interface/Translations/           # MCM translation strings
 |   +-- SKSE/Plugins/
-|   |   +-- SeverActionsNative.dll        # Native C++ SKSE plugin (189 functions)
+|   |   +-- SeverActionsNative.dll        # Native C++ SKSE plugin (197 functions)
 |   |   +-- SeverActionsNative.toml       # Plugin configuration
 |   +-- Scripts/                          # Compiled Papyrus scripts (.pex)
 |   +-- Source/
@@ -298,7 +299,7 @@ SeverActions/
 |   +-- Follower/                         # Relationship context and action guidance
 |   +-- Economy-Anywhere/                 # Merchant + debt context (always active)
 |   +-- Economy-LocationOnly/             # Merchant + debt context (location-restricted)
-|   +-- ActionSelector/                   # Optional: strict action selector override
+|   +-- ActionSelector/                   # Optional: enhanced action selector for SeverActions YAMLs
 |   +-- TargetSelectors/                  # Optional: enhanced speaker/target selectors
 |   +-- Adult-OSLAroused/                 # Arousal awareness (OSL)
 |   +-- Adult-SLOAroused/                 # Arousal awareness (SLO)
@@ -319,29 +320,29 @@ SeverActions/
 | Script | Lines | Purpose |
 |--------|------:|---------|
 | `SeverActions_Arrest` | 4,879 | Crime system — bounty tracking, guard dispatch, cross-cell escort, persuasion, judgment, jail processing |
-| `SeverActions_Travel` | 1,694 | Travel system — location lookup, walking packages, speed control, stuck recovery |
+| `SeverActions_Travel` | 1,706 | Travel system — location lookup, walking packages, speed control, stuck recovery, orphan cleanup tracking |
 | `SeverActions_MCM` | 1,611 | Mod Configuration Menu — toggle features, adjust settings, per-follower relationship sliders, survival stats, outfit lock status |
 | `SeverActions_Survival` | 1,441 | Follower survival — hunger, cold, fatigue tracking with native calculation, beverage detection |
 | `SeverActions_Loot` | 1,236 | Container looting, corpse searching, item pickup, flora harvesting, book reading |
 | `SeverActions_Crafting` | 1,187 | Full crafting pipeline — forge/cooking/alchemy with native DB integration |
-| `SeverActions_FollowerManager` | 1,363 | Follower framework — roster, relationships, NFF/EFF integration, 4-way dismiss routing, instant teammate detection via native DLL events, combat styles, home assignment, outfit slot management |
+| `SeverActions_FollowerManager` | 1,653 | Follower framework — roster, relationships, NFF/EFF integration, 4-way dismiss routing, instant teammate detection via native DLL events, combat styles, home assignment, outfit slot management, orphan cleanup event handler |
 | `SeverActions_Combat` | 1,076 | Combat actions — attack, cease, yield with C++ aggression restoration monitor |
 | `SeverActions_Debt` | 1,272 | Debt/tab system — creation, tracking, auto-growth, credit limits, due dates, payment reduction, faction reporting, complaint summaries |
 | `SeverActions_Outfit` | 1,260 | Equipment management — equip/unequip by name, batch operations, outfit presets, persistent outfit locking with known-item lock |
-| `SeverActionsNative` | 799 | Native DLL function declarations (189 functions) |
+| `SeverActionsNative` | 830 | Native DLL function declarations (197 functions) |
 | `SeverActions_Hotkeys` | 662 | Hotkey registration and handling — follow, dismiss, wait, companion, yield, outfit, furniture |
 | `SeverActions_FertilityMode_Bridge` | 424 | Fertility Mode data caching bridge to native DLL |
 | `SeverActions_Init` | 424 | Mod initialization, database loading, event registration, follower framework init |
 | `SeverActions_SpellTeach` | 380 | Spell teaching system |
 | `SeverActions_WheelMenu` | 420 | UIExtensions wheel menu — all actions in one radial interface with context-aware labels |
 | `SeverActions_EatingAnimations` | 338 | TaberuAnimation.esp integration — keyword-based food eating animations |
-| `SeverActions_Follow` | 506 | Dual follow system — casual follow (SkyrimNet package) and companion follow (CK alias-based with LinkedRef), sandbox management, alias slot assignment |
+| `SeverActions_Follow` | 553 | Dual follow system — casual follow (SkyrimNet package) and companion follow (CK alias-based with LinkedRef), sandbox management, alias slot assignment, orphan cleanup tracking |
 | `SeverActions_Currency` | 311 | Gold transactions with conjured gold fallback, auto-debt reduction on CollectPayment |
 | `SeverActions_Furniture` | 237 | Furniture interaction with native auto-cleanup |
 | `SeverActions_SLOArousal` | 164 | SexLab Aroused integration |
 | `SeverActions_Arousal` | 142 | OSL Aroused integration — arousal state decorator and modification |
 | `SeverActions_OutfitAlias` | 91 | Per-follower ReferenceAlias for zero-flicker outfit persistence across cell transitions |
-| | **~21,000** | **Total** |
+| | **~22,500** | **Total** |
 
 ---
 

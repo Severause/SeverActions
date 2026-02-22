@@ -1,6 +1,6 @@
 customCategory: basic
 name: LootContainer
-description: "Loot items from a nearby container. Use when you want to take items from a chest, barrel, sack, or other container you can see."
+description: "Loot items from a nearby container (chest, barrel, sack, end table)."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: LootContainer_Execute
@@ -10,10 +10,10 @@ parameterMapping:
     description: Speaker Actor parameter (triggering entity)
   - type: dynamic
     name: containerName
-    description: The name of the container to loot (e.g. "Chest", "Barrel", "Sack", "End Table")
+    description: The name of the container to loot (e.g. "Chest", "Barrel", "Sack")
   - type: dynamic
     name: itemsToTake
-    description: "What to take: 'all', 'valuables', 'gold', or comma-separated item names. Default to 'all' if unsure."
+    description: "'all', 'valuables', 'gold', or comma-separated item names"
 enabled: true
 eligibilityRules:
   - conditions:
