@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <code>58 Actions</code> &nbsp;&middot;&nbsp; <code>20 Context Prompts</code> &nbsp;&middot;&nbsp; <code>197 Native C++ Functions</code> &nbsp;&middot;&nbsp; <code>~23,000 Lines of Papyrus</code>
+  <code>58 Actions</code> &nbsp;&middot;&nbsp; <code>24 Context Prompts</code> &nbsp;&middot;&nbsp; <code>197 Native C++ Functions</code> &nbsp;&middot;&nbsp; <code>~23,000 Lines of Papyrus</code>
 </p>
 
 ---
@@ -28,7 +28,7 @@ Every system is designed around one principle: **the AI decides what to do, and 
 | **Basic** | `StartFollowing` `StopFollowing` `Relax` `StopRelaxing` `PickUpItem` `UseItem` `GiveItem` `BringItem` `LootContainer` `LootCorpse` `ReadBook` `StopReading` | Core commands — follow, relax, pick up items, loot, and read books aloud |
 | **Travel** | `TravelToPlace` `TravelToLocation` `ChangeTravelSpeed` `CancelTravel` | NPCs navigate to named locations (cities, inns, dungeons) using a native travel marker database |
 | **Combat** | `AttackTarget` `CeaseFighting` `Yield` | Engage or disengage from combat based on conversation |
-| **Outfit** | `Undress` `GetDressed` `EquipArmor` `UnequipArmor` `SaveOutfitPreset` `ApplyOutfitPreset` | Full outfit management — equip/unequip by name (comma-separate for multiple), save/recall presets, persistent outfit locking across cell transitions |
+| **Outfit** | `Undress` `GetDressed` `EquipItems` `UnequipItems` `SaveOutfitPreset` `ApplyOutfitPreset` | Full outfit management — equip/unequip by name (comma-separate for multiple), save/recall presets, persistent outfit locking across cell transitions. OmniSight-aware equipment prompt shows gender-aware item names and descriptions |
 | **Follower** | `SetCompanion` `DismissFollower` `CompanionWait` `CompanionFollow` `AssignHome` `SetCombatStyle` `FollowerLeaves` `AdjustRelationship` | Companion framework with relationship tracking (rapport, trust, loyalty, mood), NFF/EFF integration, combat styles, home assignment. Wait/Follow work on any NPC |
 | **Furniture** | `SitOrLayDown` `StopUsingFurniture` | NPCs use chairs, benches, beds, and crafting stations with automatic cleanup |
 | **Economy** | `GiveGold` `GiveGoldTrue` `CollectPayment` `ExtortGold` `AddToDebt` `CreateDebt` `CreateRecurringDebt` `ForgiveDebt` | Gold transactions and debt system — gifts, payments, extortion, tabs, credit limits, due dates, auto-growth, and faction-aware guard reporting. CollectPayment auto-reduces open debts |
@@ -54,7 +54,10 @@ Prompts inject real-time game state into the AI's context so NPCs *know* about t
 | **Debt Context** | Financial obligations — who owes what, due dates, credit limits, payment rules |
 | **Book Reading** | Strict reading rules — NPCs read only real book text, never fabricated content |
 | **Follower Context** | Relationship values (rapport/trust/loyalty/mood), morality, combat style, and companion behavior guidelines with relationship-influenced moral flexibility |
-| **Follower Action Guidance** | Relationship value calibration (AdjustRelationship ranges), companion recruitment threshold, and FollowerLeaves emotional weight |
+| **Group Awareness** | Shows traveling companions which other party members are nearby — scales naturally from duo to large group. Keeps dialogue conversational without checklist-style name-dropping |
+| **Conversation Flow** | Anti-loop rules that prevent NPCs from repeating the same topics or echoing previous responses in circular conversations |
+| **Relationship Assessment** | Periodic LLM-driven background evaluation of follower relationships based on recent events and memories. Runs every 5 game hours per follower — adjusts rapport, trust, loyalty, and mood without competing for action slots |
+| **Equipment (OmniSight)** | What they're currently wearing with OmniSight-aware item names and descriptions. Ground truth enforcement — NPCs cannot claim to wear items not in their equipment list |
 
 ### Adult Content Modules (Optional)
 
@@ -72,7 +75,7 @@ These replace SkyrimNet's default prompts with improved versions. Install via FO
 | Module | What It Replaces | Why |
 |--------|-----------------|-----|
 | **Enhanced Action Selector** | `native_action_selector.prompt` | Optimized for SeverActions' streamlined YAML descriptions. Reads the full player-NPC exchange, shows parameter schemas, and includes player-intent and implicit-agreement guidelines for better action matching across all model backends |
-| **Enhanced Target Selectors** | `dialogue_speaker_selector.prompt` `player_dialogue_target_selector.prompt` | Improved speaker/target routing with companion awareness tags, conversation momentum, crosshair weighting, and NPC-to-NPC dialogue support |
+| **Enhanced Target Selectors** | `dialogue_speaker_selector.prompt` `player_dialogue_target_selector.prompt` | Improved speaker/target routing with companion awareness tags, conversation momentum, crosshair weighting, NPC-to-NPC targeting rules, and anti-loop silence detection |
 
 ---
 
@@ -122,6 +125,7 @@ A relationship-driven companion system where NPCs remember how they feel about t
 - **Combat styles** — Aggressive, defensive, ranged, healer, or balanced — configurable per follower
 - **Home assignment** — NPCs can be assigned a home location and will return there when dismissed
 - **Relationship persistence** — All relationship data survives dismissal, re-recruitment, and temporary teammate status changes (IntelEngine, etc.); returning followers are recognized and keep their full relationship history
+- **Automatic relationship assessment** — Background LLM evaluation of follower relationships every 5 game hours. The AI reviews recent events and memories, then adjusts rapport, trust, loyalty, and mood organically — no action slot needed. Configurable interval via MCM
 - **Relationship cooldown** — Configurable per-actor cooldown (default 2 minutes) prevents the AI from spamming relationship changes every dialogue line
 - **Outfit persistence** — Outfit locks survive dismissal — dismissed followers keep their equipped outfits when sent home
 - **Up to 10 companions** — Default max of 10 simultaneous followers, configurable up to 20 via MCM
@@ -245,6 +249,7 @@ Followers track hunger, fatigue, and cold exposure on a 0-100 scale with native 
 | [Extensible Follower Framework](https://www.nexusmods.com/skyrimspecialedition/mods/7003) | Follower recruit/dismiss routed through EFF when detected (NFF takes priority if both installed) |
 | [NPC Names Distributor](https://www.nexusmods.com/skyrimspecialedition/mods/81214) | Guard dispatch can find NPCs by their NND-assigned names |
 | [Immersive Equipping Animations](https://www.nexusmods.com/skyrimspecialedition/mods/70249) | Slot-appropriate equip/unequip animations for outfit actions |
+| OmniSight | Gender-aware item names and descriptions in the equipment prompt — enriches NPC clothing/armor awareness |
 | [Fertility Mode Reloaded](https://www.loverslab.com/) | Pregnancy and fertility cycle awareness |
 | [OSL Aroused](https://www.nexusmods.com/skyrimspecialedition/mods/74037) | Arousal state awareness and modification |
 | [SexLab Aroused](https://www.loverslab.com/) | Arousal state awareness and modification |
@@ -280,7 +285,7 @@ SeverActions/
 |   +-- Basic/                            # Follow, wait, relax, items, loot, read books
 |   +-- Travel/                           # Travel to locations
 |   +-- Combat/                           # Attack, cease, yield
-|   +-- Outfit/                           # Equip/unequip by name, batch equip, presets
+|   +-- Outfit/                           # Equip/unequip by name, batch equip, presets + OmniSight equipment prompt
 |   +-- Follower/                         # Companion framework — recruit, dismiss, relationship, combat style
 |   +-- Furniture/                        # Sit, lay down, stand up
 |   +-- Economy/                          # Give gold, collect, extort
@@ -290,12 +295,12 @@ SeverActions/
 |   +-- Adult-SLOAroused/                 # SL Aroused integration
 |
 +-- Prompts/                              # Context prompt templates (selectable)
-|   +-- Core/                             # Spells, gold, inventory, nearby, book reading
+|   +-- Core/                             # Spells, gold, inventory, nearby, book reading, conversation flow
 |   +-- Combat/                           # Combat awareness
 |   +-- Survival/                         # Hunger, cold, fatigue
 |   +-- Faction/                          # Guild reputation
 |   +-- Arrest/                           # Bounty and jail status
-|   +-- Follower/                         # Relationship context and action guidance
+|   +-- Follower/                         # Relationship context, group awareness, and relationship assessment
 |   +-- Economy-Anywhere/                 # Merchant + debt context (always active)
 |   +-- Economy-LocationOnly/             # Merchant + debt context (location-restricted)
 |   +-- ActionSelector/                   # Optional: enhanced action selector for SeverActions YAMLs
@@ -318,25 +323,25 @@ SeverActions/
 
 | Script | Lines | Purpose |
 |--------|------:|---------|
-| `SeverActions_Arrest` | 4,879 | Crime system — bounty tracking, guard dispatch, cross-cell escort, persuasion, judgment, jail processing |
+| `SeverActions_Arrest` | 4,977 | Crime system — bounty tracking, guard dispatch, cross-cell escort, persuasion, judgment, jail processing |
 | `SeverActions_Travel` | 1,706 | Travel system — location lookup, walking packages, speed control, stuck recovery, orphan cleanup tracking |
 | `SeverActions_MCM` | 1,736 | Mod Configuration Menu — toggle features, adjust settings, companion dropdown selector, per-follower relationship sliders, survival stats, outfit lock status |
-| `SeverActions_Survival` | 1,441 | Follower survival — hunger, cold, fatigue tracking with native calculation, beverage detection |
-| `SeverActions_Loot` | 1,236 | Container looting, corpse searching, item pickup, flora harvesting, book reading |
+| `SeverActions_Survival` | 1,463 | Follower survival — hunger, cold, fatigue tracking with native calculation, beverage detection |
+| `SeverActions_Loot` | 1,308 | Container looting, corpse searching, item pickup, flora harvesting, book reading — with verified item transfers and leveled list fallback |
 | `SeverActions_Crafting` | 1,187 | Full crafting pipeline — forge/cooking/alchemy with native DB integration |
-| `SeverActions_FollowerManager` | 1,721 | Follower framework — roster, relationships, NFF/EFF integration, 4-way dismiss routing, instant teammate detection via native DLL events, combat styles with load persistence, home assignment, outfit slot management, sleep sandbox cleanup, orphan cleanup event handler |
+| `SeverActions_FollowerManager` | 1,941 | Follower framework — roster, relationships, NFF/EFF integration, 4-way dismiss routing, instant teammate detection via native DLL events, combat styles with load persistence, home assignment, outfit slot management, sleep sandbox cleanup (cell-restricted), orphan cleanup event handler, automatic LLM-based relationship assessment |
 | `SeverActions_Combat` | 1,245 | Combat actions — attack, cease, yield with C++ aggression restoration monitor and yield persistence alias system |
 | `SeverActions_Debt` | 1,272 | Debt/tab system — creation, tracking, auto-growth, credit limits, due dates, payment reduction, faction reporting, complaint summaries |
 | `SeverActions_Outfit` | 1,329 | Equipment management — equip/unequip by name, batch operations, outfit presets, persistent outfit locking with known-item lock and slot conflict detection |
 | `SeverActionsNative` | 830 | Native DLL function declarations (197 functions) |
-| `SeverActions_Hotkeys` | 662 | Hotkey registration and handling — follow, dismiss, wait, companion, yield, outfit, furniture |
-| `SeverActions_FertilityMode_Bridge` | 424 | Fertility Mode data caching bridge to native DLL |
-| `SeverActions_Init` | 424 | Mod initialization, database loading, event registration, follower framework init |
+| `SeverActions_Hotkeys` | 659 | Hotkey registration and handling — follow, dismiss, wait, companion, yield, outfit, furniture |
+| `SeverActions_FertilityMode_Bridge` | 436 | Fertility Mode data caching bridge to native DLL |
+| `SeverActions_Init` | 443 | Mod initialization, database loading, event registration, follower framework init |
 | `SeverActions_SpellTeach` | 380 | Spell teaching system |
-| `SeverActions_WheelMenu` | 420 | UIExtensions wheel menu — all actions in one radial interface with context-aware labels |
+| `SeverActions_WheelMenu` | 405 | UIExtensions wheel menu — all actions in one radial interface with context-aware labels |
 | `SeverActions_EatingAnimations` | 338 | TaberuAnimation.esp integration — keyword-based food eating animations |
-| `SeverActions_Follow` | 553 | Dual follow system — casual follow (SkyrimNet package) and companion follow (CK alias-based with LinkedRef), sandbox management, alias slot assignment, orphan cleanup tracking |
-| `SeverActions_Currency` | 311 | Gold transactions with conjured gold fallback, auto-debt reduction on CollectPayment |
+| `SeverActions_Follow` | 582 | Dual follow system — casual follow (SkyrimNet package) and companion follow (CK alias-based with LinkedRef), sandbox management with self-healing priority system, ClearPackageOverride safety nets, alias slot assignment, orphan cleanup tracking |
+| `SeverActions_Currency` | 321 | Gold transactions with conjured gold fallback, auto-debt reduction on CollectPayment |
 | `SeverActions_Furniture` | 237 | Furniture interaction with native auto-cleanup |
 | `SeverActions_SLOArousal` | 164 | SexLab Aroused integration |
 | `SeverActions_Arousal` | 142 | OSL Aroused integration — arousal state decorator and modification |
@@ -355,7 +360,7 @@ The mod is configurable through the **MCM (Mod Configuration Menu)** in-game:
 - **Furniture** — Auto-stand distance (how far the player must move before NPCs stand up)
 - **Survival** — Hunger/cold/fatigue thresholds and update intervals
 - **Hotkeys** — Configurable keybinds for follow, dismiss, wait/resume, set companion, yield, outfit, stand up. UIExtensions wheel menu key. Target mode selection (crosshair, nearest NPC, last talked to)
-- **Followers** — Per-follower Rapport, Trust, Loyalty, Mood sliders, Combat Style dropdown, survival stats (hunger/fatigue/cold percentages), outfit lock status. Max companions slider (up to 20). Relationship cooldown slider (60-300 seconds). Outfit lock system toggle. Recruitment Mode dropdown (Auto / SeverActions Only)
+- **Followers** — Per-follower Rapport, Trust, Loyalty, Mood sliders, Combat Style dropdown, survival stats (hunger/fatigue/cold percentages), outfit lock status. Max companions slider (up to 20). Relationship cooldown slider (60-300 seconds). Automatic relationship assessment toggle and interval (game hours). Outfit lock system toggle. Recruitment Mode dropdown (Auto / SeverActions Only)
 - **Crime** — Per-hold bounty display with clear options
 - **Dialogue Animations** — Enable/disable conversation idle animations
 - **Debug** — Verbose logging for troubleshooting dispatch and escort behavior
@@ -366,6 +371,7 @@ The mod is configurable through the **MCM (Mod Configuration Menu)** in-game:
 
 | Version | Changes |
 |---------|---------|
+| **0.99** | **Loot Transfer Fix** — `ProcessLootList` now reliably transfers items from containers and corpses. The "all" path uses `RemoveAllItems` for correct handling of leveled lists that `GetNthForm` can't resolve on unopened containers. The "valuables", "gold", and "specific items" paths now verify each `RemoveItem` with `GetItemCount` and fall back to `RemoveAllItems` if individual removals fail on unresolved leveled forms. **Sandbox/Follow Self-Healing Priority** — Sandbox package priority lowered to 40 (below follow at 50), making the system self-healing: orphaned FF sandbox packages from bad transitions or sleep time-skips can never block following. `Sandbox()` now explicitly removes the follow package before applying sandbox. `StartFollowing()` and `StopSandbox()` use `ClearPackageOverride` as a safety net to nuke all runtime overrides before re-applying fresh packages. **Speaker Selector Rebalance** — Merged old and new speaker selector philosophies. `zerochance` lowered from 70 to 60 (40% forced speech). Silence rules always visible regardless of zerochance roll. Softened silence directive — companions don't default to silence when they'd realistically speak. "Do NOT choose silence" expanded from 3 to 7 companion-friendly triggers. Added NPC-to-NPC targeting rule (`Vayne>Alva` instead of `Vayne>player` when NPCs are talking to each other). Anti-loop conversation detection added. **Group Conversation Rewrite** — Rewrote `0260_severactions_engaged_participants.prompt` for groups of 2+. Removed MANDATORY checklist-style participation rules. NPCs speak to whoever they're actually engaging with, use names only when it makes sense, and don't force name-dropping. Natural awareness replaces meeting-facilitator energy. **Automatic Relationship Assessment** — New LLM-driven background relationship evaluation that runs every 5 game hours (configurable). Reviews recent events and memories, then adjusts rapport, trust, loyalty, and mood organically without competing for action slots. Replaces the need for `AdjustRelationship` to fire during active conversation. Game-time-based cooldown per follower. MCM toggle and interval slider. **OmniSight Equipment Prompt** — New `0410_equipment.prompt` in the Outfit module. Shows worn equipment with OmniSight-aware gender-specific item names and descriptions. Displays weapon drawn/sheathed state. Ground truth enforcement prevents NPCs from claiming to wear items not in their equipment list. **Follow System Maintenance** — `Maintenance()` now re-applies ENGAGED faction to loaded actors with active `FollowPlayer` packages on game load (faction state doesn't persist across saves but SkyrimNet packages do). `StartFollowing`/`StopFollowing` properly manage ENGAGED state transitions. **Sleep Sandbox Cleanup** — Restricted to followers in the same cell as the player (was all followers). Non-sandboxing followers in the player's cell get `ClearPackageOverride` + `ReinforcePackages` to clear orphaned runtime packages from the sleep time-skip. **Conversation Flow** — Anti-loop rules added to `0550_severactions_conversation_flow.prompt` preventing NPCs from repeating the same conversation topics. **Action YAML Streamlining** — Outfit actions renamed (`EquipArmor` → `EquipItems`, `UnequipArmor` → `UnequipItems`). Parameter schemas fixed across multiple actions. Orphan cleanup system added to native DLL. **Removed** `0910_follower_action_guidance.prompt` — action guidance now handled entirely by YAML descriptions and relationship context prompt. |
 | **0.98.5** | **Yield Persistence System** — Surrendered generic NPCs (bandits, necromancers, etc.) now persist across cell transitions and save/load via a new ReferenceAlias slot system (`YieldSlots`). When a hostile NPC yields, they're assigned a persistence slot that prevents the engine from recycling them. Each slot runs `SeverActions_YieldAlias` with an `OnLoad` event that re-zeros Aggression, re-applies SeverSurrenderedFaction membership, and re-registers with the native C++ yield monitor — fixing an issue where yielded NPCs would turn hostile again after cell transitions because the engine reset their actor values from template. `OnDeath` frees slots automatically. `ReassignYieldSlots` repopulates all slots on game load from a StorageUtil tracking list (since `ForceRefTo` is runtime-only). **Combat Style Persistence** — Combat style actor values (Confidence, Aggression) now survive save/load and dismiss/re-recruit cycles. New `ApplyCombatStyleValues` extracted function and `ReapplyCombatStyles` called from Maintenance on every game load. Returning followers get their stored combat style re-applied on re-recruit. **Sleep Sandbox Cleanup** — Followers with active sandbox packages (from relax/wait actions) now have those packages cleared automatically when the player sleeps. `OnSleepStart` iterates all followers and calls `StopSandbox` on any with an active sandbox override, preventing odd runtime packages during the sleep time-skip. **MCM Companion Selector** — Followers MCM page redesigned with a dropdown companion selector instead of listing all companions simultaneously. Shows one companion at a time with all stats, relationship sliders, survival needs, outfit lock status, and controls. **Outfit Lock Slot Conflict Fix** — `LockEquippedOutfit` now detects slot mask conflicts between newly equipped items and stale `GetWornForm` results, preventing displaced items from persisting in the lock list and fighting newly equipped gear. `ReapplyLockedOutfit` now suspends/resumes the outfit lock during re-equip to prevent recursive `OnObjectUnequipped` calls, with a re-entry guard via `SeverOutfit_Suspended`. **Equipment Ground Truth Prompt** — Added enforcement line to worn equipment prompt establishing the equipment list as canonical truth — NPCs cannot claim to wear items not in the list. **Enhanced Speaker Selector Rewrite** — Complete rewrite of `dialogue_speaker_selector.prompt`. Silence reduced from 90% to 70%. Companion behavior reframed: companions are the "core cast" encouraged to banter, react, joke, warn, and express personality freely. Silence criteria now primarily targets bystanders (merchants, guards, strangers) while companions are expected to be active party participants. Selection criteria reordered with unresolved questions at #1, companion dynamics elevated to #3 with detailed behavioral guidance. |
 | **0.98** | **Debt System** — Full financial obligation tracking with 5 new actions (`AddToDebt`, `CreateDebt`, `CreateRecurringDebt`, `ForgiveDebt`, `GiveGoldTrue`). NPCs can run tabs, set credit limits, assign due dates, and report overdue debts to faction-appropriate guards. `GiveItem` auto-adds item value to existing debts (no double-charging). `CollectPayment` auto-reduces matching debts — partial payments reduce the balance, full payments clear it. Debt context prompt shows all obligations in the NPC's AI context. Removed `SettleDebt` action — LLMs naturally use `CollectPayment` instead. **Outfit Lock Race Condition Fix** — Fixed bug where outfit lock captured the old outfit instead of the newly equipped one. Root cause: Papyrus `OnObjectUnequipped` events fire on separate stacks after the equip function returns, and `GetWornForm()` returns stale data before the engine finalizes equip state. New `LockEquippedOutfit` function builds the lock from KNOWN equipped items (guaranteed fresh) merged with `GetWornForm` for unchanged slots. Rewired `EquipMultipleItems`, `EquipItemByName`, `Dress`, and `ApplyOutfitPreset`. Also fixed `Dress_Execute` early return not calling `ResumeOutfitLock` (would permanently suspend the lock). **Anti-Hallucination Prompt** — New `0600_severactions_dialogue_rules.prompt` prevents NPCs from echoing system/action text (gold amounts, debt totals, `[item_given]` tags, "X gave Y to Z" patterns) in their dialogue or narration. **AdjustRelationship Priority Fix** — Demoted from "use after EVERY exchange" to LOW PRIORITY fallback, fixing issue where models chose it over gameplay actions like `CollectPayment` or `GiveItem`. **Bounty Awareness** — New prompt gives guards awareness of player's bounty in the current hold. **FOMOD Prompt Overrides** — Two new optional modules: Strict Action Selector (reinforces one-action-per-turn, prevents duplicate action calls from models like Grok) and Enhanced Target Selectors (improved speaker/target routing with companion tags, conversation momentum, crosshair weighting). **Action YAML Audit** — All 60 actions updated with tracking-only mode support. |
 | **0.97.5** | **NFF Ignore Token Detection** — Custom AI followers (Inigo, Lucien, Kaidan, etc.) that carry NFF's `nwsIgnoreToken` (distributed via SPID) are now automatically detected and routed to track-only mode instead of through NFF. Track-only followers get full relationship tracking, outfit locking, and survival monitoring without any package or alias injection that could conflict with their custom AI. New `HasNFFIgnoreToken()` checks actor inventory for the token via `Game.GetFormFromFile(0x051CFC8D, "nwsFollowerFramework.esp")`. New `ShouldUseFramework()` provides centralized routing decisions across all 6 onboarding paths (`RegisterFollower`, `UnregisterFollower`, `OnNativeTeammateDetected`, `DetectExistingFollowers`, `Maintenance`, follow system injection). **MCM Recruitment Mode Toggle** — New "Recruitment Mode" dropdown on the Followers MCM page with two options: Auto (default — uses NFF/EFF when installed, respects ignore tokens) and SeverActions Only (bypasses NFF/EFF entirely, uses our own alias-based follow system for all followers). Takes effect on next recruit — existing followers are not live-swapped. **Fertility Mode Bridge Fix** — Fixed `Cannot cast from None to Form[]` Papyrus error when Fertility Mode's internal arrays haven't initialized yet. All FM array accesses (`TrackedActors`, `LastConception`, `LastBirth`, `BabyAdded`, `LastOvulation`, `LastGameHours`, `LastGameHoursDelta`, `CurrentFather`) are now cached to local variables with None guards before indexing, preventing cascading errors during game load. |

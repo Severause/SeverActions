@@ -487,27 +487,52 @@ int Function ProcessLootList(Actor akActor, ObjectReference akSource, String ite
     int totalTaken = 0
 
     ; Handle "all" - take everything
-    ; Iterate backwards so RemoveItem doesn't shift indices we haven't visited
+    ; Uses RemoveAllItems for reliable transfer (handles leveled lists that
+    ; GetNthForm can't resolve until the player opens the container)
     if lootRequest == "all" || lootRequest == "everything"
         int numItems = akSource.GetNumItems()
-        int startIdx = numItems - 1
-        if startIdx >= MAX_ITEMS
-            startIdx = MAX_ITEMS - 1
+        Debug.Trace("[SeverActions_Loot] ProcessLootList ALL: source has " + numItems + " item stacks")
+
+        ; Snapshot item descriptions before transfer (best-effort for event text)
+        int cap = numItems
+        if cap > MAX_ITEMS
+            cap = MAX_ITEMS
         endif
-        int i = startIdx
-        while i >= 0
+        Form lastForm = None
+        int lastCount = 0
+        int i = 0
+        while i < cap
             Form itemForm = akSource.GetNthForm(i)
             if itemForm
                 int count = akSource.GetItemCount(itemForm)
                 if count > 0
-                    akSource.RemoveItem(itemForm, count, true, akActor)
-                    totalTaken += 1
-                    TrackLootedItem(akActor, itemForm, count)
-                    AddToLootedItemsList(itemForm.GetName(), count)
+                    String itemName = itemForm.GetName()
+                    if itemName != ""
+                        totalTaken += 1
+                        AddToLootedItemsList(itemName, count)
+                        lastForm = itemForm
+                        lastCount = count
+                    endif
                 endif
             endif
-            i -= 1
+            i += 1
         endwhile
+
+        ; Transfer everything in one native call (resolves leveled items properly)
+        akSource.RemoveAllItems(akActor, false, true)
+
+        ; Track last item for prompt reference
+        if lastForm
+            TrackLootedItem(akActor, lastForm, lastCount)
+        endif
+
+        ; Verify source is empty
+        int remaining = akSource.GetNumItems()
+        if remaining > 0
+            Debug.Trace("[SeverActions_Loot] WARNING: " + remaining + " items remain after RemoveAllItems (quest items or engine lock)")
+        else
+            Debug.Trace("[SeverActions_Loot] ProcessLootList ALL: transfer complete, " + totalTaken + " stacks reported")
+        endif
         return totalTaken
     endif
 
@@ -515,10 +540,12 @@ int Function ProcessLootList(Actor akActor, ObjectReference akSource, String ite
     ; Iterate backwards so RemoveItem doesn't shift indices we haven't visited
     if lootRequest == "valuables" || lootRequest == "valuable"
         int numItems = akSource.GetNumItems()
+        Debug.Trace("[SeverActions_Loot] ProcessLootList VALUABLES: source has " + numItems + " item stacks")
         int startIdx = numItems - 1
         if startIdx >= MAX_ITEMS
             startIdx = MAX_ITEMS - 1
         endif
+        int failedRemovals = 0
         int i = startIdx
         while i >= 0
             Form itemForm = akSource.GetNthForm(i)
@@ -527,15 +554,30 @@ int Function ProcessLootList(Actor akActor, ObjectReference akSource, String ite
                 if value >= 50
                     int count = akSource.GetItemCount(itemForm)
                     if count > 0
+                        Debug.Trace("[SeverActions_Loot]   Removing: " + itemForm.GetName() + " x" + count + " (value " + value + ")")
                         akSource.RemoveItem(itemForm, count, true, akActor)
-                        totalTaken += 1
-                        TrackLootedItem(akActor, itemForm, count)
-                        AddToLootedItemsList(itemForm.GetName(), count)
+                        ; Verify removal actually worked
+                        int remaining = akSource.GetItemCount(itemForm)
+                        if remaining < count
+                            totalTaken += 1
+                            int actuallyMoved = count - remaining
+                            TrackLootedItem(akActor, itemForm, actuallyMoved)
+                            AddToLootedItemsList(itemForm.GetName(), actuallyMoved)
+                        else
+                            Debug.Trace("[SeverActions_Loot]   WARNING: RemoveItem failed for " + itemForm.GetName() + " (still " + remaining + " in source) - likely unresolved leveled item")
+                            failedRemovals += 1
+                        endif
                     endif
                 endif
             endif
             i -= 1
         endwhile
+        ; If all individual removals failed, fall back to RemoveAllItems then return non-valuables
+        if totalTaken == 0 && failedRemovals > 0
+            Debug.Trace("[SeverActions_Loot] All RemoveItem calls failed - falling back to RemoveAllItems")
+            akSource.RemoveAllItems(akActor, false, true)
+            totalTaken = failedRemovals
+        endif
         return totalTaken
     endif
     
@@ -545,23 +587,32 @@ int Function ProcessLootList(Actor akActor, ObjectReference akSource, String ite
         if goldForm
             int goldCount = akSource.GetItemCount(goldForm)
             if goldCount > 0
+                Debug.Trace("[SeverActions_Loot] ProcessLootList GOLD: removing " + goldCount + " gold")
                 akSource.RemoveItem(goldForm, goldCount, true, akActor)
-                totalTaken += 1
-                TrackLootedItem(akActor, goldForm, goldCount)
-                AddToLootedItemsList("Gold", goldCount)
+                ; Verify
+                int remaining = akSource.GetItemCount(goldForm)
+                if remaining < goldCount
+                    int actuallyMoved = goldCount - remaining
+                    totalTaken += 1
+                    TrackLootedItem(akActor, goldForm, actuallyMoved)
+                    AddToLootedItemsList("Gold", actuallyMoved)
+                else
+                    Debug.Trace("[SeverActions_Loot] WARNING: Gold removal failed (still " + remaining + " in source)")
+                endif
             endif
         endif
         return totalTaken
     endif
-    
+
     ; Handle comma-separated list of item names
     ; Split by comma and search for each item
+    Debug.Trace("[SeverActions_Loot] ProcessLootList SPECIFIC: '" + lootRequest + "'")
     int startPos = 0
     int commaPos = StringUtil.Find(lootRequest, ",", startPos)
-    
+
     while startPos < StringUtil.GetLength(lootRequest)
         String itemName = ""
-        
+
         if commaPos >= 0
             itemName = StringUtil.Substring(lootRequest, startPos, commaPos - startPos)
             startPos = commaPos + 1
@@ -570,25 +621,35 @@ int Function ProcessLootList(Actor akActor, ObjectReference akSource, String ite
             itemName = StringUtil.Substring(lootRequest, startPos)
             startPos = StringUtil.GetLength(lootRequest)
         endif
-        
+
         ; Trim whitespace (basic)
         itemName = TrimString(itemName)
-        
+
         if itemName != ""
             ; Find and take the item
             Form itemForm = FindItemInContainer(akSource, itemName)
             if itemForm
                 int count = akSource.GetItemCount(itemForm)
                 if count > 0
+                    Debug.Trace("[SeverActions_Loot]   Removing: " + itemForm.GetName() + " x" + count)
                     akSource.RemoveItem(itemForm, count, true, akActor)
-                    totalTaken += 1
-                    TrackLootedItem(akActor, itemForm, count)
-                    AddToLootedItemsList(itemForm.GetName(), count)
+                    ; Verify removal actually worked
+                    int remaining = akSource.GetItemCount(itemForm)
+                    if remaining < count
+                        int actuallyMoved = count - remaining
+                        totalTaken += 1
+                        TrackLootedItem(akActor, itemForm, actuallyMoved)
+                        AddToLootedItemsList(itemForm.GetName(), actuallyMoved)
+                    else
+                        Debug.Trace("[SeverActions_Loot]   WARNING: RemoveItem failed for " + itemForm.GetName() + " (still " + remaining + " in source) - likely unresolved leveled item")
+                    endif
                 endif
+            else
+                Debug.Trace("[SeverActions_Loot]   Item not found in container: '" + itemName + "'")
             endif
         endif
     endwhile
-    
+
     return totalTaken
 EndFunction
 

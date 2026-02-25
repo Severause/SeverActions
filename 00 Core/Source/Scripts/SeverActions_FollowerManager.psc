@@ -56,6 +56,15 @@ Float Property RelationshipCooldown = 120.0 Auto
 {Real-time seconds between allowed AdjustRelationship calls per actor. Default 120 (2 minutes).
 Prevents the LLM from spamming relationship changes every dialogue line.}
 
+Bool Property AutoRelAssessment = true Auto
+{Enable automatic LLM-based relationship assessment. When true, the OnUpdate loop
+periodically sends recent events to the LLM for background relationship evaluation,
+replacing the need for the AdjustRelationship action to compete for action slots.}
+
+Float Property AssessmentCooldownHours = 5.0 Auto
+{Game hours between automatic relationship assessments per follower.
+Default 5.0 (5 game hours). Lower values mean more frequent LLM calls.}
+
 Int Property FrameworkMode = 0 Auto
 {Recruitment mode: 0 = Auto (use NFF/EFF when installed, respect ignore tokens),
  1 = SeverActions Only (bypass NFF/EFF, use our alias-based follow for all).
@@ -149,12 +158,19 @@ String Property KEY_WAS_ALREADY_TEAMMATE = "SeverFollower_WasAlreadyTeammate" Au
 ; Cooldown tracking for AdjustRelationship (real-time seconds via Utility.GetCurrentRealTime)
 String Property KEY_LAST_REL_ADJUST = "SeverFollower_LastRelAdjust" AutoReadOnly
 
+; Cooldown tracking for automatic LLM relationship assessment (game hours)
+String Property KEY_LAST_ASSESS_GT = "SeverFollower_LastAssessGT" AutoReadOnly
+
 ; =============================================================================
 ; INTERNAL STATE
 ; =============================================================================
 
 Float LastTickTime
 Bool IsUpdating = false
+
+; Relationship assessment tracking — only one assessment in flight at a time
+Int PendingAssessmentFormId = 0
+Bool AssessmentInProgress = false
 
 ; =============================================================================
 ; INITIALIZATION
@@ -234,10 +250,9 @@ EndFunction
 
 Event OnSleepStart(Float afSleepStartTime, Float afDesiredSleepEndTime)
     {When the player goes to bed, clear any active sandbox packages (relax/wait)
-     on followers IN THE SAME CELL. Generic sandbox overrides can produce odd
-     runtime packages during the sleep time-skip, so we clean them up preemptively.
-     Only affects followers in the player's cell — followers waiting in other cells
-     keep their sandbox/wait package intact.}
+     on followers IN THE SAME CELL. Sleep time-skips can produce orphaned FF
+     runtime packages, so we nuke all overrides preemptively and let the follow
+     package re-assert on wake. Followers in other cells are unaffected.}
     SeverActions_Follow followSys = GetFollowScript()
     If !followSys
         Return
@@ -251,9 +266,18 @@ Event OnSleepStart(Float afSleepStartTime, Float afDesiredSleepEndTime)
     Actor[] followers = GetAllFollowers()
     Int i = 0
     While i < followers.Length
-        If followers[i] && followers[i].GetParentCell() == playerCell && SkyrimNetApi.HasPackage(followers[i], "Sandbox")
-            followSys.StopSandbox(followers[i])
-            Debug.Trace("[SeverActions_FollowerManager] Cleared sandbox for " + followers[i].GetDisplayName() + " on sleep (same cell)")
+        If followers[i] && followers[i].GetParentCell() == playerCell
+            ; Stop sandbox tracking if active
+            If SkyrimNetApi.HasPackage(followers[i], "Sandbox")
+                followSys.StopSandbox(followers[i])
+                Debug.Trace("[SeverActions_FollowerManager] Cleared sandbox for " + followers[i].GetDisplayName() + " on sleep (same cell)")
+            Else
+                ; Even non-sandboxing followers: clear any lingering FF orphans
+                ActorUtil.ClearPackageOverride(followers[i])
+                SkyrimNetApi.ReinforcePackages(followers[i])
+                followers[i].EvaluatePackage()
+                Debug.Trace("[SeverActions_FollowerManager] Cleared package overrides for " + followers[i].GetDisplayName() + " on sleep (same cell)")
+            EndIf
         EndIf
         i += 1
     EndWhile
@@ -692,6 +716,11 @@ Event OnUpdate()
             DebtScript.TickDebts(hoursPassed)
         EndIf
         LastTickTime = currentTime
+    EndIf
+
+    ; Automatic relationship assessment — runs on real-time cooldowns, not game-time
+    If AutoRelAssessment
+        CheckRelationshipAssessments()
     EndIf
 
     IsUpdating = false
@@ -1275,6 +1304,190 @@ EndFunction
 ; Called when the follower has a conversation with the player
 Function OnFollowerInteraction(Actor akActor)
     StorageUtil.SetFloatValue(akActor, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
+EndFunction
+
+; =============================================================================
+; AUTOMATIC RELATIONSHIP ASSESSMENT (LLM-based)
+; =============================================================================
+
+Function CheckRelationshipAssessments()
+    {Check if any follower is due for an automatic relationship assessment.
+     Fires at most ONE assessment per tick to avoid flooding the LLM queue.
+     Each follower is assessed on a game-time cooldown (AssessmentCooldown in game hours).
+     Only followers in the same cell as the player are assessed.
+     The assessment prompt (sever_relationship_assess.prompt) uses SkyrimNet
+     decorators to read recent events and current values, then returns a
+     JSON object with relationship changes.}
+    If AssessmentInProgress
+        Return
+    EndIf
+
+    Actor player = Game.GetPlayer()
+    Cell playerCell = player.GetParentCell()
+    If !playerCell
+        Return
+    EndIf
+
+    Actor[] followers = GetAllFollowers()
+    Float now = GetGameTimeInSeconds()
+    Float cooldownSeconds = AssessmentCooldownHours * SECONDS_PER_GAME_HOUR
+
+    Int i = 0
+    While i < followers.Length
+        Actor follower = followers[i]
+        If follower && !follower.IsDead() && follower.GetParentCell() == playerCell
+            Float lastAssess = StorageUtil.GetFloatValue(follower, KEY_LAST_ASSESS_GT, 0.0)
+            If (now - lastAssess) >= cooldownSeconds
+                FireRelationshipAssessment(follower)
+                Return ; Only one at a time
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+EndFunction
+
+Function FireRelationshipAssessment(Actor akActor)
+    {Send the relationship assessment prompt to the LLM for a specific follower.
+     Passes the follower's FormID in contextJson so the prompt template can
+     resolve it to a UUID via formid_to_uuid() and access all NPC data.}
+    AssessmentInProgress = true
+    PendingAssessmentFormId = akActor.GetFormID()
+    StorageUtil.SetFloatValue(akActor, KEY_LAST_ASSESS_GT, GetGameTimeInSeconds())
+
+    String contextJson = "{\"npcFormId\":" + PendingAssessmentFormId + "}"
+
+    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_relationship_assess", "", contextJson, \
+        Self as Quest, "SeverActions_FollowerManager", "OnRelationshipAssessment")
+
+    If result < 0
+        AssessmentInProgress = false
+        DebugMsg("Relationship assessment LLM call failed for " + akActor.GetDisplayName() + ", code " + result)
+    Else
+        DebugMsg("Relationship assessment queued for " + akActor.GetDisplayName())
+    EndIf
+EndFunction
+
+Function OnRelationshipAssessment(String response, Int success)
+    {Callback from SendCustomPromptToLLM. Parses the JSON response and applies
+     relationship changes to the pending follower.
+     Expected response: JSON with rapport, trust, loyalty, mood integer values.}
+    AssessmentInProgress = false
+
+    If success != 1
+        DebugMsg("Relationship assessment LLM failed: " + response)
+        Return
+    EndIf
+
+    ; Resolve the follower from the stored FormID
+    Actor akActor = Game.GetForm(PendingAssessmentFormId) as Actor
+    If !akActor || !IsRegisteredFollower(akActor)
+        DebugMsg("Relationship assessment: actor not found or no longer a follower (FormID " + PendingAssessmentFormId + ")")
+        Return
+    EndIf
+
+    ; Parse the JSON response
+    Int rapportChange = ExtractJsonInt(response, "rapport")
+    Int trustChange = ExtractJsonInt(response, "trust")
+    Int loyaltyChange = ExtractJsonInt(response, "loyalty")
+    Int moodChange = ExtractJsonInt(response, "mood")
+    Int lastEventId = ExtractJsonInt(response, "eid")
+    Int lastMemoryId = ExtractJsonInt(response, "mid")
+
+    ; Store the highest assessed event/memory IDs so the next assessment only sees new ones
+    If lastEventId > 0
+        StorageUtil.SetIntValue(akActor, "SeverFollower_LastAssessEventId", lastEventId)
+    EndIf
+    If lastMemoryId > 0
+        StorageUtil.SetIntValue(akActor, "SeverFollower_LastAssessMemoryId", lastMemoryId)
+    EndIf
+
+    ; Skip if all zeros (no meaningful change)
+    If rapportChange == 0 && trustChange == 0 && loyaltyChange == 0 && moodChange == 0
+        DebugMsg(akActor.GetDisplayName() + " assessment: no change (eid " + lastEventId + ", mid " + lastMemoryId + ")")
+        Return
+    EndIf
+
+    ; Apply adjustments (Modify* functions handle clamping to valid ranges)
+    If rapportChange != 0
+        ModifyRapport(akActor, rapportChange as Float)
+    EndIf
+    If trustChange != 0
+        ModifyTrust(akActor, trustChange as Float)
+    EndIf
+    If loyaltyChange != 0
+        ModifyLoyalty(akActor, loyaltyChange as Float)
+    EndIf
+    If moodChange != 0
+        ModifyMood(akActor, moodChange as Float)
+    EndIf
+
+    ; Refresh the last interaction timestamp so neglect decay resets
+    StorageUtil.SetFloatValue(akActor, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
+
+    ; Build summary for the event system
+    String summary = akActor.GetDisplayName() + " relationship assessed:"
+    If rapportChange != 0
+        summary += " rapport " + rapportChange
+    EndIf
+    If trustChange != 0
+        summary += " trust " + trustChange
+    EndIf
+    If loyaltyChange != 0
+        summary += " loyalty " + loyaltyChange
+    EndIf
+    If moodChange != 0
+        summary += " mood " + moodChange
+    EndIf
+
+    SkyrimNetApi.RegisterEvent("relationship_assessed", summary, akActor, Game.GetPlayer())
+    DebugMsg(summary)
+EndFunction
+
+Int Function ExtractJsonInt(String json, String jsonKey)
+    {Extract an integer value from a flat JSON object.
+     Handles compact and spaced colon formats.
+     Returns 0 if the key is not found or parsing fails.}
+
+    ; Look for "jsonKey": in the JSON string
+    String marker = "\"" + jsonKey + "\":"
+    Int keyPos = StringUtil.Find(json, marker)
+    If keyPos < 0
+        ; Try with space after colon: "jsonKey": value
+        marker = "\"" + jsonKey + "\": "
+        keyPos = StringUtil.Find(json, marker)
+        If keyPos < 0
+            Return 0
+        EndIf
+    EndIf
+
+    Int valStart = keyPos + StringUtil.GetLength(marker)
+    Int jsonLen = StringUtil.GetLength(json)
+
+    If valStart >= jsonLen
+        Return 0
+    EndIf
+
+    ; Find the end of this value (next comma or closing brace)
+    Int endComma = StringUtil.Find(json, ",", valStart)
+    Int endBrace = StringUtil.Find(json, "}", valStart)
+
+    Int valEnd = jsonLen
+    If endComma >= 0 && endComma < valEnd
+        valEnd = endComma
+    EndIf
+    If endBrace >= 0 && endBrace < valEnd
+        valEnd = endBrace
+    EndIf
+
+    If valEnd <= valStart
+        Return 0
+    EndIf
+
+    String rawVal = StringUtil.Substring(json, valStart, valEnd - valStart)
+
+    ; rawVal should be something like "5" or "-2" (possibly with spaces)
+    ; Papyrus string-to-int cast handles simple integer strings
+    Return rawVal as Int
 EndFunction
 
 ; =============================================================================

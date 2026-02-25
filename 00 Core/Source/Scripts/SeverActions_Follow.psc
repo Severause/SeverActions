@@ -38,10 +38,11 @@ Create in CK — just a new faction, no special setup needed.}
 Package Property SandboxPackage Auto
 {Sandbox package for relaxing in place - NPC wanders and interacts with nearby furniture}
 
-int Property SandboxPackagePriority = 60 AutoReadOnly
-{Above follow (50) so sandbox takes over when active, but close enough that
- cleanup and follow resumption override it cleanly. Below 70 to avoid competing
- with important mod packages.}
+int Property SandboxPackagePriority = 40 AutoReadOnly
+{Below follow (50) so orphaned FF sandbox packages can never block following.
+ When we want an NPC to sandbox, we explicitly pause/remove the follow package
+ first so sandbox can take effect. This makes the system self-healing: if a
+ sandbox FF orphan survives a bad transition, follow still wins.}
 
 float Property SandboxAutoStandDistance = 2000.0 Auto
 {Distance at which sandboxing actors auto-resume following when player moves away}
@@ -55,9 +56,26 @@ Event OnInit()
     RegisterForModEvent("SeverActionsNative_SandboxCleanup", "OnNativeSandboxCleanup")
 EndEvent
 
-; Called on game load to re-register events
+; Called on game load to re-register events and restore state
 Function Maintenance()
     RegisterForModEvent("SeverActionsNative_SandboxCleanup", "OnNativeSandboxCleanup")
+
+    ; Re-apply ENGAGED faction to any NPCs that already have the FollowPlayer package
+    ; (faction state doesn't persist across save/load, but SkyrimNet packages do)
+    Actor player = Game.GetPlayer()
+    Cell playerCell = player.GetParentCell()
+    If playerCell
+        Int numRefs = playerCell.GetNumRefs(43) ; 43 = kNPC
+        Int i = 0
+        While i < numRefs
+            ObjectReference ref = playerCell.GetNthRef(i, 43)
+            Actor actorRef = ref as Actor
+            If actorRef && actorRef != player && !actorRef.IsDead() && SkyrimNetApi.HasPackage(actorRef, "FollowPlayer")
+                SetActivelyFollowing(actorRef, true)
+            EndIf
+            i += 1
+        EndWhile
+    EndIf
 EndFunction
 
 ; =============================================================================
@@ -229,20 +247,24 @@ Function StartFollowing(Actor akActor)
         return
     endif
 
-    ; Clear sandbox if active (so they resume following cleanly)
+    ; Clear sandbox tracking if active
     if SkyrimNetApi.HasPackage(akActor, "Sandbox")
         SeverActionsNative.UnregisterSandboxUser(akActor)
-        if SandboxPackage
-            ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
-        endif
         SkyrimNetApi.UnregisterPackage(akActor, "Sandbox")
     endif
+
+    ; Safety net: nuke ALL package overrides to clear any orphaned FF packages
+    ; (sandbox FF copies that survived a bad transition, sleep time-skip, etc.)
+    ActorUtil.ClearPackageOverride(akActor)
 
     ; Clear waiting state (in case they were waiting)
     akActor.SetAV("WaitingForPlayer", 0)
 
-    ; Register SkyrimNet's built-in follow package
+    ; Register SkyrimNet's built-in follow package (re-applied fresh after the clear)
     SkyrimNetApi.RegisterPackage(akActor, "FollowPlayer", FollowPackagePriority, 0, true)
+
+    ; Mark as actively following for ENGAGED tag in prompts
+    SetActivelyFollowing(akActor, true)
 
     akActor.EvaluatePackage()
 
@@ -266,6 +288,9 @@ Function StopFollowing(Actor akActor)
 
     ; Unregister SkyrimNet's follow package
     SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
+
+    ; Remove actively following state
+    SetActivelyFollowing(akActor, false)
 
     akActor.EvaluatePackage()
 
@@ -386,7 +411,10 @@ Function Sandbox(Actor akActor)
         return
     endif
 
-    ; Pause follow package so sandbox can take over
+    ; Remove follow package so sandbox (lower priority) can take effect
+    ; For casual follow: unregister SkyrimNet's FollowPlayer package
+    ; For companion follow: WaitingForPlayer=1 deactivates the CK follow package condition
+    SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
     akActor.SetAV("WaitingForPlayer", 1)
 
     ; Apply sandbox package at current location
@@ -415,16 +443,17 @@ Function StopSandbox(Actor akActor)
     ; Unregister from native SandboxManager
     SeverActionsNative.UnregisterSandboxUser(akActor)
 
-    ; Remove sandbox package
-    if SandboxPackage
-        ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
-    endif
-
     ; Unregister from SkyrimNet
     SkyrimNetApi.UnregisterPackage(akActor, "Sandbox")
 
+    ; Safety net: nuke ALL package overrides to clear any orphaned FF packages
+    ActorUtil.ClearPackageOverride(akActor)
+
     ; Resume following
     akActor.SetAV("WaitingForPlayer", 0)
+
+    ; Re-apply follow package (cleared above with everything else)
+    SkyrimNetApi.RegisterPackage(akActor, "FollowPlayer", FollowPackagePriority, 0, true)
 
     ; Back to actively following
     SetActivelyFollowing(akActor, true)

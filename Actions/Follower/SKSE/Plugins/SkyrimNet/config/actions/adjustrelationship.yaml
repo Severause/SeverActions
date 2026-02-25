@@ -20,7 +20,11 @@ parameterMapping:
   - type: dynamic
     name: moodChange
     description: "Mood change (-20 to +20). Can change from ANY source. 0 if unaffected."
-enabled: true
+# Disabled: relationship assessment is now handled automatically via background
+# LLM calls (sever_relationship_assess.prompt) triggered by the FollowerManager
+# update loop. This frees the action slot for behavioral actions instead.
+# The AdjustRelationship Papyrus function still exists and can be called directly.
+enabled: false
 defaultPriority: 3
 eligibilityRules:
   - conditions:
