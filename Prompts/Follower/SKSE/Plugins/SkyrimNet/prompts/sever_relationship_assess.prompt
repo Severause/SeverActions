@@ -11,6 +11,7 @@ You are an internal relationship assessment system for a companion in Skyrim. Yo
 {% set morality = papyrus_util("GetIntValue", npc.UUID, "SeverFollower_Morality", 2) %}
 {% set lastEventId = to_number(to_string(papyrus_util("GetIntValue", npc.UUID, "SeverFollower_LastAssessEventId", 0))) %}
 {% set lastMemoryId = to_number(to_string(papyrus_util("GetIntValue", npc.UUID, "SeverFollower_LastAssessMemoryId", 0))) %}
+{% set lastDiaryId = to_number(to_string(papyrus_util("GetIntValue", npc.UUID, "SeverFollower_LastAssessDiaryId", 0))) %}
 
 Companion: {{ npc.name }} ({{ npc.race }}{% if npc.class %}, {{ npc.class }}{% endif %})
 
@@ -66,10 +67,22 @@ Recent memories for {{ npc.name }}:
 No new memories since last assessment.
 {% endif %}
 
+Last diary entry:
+{% set diary = get_latest_diary_entry(npc.UUID) %}
+{% set diaryId = 0 %}
+{% if diary and diary.id %}
+{% set diaryId = to_number(to_string(diary.id)) %}
+{% endif %}
+{% if diary and diary.content and diaryId > lastDiaryId %}
+[{{ diary.entry_date_str }}] {{ diary.content }}{% if diary.emotion %} ({{ diary.emotion }}){% endif %}
+{% else %}
+No new diary entries since last assessment.
+{% endif %}
+
 {% endif %}
 [ user ]
 {% if npcUUID and npcUUID != 0 %}
-Analyze the recent events and memories involving {{ npc.name }}. Determine how these interactions should affect their feelings toward {{ player.name }}.
+Analyze the recent events, memories, and diary entry involving {{ npc.name }}. Determine how these interactions should affect their feelings toward {{ player.name }}.
 
 Rules:
 - Rapport, Trust, Loyalty: Change ONLY from direct interactions with {{ player.name }}. Range: -15 to +15.
@@ -80,10 +93,12 @@ Rules:
 - Consider the companion's morality when judging reactions. A principled NPC loses trust/rapport from criminal behavior; an amoral one does not care.
 - Consider current values. High rapport requires bigger events to shift further. Someone at -80 rapport doesn't suddenly jump to 0 from one kind word.
 - Rapport reflects emotional warmth. Trust reflects faith in judgment and safety. Loyalty reflects commitment through hardship. Mood reflects short-term emotional state.
+- Diary entries represent the companion's deepest internal reflections — weigh them more heavily than momentary dialogue. A diary expressing profound gratitude or resentment should shift rapport/loyalty by at least 4-6, not 1-3.
+- Mood is volatile and situational. Do not let a bad mood suppress rapport/loyalty gains from meaningful memories or diary entries. They are independent dimensions.
 
 Respond with ONLY this JSON. No spaces after colons. No explanation. One line.
-Include "eid" with the value {{ maxEventId }} and "mid" with the value {{ maxMemoryId }} so the system knows which events and memories were assessed:
-{% raw %}{"rapport":0,"trust":0,"loyalty":0,"mood":0,"eid":0,"mid":0}{% endraw %}
+Include "eid" with the value {{ maxEventId }}, "mid" with the value {{ maxMemoryId }}, and "did" with the value {{ diaryId }} so the system knows which events, memories, and diary entries were assessed:
+{% raw %}{"rapport":0,"trust":0,"loyalty":0,"mood":0,"eid":0,"mid":0,"did":0}{% endraw %}
 {% else %}
-{% raw %}{"rapport":0,"trust":0,"loyalty":0,"mood":0,"eid":0,"mid":0}{% endraw %}
+{% raw %}{"rapport":0,"trust":0,"loyalty":0,"mood":0,"eid":0,"mid":0,"did":0}{% endraw %}
 {% endif %}

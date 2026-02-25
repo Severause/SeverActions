@@ -1392,18 +1392,22 @@ Function OnRelationshipAssessment(String response, Int success)
     Int moodChange = ExtractJsonInt(response, "mood")
     Int lastEventId = ExtractJsonInt(response, "eid")
     Int lastMemoryId = ExtractJsonInt(response, "mid")
+    Int lastDiaryId = ExtractJsonInt(response, "did")
 
-    ; Store the highest assessed event/memory IDs so the next assessment only sees new ones
+    ; Store the highest assessed event/memory/diary IDs so the next assessment only sees new ones
     If lastEventId > 0
         StorageUtil.SetIntValue(akActor, "SeverFollower_LastAssessEventId", lastEventId)
     EndIf
     If lastMemoryId > 0
         StorageUtil.SetIntValue(akActor, "SeverFollower_LastAssessMemoryId", lastMemoryId)
     EndIf
+    If lastDiaryId > 0
+        StorageUtil.SetIntValue(akActor, "SeverFollower_LastAssessDiaryId", lastDiaryId)
+    EndIf
 
     ; Skip if all zeros (no meaningful change)
     If rapportChange == 0 && trustChange == 0 && loyaltyChange == 0 && moodChange == 0
-        DebugMsg(akActor.GetDisplayName() + " assessment: no change (eid " + lastEventId + ", mid " + lastMemoryId + ")")
+        DebugMsg(akActor.GetDisplayName() + " assessment: no change (eid " + lastEventId + ", mid " + lastMemoryId + ", did " + lastDiaryId + ")")
         Return
     EndIf
 

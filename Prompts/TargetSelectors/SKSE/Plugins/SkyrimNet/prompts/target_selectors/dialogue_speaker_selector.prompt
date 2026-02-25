@@ -1,5 +1,5 @@
 [ system ]
-{% set zerochance = 60 %}
+{% set zerochance = 50 %}
 ## Task
 Select which NPC should speak next, if anyone. Output only: {% if random < zerochance %}`0` (silence) or {% endif %}`[speaker]>[target]`
 
