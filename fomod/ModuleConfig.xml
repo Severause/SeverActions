@@ -283,6 +283,21 @@ Install with Follower Actions for the full companion system.</description>
                             </typeDescriptor>
                         </plugin>
 
+                        <plugin name="Group Meeting Awareness">
+                            <description>Group conversation awareness for traveling companions:
+• NPCs know which other companions are nearby
+• Scales naturally from duo to large group
+• Keeps dialogue conversational — NPCs speak to whoever they're engaging with, use names when it makes sense, and don't force checklist-style participation
+
+Recommended if you travel with multiple followers. Install with Follower Prompts for full companion awareness.</description>
+                            <files>
+                                <folder source="Prompts/GroupMeeting" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
+                            </typeDescriptor>
+                        </plugin>
+
                         <plugin name="Enhanced Action Selector">
                             <description>Replaces SkyrimNet's native action selector prompt with an improved version optimized for SeverActions' streamlined YAML descriptions.
 
