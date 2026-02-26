@@ -444,7 +444,10 @@ Function UnequipItemByName_Execute(Actor akActor, String itemName)
         String slotName = GetSlotNameFromMask(armorItem.GetSlotMask())
         PlayUnequipAnimation(akActor, slotName)
         akActor.UnequipItem(armorItem, false, true)
-        SnapshotLockedOutfit(akActor)
+        ; Remove directly from lock list instead of re-snapshotting (GetWornForm is stale)
+        Form[] removedForms = new Form[1]
+        removedForms[0] = armorItem
+        RemoveFromLockedOutfit(akActor, removedForms, 1)
         ResumeOutfitLock(akActor)
         Debug.Trace("[SeverActions_Outfit] Unequipped armor: " + armorItem.GetName())
         return
@@ -525,7 +528,10 @@ Function UnequipMultipleItems_Execute(Actor akActor, String itemNames)
 
     Debug.Trace("[SeverActions_Outfit] UnequipMultipleItems: " + akActor.GetDisplayName() + " removing '" + itemNames + "'")
 
-    Int count = 0
+    ; Collect Forms we actually unequip so we can remove them from the lock list
+    Form[] removedForms = new Form[32]
+    Int removedCount = 0
+
     Int startPos = 0
     Int commaPos = StringUtil.Find(itemNames, ",", startPos)
 
@@ -542,18 +548,24 @@ Function UnequipMultipleItems_Execute(Actor akActor, String itemNames)
 
         itemName = TrimString(itemName)
         if itemName != ""
-            count += UnequipSingleItemInternal(akActor, itemName)
+            Form removed = UnequipSingleItemInternal2(akActor, itemName)
+            if removed && removedCount < 32
+                removedForms[removedCount] = removed
+                removedCount += 1
+            endif
         endif
     endwhile
 
-    ; Update the outfit lock after batch unequip
-    if count > 0
-        SnapshotLockedOutfit(akActor)
+    ; Remove unequipped items directly from the lock list instead of
+    ; re-snapshotting with GetWornForm (which returns stale data because
+    ; UnequipItem is async and the item is still "worn" at this point)
+    if removedCount > 0
+        RemoveFromLockedOutfit(akActor, removedForms, removedCount)
     endif
 
     ResumeOutfitLock(akActor)
 
-    Debug.Trace("[SeverActions_Outfit] UnequipMultipleItems: Unequipped " + count + " items")
+    Debug.Trace("[SeverActions_Outfit] UnequipMultipleItems: Unequipped " + removedCount + " items")
 EndFunction
 
 ; =============================================================================
@@ -567,7 +579,7 @@ Function SaveOutfitPreset_Execute(Actor akActor, String presetName)
         return
     endif
 
-    presetName = StringToLower(presetName)
+    presetName = NormalizePresetName(presetName)
     String presetKey = "SeverOutfit_" + presetName + "_" + (akActor.GetFormID() as String)
 
     Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset: Saving '" + presetName + "' for " + akActor.GetDisplayName())
@@ -630,7 +642,7 @@ Function ApplyOutfitPreset_Execute(Actor akActor, String presetName)
         return
     endif
 
-    presetName = StringToLower(presetName)
+    presetName = NormalizePresetName(presetName)
     String presetKey = "SeverOutfit_" + presetName + "_" + (akActor.GetFormID() as String)
 
     Int count = StorageUtil.FormListCount(None, presetKey)
@@ -769,6 +781,15 @@ EndFunction
 
 Int Function UnequipSingleItemInternal(Actor akActor, String itemName)
 {Search worn items in C++, unequip via Papyrus UnequipItem. Returns 1 on success, 0 on failure.}
+    Form removed = UnequipSingleItemInternal2(akActor, itemName)
+    if removed
+        return 1
+    endif
+    return 0
+EndFunction
+
+Form Function UnequipSingleItemInternal2(Actor akActor, String itemName)
+{Search worn items in C++, unequip via Papyrus UnequipItem. Returns the Form removed, or None on failure.}
     String searchName = ResolveItemName(itemName)
     Form foundForm = SeverActionsNative.FindWornItemByName(akActor, searchName)
     if !foundForm && searchName != itemName
@@ -776,7 +797,7 @@ Int Function UnequipSingleItemInternal(Actor akActor, String itemName)
     endif
     if !foundForm
         Debug.Trace("[SeverActions_Outfit] UnequipMultiple: '" + itemName + "' not worn")
-        return 0
+        return None
     endif
 
     ; Store armor for Dress re-equip
@@ -790,7 +811,39 @@ Int Function UnequipSingleItemInternal(Actor akActor, String itemName)
 
     akActor.UnequipItem(foundForm, false, true)
     Debug.Trace("[SeverActions_Outfit] UnequipMultiple: Unequipped '" + foundForm.GetName() + "'")
-    return 1
+    return foundForm
+EndFunction
+
+Function RemoveFromLockedOutfit(Actor akActor, Form[] removedForms, Int count)
+{Remove specific items from the locked outfit FormList instead of re-snapshotting.
+ This avoids the GetWornForm race condition where UnequipItem is async and the
+ item still appears worn when SnapshotLockedOutfit scans slots.}
+    if !akActor || count == 0
+        return
+    endif
+
+    if StorageUtil.GetIntValue(akActor, "SeverOutfit_LockActive", 0) != 1
+        return
+    endif
+
+    String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
+    Int removed = 0
+    Int i = 0
+    while i < count
+        if removedForms[i]
+            Int idx = StorageUtil.FormListFind(None, lockKey, removedForms[i])
+            if idx >= 0
+                StorageUtil.FormListRemoveAt(None, lockKey, idx)
+                removed += 1
+            endif
+        endif
+        i += 1
+    endwhile
+
+    if removed > 0
+        Int remaining = StorageUtil.FormListCount(None, lockKey)
+        Debug.Trace("[SeverActions_Outfit] Removed " + removed + " items from outfit lock (" + remaining + " remaining)")
+    endif
 EndFunction
 
 ; =============================================================================
@@ -1327,4 +1380,39 @@ EndFunction
 String Function StringToLower(String text)
     ; Native implementation: ~2000-10000x faster
     return SeverActionsNative.StringToLower(text)
+EndFunction
+
+String Function NormalizePresetName(String name)
+{Strip common trailing words that LLMs append to preset names.
+ "travel outfit" → "travel", "combat gear" → "combat", "formal clothes" → "formal"
+ Already-clean names like "travel" pass through unchanged.}
+    name = TrimString(StringToLower(name))
+    Int len = StringUtil.GetLength(name)
+    if len == 0
+        return ""
+    endif
+
+    ; Suffixes to strip (longest first to avoid partial matches)
+    String[] suffixes = new String[6]
+    suffixes[0] = " clothes"
+    suffixes[1] = " outfit"
+    suffixes[2] = " attire"
+    suffixes[3] = " armor"
+    suffixes[4] = " gear"
+    suffixes[5] = " set"
+
+    Int i = 0
+    while i < suffixes.Length
+        Int suffixLen = StringUtil.GetLength(suffixes[i])
+        if len > suffixLen
+            String tail = StringUtil.Substring(name, len - suffixLen, suffixLen)
+            if tail == suffixes[i]
+                name = TrimString(StringUtil.Substring(name, 0, len - suffixLen))
+                return name
+            endif
+        endif
+        i += 1
+    endwhile
+
+    return name
 EndFunction

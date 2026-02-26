@@ -118,6 +118,7 @@ int OID_FM_Debug
 int OID_FM_RelCooldown
 int OID_FM_OutfitLock
 int OID_FM_FrameworkMode
+int OID_FM_AutoAssessment
 int OID_FM_ResetAll
 int[] OID_FM_DismissFollower
 int[] OID_FM_ClearHome
@@ -564,6 +565,7 @@ Function DrawFollowersPage()
         OID_FM_FrameworkMode = AddMenuOption("Recruitment Mode", FrameworkModeOptions[FollowerManagerScript.FrameworkMode])
         OID_FM_Notifications = AddToggleOption("Show Notifications", FollowerManagerScript.ShowNotifications)
         OID_FM_Debug = AddToggleOption("Debug Mode", FollowerManagerScript.DebugMode)
+        OID_FM_AutoAssessment = AddToggleOption("Auto Relationship Assessment", FollowerManagerScript.AutoRelAssessment)
 
         AddEmptyOption()
 
@@ -769,6 +771,11 @@ Event OnOptionSelect(int option)
         If FollowerManagerScript
             FollowerManagerScript.DebugMode = !FollowerManagerScript.DebugMode
             SetToggleOptionValue(OID_FM_Debug, FollowerManagerScript.DebugMode)
+        EndIf
+    elseif option == OID_FM_AutoAssessment
+        If FollowerManagerScript
+            FollowerManagerScript.AutoRelAssessment = !FollowerManagerScript.AutoRelAssessment
+            SetToggleOptionValue(OID_FM_AutoAssessment, FollowerManagerScript.AutoRelAssessment)
         EndIf
     elseif option == OID_FM_ResetAll
         If FollowerManagerScript
@@ -1391,6 +1398,8 @@ Event OnOptionHighlight(int option)
         SetInfoText("Show notifications when companions are recruited, dismissed, or when relationship milestones occur.")
     elseif option == OID_FM_Debug
         SetInfoText("Enable debug messages for companion framework. Shows relationship value changes in the console.")
+    elseif option == OID_FM_AutoAssessment
+        SetInfoText("When enabled, companions periodically reflect on recent events, memories, and diary entries. The system automatically adjusts rapport, trust, loyalty, and mood based on these reflections. Disable to manage relationship values manually or through actions only.")
     elseif option == OID_FM_RelCooldown
         SetInfoText("Minimum real-time seconds between relationship changes per companion. Prevents the AI from adjusting rapport/trust/loyalty/mood too frequently during conversation. Default: 120 seconds (2 minutes).")
     elseif option == OID_FM_CompanionSelect
@@ -1614,6 +1623,11 @@ Event OnOptionDefault(int option)
         If FollowerManagerScript
             FollowerManagerScript.DebugMode = false
             SetToggleOptionValue(OID_FM_Debug, false)
+        EndIf
+    elseif option == OID_FM_AutoAssessment
+        If FollowerManagerScript
+            FollowerManagerScript.AutoRelAssessment = true
+            SetToggleOptionValue(OID_FM_AutoAssessment, true)
         EndIf
 
     ; Per-follower relationship defaults
