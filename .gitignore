@@ -1,0 +1,11 @@
+# Build artifacts
+Native/build/
+Native/*.dll
+Native/*.pdb
+Native/*.exp
+Native/*.lib
+
+# IDE/editor
+.vs/
+.vscode/
+*.user

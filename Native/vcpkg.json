@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "severactionsnative",
+  "version-string": "1.0.0",
+  "description": "Native SKSE plugin for SeverActions performance optimization - string utilities, database lookups, inventory helpers",
+  "dependencies": [
+    "commonlibsse-ng",
+    "spdlog",
+    "nlohmann-json"
+  ]
+}
