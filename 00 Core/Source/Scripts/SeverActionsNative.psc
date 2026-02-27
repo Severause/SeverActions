@@ -828,3 +828,25 @@ Bool Function OrphanCleanup_IsEnabled() Global Native
 
 Function OrphanCleanup_ClearTracking() Global Native
 {Clear all tracked actor data. Called automatically on game load/new game.}
+
+; =============================================================================
+; SKYRIMNET PLUGIN CONFIG BRIDGE
+; Read settings from the SkyrimNet WebUI plugin configuration system.
+; Requires SkyrimNet 0.15.4+ dev build with Plugin Configuration support.
+; Returns defaults gracefully when SkyrimNet is absent or doesn't support it.
+; =============================================================================
+
+Bool Function PluginConfig_IsAvailable() Global Native
+{Returns true if SkyrimNet's plugin config API is accessible (dev build 0.15.4+)}
+
+String Function PluginConfig_GetString(String path, String defaultValue = "") Global Native
+{Read a string setting from the WebUI plugin config by dot-path (e.g. "travel.arrival_distance")}
+
+Bool Function PluginConfig_GetBool(String path, Bool defaultValue = false) Global Native
+{Read a bool setting from the WebUI plugin config by dot-path (e.g. "categories.travel")}
+
+Int Function PluginConfig_GetInt(String path, Int defaultValue = 0) Global Native
+{Read an int setting from the WebUI plugin config by dot-path (e.g. "followers.max_companions")}
+
+Float Function PluginConfig_GetFloat(String path, Float defaultValue = 0.0) Global Native
+{Read a float setting from the WebUI plugin config by dot-path (e.g. "survival.hunger_rate")}

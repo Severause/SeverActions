@@ -55,6 +55,7 @@ Function Initialize(Bool isFirstInit)
     InitializeFollowerManagerSystem()
     InitializeDebtSystem()
     SyncMCMSettings()
+    SyncPluginConfig()
 
     Debug.Trace("[SeverActions] Initialization complete!")
     Debug.Notification("SeverActions loaded")
@@ -433,7 +434,7 @@ EndFunction
 
 Function SyncMCMSettings()
     Debug.Trace("[SeverActions] Syncing MCM settings...")
-    
+
     SeverActions_MCM mcm = SeverActions_MCM.GetInstance()
     If mcm
         mcm.SyncAllSettings()
@@ -441,4 +442,49 @@ Function SyncMCMSettings()
     Else
         Debug.Trace("[SeverActions] MCM not found - using defaults")
     EndIf
+EndFunction
+
+; =============================================================================
+; SKYRIMNET WEBUI PLUGIN CONFIG SYNC
+; Reads settings from SkyrimNet's Plugin Configuration WebUI and applies them.
+; Runs after SyncMCMSettings — WebUI values override MCM for shared settings.
+; Gracefully skips if SkyrimNet doesn't support plugin config (older versions).
+; =============================================================================
+
+Function SyncPluginConfig()
+    If !SeverActionsNative.PluginConfig_IsAvailable()
+        Debug.Trace("[SeverActions] WebUI plugin config not available — using MCM/defaults")
+        Return
+    EndIf
+
+    Debug.Trace("[SeverActions] Syncing WebUI plugin config settings...")
+
+    ; Travel settings (NOT in MCM — WebUI is the only way to tune these)
+    If TravelSystem
+        TravelSystem.ArrivalDistance = SeverActionsNative.PluginConfig_GetFloat("travel.arrival_distance", 300.0)
+        TravelSystem.DefaultWaitTime = SeverActionsNative.PluginConfig_GetFloat("travel.default_wait_hours", 48.0)
+        TravelSystem.MinWaitTime = SeverActionsNative.PluginConfig_GetFloat("travel.min_wait_hours", 6.0)
+        TravelSystem.MaxWaitTime = SeverActionsNative.PluginConfig_GetFloat("travel.max_wait_hours", 168.0)
+    EndIf
+
+    ; Follower settings (WebUI overrides MCM for these)
+    If FollowerManagerSystem
+        FollowerManagerSystem.MaxFollowers = SeverActionsNative.PluginConfig_GetInt("followers.max_companions", 10)
+        FollowerManagerSystem.RapportDecayRate = SeverActionsNative.PluginConfig_GetFloat("followers.rapport_decay_rate", 1.0)
+        FollowerManagerSystem.AutoRelAssessment = SeverActionsNative.PluginConfig_GetBool("followers.auto_assessment", true)
+        FollowerManagerSystem.AssessmentCooldownHours = SeverActionsNative.PluginConfig_GetFloat("followers.assessment_cooldown_hours", 5.0)
+        FollowerManagerSystem.AllowAutonomousLeaving = SeverActionsNative.PluginConfig_GetBool("followers.allow_leaving", true)
+        FollowerManagerSystem.LeavingThreshold = SeverActionsNative.PluginConfig_GetInt("followers.leaving_threshold", -60) as Float
+    EndIf
+
+    ; General settings
+    Quest myQuest = GetOwningQuest()
+    If myQuest
+        SeverActions_MCM mcm = myQuest as SeverActions_MCM
+        If mcm
+            mcm.DialogueAnimEnabled = SeverActionsNative.PluginConfig_GetBool("general.dialogue_animations", true)
+        EndIf
+    EndIf
+
+    Debug.Trace("[SeverActions] WebUI plugin config synced successfully")
 EndFunction

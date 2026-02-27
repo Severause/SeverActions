@@ -19,6 +19,7 @@
 #include "YieldMonitor.h"
 #include "TeammateMonitor.h"
 #include "OrphanCleanup.h"
+#include "SkyrimNetBridge.h"
 
 namespace SeverActionsNative
 {
@@ -110,6 +111,11 @@ namespace SeverActionsNative
             } else {
                 SKSE::log::info("NPC Names Distributor not detected — using base game names only");
             }
+
+            // SkyrimNet plugin config bridge — resolve PublicGetPluginConfigValue export
+            SKSE::log::info("Post load — checking for SkyrimNet plugin config API...");
+            SkyrimNetBridge::GetSingleton()->Initialize();
+
             break;
         }
 

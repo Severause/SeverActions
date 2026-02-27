@@ -17,6 +17,8 @@ parameterMapping:
   - type: dynamic
     name: reason
     description: "What to investigate (e.g. 'skooma dealing', 'necromancy', 'talos worship', 'thieving')"
+    optional: true
+    default: "suspicious activity"
 enabled: true
 defaultPriority: 6
 eligibilityRules:

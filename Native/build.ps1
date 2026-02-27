@@ -83,8 +83,11 @@ if (Test-Path $vcvars) {
 # Standalone vcpkg location
 $vcpkgStandalone = "C:\vcpkg"
 
-# Setup standalone vcpkg if requested or if we don't have a working one
-if ($SetupVcpkg -or (-not $env:VCPKG_ROOT)) {
+# VS2026 workaround — vcpkg can't auto-detect VS 18.x, so tell it explicitly
+$env:VCPKG_VISUAL_STUDIO_PATH = $vsPath
+
+# Always prefer standalone vcpkg (VS-bundled one has VS2026 detection issues)
+if ($true) {
     if (-not (Test-Path "$vcpkgStandalone\vcpkg.exe")) {
         Write-Host ""
         Write-Host "Setting up standalone vcpkg at $vcpkgStandalone..." -ForegroundColor Yellow

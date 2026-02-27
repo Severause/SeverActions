@@ -20,9 +20,13 @@ parameterMapping:
   - type: dynamic
     name: asReason
     description: "Brief reason (e.g. 'room rental', 'protection money', 'weekly wages')"
+    optional: true
+    default: "unspecified"
   - type: dynamic
     name: aiIntervalDays
     description: Days between payments (1=daily, 7=weekly, 30=monthly)
+    optional: true
+    default: 7
   - type: static
     value: 0
     name: aiCreditLimit

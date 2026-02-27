@@ -20,12 +20,18 @@ parameterMapping:
   - type: dynamic
     name: asReason
     description: "Brief reason (e.g. 'tavern tab', 'borrowed gold', 'armor repair')"
+    optional: true
+    default: "unspecified"
   - type: dynamic
     name: aiDueDays
     description: Days until due (0 for open-ended)
+    optional: true
+    default: 0
   - type: dynamic
     name: aiCreditLimit
     description: Max debt before credit is cut off (0 for unlimited)
+    optional: true
+    default: 0
 enabled: true
 eligibilityRules:
   - conditions:

@@ -17,6 +17,8 @@ parameterMapping:
   - type: dynamic
     name: aiCount
     description: Number of items to give (default 1)
+    optional: true
+    default: 1
 enabled: true
 eligibilityRules:
   - conditions:

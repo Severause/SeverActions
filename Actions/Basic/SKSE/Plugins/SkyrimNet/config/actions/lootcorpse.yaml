@@ -14,6 +14,8 @@ parameterMapping:
   - type: dynamic
     name: itemsToTake
     description: "'all', 'valuables', 'gold', or comma-separated item names"
+    optional: true
+    default: "all"
 enabled: true
 eligibilityRules:
   - conditions:

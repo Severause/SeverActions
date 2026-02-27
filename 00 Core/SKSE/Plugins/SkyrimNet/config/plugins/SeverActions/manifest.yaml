@@ -1,0 +1,209 @@
+plugin:
+  name: "SeverActions"
+  version: "0.99"
+  description: "Configure SeverActions companion framework, actions, and subsystems"
+  icon: "⚔️"
+
+schema:
+  fields:
+    # ── Action Categories ──
+    - name: "Basic Actions"
+      path: "categories.basic"
+      type: "bool"
+      description: "Give items, loot corpses/containers"
+      category: "Action Categories"
+      defaultValue: true
+
+    - name: "Crafting Actions"
+      path: "categories.crafting"
+      type: "bool"
+      description: "Brew potions, cook meals, craft weapons/armor"
+      category: "Action Categories"
+      defaultValue: true
+
+    - name: "Economy Actions"
+      path: "categories.economy"
+      type: "bool"
+      description: "Create debts, recurring payments, currency exchange"
+      category: "Action Categories"
+      defaultValue: true
+
+    - name: "Travel Actions"
+      path: "categories.travel"
+      type: "bool"
+      description: "Send NPCs to travel to locations"
+      category: "Action Categories"
+      defaultValue: true
+
+    - name: "Arrest Actions"
+      path: "categories.arrest"
+      type: "bool"
+      description: "Guard dispatch, arrests, home searches"
+      category: "Action Categories"
+      defaultValue: true
+
+    - name: "Follower Actions"
+      path: "categories.follower"
+      type: "bool"
+      description: "Recruit, dismiss, companion management"
+      category: "Action Categories"
+      defaultValue: true
+
+    - name: "Furniture Actions"
+      path: "categories.furniture"
+      type: "bool"
+      description: "Sit, use crafting stations, sleep"
+      category: "Action Categories"
+      defaultValue: true
+
+    - name: "Outfit Actions"
+      path: "categories.outfit"
+      type: "bool"
+      description: "Equip, unequip, dress, undress, outfit presets"
+      category: "Action Categories"
+      defaultValue: true
+
+    - name: "Combat Actions"
+      path: "categories.combat"
+      type: "bool"
+      description: "Yield, surrender, combat style changes"
+      category: "Action Categories"
+      defaultValue: true
+
+    # ── Travel Tuning (NOT in MCM) ──
+    - name: "Arrival Distance"
+      path: "travel.arrival_distance"
+      type: "float"
+      description: "Distance (units) NPC must be within to count as arrived at destination"
+      category: "Travel"
+      defaultValue: 300.0
+      min: 100
+      max: 1000
+
+    - name: "Default Wait Time (hours)"
+      path: "travel.default_wait_hours"
+      type: "float"
+      description: "How long NPCs wait at their destination before returning"
+      category: "Travel"
+      defaultValue: 48.0
+      min: 1
+      max: 336
+
+    - name: "Min Wait Time (hours)"
+      path: "travel.min_wait_hours"
+      type: "float"
+      description: "Minimum wait time before travel resumes"
+      category: "Travel"
+      defaultValue: 6.0
+      min: 1
+      max: 48
+
+    - name: "Max Wait Time (hours)"
+      path: "travel.max_wait_hours"
+      type: "float"
+      description: "Maximum wait time at destination (1 week = 168)"
+      category: "Travel"
+      defaultValue: 168.0
+      min: 24
+      max: 672
+
+    # ── Follower Settings ──
+    - name: "Max Companions"
+      path: "followers.max_companions"
+      type: "int"
+      description: "Maximum number of active followers"
+      category: "Followers"
+      defaultValue: 10
+      min: 1
+      max: 20
+
+    - name: "Rapport Decay Rate"
+      path: "followers.rapport_decay_rate"
+      type: "float"
+      description: "Multiplier for how fast rapport decays over time (1.0 = normal)"
+      category: "Followers"
+      defaultValue: 1.0
+      min: 0.0
+      max: 5.0
+
+    - name: "Auto Relationship Assessment"
+      path: "followers.auto_assessment"
+      type: "bool"
+      description: "Periodically assess follower relationships via LLM"
+      category: "Followers"
+      defaultValue: true
+
+    - name: "Assessment Cooldown (hours)"
+      path: "followers.assessment_cooldown_hours"
+      type: "float"
+      description: "Game hours between automatic relationship assessments per follower"
+      category: "Followers"
+      defaultValue: 5.0
+      min: 1
+      max: 48
+
+    - name: "Allow Autonomous Leaving"
+      path: "followers.allow_leaving"
+      type: "bool"
+      description: "Followers can leave on their own if relationship drops too low"
+      category: "Followers"
+      defaultValue: true
+
+    - name: "Leaving Threshold"
+      path: "followers.leaving_threshold"
+      type: "int"
+      description: "Rapport value below which a follower may leave (-100 to -10)"
+      category: "Followers"
+      defaultValue: -60
+      min: -100
+      max: -10
+
+    # ── Survival ──
+    - name: "Enable Survival System"
+      path: "survival.enabled"
+      type: "bool"
+      description: "Track hunger, fatigue, and cold for followers"
+      category: "Survival"
+      defaultValue: false
+
+    - name: "Hunger Rate"
+      path: "survival.hunger_rate"
+      type: "float"
+      description: "Hunger depletion speed multiplier"
+      category: "Survival"
+      defaultValue: 1.0
+      min: 0.1
+      max: 5.0
+
+    - name: "Fatigue Rate"
+      path: "survival.fatigue_rate"
+      type: "float"
+      description: "Fatigue depletion speed multiplier"
+      category: "Survival"
+      defaultValue: 1.0
+      min: 0.1
+      max: 5.0
+
+    - name: "Cold Rate"
+      path: "survival.cold_rate"
+      type: "float"
+      description: "Cold accumulation speed multiplier"
+      category: "Survival"
+      defaultValue: 1.0
+      min: 0.1
+      max: 5.0
+
+    # ── General ──
+    - name: "Dialogue Animations"
+      path: "general.dialogue_animations"
+      type: "bool"
+      description: "Play gesture animations during NPC dialogue"
+      category: "General"
+      defaultValue: true
+
+    - name: "Debug Mode"
+      path: "general.debug_mode"
+      type: "bool"
+      description: "Enable debug logging for all SeverActions systems"
+      category: "General"
+      defaultValue: false

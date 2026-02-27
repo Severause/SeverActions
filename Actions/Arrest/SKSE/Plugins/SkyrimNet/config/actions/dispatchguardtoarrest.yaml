@@ -14,6 +14,8 @@ parameterMapping:
   - type: dynamic
     name: senderName
     description: "Optional. Who ordered the arrest — prisoner is brought to them for judgment. Omit to take prisoner directly to jail."
+    optional: true
+    default: ""
 enabled: true
 defaultPriority: 7
 eligibilityRules:
