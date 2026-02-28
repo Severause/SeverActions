@@ -2637,7 +2637,7 @@ Bool Function DispatchGuardToArrest(Actor akGuard, String targetName, Actor akSe
 
     ; Find a guard if none provided
     If akGuard == None
-        akGuard = FindNearestGuard(Game.GetPlayer())
+        akGuard = SeverActionsNative.FindNearestGuard(Game.GetPlayer())
         If akGuard == None
             DebugMsg("ERROR: No guard nearby to dispatch")
             Debug.Notification("No guard nearby to dispatch!")
@@ -2791,7 +2791,7 @@ Bool Function DispatchGuardToHome(Actor akGuard, String targetName, Actor akSend
 
     ; Find a guard if none provided
     If akGuard == None
-        akGuard = FindNearestGuard(Game.GetPlayer())
+        akGuard = SeverActionsNative.FindNearestGuard(Game.GetPlayer())
         If akGuard == None
             DebugMsg("ERROR: No guard nearby to dispatch")
             Debug.Notification("No guard nearby to dispatch!")
@@ -4416,72 +4416,6 @@ Function CancelDispatch()
     ClearDispatchState()
 
     DebugMsg("Dispatch canceled")
-EndFunction
-
-Actor Function FindNearestGuard(Actor akNearActor)
-    {Find the nearest guard near the given actor.
-     Searches loaded actors for NPCs in an actual guard faction (NOT crime faction).
-     Crime factions include all citizens in a hold, while guard factions are specific to guards.
-     Returns None if no guard is found nearby.}
-
-    If akNearActor == None
-        Return None
-    EndIf
-
-    ; Search nearby NPCs for guards
-    Actor nearestGuard = None
-    Float nearestDist = 3000.0  ; Max search radius
-
-    ; Use actual guard factions (NOT crime factions which include all citizens)
-    Faction[] guardFactions = new Faction[9]
-    guardFactions[0] = GuardFactionWhiterun
-    guardFactions[1] = GuardFactionRiften
-    guardFactions[2] = GuardFactionSolitude
-    guardFactions[3] = GuardFactionHaafingar
-    guardFactions[4] = GuardFactionWindhelm
-    guardFactions[5] = GuardFactionMarkarth
-    guardFactions[6] = GuardFactionFalkreath
-    guardFactions[7] = GuardFactionDawnstar
-    guardFactions[8] = GuardFactionWinterhold
-
-    ; Search the cell the given actor is in
-    Cell currentCell = akNearActor.GetParentCell()
-
-    If currentCell == None
-        Return None
-    EndIf
-
-    ; Search references in the current cell for guards
-    Int numRefs = currentCell.GetNumRefs(43)  ; 43 = kNPC type
-    Int i = 0
-    While i < numRefs
-        ObjectReference ref = currentCell.GetNthRef(i, 43)
-        Actor candidate = ref as Actor
-        If candidate != None && candidate != akNearActor && !candidate.IsDead() && !candidate.IsInCombat()
-            ; Check if this NPC is in any guard faction (actual guards only)
-            Int fIdx = 0
-            While fIdx < guardFactions.Length
-                If guardFactions[fIdx] != None && candidate.IsInFaction(guardFactions[fIdx])
-                    Float dist = akNearActor.GetDistance(candidate)
-                    If dist < nearestDist
-                        nearestDist = dist
-                        nearestGuard = candidate
-                    EndIf
-                    fIdx = guardFactions.Length  ; Break inner loop
-                EndIf
-                fIdx += 1
-            EndWhile
-        EndIf
-        i += 1
-    EndWhile
-
-    If nearestGuard != None
-        DebugMsg("Found nearest guard: " + nearestGuard.GetDisplayName() + " at distance " + nearestDist)
-    Else
-        DebugMsg("No guard found near " + akNearActor.GetDisplayName())
-    EndIf
-
-    Return nearestGuard
 EndFunction
 
 String Function GetNPCLocation(String npcName)

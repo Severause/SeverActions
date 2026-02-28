@@ -859,6 +859,15 @@ Int Function Arrival_GetTrackedCount() Global Native
 {Get count of monitored actors. For debug/diagnostics.}
 
 ; =============================================================================
+; GUARD FINDER
+; Native nearby guard search — replaces Papyrus cell iteration + faction checks.
+; Pre-resolves vanilla guard factions at startup for fast lookup.
+; =============================================================================
+
+Actor Function FindNearestGuard(Actor akNearActor, Float searchRadius = 3000.0) Global Native
+{Find the nearest guard within searchRadius of akNearActor. Checks all vanilla guard factions (Whiterun, Riften, Solitude, Haafingar, Windhelm, Markarth, Falkreath, Dawnstar). Skips dead, in-combat guards. Returns None if no guard found.}
+
+; =============================================================================
 ; SKYRIMNET PLUGIN CONFIG BRIDGE
 ; Read settings from the SkyrimNet WebUI plugin configuration system.
 ; Requires SkyrimNet 0.15.4+ dev build with Plugin Configuration support.

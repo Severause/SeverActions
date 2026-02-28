@@ -20,6 +20,7 @@
 #include "TeammateMonitor.h"
 #include "OrphanCleanup.h"
 #include "ArrivalMonitor.h"
+#include "GuardFinder.h"
 #include "SkyrimNetBridge.h"
 
 namespace SeverActionsNative
@@ -95,6 +96,10 @@ namespace SeverActionsNative
             // Arrival monitor — native distance monitoring for approach/escort/dispatch
             SKSE::log::info("Initializing arrival monitor...");
             ArrivalMonitor::GetSingleton()->Initialize();
+
+            // Guard finder — pre-resolve vanilla guard factions for fast nearby search
+            SKSE::log::info("Initializing guard finder...");
+            GuardFinder::GetInstance().Initialize();
 
             if (failCount > 0) {
                 SKSE::log::warn("SeverActionsNative: {} database(s) failed to initialize — some features will be unavailable", failCount);

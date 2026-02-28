@@ -87,6 +87,7 @@ set(HEADERS
     src/TeammateMonitor.h
     src/OrphanCleanup.h
     src/ArrivalMonitor.h
+    src/GuardFinder.h
 )
 
 # Create DLL

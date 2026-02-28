@@ -28,6 +28,7 @@
 #include "TeammateMonitor.h"
 #include "OrphanCleanup.h"
 #include "ArrivalMonitor.h"
+#include "GuardFinder.h"
 #include "SkyrimNetBridge.h"
 
 namespace SeverActionsNative
@@ -70,6 +71,7 @@ namespace SeverActionsNative
         TeammateMonitor::RegisterFunctions(a_vm, scriptName);
         OrphanCleanup::RegisterFunctions(a_vm, scriptName);
         ArrivalMonitor::RegisterFunctions(a_vm, scriptName);
+        GuardFinder::RegisterFunctions(a_vm, scriptName);
         SkyrimNetBridge::RegisterFunctions(a_vm, scriptName);
 
         SKSE::log::info("Registered all Papyrus native functions for {}", scriptName);
