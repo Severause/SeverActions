@@ -57,6 +57,7 @@ set(SOURCES
     src/TeammateMonitor.cpp
     src/OrphanCleanup.cpp
     src/ArrivalMonitor.cpp
+    src/PackageManager.cpp
 )
 
 set(HEADERS
@@ -88,6 +89,7 @@ set(HEADERS
     src/OrphanCleanup.h
     src/ArrivalMonitor.h
     src/GuardFinder.h
+    src/PackageManager.h
 )
 
 # Create DLL

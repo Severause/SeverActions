@@ -894,7 +894,7 @@ Function PerformArrest()
     prisoner.SetAV("HealRate", 0.1)
 
     ; Link prisoner to guard so follow package works
-    PO3_SKSEFunctions.SetLinkedRef(prisoner, guard, SeverActions_FollowTargetKW)
+    SeverActionsNative.LinkedRef_Set(prisoner, guard, SeverActions_FollowTargetKW)
     DebugMsg("Linked prisoner to guard for follow")
 
     ; Break any animation lock from PlayIdle before activating follow package
@@ -1033,7 +1033,7 @@ Function OnArrivedAtJail()
     EndIf
 
     ; Clear prisoner's linked ref to guard (was used for follow)
-    PO3_SKSEFunctions.SetLinkedRef(prisoner, None, SeverActions_FollowTargetKW)
+    SeverActionsNative.LinkedRef_Clear(prisoner, SeverActions_FollowTargetKW)
 
     ; Clear reference aliases
     ArrestTarget.Clear()
@@ -1102,7 +1102,7 @@ Function OnArrivedAtJail()
         ; Keep prisoner active with sandbox package
         If SeverActions_PrisonerSandBox && jailMarker
             ; Link prisoner to their jail marker for sandbox (per-actor, supports multiple prisoners)
-            PO3_SKSEFunctions.SetLinkedRef(prisoner, jailMarker, SeverActions_SandboxAnchorKW)
+            SeverActionsNative.LinkedRef_Set(prisoner, jailMarker, SeverActions_SandboxAnchorKW)
             ActorUtil.AddPackageOverride(prisoner, SeverActions_PrisonerSandBox, PackagePriority + 10, 1)
             prisoner.EvaluatePackage()
             DebugMsg("Prisoner sandboxing in jail (linked to marker)")
@@ -1318,8 +1318,8 @@ Function ReleasePrisoner(Actor akPrisoner)
     EndIf
 
     ; Clear any linked ref (guard or jail marker)
-    PO3_SKSEFunctions.SetLinkedRef(akPrisoner, None, SeverActions_FollowTargetKW)
-    PO3_SKSEFunctions.SetLinkedRef(akPrisoner, None, SeverActions_SandboxAnchorKW)
+    SeverActionsNative.LinkedRef_Clear(akPrisoner, SeverActions_FollowTargetKW)
+    SeverActionsNative.LinkedRef_Clear(akPrisoner, SeverActions_SandboxAnchorKW)
 
     ; Restore normal behavior (they may become hostile again)
     akPrisoner.RestoreAV("HealRate", 100)
@@ -1339,7 +1339,7 @@ Function ReleaseFromJailCore(Actor akTarget)
     ; Remove jail sandbox package and clear linked ref
     If SeverActions_PrisonerSandBox
         ActorUtil.RemovePackageOverride(akTarget, SeverActions_PrisonerSandBox)
-        PO3_SKSEFunctions.SetLinkedRef(akTarget, None, SeverActions_SandboxAnchorKW)
+        SeverActionsNative.LinkedRef_Clear(akTarget, SeverActions_SandboxAnchorKW)
     EndIf
 
     ; Restore original outfit if we stored one
@@ -1483,8 +1483,8 @@ Function ClearAllDispatchLinkedRefs(Actor akActor)
     {Clear linked refs for both dispatch keywords on an actor.
      Used during dispatch cleanup to ensure no stale linked refs remain.}
     If akActor != None
-        PO3_SKSEFunctions.SetLinkedRef(akActor, None, SeverActions_FollowTargetKW)
-        PO3_SKSEFunctions.SetLinkedRef(akActor, None, SeverActions_SandboxAnchorKW)
+        SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_FollowTargetKW)
+        SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_SandboxAnchorKW)
     EndIf
 EndFunction
 
@@ -1615,7 +1615,7 @@ Function ApplyDispatchArrestEffects()
     EndIf
 
     ; Link prisoner to guard for follow package
-    PO3_SKSEFunctions.SetLinkedRef(DispatchTarget, DispatchGuard, SeverActions_FollowTargetKW)
+    SeverActionsNative.LinkedRef_Set(DispatchTarget, DispatchGuard, SeverActions_FollowTargetKW)
     Utility.Wait(0.2)
 
     ; Break any animation lock from PlayIdle before activating follow package
@@ -1638,7 +1638,7 @@ Function StopPersuasionFollow()
     If SeverActions_GuardFollowPlayer
         ActorUtil.RemovePackageOverride(ConfrontingGuard, SeverActions_GuardFollowPlayer)
     EndIf
-    PO3_SKSEFunctions.SetLinkedRef(ConfrontingGuard, None, SeverActions_FollowTargetKW)
+    SeverActionsNative.LinkedRef_Clear(ConfrontingGuard, SeverActions_FollowTargetKW)
     ConfrontingGuard.EvaluatePackage()
 EndFunction
 
@@ -1774,7 +1774,7 @@ Bool Function FreeNPC_Internal(Actor akGuard, Actor akTarget)
         DebugMsg("Guard approaching prisoner (distance: " + distance + ")")
 
         ; Link guard to prisoner for approach package
-        PO3_SKSEFunctions.SetLinkedRef(akGuard, akTarget, SeverActions_FollowTargetKW)
+        SeverActionsNative.LinkedRef_Set(akGuard, akTarget, SeverActions_FollowTargetKW)
 
         ; Fill the ArrestTarget alias with the prisoner for the approach package
         ArrestTarget.ForceRefTo(akTarget)
@@ -1798,7 +1798,7 @@ Bool Function FreeNPC_Internal(Actor akGuard, Actor akTarget)
             ActorUtil.RemovePackageOverride(akGuard, SeverActions_GuardApproachTarget)
         EndIf
         ArrestTarget.Clear()
-        PO3_SKSEFunctions.SetLinkedRef(akGuard, None, SeverActions_FollowTargetKW)
+        SeverActionsNative.LinkedRef_Clear(akGuard, SeverActions_FollowTargetKW)
 
         DebugMsg("Guard reached prisoner (elapsed: " + elapsed + "s)")
     EndIf
@@ -1988,7 +1988,7 @@ Function VerifyJailedNPCs()
 
                     ; Re-apply jail sandbox package in case it got removed
                     If SeverActions_PrisonerSandBox
-                        PO3_SKSEFunctions.SetLinkedRef(prisoner, jailMarker, SeverActions_SandboxAnchorKW)
+                        SeverActionsNative.LinkedRef_Set(prisoner, jailMarker, SeverActions_SandboxAnchorKW)
                         ActorUtil.AddPackageOverride(prisoner, SeverActions_PrisonerSandBox, PackagePriority + 10, 1)
                         prisoner.EvaluatePackage()
                     EndIf
@@ -2328,7 +2328,7 @@ Function HandlePersuade()
     PersuasionStartTime = Utility.GetCurrentRealTime()
 
     ; Link guard to player so follow package works
-    PO3_SKSEFunctions.SetLinkedRef(ConfrontingGuard, Game.GetPlayer(), SeverActions_FollowTargetKW)
+    SeverActionsNative.LinkedRef_Set(ConfrontingGuard, Game.GetPlayer(), SeverActions_FollowTargetKW)
 
     ; Apply follow package to guard
     If SeverActions_GuardFollowPlayer
@@ -3259,7 +3259,7 @@ Function StartDispatchReturnPhase()
     ; Disable collision so guard and prisoner don't block each other at doors.
     If DispatchTarget != None && !DispatchIsHomeInvestigation
         SeverActionsNative.SetActorBumpable(DispatchTarget, false)
-        PO3_SKSEFunctions.SetLinkedRef(DispatchTarget, DispatchGuard, SeverActions_FollowTargetKW)
+        SeverActionsNative.LinkedRef_Set(DispatchTarget, DispatchGuard, SeverActions_FollowTargetKW)
         Utility.Wait(0.2)
         Debug.SendAnimationEvent(DispatchTarget, "IdleForceDefaultState")
         Utility.Wait(0.1)
@@ -3306,7 +3306,7 @@ Function ReapplyReturnPackages()
 
     ; Re-apply prisoner follow if applicable
     If DispatchTarget != None && !DispatchIsHomeInvestigation
-        PO3_SKSEFunctions.SetLinkedRef(DispatchTarget, DispatchGuard, SeverActions_FollowTargetKW)
+        SeverActionsNative.LinkedRef_Set(DispatchTarget, DispatchGuard, SeverActions_FollowTargetKW)
         Utility.Wait(0.2)
         If SeverActions_FollowGuard_Prisoner
             ActorUtil.AddPackageOverride(DispatchTarget, SeverActions_FollowGuard_Prisoner, PackagePriority, 1)
@@ -3566,7 +3566,7 @@ Function TransitionToSandboxPhase()
     Else
         DebugMsg("Sandbox anchor: guard position (no target)")
     EndIf
-    PO3_SKSEFunctions.SetLinkedRef(DispatchGuard, sandboxAnchor, SeverActions_SandboxAnchorKW)
+    SeverActionsNative.LinkedRef_Set(DispatchGuard, sandboxAnchor, SeverActions_SandboxAnchorKW)
 
     ; Apply sandbox package (reuses PrisonerSandBox which sandboxes near linked ref)
     If SeverActions_PrisonerSandBox
@@ -3626,7 +3626,7 @@ Function TransitionToEvidencePhase()
     If SeverActions_PrisonerSandBox
         ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_PrisonerSandBox)
     EndIf
-    PO3_SKSEFunctions.SetLinkedRef(DispatchGuard, None, SeverActions_SandboxAnchorKW)
+    SeverActionsNative.LinkedRef_Clear(DispatchGuard, SeverActions_SandboxAnchorKW)
 
     DispatchPhase = 4
     StorageUtil.SetIntValue(DispatchGuard, "SeverActions_DispatchPhase", DispatchPhase)
@@ -4266,7 +4266,7 @@ Function CompleteDispatch()
         JudgmentStartTime = Utility.GetCurrentRealTime()
 
         ; Keep guard near sender — link guard to sender and apply follow package
-        PO3_SKSEFunctions.SetLinkedRef(guard, sender, SeverActions_FollowTargetKW)
+        SeverActionsNative.LinkedRef_Set(guard, sender, SeverActions_FollowTargetKW)
         If SeverActions_GuardFollowPlayer
             ActorUtil.AddPackageOverride(guard, SeverActions_GuardFollowPlayer, PackagePriority, 1)
             guard.EvaluatePackage()
@@ -4276,7 +4276,7 @@ Function CompleteDispatch()
         ; Keep prisoner following the guard during judgment.
         ; Re-apply follow package to ensure prisoner stays near guard.
         If prisoner != None
-            PO3_SKSEFunctions.SetLinkedRef(prisoner, guard, SeverActions_FollowTargetKW)
+            SeverActionsNative.LinkedRef_Set(prisoner, guard, SeverActions_FollowTargetKW)
             Utility.Wait(0.1)
             If SeverActions_FollowGuard_Prisoner
                 ActorUtil.AddPackageOverride(prisoner, SeverActions_FollowGuard_Prisoner, PackagePriority, 1)
@@ -4664,7 +4664,7 @@ Function EndJudgment(Bool released)
             If SeverActions_GuardFollowPlayer
                 ActorUtil.RemovePackageOverride(guard, SeverActions_GuardFollowPlayer)
             EndIf
-            PO3_SKSEFunctions.SetLinkedRef(guard, None, SeverActions_FollowTargetKW)
+            SeverActionsNative.LinkedRef_Clear(guard, SeverActions_FollowTargetKW)
         EndIf
 
         ; Determine jail destination
@@ -4711,7 +4711,7 @@ Function EndJudgment(Bool released)
                 Utility.Wait(0.1)
 
                 ; Ensure prisoner is following the guard for escort
-                PO3_SKSEFunctions.SetLinkedRef(prisoner, guard, SeverActions_FollowTargetKW)
+                SeverActionsNative.LinkedRef_Set(prisoner, guard, SeverActions_FollowTargetKW)
                 Utility.Wait(0.2)
                 If SeverActions_FollowGuard_Prisoner
                     ActorUtil.AddPackageOverride(prisoner, SeverActions_FollowGuard_Prisoner, PackagePriority, 1)
@@ -4903,7 +4903,7 @@ Function RecoverActiveDispatch()
         If DispatchTarget != None && !DispatchIsHomeInvestigation
             DispatchPrisonerAlias.ForceRefTo(DispatchTarget)
             SeverActionsNative.SetActorBumpable(DispatchTarget, false)
-            PO3_SKSEFunctions.SetLinkedRef(DispatchTarget, guard, SeverActions_FollowTargetKW)
+            SeverActionsNative.LinkedRef_Set(DispatchTarget, guard, SeverActions_FollowTargetKW)
             If SeverActions_FollowGuard_Prisoner
                 ActorUtil.AddPackageOverride(DispatchTarget, SeverActions_FollowGuard_Prisoner, PackagePriority, 1)
                 DispatchTarget.EvaluatePackage()

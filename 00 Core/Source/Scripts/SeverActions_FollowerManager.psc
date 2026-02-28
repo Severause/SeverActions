@@ -584,7 +584,7 @@ Event OnOrphanCleanup(string eventName, string keywordType, float numArg, Form s
 
     If keywordType == "travel"
         If TravelScript
-            PO3_SKSEFunctions.SetLinkedRef(npc, None, TravelScript.TravelTargetKeyword)
+            SeverActionsNative.LinkedRef_Clear(npc, TravelScript.TravelTargetKeyword)
             TravelScript.RemoveAllTravelPackages(npc)
             If TravelScript.SandboxPackage
                 ActorUtil.RemovePackageOverride(npc, TravelScript.SandboxPackage)
@@ -592,13 +592,13 @@ Event OnOrphanCleanup(string eventName, string keywordType, float numArg, Form s
         EndIf
     ElseIf keywordType == "furniture"
         If FurnitureScript
-            PO3_SKSEFunctions.SetLinkedRef(npc, None, FurnitureScript.SeverActions_FurnitureTargetKeyword)
+            SeverActionsNative.LinkedRef_Clear(npc, FurnitureScript.SeverActions_FurnitureTargetKeyword)
             ActorUtil.RemovePackageOverride(npc, FurnitureScript.SeverActions_UseFurniturePackage)
             SeverActionsNative.UnregisterFurnitureUser(npc)
         EndIf
     ElseIf keywordType == "follow"
         If FollowScript
-            PO3_SKSEFunctions.SetLinkedRef(npc, None, FollowScript.SeverActions_FollowerFollowKW)
+            SeverActionsNative.LinkedRef_Clear(npc, FollowScript.SeverActions_FollowerFollowKW)
         EndIf
     EndIf
 

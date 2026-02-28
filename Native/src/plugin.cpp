@@ -21,6 +21,7 @@
 #include "OrphanCleanup.h"
 #include "ArrivalMonitor.h"
 #include "GuardFinder.h"
+#include "PackageManager.h"
 #include "SkyrimNetBridge.h"
 
 namespace SeverActionsNative
@@ -101,6 +102,10 @@ namespace SeverActionsNative
             SKSE::log::info("Initializing guard finder...");
             GuardFinder::GetInstance().Initialize();
 
+            // Package manager — native LinkedRef management with cosave persistence
+            SKSE::log::info("Initializing package manager...");
+            PackageManager::GetSingleton()->Initialize();
+
             if (failCount > 0) {
                 SKSE::log::warn("SeverActionsNative: {} database(s) failed to initialize — some features will be unavailable", failCount);
             } else {
@@ -143,6 +148,11 @@ namespace SeverActionsNative
 
             // Reset arrival tracking — Papyrus will re-register in Maintenance()
             ArrivalMonitor::GetSingleton()->ClearAll();
+
+            // Restore all tracked LinkedRefs from cosave data
+            // On kNewGame this is a no-op (Revert already cleared the map)
+            // On kPostLoadGame this restores all LinkedRefs set before the save
+            PackageManager::GetSingleton()->RestoreAllLinkedRefs();
 
             SKSE::log::info("Game loaded - native databases ready for Papyrus queries");
             break;

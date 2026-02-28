@@ -370,7 +370,7 @@ Bool Function TravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0
     ; Set up linked ref for travel package AFTER alias is assigned
     ; Points to interior marker (if resolved) or exterior ref — NPC AI pathfinds through doors
     If TravelTargetKeyword
-        PO3_SKSEFunctions.SetLinkedRef(akNPC, finalDest, TravelTargetKeyword)
+        SeverActionsNative.LinkedRef_Set(akNPC, finalDest, TravelTargetKeyword)
         DebugMsg("Set linked ref to destination")
     Else
         DebugMsg("WARNING: TravelTargetKeyword not set!")
@@ -558,7 +558,7 @@ Bool Function TravelToReference(Actor akNPC, ObjectReference akDestination, Floa
 
     ; Set up linked ref — NPC AI pathfinds through doors to reach interior markers
     If TravelTargetKeyword
-        PO3_SKSEFunctions.SetLinkedRef(akNPC, finalDest, TravelTargetKeyword)
+        SeverActionsNative.LinkedRef_Set(akNPC, finalDest, TravelTargetKeyword)
         DebugMsg("TravelToReference: Set linked ref to destination")
     Else
         DebugMsg("WARNING: TravelTargetKeyword not set!")
@@ -818,7 +818,7 @@ Function CheckTravelingSlot(Int slot)
         ; giving the pathfinding engine a clean slate.
         DebugMsg("Slot " + slot + ": NPC possibly stuck, re-linking destination and re-evaluating")
         If TravelTargetKeyword
-            PO3_SKSEFunctions.SetLinkedRef(npc, dest, TravelTargetKeyword)
+            SeverActionsNative.LinkedRef_Set(npc, dest, TravelTargetKeyword)
         EndIf
         npc.EvaluatePackage()
 
@@ -844,7 +844,7 @@ Function CheckTravelingSlot(Int slot)
             npc.MoveTo(npc, moveX, moveY, 0.0)
             ; Re-link after teleport — NPC is in a new position, needs fresh pathfinding
             If TravelTargetKeyword
-                PO3_SKSEFunctions.SetLinkedRef(npc, dest, TravelTargetKeyword)
+                SeverActionsNative.LinkedRef_Set(npc, dest, TravelTargetKeyword)
             EndIf
             npc.EvaluatePackage()
         EndIf
@@ -877,10 +877,10 @@ Function OnArrived(Int slot, Actor akNPC, String placeName)
     If TravelTargetKeyword
         ObjectReference sandboxAnchor = SlotDestinations[slot]
         If sandboxAnchor != None
-            PO3_SKSEFunctions.SetLinkedRef(akNPC, sandboxAnchor, TravelTargetKeyword)
+            SeverActionsNative.LinkedRef_Set(akNPC, sandboxAnchor, TravelTargetKeyword)
             DebugMsg("Slot " + slot + ": Set linked ref to destination for sandbox")
         Else
-            PO3_SKSEFunctions.SetLinkedRef(akNPC, None, TravelTargetKeyword)
+            SeverActionsNative.LinkedRef_Clear(akNPC, TravelTargetKeyword)
         EndIf
     EndIf
 
@@ -1134,9 +1134,9 @@ Function ClearSlot(Int slot, Bool restoreFollower = false)
             
             ; Clear linked ref
             If TravelTargetKeyword
-                PO3_SKSEFunctions.SetLinkedRef(npc, None, TravelTargetKeyword)
+                SeverActionsNative.LinkedRef_Clear(npc, TravelTargetKeyword)
             EndIf
-            
+
             ; Check if should restore follower status
             If restoreFollower
                 Bool wasFollower = StorageUtil.GetIntValue(npc, "SeverTravel_WasFollower") as Bool
@@ -1212,7 +1212,7 @@ Function ForceResetAllSlots(Bool restoreFollowers = true)
                 
                 ; Clear linked ref
                 If TravelTargetKeyword
-                    PO3_SKSEFunctions.SetLinkedRef(npc, None, TravelTargetKeyword)
+                    SeverActionsNative.LinkedRef_Clear(npc, TravelTargetKeyword)
                 EndIf
                 
                 ; Check if should restore follower status

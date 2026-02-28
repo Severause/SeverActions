@@ -29,6 +29,7 @@
 #include "OrphanCleanup.h"
 #include "ArrivalMonitor.h"
 #include "GuardFinder.h"
+#include "PackageManager.h"
 #include "SkyrimNetBridge.h"
 
 namespace SeverActionsNative
@@ -72,6 +73,7 @@ namespace SeverActionsNative
         OrphanCleanup::RegisterFunctions(a_vm, scriptName);
         ArrivalMonitor::RegisterFunctions(a_vm, scriptName);
         GuardFinder::RegisterFunctions(a_vm, scriptName);
+        PackageManager::RegisterFunctions(a_vm, scriptName);
         SkyrimNetBridge::RegisterFunctions(a_vm, scriptName);
 
         SKSE::log::info("Registered all Papyrus native functions for {}", scriptName);

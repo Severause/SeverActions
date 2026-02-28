@@ -868,6 +868,31 @@ Actor Function FindNearestGuard(Actor akNearActor, Float searchRadius = 3000.0) 
 {Find the nearest guard within searchRadius of akNearActor. Checks all vanilla guard factions (Whiterun, Riften, Solitude, Haafingar, Windhelm, Markarth, Falkreath, Dawnstar). Skips dead, in-combat guards. Returns None if no guard found.}
 
 ; =============================================================================
+; PACKAGE MANAGER — LINKED REF
+; Native LinkedRef management with SKSE cosave persistence.
+; Drop-in replacement for PO3_SKSEFunctions.SetLinkedRef with auto-tracking.
+; LinkedRefs automatically persist across save/load and restore on game start.
+; =============================================================================
+
+Function LinkedRef_Set(Actor akActor, ObjectReference akTarget, Keyword akKeyword) Global Native
+{Set a LinkedRef on an actor. Replaces PO3_SKSEFunctions.SetLinkedRef. Automatically tracked for cosave persistence — LinkedRef will auto-restore on game load.}
+
+Function LinkedRef_Clear(Actor akActor, Keyword akKeyword) Global Native
+{Clear a LinkedRef on an actor. Removes from persistence tracking.}
+
+Function LinkedRef_ClearAll(Actor akActor) Global Native
+{Clear ALL tracked LinkedRefs on an actor. Used during full cleanup (e.g. dismiss follower, cancel arrest).}
+
+Bool Function LinkedRef_HasAny(Actor akActor) Global Native
+{Check if an actor has any tracked LinkedRefs. Debug/diagnostic.}
+
+Int Function LinkedRef_GetTrackedCount() Global Native
+{Get total count of tracked LinkedRef entries across all actors. Debug.}
+
+Function NativeEvaluatePackage(Actor akActor) Global Native
+{Call EvaluatePackage natively. Slightly faster than Papyrus actor.EvaluatePackage().}
+
+; =============================================================================
 ; SKYRIMNET PLUGIN CONFIG BRIDGE
 ; Read settings from the SkyrimNet WebUI plugin configuration system.
 ; Requires SkyrimNet 0.15.4+ dev build with Plugin Configuration support.

@@ -204,7 +204,7 @@ EndFunction
 Function ReapplyFollowTracking(Actor[] followers)
     {Re-apply runtime-only data for companions after save/load.
      The CK alias packages persist natively — this only restores:
-     - LinkedRef (PO3_SKSEFunctions.SetLinkedRef doesn't persist)
+     - LinkedRef (now persists via native cosave — auto-restores on game load)
      - Sandbox overrides for waiting companions
      Does NOT register with SkyrimNet — companion eligibility uses faction.}
     Actor player = Game.GetPlayer()
@@ -214,7 +214,7 @@ Function ReapplyFollowTracking(Actor[] followers)
         If akActor && !akActor.IsDead()
             ; Re-set linked ref (runtime-only, doesn't survive save/load)
             If SeverActions_FollowerFollowKW
-                PO3_SKSEFunctions.SetLinkedRef(akActor, player, SeverActions_FollowerFollowKW)
+                SeverActionsNative.LinkedRef_Set(akActor, player, SeverActions_FollowerFollowKW)
             EndIf
 
             Bool isWaiting = akActor.GetAV("WaitingForPlayer") > 0
@@ -324,7 +324,7 @@ Function CompanionStartFollowing(Actor akActor)
 
     ; Set linked ref to player (so CK follow package knows who to follow)
     If SeverActions_FollowerFollowKW
-        PO3_SKSEFunctions.SetLinkedRef(akActor, Game.GetPlayer(), SeverActions_FollowerFollowKW)
+        SeverActionsNative.LinkedRef_Set(akActor, Game.GetPlayer(), SeverActions_FollowerFollowKW)
     Else
         Debug.Trace("[SeverActions_Follow] WARNING: FollowerFollowKW not set!")
     EndIf
@@ -367,7 +367,7 @@ Function CompanionStopFollowing(Actor akActor)
 
     ; Clear linked ref
     If SeverActions_FollowerFollowKW
-        PO3_SKSEFunctions.SetLinkedRef(akActor, None, SeverActions_FollowerFollowKW)
+        SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_FollowerFollowKW)
     EndIf
 
     ; Also unregister from SkyrimNet in case they had a casual follow registered too

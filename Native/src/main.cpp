@@ -5,6 +5,7 @@
 
 #include "plugin.h"
 #include "papyrus.h"
+#include "PackageManager.h"
 
 #include <filesystem>
 #include <format>
@@ -66,6 +67,16 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
     if (papyrus) {
         papyrus->Register(SeverActionsNative::Papyrus::RegisterFunctions);
         SKSE::log::info("Papyrus functions registered");
+    }
+
+    // Register SKSE serialization for cosave persistence (PackageManager LinkedRef tracking)
+    auto serialization = SKSE::GetSerializationInterface();
+    if (serialization) {
+        serialization->SetUniqueID(SeverActionsNative::PackageManager::kUniqueID);
+        serialization->SetSaveCallback(SeverActionsNative::PackageManager::OnSave);
+        serialization->SetLoadCallback(SeverActionsNative::PackageManager::OnLoad);
+        serialization->SetRevertCallback(SeverActionsNative::PackageManager::OnRevert);
+        SKSE::log::info("SKSE serialization registered (cosave ID: 'SVAN')");
     }
 
     // Initialize plugin

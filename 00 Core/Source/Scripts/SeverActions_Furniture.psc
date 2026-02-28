@@ -65,7 +65,7 @@ Event OnNativeFurnitureCleanup(string eventName, string strArg, float numArg, Fo
 
     ; Clear linked ref
     if SeverActions_FurnitureTargetKeyword
-        PO3_SKSEFunctions.SetLinkedRef(akActor, None, SeverActions_FurnitureTargetKeyword)
+        SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_FurnitureTargetKeyword)
     endif
 
     ; Unregister from SkyrimNet
@@ -145,7 +145,7 @@ Function UseFurniture_Execute(Actor akActor, String furnitureFormId)
     
     ; Set linked ref to the furniture
     if SeverActions_FurnitureTargetKeyword
-        PO3_SKSEFunctions.SetLinkedRef(akActor, furnRef, SeverActions_FurnitureTargetKeyword)
+        SeverActionsNative.LinkedRef_Set(akActor, furnRef, SeverActions_FurnitureTargetKeyword)
     endif
     
     ; Apply sandbox package - they'll walk to and use the furniture
@@ -193,7 +193,7 @@ Function StopUsingFurniture_Execute(Actor akActor)
 
     ; Clear linked ref
     if SeverActions_FurnitureTargetKeyword
-        PO3_SKSEFunctions.SetLinkedRef(akActor, None, SeverActions_FurnitureTargetKeyword)
+        SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_FurnitureTargetKeyword)
     endif
 
     ; Unregister from SkyrimNet
