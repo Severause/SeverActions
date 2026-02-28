@@ -445,6 +445,9 @@ Function Maintenance()
     ; Register for game load event to verify prisoner positions
     RegisterForModEvent("OnPlayerLoadGame", "OnPlayerLoadGame")
 
+    ; Register for native arrival callbacks from ArrivalMonitor
+    RegisterForModEvent("SeverActionsNative_OnArrival", "OnArrivalEvent")
+
     ; Register for player cell change to verify prisoners after fast travel
     RegisterForTrackedStatsEvent()
 EndFunction
@@ -597,7 +600,10 @@ Function StartApproachPhase()
     ; Start stuck detection for long-distance approaches
     SeverActionsNative.Stuck_StartTracking(CurrentGuard)
 
-    ; Start monitoring for arrival
+    ; Register native arrival monitoring (fires OnArrivalEvent with tag "approach")
+    SeverActionsNative.Arrival_Register(CurrentGuard, CurrentPrisoner, ApproachDistance, "approach")
+
+    ; Start monitoring for stuck detection
     RegisterForSingleUpdate(UpdateInterval)
 EndFunction
 
@@ -651,11 +657,120 @@ Event OnUpdate()
     EndIf
 EndEvent
 
-Function CheckApproachProgress()
-    {Check if guard has reached the target.
-     Includes stuck detection with progressive recovery for cross-cell approaches.}
+; =============================================================================
+; NATIVE ARRIVAL CALLBACK — fires from ArrivalMonitor C++ when actor reaches dest
+; =============================================================================
 
-    Float dist
+Event OnArrivalEvent(String eventName, String strArg, Float numArg, Form sender)
+    {Handles native arrival callbacks from ArrivalMonitor.
+     strArg = callbackTag, numArg = final distance, sender = the tracked actor.}
+
+    Actor arrivedActor = sender as Actor
+    If arrivedActor == None
+        Return
+    EndIf
+
+    If strArg == "approach"
+        OnApproachArrival(arrivedActor, numArg)
+    ElseIf strArg == "escort"
+        OnEscortArrival(arrivedActor, numArg)
+    ElseIf strArg == "dispatch_travel"
+        OnDispatchTravelArrival(arrivedActor, numArg)
+    ElseIf strArg == "dispatch_approach"
+        OnDispatchApproachArrival(arrivedActor, numArg)
+    ElseIf strArg == "dispatch_return"
+        OnDispatchReturnArrival(arrivedActor, numArg)
+    EndIf
+EndEvent
+
+Function OnApproachArrival(Actor akGuard, Float dist)
+    {Native callback: guard reached prisoner during approach phase.}
+    If akGuard != CurrentGuard || ArrestState != 1
+        Return  ; Stale event from a cancelled/completed arrest
+    EndIf
+
+    DebugMsg("Guard reached target (native arrival, dist=" + dist + "), performing arrest")
+    SeverActionsNative.Stuck_StopTracking(CurrentGuard)
+
+    If SeverActions_GuardApproachTarget
+        ActorUtil.RemovePackageOverride(CurrentGuard, SeverActions_GuardApproachTarget)
+    EndIf
+
+    PerformArrest()
+EndFunction
+
+Function OnEscortArrival(Actor akGuard, Float dist)
+    {Native callback: guard arrived at jail during escort phase.}
+    If akGuard != CurrentGuard || ArrestState != 3
+        Return
+    EndIf
+
+    DebugMsg("Guard arrived at jail (native arrival, dist=" + dist + ")")
+    OnArrivedAtJail()
+EndFunction
+
+Function OnDispatchTravelArrival(Actor akGuard, Float dist)
+    {Native callback: guard arrived at destination during dispatch Phase 1 travel.}
+    If akGuard != DispatchGuard || DispatchPhase != 1
+        Return
+    EndIf
+
+    DebugMsg("Guard arrived at destination (native arrival, dist=" + dist + ")")
+    If DispatchIsHomeInvestigation
+        TransitionToSandboxPhase()
+    Else
+        TransitionToApproachPhase()
+    EndIf
+EndFunction
+
+Function OnDispatchApproachArrival(Actor akGuard, Float dist)
+    {Native callback: guard reached target during dispatch Phase 2 approach.}
+    If akGuard != DispatchGuard || DispatchPhase != 2
+        Return
+    EndIf
+
+    DebugMsg("Guard reached target (native arrival, dist=" + dist + "), performing dispatch arrest")
+
+    ; Remove approach/dispatch packages
+    If SeverActions_GuardApproachTarget
+        ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_GuardApproachTarget)
+    EndIf
+    If SeverActions_DispatchJog
+        ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchJog)
+    EndIf
+
+    ApplyDispatchArrestEffects()
+    DebugMsg("Dispatch arrest effects applied to " + DispatchTarget.GetDisplayName())
+
+    ; Narrate the arrest
+    String guardName = DispatchGuard.GetDisplayName()
+    String targetName = DispatchTarget.GetDisplayName()
+    String narration = "*" + guardName + " seizes " + targetName + " and places them under arrest.*"
+    SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
+
+    Debug.Notification(guardName + " has arrested " + targetName)
+
+    StartDispatchReturnPhase()
+EndFunction
+
+Function OnDispatchReturnArrival(Actor akGuard, Float dist)
+    {Native callback: guard arrived at return destination during dispatch Phase 5.}
+    If akGuard != DispatchGuard || DispatchPhase != 5
+        Return
+    EndIf
+
+    DebugMsg("Guard arrived at return destination (native arrival, dist=" + dist + ")")
+    CompleteDispatch()
+EndFunction
+
+; =============================================================================
+; APPROACH PROGRESS — stuck detection (arrival handled by ArrivalMonitor)
+; =============================================================================
+
+Function CheckApproachProgress()
+    {Check approach stuck detection. Arrival is detected natively by ArrivalMonitor
+     which fires OnApproachArrival. This function handles stuck recovery only.}
+
     Int stuckLevel
     Float teleportDist
     Float guardX
@@ -674,7 +789,8 @@ Function CheckApproachProgress()
         Return
     EndIf
 
-    ; Check if guard or prisoner died
+    ; Check if guard or prisoner died (ArrivalMonitor auto-cancels on death,
+    ; but Papyrus needs its own cleanup of packages, factions, etc.)
     If CurrentGuard.IsDead()
         DebugMsg("Guard died during approach")
         SeverActionsNative.Stuck_StopTracking(CurrentGuard)
@@ -689,59 +805,42 @@ Function CheckApproachProgress()
         Return
     EndIf
 
-    dist = CurrentGuard.GetDistance(CurrentPrisoner)
+    ; Stuck detection — arrival is handled natively by ArrivalMonitor
+    stuckLevel = SeverActionsNative.Stuck_CheckStatus(CurrentGuard, UpdateInterval, 50.0)
 
-    If dist <= ApproachDistance
-        ; Arrived at target - perform arrest
-        DebugMsg("Guard reached target, performing arrest")
-        SeverActionsNative.Stuck_StopTracking(CurrentGuard)
+    If stuckLevel == 1
+        DebugMsg("Approach: guard may be stuck, re-evaluating packages")
+        CurrentGuard.EvaluatePackage()
+    ElseIf stuckLevel == 2
+        ; Stuck - leapfrog toward target
+        teleportDist = SeverActionsNative.Stuck_GetTeleportDistance(CurrentGuard)
+        guardX = CurrentGuard.GetPositionX()
+        guardY = CurrentGuard.GetPositionY()
+        targetX = CurrentPrisoner.GetPositionX()
+        targetY = CurrentPrisoner.GetPositionY()
+        dx = targetX - guardX
+        dy = targetY - guardY
+        dist2d = Math.sqrt(dx * dx + dy * dy)
 
-        ; Remove approach package
-        If SeverActions_GuardApproachTarget
-            ActorUtil.RemovePackageOverride(CurrentGuard, SeverActions_GuardApproachTarget)
+        If dist2d > 0.0
+            moveX = (dx / dist2d) * teleportDist
+            moveY = (dy / dist2d) * teleportDist
+            CurrentGuard.MoveTo(CurrentGuard, moveX, moveY, 0.0)
+            CurrentGuard.EvaluatePackage()
+            DebugMsg("Approach: leapfrog guard " + teleportDist + " units toward target")
         EndIf
 
-        PerformArrest()
-    Else
-        ; Not arrived yet - check for stuck (helps with cross-cell approaches)
-        stuckLevel = SeverActionsNative.Stuck_CheckStatus(CurrentGuard, UpdateInterval, 50.0)
-
-        If stuckLevel == 1
-            ; Possibly stuck - re-evaluate packages
-            DebugMsg("Approach: guard may be stuck, re-evaluating packages")
-            CurrentGuard.EvaluatePackage()
-        ElseIf stuckLevel == 2
-            ; Stuck - leapfrog toward target
-            teleportDist = SeverActionsNative.Stuck_GetTeleportDistance(CurrentGuard)
-            guardX = CurrentGuard.GetPositionX()
-            guardY = CurrentGuard.GetPositionY()
-            targetX = CurrentPrisoner.GetPositionX()
-            targetY = CurrentPrisoner.GetPositionY()
-            dx = targetX - guardX
-            dy = targetY - guardY
-            dist2d = Math.sqrt(dx * dx + dy * dy)
-
-            If dist2d > 0.0
-                moveX = (dx / dist2d) * teleportDist
-                moveY = (dy / dist2d) * teleportDist
-                CurrentGuard.MoveTo(CurrentGuard, moveX, moveY, 0.0)
-                CurrentGuard.EvaluatePackage()
-                DebugMsg("Approach: leapfrog guard " + teleportDist + " units toward target")
-            EndIf
-
-            SeverActionsNative.Stuck_ResetEscalation(CurrentGuard)
-        ElseIf stuckLevel >= 3
-            ; Very stuck - force teleport near target
-            DebugMsg("Approach: force teleporting guard near target")
-            CurrentGuard.MoveTo(CurrentPrisoner, 200.0, 0.0, 0.0)
-            Utility.Wait(0.5)
-            CurrentGuard.EvaluatePackage()
-            SeverActionsNative.Stuck_ResetEscalation(CurrentGuard)
-        EndIf
-
-        ; Still approaching, keep checking
-        RegisterForSingleUpdate(UpdateInterval)
+        SeverActionsNative.Stuck_ResetEscalation(CurrentGuard)
+    ElseIf stuckLevel >= 3
+        DebugMsg("Approach: force teleporting guard near target")
+        CurrentGuard.MoveTo(CurrentPrisoner, 200.0, 0.0, 0.0)
+        Utility.Wait(0.5)
+        CurrentGuard.EvaluatePackage()
+        SeverActionsNative.Stuck_ResetEscalation(CurrentGuard)
     EndIf
+
+    ; Keep checking for stuck detection (arrival handled by native callback)
+    RegisterForSingleUpdate(UpdateInterval)
 EndFunction
 
 ; =============================================================================
@@ -858,12 +957,17 @@ Function StartEscortPhase()
         DebugMsg("WARNING: No guard travel package defined!")
     EndIf
 
-    ; Start monitoring for arrival
+    ; Register native arrival monitoring (fires OnArrivalEvent with tag "escort")
+    SeverActionsNative.Arrival_Register(CurrentGuard, CurrentJailMarker, ArrivalDistance, "escort")
+
+    ; Start monitoring for prisoner follow re-application
     RegisterForSingleUpdate(UpdateInterval)
 EndFunction
 
 Function CheckEscortProgress()
-    {Check if guard has arrived at jail}
+    {Check escort status. Arrival is detected natively by ArrivalMonitor
+     which fires OnEscortArrival. This function re-applies prisoner follow
+     package (Skyrim drops overrides) and checks for death.}
 
     If CurrentGuard == None || CurrentPrisoner == None || CurrentJailMarker == None
         DebugMsg("ERROR: CheckEscortProgress - invalid state")
@@ -891,17 +995,8 @@ Function CheckEscortProgress()
         CurrentPrisoner.EvaluatePackage()
     EndIf
 
-    ; Check distance to jail marker
-    Float dist = CurrentGuard.GetDistance(CurrentJailMarker)
-
-    If dist <= ArrivalDistance
-        ; Arrived at jail
-        DebugMsg("Guard arrived at jail (distance: " + dist + ")")
-        OnArrivedAtJail()
-    Else
-        ; Still traveling
-        RegisterForSingleUpdate(UpdateInterval)
-    EndIf
+    ; Keep checking for death and follow re-application (arrival handled by native callback)
+    RegisterForSingleUpdate(UpdateInterval)
 EndFunction
 
 ; =============================================================================
@@ -1154,7 +1249,8 @@ Function CancelCurrentArrest()
     DebugMsg("Canceling current arrest")
 
     If CurrentGuard
-        ; Stop stuck tracking
+        ; Stop native arrival monitoring and stuck tracking
+        SeverActionsNative.Arrival_Cancel(CurrentGuard)
         SeverActionsNative.Stuck_StopTracking(CurrentGuard)
 
         ; Remove guard packages
@@ -1471,10 +1567,13 @@ Function InitDispatchCommon(Actor akGuard, ObjectReference akDestination)
     ; Initialize off-screen travel estimation (distance-based arrival time)
     SeverActionsNative.OffScreen_InitTracking(akGuard, akDestination, 0.5, 18.0)
 
+    ; Register native arrival monitoring (fires OnArrivalEvent with tag "dispatch_travel")
+    SeverActionsNative.Arrival_Register(akGuard, akDestination, DispatchArrivalDistance, "dispatch_travel")
+
     ; Persist dispatch state for save/load recovery
     PersistDispatchState()
 
-    ; Start monitoring
+    ; Start monitoring for stuck detection, off-screen estimation, etc.
     RegisterForSingleUpdate(UpdateInterval)
 EndFunction
 
@@ -3180,6 +3279,11 @@ Function StartDispatchReturnPhase()
         SeverActionsNative.OffScreen_InitTracking(DispatchGuard, DispatchReturnMarker, 0.25, 12.0)
     EndIf
 
+    ; Register native arrival monitoring for return phase
+    If DispatchReturnMarker != None
+        SeverActionsNative.Arrival_Register(DispatchGuard, DispatchReturnMarker, DispatchArrivalDistance, "dispatch_return")
+    EndIf
+
     DispatchPhase = 5
     StorageUtil.SetIntValue(DispatchGuard, "SeverActions_DispatchPhase", DispatchPhase)
     DispatchGuardOffScreen = false
@@ -3224,12 +3328,10 @@ EndFunction
 
 Function CheckDispatchPhase1_Travel()
     {Phase 1: Guard traveling to destination (target Actor or home interior marker).
-     Skyrim AI handles cross-cell pathfinding through doors automatically. We monitor for:
-     - Same cell as destination (transition to approach or sandbox)
-     - Close enough to destination (transition to approach or sandbox)
-     - Stuck detection with leapfrog recovery}
+     Arrival is detected natively by ArrivalMonitor (fires OnDispatchTravelArrival).
+     This function handles: departure check, stuck detection, off-screen teleportation,
+     and stale snapshot redirect.}
 
-    Float dist
     Int stuckLevel
     ObjectReference travelDest
 
@@ -3286,53 +3388,9 @@ Function CheckDispatchPhase1_Travel()
         EndIf
     EndIf
 
-    ; Same cell check — dest is now the interior marker (home) or target Actor (arrest)
-    ; so same cell = guard has pathfound through doors and arrived
-    Cell guardCell = DispatchGuard.GetParentCell()
-    Cell destCell = travelDest.GetParentCell()
-    If guardCell != None && destCell != None && guardCell == destCell
-        If DispatchIsHomeInvestigation
-            ; Guard is in the same cell as the interior marker — they're inside the home
-            dist = DispatchGuard.GetDistance(travelDest)
-            If dist <= DispatchArrivalDistance
-                DebugMsg("Guard arrived inside home (same cell, dist=" + dist + "), transitioning to sandbox")
-                TransitionToSandboxPhase()
-                Return
-            EndIf
-        ElseIf guardCell.IsInterior()
-            ; Interior cells are small enough that same-cell = arrived
-            DebugMsg("Guard is in same interior cell as target, transitioning to approach phase")
-            TransitionToApproachPhase()
-            Return
-        Else
-            ; Exterior cells can be very large — only transition if within ArrivalDistance
-            If DispatchGuard.Is3DLoaded() && travelDest.Is3DLoaded()
-                dist = DispatchGuard.GetDistance(travelDest)
-                If dist <= DispatchArrivalDistance
-                    DebugMsg("Guard near target in same exterior cell (dist=" + dist + "), transitioning to approach")
-                    TransitionToApproachPhase()
-                    Return
-                EndIf
-            EndIf
-        EndIf
-    EndIf
-
-    ; Snapshot-based distance check (works off-screen via position snapshots)
-    If !DispatchGuard.Is3DLoaded() || !travelDest.Is3DLoaded()
-        ; Guard or destination is off-screen — try native distance
-        If !DispatchIsHomeInvestigation
-            ; Home marker isn't an actor, can't use GetDistanceBetweenActors
-            Float snapDist = SeverActionsNative.GetDistanceBetweenActors(DispatchGuard, DispatchTarget)
-            If snapDist >= 0.0 && snapDist <= DispatchArrivalDistance
-                DebugMsg("Snapshot distance arrival: guard within " + snapDist + " of target (off-screen)")
-                TransitionToApproachPhase()
-                Return
-            EndIf
-        EndIf
-    EndIf
-
     ; Off-screen travel estimation — if guard has been traveling off-screen long enough,
-    ; teleport them to destination based on distance-calculated estimate
+    ; teleport them to destination based on distance-calculated estimate.
+    ; After teleport, ArrivalMonitor will detect proximity on its next tick.
     If !DispatchGuard.Is3DLoaded()
         Int arrivalStatus = SeverActionsNative.OffScreen_CheckArrival(DispatchGuard, Utility.GetCurrentGameTime())
         If arrivalStatus == 1
@@ -3345,23 +3403,8 @@ Function CheckDispatchPhase1_Travel()
             Utility.Wait(0.5)
             DispatchGuard.EvaluatePackage()
             SeverActionsNative.OffScreen_StopTracking(DispatchGuard)
-            ; Let the next tick detect same-cell/proximity and transition naturally
+            ; ArrivalMonitor will detect proximity after teleport
             RegisterForSingleUpdate(UpdateInterval)
-            Return
-        EndIf
-    EndIf
-
-    ; Distance check (both 3D loaded — same exterior area or player cell)
-    If DispatchGuard.Is3DLoaded() && travelDest.Is3DLoaded()
-        dist = DispatchGuard.GetDistance(travelDest)
-        If dist <= DispatchArrivalDistance
-            If DispatchIsHomeInvestigation
-                DebugMsg("Guard arrived at home destination (dist=" + dist + "), transitioning to sandbox")
-                TransitionToSandboxPhase()
-            Else
-                DebugMsg("Guard near target (dist=" + dist + "), transitioning to approach")
-                TransitionToApproachPhase()
-            EndIf
             Return
         EndIf
     EndIf
@@ -3387,19 +3430,18 @@ Function CheckDispatchPhase1_Travel()
                     EndIf
 
                     If homeMarker != None
-                        ; Redirect guard to target's home
+                        ; Redirect guard to target's home and update ArrivalMonitor destination
                         DebugMsg("Redirecting guard to target's home")
                         ArrestTarget.ForceRefTo(homeMarker)
                         DispatchGuard.EvaluatePackage()
-                        ; Don't change DispatchTarget — still arresting same person
-                        ; Guard will arrive at home and wait for target
+                        SeverActionsNative.Arrival_Register(DispatchGuard, homeMarker, DispatchArrivalDistance, "dispatch_travel")
                     EndIf
                 EndIf
             EndIf
         EndIf
     EndIf
 
-    ; Continue monitoring
+    ; Continue monitoring for stuck detection, off-screen, etc. (arrival handled by native callback)
     RegisterForSingleUpdate(UpdateInterval)
 EndFunction
 
@@ -3439,63 +3481,43 @@ Function TransitionToApproachPhase()
     DispatchGuard.DrawWeapon()
     DispatchPhase = 2
     StorageUtil.SetIntValue(DispatchGuard, "SeverActions_DispatchPhase", DispatchPhase)
+
+    ; Register native arrival monitoring for approach phase
+    SeverActionsNative.Arrival_Register(DispatchGuard, DispatchTarget, ApproachDistance, "dispatch_approach")
+
     RegisterForSingleUpdate(UpdateInterval)
 EndFunction
 
 Function CheckDispatchPhase2_Approach()
-    {Phase 2: Guard approaching target in same cell for arrest.
-     GetDistance returns 0 for unloaded actors, so we must guard against false positives.
-     If neither is 3D loaded, use snapshot distance instead. If both unloaded and snapshot
-     confirms proximity (or is unavailable), proceed — the guard was transitioned to Phase 2
-     because same-cell was already confirmed.}
+    {Phase 2: Guard approaching target in same cell. Arrival is detected natively by
+     ArrivalMonitor (fires OnDispatchApproachArrival). This function is kept minimal
+     as a safety fallback — if both are unloaded with no snapshots, trust same-cell.}
 
-    Float dist = -1.0
-    Bool bothLoaded = DispatchGuard.Is3DLoaded() && DispatchTarget.Is3DLoaded()
-
-    If bothLoaded
-        dist = DispatchGuard.GetDistance(DispatchTarget)
-    Else
-        ; One or both actors not loaded — use snapshot distance
-        dist = SeverActionsNative.GetDistanceBetweenActors(DispatchGuard, DispatchTarget)
+    ; Safety fallback: if both actors are unloaded and ArrivalMonitor can't get position data,
+    ; trust that same-cell was already confirmed in Phase 1 transition and proceed with arrest.
+    ; This handles the edge case where C++ has no position info for either actor.
+    If !DispatchGuard.Is3DLoaded() && !DispatchTarget.Is3DLoaded()
+        Float dist = SeverActionsNative.GetDistanceBetweenActors(DispatchGuard, DispatchTarget)
         If dist < 0.0
-            ; Snapshot unavailable — we already confirmed same-cell to reach Phase 2,
-            ; so trust it and proceed with the arrest
-            dist = 0.0
-            DebugMsg("Phase 2: both unloaded, no snapshot — trusting same-cell arrival")
+            DebugMsg("Phase 2: both unloaded, no snapshot — trusting same-cell, triggering arrest")
+            ; Cancel the native tracker (we're handling it here)
+            SeverActionsNative.Arrival_Cancel(DispatchGuard)
+            ; Use the same logic as OnDispatchApproachArrival
+            If SeverActions_GuardApproachTarget
+                ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_GuardApproachTarget)
+            EndIf
+            If SeverActions_DispatchJog
+                ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchJog)
+            EndIf
+            ApplyDispatchArrestEffects()
+            String guardName = DispatchGuard.GetDisplayName()
+            String targetName = DispatchTarget.GetDisplayName()
+            String narration = "*" + guardName + " seizes " + targetName + " and places them under arrest.*"
+            SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
+            Debug.Notification(guardName + " has arrested " + targetName)
+            StartDispatchReturnPhase()
+            Return
         EndIf
-    EndIf
-
-    If dist >= 0.0 && dist <= ApproachDistance
-        DebugMsg("Guard reached target (dist=" + dist + ", loaded=" + bothLoaded + "), performing arrest")
-
-        ; Remove approach/dispatch packages (will be replaced by walk package in return phase)
-        If SeverActions_GuardApproachTarget
-            ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_GuardApproachTarget)
-        EndIf
-        If SeverActions_DispatchJog
-            ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchJog)
-        EndIf
-
-        ; DO NOT clear aliases here — they're needed for Phase 5 return journey
-        ; ArrestingGuard keeps the guard in high-process while off-screen
-        ; ArrestTarget will be repurposed in StartDispatchReturnPhase
-
-        ApplyDispatchArrestEffects()
-
-        DebugMsg("Dispatch arrest effects applied to " + DispatchTarget.GetDisplayName())
-
-        ; Narrate the arrest
-        String guardName = DispatchGuard.GetDisplayName()
-        String targetName = DispatchTarget.GetDisplayName()
-        String narration = "*" + guardName + " seizes " + targetName + " and places them under arrest.*"
-        SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
-
-        ; Notify player even when the arrest happens off-screen
-        Debug.Notification(guardName + " has arrested " + targetName)
-
-        ; Transition to return phase (escort prisoner back to jail or Jarl)
-        StartDispatchReturnPhase()
-        Return
     EndIf
 
     RegisterForSingleUpdate(UpdateInterval)
@@ -3911,16 +3933,8 @@ Function CheckDispatchPhase5_Return()
             EndIf
         EndIf
 
-        ; Check arrival at return destination
-        ; Both must be 3D loaded — GetDistance returns 0 cross-cell which falsely triggers arrival
-        If DispatchReturnMarker != None && DispatchGuard.Is3DLoaded() && DispatchReturnMarker.Is3DLoaded()
-            dist = DispatchGuard.GetDistance(DispatchReturnMarker)
-            If dist <= DispatchArrivalDistance
-                DebugMsg("Guard arrived at return destination (dist=" + dist + ")")
-                CompleteDispatch()
-                Return
-            EndIf
-        EndIf
+        ; On-screen arrival is detected natively by ArrivalMonitor (fires OnDispatchReturnArrival)
+
     Else
         ; --- Off-screen: tiered escalation ---
         If !DispatchGuardOffScreen
@@ -4314,8 +4328,9 @@ EndFunction
 Function CancelDispatch()
     {Cancel an active dispatch and clean up all state.}
 
-    ; Stop stuck tracking, off-screen estimation, restore collision, and restore combat AI
+    ; Stop native arrival monitoring, stuck tracking, off-screen estimation, restore collision
     If DispatchGuard != None
+        SeverActionsNative.Arrival_Cancel(DispatchGuard)
         SeverActionsNative.Stuck_StopTracking(DispatchGuard)
         SeverActionsNative.OffScreen_StopTracking(DispatchGuard)
         SeverActionsNative.SetActorBumpable(DispatchGuard, true)

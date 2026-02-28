@@ -1,14 +1,3 @@
-# Native SKSE plugin source (private — only the compiled DLL ships in 00 Core)
-Native/
-
-# Build stubs (compile-time only, never deploy)
-00 Core/Source/BuildStubs/
-
-# Claude Code project files
-.claude/
-CLAUDE.md
-CLAUDE.local.md
-
 # Build artifacts
 *.exp
 *.lib
