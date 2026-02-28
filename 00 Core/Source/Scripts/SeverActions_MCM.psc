@@ -24,6 +24,7 @@ bool Property AllowConjuredGold = true Auto
 
 ; Dialogue Animation Settings (stored here, applied to native DLL)
 bool Property DialogueAnimEnabled = true Auto Hidden
+int Property SilenceChance = 50 Auto Hidden
 
 ; Hotkey Settings (stored here, applied to HotkeyScript)
 int Property FollowToggleKey = -1 Auto Hidden
@@ -91,6 +92,7 @@ int OID_PersuasionTimeLimit
 
 ; General page - Native DLL toggles
 int OID_DialogueAnimEnabled
+int OID_SilenceChance
 
 ; Survival page
 int OID_SurvivalEnabled
@@ -281,6 +283,7 @@ Function DrawGeneralPage()
     AddEmptyOption()
     AddHeaderOption("Native Features")
     OID_DialogueAnimEnabled = AddToggleOption("Dialogue Animations", DialogueAnimEnabled)
+    OID_SilenceChance = AddSliderOption("Silence Chance", SilenceChance as Float, "{0}%")
 
     AddEmptyOption()
     AddHeaderOption("Quick Reference")
@@ -1103,6 +1106,11 @@ Event OnOptionSliderOpen(int option)
         SetSliderDialogDefaultValue(90.0)
         SetSliderDialogRange(30.0, 300.0)
         SetSliderDialogInterval(5.0)
+    elseif option == OID_SilenceChance
+        SetSliderDialogStartValue(SilenceChance as Float)
+        SetSliderDialogDefaultValue(50.0)
+        SetSliderDialogRange(0.0, 100.0)
+        SetSliderDialogInterval(5.0)
 
     ; Survival sliders
     elseif option == OID_HungerRate
@@ -1209,6 +1217,10 @@ Event OnOptionSliderAccept(int option, float value)
     elseif option == OID_PersuasionTimeLimit
         ArrestScript.PersuasionTimeLimit = value
         SetSliderOptionValue(OID_PersuasionTimeLimit, value, "{0} sec")
+    elseif option == OID_SilenceChance
+        SilenceChance = value as Int
+        StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", SilenceChance)
+        SetSliderOptionValue(OID_SilenceChance, value, "{0}%")
 
     ; Survival sliders
     elseif option == OID_HungerRate
@@ -1287,6 +1299,8 @@ EndEvent
 Event OnOptionHighlight(int option)
     if option == OID_DialogueAnimEnabled
         SetInfoText("Enable or disable conversation animations on NPCs during SkyrimNet dialogue. When enabled, NPCs will use vanilla Skyrim talking gestures while conversing.")
+    elseif option == OID_SilenceChance
+        SetInfoText("Probability (0-100%) that silence is offered as an option when choosing the next speaker. 0% = NPCs always speak, 100% = silence always available. Default: 50%")
 
     elseif option == OID_AllowConjuredGold
         SetInfoText("Allow NPCs to give gold they don't actually have. Useful for rewards and quest payments. Disable for hardcore economy.")
@@ -1456,6 +1470,10 @@ Event OnOptionDefault(int option)
         DialogueAnimEnabled = true
         SetToggleOptionValue(OID_DialogueAnimEnabled, true)
         SeverActionsNative.SetDialogueAnimEnabled(true)
+    elseif option == OID_SilenceChance
+        SilenceChance = 50
+        StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", 50)
+        SetSliderOptionValue(OID_SilenceChance, 50.0, "{0}%")
 
     elseif option == OID_AllowConjuredGold
         AllowConjuredGold = true
@@ -1726,6 +1744,10 @@ Function SyncAllSettings()
     ; Sync native DLL settings
     SeverActionsNative.SetDialogueAnimEnabled(DialogueAnimEnabled)
     Debug.Trace("[SeverActions_MCM] Dialogue Animations: " + DialogueAnimEnabled)
+
+    ; Sync prompt-accessible settings via StorageUtil
+    StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", SilenceChance)
+    Debug.Trace("[SeverActions_MCM] Silence Chance: " + SilenceChance + "%")
 
     Debug.Trace("[SeverActions_MCM] All settings synced and menu rebuilt")
 EndFunction

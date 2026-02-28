@@ -57,9 +57,28 @@ Function Initialize(Bool isFirstInit)
     SyncMCMSettings()
     SyncPluginConfig()
 
+    ; Register for real-time WebUI plugin config changes (SkyrimNet 0.15.5+)
+    ; When user saves plugin config in the browser, SkyrimNet fires this ModEvent
+    ; so we can re-sync without reloading the save.
+    RegisterForModEvent("SkyrimNet_OnPluginConfigSaved", "OnPluginConfigSaved")
+
     Debug.Trace("[SeverActions] Initialization complete!")
     Debug.Notification("SeverActions loaded")
 EndFunction
+
+; =============================================================================
+; WEBUI REAL-TIME CONFIG CALLBACK
+; Fired by SkyrimNet when any plugin config is saved via the WebUI.
+; strArg = plugin name (e.g. "SeverActions"), so we only re-sync our own.
+; =============================================================================
+
+Event OnPluginConfigSaved(string eventName, string strArg, float numArg, Form sender)
+    If strArg == "SeverActions"
+        Debug.Trace("[SeverActions] WebUI plugin config changed — re-syncing settings...")
+        SyncPluginConfig()
+        Debug.Notification("SeverActions config updated from WebUI")
+    EndIf
+EndEvent
 
 ; =============================================================================
 ; HOTKEY SYSTEM INITIALIZATION
@@ -449,6 +468,8 @@ EndFunction
 ; Reads settings from SkyrimNet's Plugin Configuration WebUI and applies them.
 ; Runs after SyncMCMSettings — WebUI values override MCM for shared settings.
 ; Gracefully skips if SkyrimNet doesn't support plugin config (older versions).
+;
+; Synced categories: Travel, Followers, Survival, General (dialogue anims + debug)
 ; =============================================================================
 
 Function SyncPluginConfig()
@@ -467,6 +488,9 @@ Function SyncPluginConfig()
         TravelSystem.MaxWaitTime = SeverActionsNative.PluginConfig_GetFloat("travel.max_wait_hours", 168.0)
     EndIf
 
+    ; Dialogue settings — stored in StorageUtil so prompt templates can read via papyrus_util()
+    StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", SeverActionsNative.PluginConfig_GetInt("dialogue.silence_chance", 50))
+
     ; Follower settings (WebUI overrides MCM for these)
     If FollowerManagerSystem
         FollowerManagerSystem.MaxFollowers = SeverActionsNative.PluginConfig_GetInt("followers.max_companions", 10)
@@ -477,12 +501,30 @@ Function SyncPluginConfig()
         FollowerManagerSystem.LeavingThreshold = SeverActionsNative.PluginConfig_GetInt("followers.leaving_threshold", -60) as Float
     EndIf
 
-    ; General settings
+    ; Survival settings (WebUI overrides MCM for these)
     Quest myQuest = GetOwningQuest()
     If myQuest
+        SeverActions_Survival survival = myQuest as SeverActions_Survival
+        If survival
+            survival.Enabled = SeverActionsNative.PluginConfig_GetBool("survival.enabled", false)
+            survival.HungerRate = SeverActionsNative.PluginConfig_GetFloat("survival.hunger_rate", 1.0)
+            survival.FatigueRate = SeverActionsNative.PluginConfig_GetFloat("survival.fatigue_rate", 1.0)
+            survival.ColdRate = SeverActionsNative.PluginConfig_GetFloat("survival.cold_rate", 1.0)
+        EndIf
+
+        ; General settings
         SeverActions_MCM mcm = myQuest as SeverActions_MCM
         If mcm
             mcm.DialogueAnimEnabled = SeverActionsNative.PluginConfig_GetBool("general.dialogue_animations", true)
+        EndIf
+
+        ; Debug mode — applies to all subsystems that have it
+        Bool debugMode = SeverActionsNative.PluginConfig_GetBool("general.debug_mode", false)
+        If survival
+            survival.DebugMode = debugMode
+        EndIf
+        If FollowerManagerSystem
+            FollowerManagerSystem.DebugMode = debugMode
         EndIf
     EndIf
 

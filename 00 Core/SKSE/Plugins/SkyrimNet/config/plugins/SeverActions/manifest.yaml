@@ -6,70 +6,6 @@ plugin:
 
 schema:
   fields:
-    # ── Action Categories ──
-    - name: "Basic Actions"
-      path: "categories.basic"
-      type: "bool"
-      description: "Give items, loot corpses/containers"
-      category: "Action Categories"
-      defaultValue: true
-
-    - name: "Crafting Actions"
-      path: "categories.crafting"
-      type: "bool"
-      description: "Brew potions, cook meals, craft weapons/armor"
-      category: "Action Categories"
-      defaultValue: true
-
-    - name: "Economy Actions"
-      path: "categories.economy"
-      type: "bool"
-      description: "Create debts, recurring payments, currency exchange"
-      category: "Action Categories"
-      defaultValue: true
-
-    - name: "Travel Actions"
-      path: "categories.travel"
-      type: "bool"
-      description: "Send NPCs to travel to locations"
-      category: "Action Categories"
-      defaultValue: true
-
-    - name: "Arrest Actions"
-      path: "categories.arrest"
-      type: "bool"
-      description: "Guard dispatch, arrests, home searches"
-      category: "Action Categories"
-      defaultValue: true
-
-    - name: "Follower Actions"
-      path: "categories.follower"
-      type: "bool"
-      description: "Recruit, dismiss, companion management"
-      category: "Action Categories"
-      defaultValue: true
-
-    - name: "Furniture Actions"
-      path: "categories.furniture"
-      type: "bool"
-      description: "Sit, use crafting stations, sleep"
-      category: "Action Categories"
-      defaultValue: true
-
-    - name: "Outfit Actions"
-      path: "categories.outfit"
-      type: "bool"
-      description: "Equip, unequip, dress, undress, outfit presets"
-      category: "Action Categories"
-      defaultValue: true
-
-    - name: "Combat Actions"
-      path: "categories.combat"
-      type: "bool"
-      description: "Yield, surrender, combat style changes"
-      category: "Action Categories"
-      defaultValue: true
-
     # ── Travel Tuning (NOT in MCM) ──
     - name: "Arrival Distance"
       path: "travel.arrival_distance"
@@ -192,6 +128,16 @@ schema:
       defaultValue: 1.0
       min: 0.1
       max: 5.0
+
+    # ── Dialogue ──
+    - name: "Silence Chance"
+      path: "dialogue.silence_chance"
+      type: "int"
+      description: "Probability (0-100) that silence is offered as an option in speaker selection. Higher = more pauses in conversation."
+      category: "Dialogue"
+      defaultValue: 50
+      min: 0
+      max: 100
 
     # ── General ──
     - name: "Dialogue Animations"

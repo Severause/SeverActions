@@ -30,8 +30,6 @@ public:
 
         m_getPluginConfigValue = reinterpret_cast<GetPluginConfigValue_t>(
             GetProcAddress(hDLL, "PublicGetPluginConfigValue"));
-        m_getPluginConfig = reinterpret_cast<GetPluginConfig_t>(
-            GetProcAddress(hDLL, "PublicGetPluginConfig"));
 
         m_available = (m_getPluginConfigValue != nullptr);
 
@@ -49,11 +47,11 @@ public:
 
     std::string GetString(const char* path, const char* defaultValue) const
     {
-        if (!m_available || !m_getPluginConfigValue) {
+        if (!m_available) {
             return defaultValue ? defaultValue : "";
         }
         try {
-            return m_getPluginConfigValue("SeverActions", path, defaultValue);
+            return m_getPluginConfigValue("SeverActions", path ? path : "", defaultValue);
         } catch (...) {
             SKSE::log::warn("SkyrimNetBridge: Exception reading config path '{}'", path ? path : "null");
             return defaultValue ? defaultValue : "";
@@ -135,11 +133,9 @@ private:
     SkyrimNetBridge(const SkyrimNetBridge&) = delete;
     SkyrimNetBridge& operator=(const SkyrimNetBridge&) = delete;
 
-    // Function pointer types matching SkyrimNet's PublicAPI exports
+    // Function pointer type matching SkyrimNet's PublicAPI export
     using GetPluginConfigValue_t = std::string(*)(const char*, const char*, const char*);
-    using GetPluginConfig_t      = std::string(*)(const char*);
 
     GetPluginConfigValue_t m_getPluginConfigValue = nullptr;
-    GetPluginConfig_t      m_getPluginConfig      = nullptr;
     bool                   m_available             = false;
 };

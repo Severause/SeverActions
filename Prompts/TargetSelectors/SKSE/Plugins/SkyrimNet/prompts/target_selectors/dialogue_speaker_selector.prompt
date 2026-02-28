@@ -1,5 +1,5 @@
 [ system ]
-{% set zerochance = 50 %}
+{% set zerochance = papyrus_util("GetIntValue", 0, "SeverActions_ZeroChance", 50) %}
 ## Task
 Select which NPC should speak next, if anyone. Output only: {% if random < zerochance %}`0` (silence) or {% endif %}`[speaker]>[target]`
 
@@ -23,8 +23,9 @@ Evaluate candidates using these factors (highest priority first):
 Not every line needs a reply — conversations should end naturally. But don't default to silence when a companion would realistically have something to say. Traveling companions talk; err toward letting them speak when there's even a mild reason to.
 
 Choose silence when:
-- **Waiting for the player** — An NPC just spoke to the player and the player hasn't responded yet. Choose silence and let the player speak. Do NOT have other NPCs fill this gap.
-- The last exchange was a natural conclusion — farewell, transaction complete, question answered, agreement reached
+{% if lastDialogueTarget.name %}- **Waiting for the player** — {{ lastSpeaker.name }} just spoke to {% if lastDialogueTarget.UUID == player.UUID %}the player{% else %}{{ lastDialogueTarget.name }}{% endif %}. {% if lastDialogueTarget.UUID == player.UUID %}The player hasn't responded yet — choose silence and let the player speak. Do NOT have other NPCs fill this gap.{% endif %}
+{% else %}- **Waiting for the player** — If an NPC just spoke to the player and the player hasn't responded yet, choose silence and let the player speak. Do NOT have other NPCs fill this gap.
+{% endif %}- The last exchange was a natural conclusion — farewell, transaction complete, question answered, agreement reached
 - The last response was a closing statement — acknowledgment, thanks, agreement, or farewell. These do NOT need replies.
 - The same two NPCs have been going back and forth for several turns — the topic is likely exhausted
 - The recent dialogue is circular — similar points being restated, pleasantries being traded, or small talk looping
@@ -43,7 +44,8 @@ Do NOT choose silence when:
 **Restrictions:**
 - Never select a non-companion NPC just because they're listed — proximity alone is not a reason for bystanders to speak
 - Do NOT select {{ lastSpeaker.name }} as speaker (they just spoke — but they CAN be selected as target)
-- **No meta-commentary about silence** — If the recent dialogue shows an NPC spoke to the player and the player hasn't replied, choose `0`. Never select an NPC to comment on the player not talking, to urge the player to speak, or to narrate the waiting. NPCs do not have awareness that "the player is taking too long to respond" — they simply wait.
+{% if lastDialogueTarget.name %}- {{ lastSpeaker.name }} was addressing {% if lastDialogueTarget.UUID == player.UUID %}the player{% else %}{{ lastDialogueTarget.name }}{% endif %}. {% if lastDialogueTarget.UUID == player.UUID %}Prefer silence so the player can respond.{% else %}{{ lastDialogueTarget.name }} is the natural next speaker if the exchange warrants a reply.{% endif %}
+{% endif %}- **No meta-commentary about silence** — If the recent dialogue shows an NPC spoke to the player and the player hasn't replied, choose `0`. Never select an NPC to comment on the player not talking, to urge the player to speak, or to narrate the waiting. NPCs do not have awareness that "the player is taking too long to respond" — they simply wait.
 - Regular NPCs cannot hear Virtual NPCs. Do not select an NPC to respond directly to a Virtual NPC.
 - Virtual NPCs may be selected as speaker but may NOT be selected as a target unless the speaker is also a Virtual NPC.
 
@@ -56,6 +58,12 @@ Do NOT choose silence when:
 
 ## Recent Dialogue
 {{ render_template("components\\event_history_compact") }}
+
+{% if existsIn(lastSpeaker, "name") and existsIn(lastDialogueTarget, "name") %}
+**Last exchange:** {{ lastSpeaker.name }} was speaking to {{ lastDialogueTarget.name }}
+{% elif existsIn(lastSpeaker, "name") %}
+**Last speaker:** {{ lastSpeaker.name }} (general comment, no specific target)
+{% endif %}
 
 ## Candidates
 {% for candidate in candidateDialogues %}
@@ -76,7 +84,7 @@ Do NOT choose silence when:
 - `[ENGAGED]` — This NPC has heightened conversational engagement and a lower threshold to speak. After an ENGAGED NPC speaks, prefer silence so the player has room to participate. Do not chain multiple ENGAGED NPC turns back-to-back.
 - `[IN SCENE]` — This NPC is currently in an intimate/sexual scene. **Strongly deprioritize** — they are physically occupied and should almost never be selected as speaker. Only select them if directly addressed by name or asked a direct question. Their companion/engaged status is overridden while in a scene.
 
-**Targeting rule:** When an NPC is speaking to another NPC (not the player), target that NPC — e.g. `Vayne>Alva`, not `Vayne>player`. Only use `player` as target when the NPC is genuinely addressing the player. If two NPCs are mid-conversation, keep the target between them.
+**Targeting rule:** When selecting a target, consider who was just speaking to whom.{% if existsIn(lastSpeaker, "name") and existsIn(lastDialogueTarget, "name") %} {{ lastSpeaker.name }} was just speaking to {{ lastDialogueTarget.name }} — if {{ lastDialogueTarget.name }} is a candidate, they should typically respond back to {{ lastSpeaker.name }}, not redirect to the player.{% endif %} Only use `player` as target when the NPC is genuinely addressing the player. If two NPCs are mid-conversation, keep the target between them.
 
 {{ "### Examples" }}
 - CORRECT: "Aela the Huntress>Lydia"

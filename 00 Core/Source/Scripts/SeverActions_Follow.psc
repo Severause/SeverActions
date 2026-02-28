@@ -250,23 +250,23 @@ Function StartFollowing(Actor akActor)
     ; Clear sandbox tracking if active
     if SkyrimNetApi.HasPackage(akActor, "Sandbox")
         SeverActionsNative.UnregisterSandboxUser(akActor)
+        if SandboxPackage
+            ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
+        endif
         SkyrimNetApi.UnregisterPackage(akActor, "Sandbox")
     endif
-
-    ; Safety net: nuke ALL package overrides to clear any orphaned FF packages
-    ; (sandbox FF copies that survived a bad transition, sleep time-skip, etc.)
-    ActorUtil.ClearPackageOverride(akActor)
 
     ; Clear waiting state (in case they were waiting)
     akActor.SetAV("WaitingForPlayer", 0)
 
-    ; Register SkyrimNet's built-in follow package (re-applied fresh after the clear)
+    ; Register SkyrimNet's built-in follow package
+    ; NOTE: SkyrimNet 0.15.4+ queues package operations and calls EvaluatePackage
+    ; internally when the queue processes — do NOT call EvaluatePackage here or the
+    ; actor evaluates against a stale package stack before the queue applies the override.
     SkyrimNetApi.RegisterPackage(akActor, "FollowPlayer", FollowPackagePriority, 0, true)
 
     ; Mark as actively following for ENGAGED tag in prompts
     SetActivelyFollowing(akActor, true)
-
-    akActor.EvaluatePackage()
 
     Debug.Notification(akActor.GetDisplayName() + " is now following you.")
 EndFunction
@@ -287,12 +287,11 @@ Function StopFollowing(Actor akActor)
     endif
 
     ; Unregister SkyrimNet's follow package
+    ; Queue handles package removal + EvaluatePackage internally (0.15.4+)
     SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
 
     ; Remove actively following state
     SetActivelyFollowing(akActor, false)
-
-    akActor.EvaluatePackage()
 
     Debug.Notification(akActor.GetDisplayName() + " stopped following you.")
     SkyrimNetApi.RegisterEvent("follower_left", akActor.GetDisplayName() + " stopped following " + Game.GetPlayer().GetDisplayName(), akActor, Game.GetPlayer())
@@ -443,22 +442,22 @@ Function StopSandbox(Actor akActor)
     ; Unregister from native SandboxManager
     SeverActionsNative.UnregisterSandboxUser(akActor)
 
-    ; Unregister from SkyrimNet
+    ; Unregister from SkyrimNet (queued)
     SkyrimNetApi.UnregisterPackage(akActor, "Sandbox")
 
-    ; Safety net: nuke ALL package overrides to clear any orphaned FF packages
-    ActorUtil.ClearPackageOverride(akActor)
+    ; Remove sandbox package override directly (synchronous)
+    if SandboxPackage
+        ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
+    endif
 
     ; Resume following
     akActor.SetAV("WaitingForPlayer", 0)
 
-    ; Re-apply follow package (cleared above with everything else)
+    ; Re-apply follow package — queue handles EvaluatePackage internally (0.15.4+)
     SkyrimNetApi.RegisterPackage(akActor, "FollowPlayer", FollowPackagePriority, 0, true)
 
     ; Back to actively following
     SetActivelyFollowing(akActor, true)
-
-    akActor.EvaluatePackage()
 
     Debug.Notification(akActor.GetDisplayName() + " stopped relaxing.")
     SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " stops relaxing and is ready to move.", akActor, Game.GetPlayer())
