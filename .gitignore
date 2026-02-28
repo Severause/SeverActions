@@ -1,19 +1,19 @@
+# Native SKSE plugin source (private — only the compiled DLL ships in 00 Core)
+Native/
+
+# Build stubs (compile-time only, never deploy)
+00 Core/Source/BuildStubs/
+
+# Claude Code project files
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+
 # Build artifacts
-Native/build/
-Native/*.dll
-Native/*.pdb
-Native/*.exp
-Native/*.lib
+*.exp
+*.lib
 
 # IDE/editor
 .vs/
 .vscode/
 *.user
-
-# Claude Code — keep commands/agents/hooks committed, ignore local config
-/.claude/*
-!/.claude/agents/
-!/.claude/commands/
-!/.claude/hooks/
-!/.claude/CAPABILITIES.md
-CLAUDE.local.md
