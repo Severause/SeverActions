@@ -90,6 +90,8 @@ set(HEADERS
     src/ArrivalMonitor.h
     src/GuardFinder.h
     src/PackageManager.h
+    src/SpellDB.h
+    src/SkyrimNetBridge.h
 )
 
 # Create DLL

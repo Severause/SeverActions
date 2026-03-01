@@ -378,3 +378,101 @@ EndFunction
 Function LearnSpell_Execute(Actor akActor, Actor teacher, Spell akSpell)
     TransferSpell_Execute(teacher, akActor, akSpell)
 EndFunction
+
+; =============================================================================
+; SKYRIMNET ACTION ENTRY POINTS
+; These are called by SkyrimNet action YAMLs via executionFunctionName.
+; They resolve spell names to forms using the native SpellDB, then delegate
+; to TransferSpell_Execute for the actual teaching sequence.
+; =============================================================================
+
+; ACTION: TeachSpell — NPC teaches a spell to the player
+; Called by teachspell.yaml: akActor = the NPC teacher, spellName = LLM-provided name
+Function TeachSpell(Actor akActor, String spellName)
+    Actor player = Game.GetPlayer()
+
+    ; Resolve spell name to form via native fuzzy search on the NPC's known spells
+    Form spellForm = SeverActionsNative.FindSpellOnActor(akActor, spellName)
+    if !spellForm
+        SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
+            akActor.GetDisplayName() + " doesn't know any spell called " + spellName + ".", \
+            akActor, player)
+        return
+    endif
+
+    Spell akSpell = spellForm as Spell
+    if !akSpell
+        return
+    endif
+
+    ; Check if player already knows it
+    if player.HasSpell(akSpell)
+        SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
+            player.GetDisplayName() + " already knows " + akSpell.GetName() + ".", \
+            akActor, player)
+        return
+    endif
+
+    ; Narrate the start of the lesson with school info
+    String school = GetSpellSchool(akSpell)
+    String diffName = _DifficultyName(GetSpellDifficulty(akSpell))
+    String narration = akActor.GetDisplayName() + " begins teaching " + player.GetDisplayName() + \
+        " the " + diffName + "-level " + school + " spell " + akSpell.GetName() + "."
+    SkyrimNetApi.RegisterEvent("spell_teaching_started", narration, akActor, player)
+    SkyrimNetApi.DirectNarration(narration, akActor, player)
+
+    TransferSpell_Execute(akActor, player, akSpell)
+EndFunction
+
+; ACTION: LearnSpell — NPC learns a spell from the player
+; Called by learnspell.yaml: akActor = the NPC learner, spellName = LLM-provided name
+Function LearnSpell(Actor akActor, String spellName)
+    Actor player = Game.GetPlayer()
+
+    ; Resolve spell name to form via native fuzzy search on the player's known spells
+    Form spellForm = SeverActionsNative.FindSpellOnActor(player, spellName)
+    if !spellForm
+        SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
+            player.GetDisplayName() + " doesn't know any spell called " + spellName + ".", \
+            player, akActor)
+        return
+    endif
+
+    Spell akSpell = spellForm as Spell
+    if !akSpell
+        return
+    endif
+
+    ; Check if NPC already knows it
+    if akActor.HasSpell(akSpell)
+        SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
+            akActor.GetDisplayName() + " already knows " + akSpell.GetName() + ".", \
+            player, akActor)
+        return
+    endif
+
+    ; Narrate the start of the lesson with school info
+    String school = GetSpellSchool(akSpell)
+    String diffName = _DifficultyName(GetSpellDifficulty(akSpell))
+    String narration = player.GetDisplayName() + " begins teaching " + akActor.GetDisplayName() + \
+        " the " + diffName + "-level " + school + " spell " + akSpell.GetName() + "."
+    SkyrimNetApi.RegisterEvent("spell_learning_started", narration, player, akActor)
+    SkyrimNetApi.DirectNarration(narration, akActor, player)
+
+    TransferSpell_Execute(player, akActor, akSpell)
+EndFunction
+
+; Helper: Convert difficulty tier to readable name
+String Function _DifficultyName(Int difficulty)
+    if difficulty == 0
+        return "Novice"
+    elseif difficulty == 1
+        return "Apprentice"
+    elseif difficulty == 2
+        return "Adept"
+    elseif difficulty == 3
+        return "Expert"
+    else
+        return "Master"
+    endif
+EndFunction

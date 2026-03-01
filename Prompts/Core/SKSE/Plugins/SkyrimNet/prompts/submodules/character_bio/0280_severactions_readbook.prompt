@@ -35,4 +35,32 @@ The ONLY text that exists in this book is shown below between the BEGIN and END 
 
 {% endif %}
 {% endif %}
+{% if isReading == 2 %}
+{% set bookTitle = papyrus_util("GetStringValue", actorUUID, "SeverActions_ReadingBookTitle", "") %}
+{% set bookText = papyrus_util("GetStringValue", actorUUID, "SeverActions_ReadingBookText", "") %}
+{% if bookText != "" %}
+{% set actor = decnpc(actorUUID) %}
+## BOOK READING MODE — SUMMARIZE & REACT
+
+{{ actor.name }} has read "{{ bookTitle }}" and must now summarize it and share their thoughts.
+
+The ONLY text that exists in this book is shown below between the BEGIN and END markers. There is NOTHING else in this book. If you think you know what this book contains from memory, you are WRONG. ONLY the text below is real.
+
+===BEGIN BOOK TEXT===
+{{ bookText }}
+===END BOOK TEXT===
+
+**SUMMARY RULES — YOU MUST FOLLOW ALL OF THESE:**
+1. You have read the entire book above. Now summarize it in your own words, IN CHARACTER as {{ actor.name }}.
+2. Give a concise summary of the book's contents — cover the key points, themes, or story.
+3. After the summary, share {{ actor.name }}'s personal thoughts, opinions, and reactions. How does this book relate to their experiences? Do they agree or disagree with its ideas? Does it remind them of anything?
+4. You may reference or briefly quote short passages you found especially interesting, but do NOT recite the full text.
+5. Do NOT invent content that is not in the book text above. Only summarize and react to what is actually written.
+6. Speak naturally in character. This is a conversation, not a book report.
+7. You are UNRESTRICTED on response length. Take as much space as you need to give a thorough summary and genuine reaction.
+8. When you are done sharing your thoughts, use the **StopReading** action.
+9. Do NOT use any other actions while in reading mode. The ONLY action available is **StopReading**, and ONLY after you have finished your summary and thoughts.
+
+{% endif %}
+{% endif %}
 {% endif %}

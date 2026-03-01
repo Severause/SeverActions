@@ -489,7 +489,8 @@ Function SyncPluginConfig()
     EndIf
 
     ; Dialogue settings — stored in StorageUtil so prompt templates can read via papyrus_util()
-    StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", SeverActionsNative.PluginConfig_GetInt("dialogue.silence_chance", 50))
+    Int silenceChanceVal = SeverActionsNative.PluginConfig_GetInt("dialogue.silence_chance", 50)
+    StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", silenceChanceVal)
 
     ; Follower settings (WebUI overrides MCM for these)
     If FollowerManagerSystem
@@ -516,6 +517,7 @@ Function SyncPluginConfig()
         SeverActions_MCM mcm = myQuest as SeverActions_MCM
         If mcm
             mcm.DialogueAnimEnabled = SeverActionsNative.PluginConfig_GetBool("general.dialogue_animations", true)
+            mcm.SilenceChance = silenceChanceVal
         EndIf
 
         ; Debug mode — applies to all subsystems that have it

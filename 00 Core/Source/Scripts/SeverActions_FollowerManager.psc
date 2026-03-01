@@ -1313,11 +1313,9 @@ EndFunction
 Function CheckRelationshipAssessments()
     {Check if any follower is due for an automatic relationship assessment.
      Fires at most ONE assessment per tick to avoid flooding the LLM queue.
-     Each follower is assessed on a game-time cooldown (AssessmentCooldown in game hours).
+     Each follower is assessed on a game-time cooldown (AssessmentCooldownHours).
      Only followers in the same cell as the player are assessed.
-     The assessment prompt (sever_relationship_assess.prompt) uses SkyrimNet
-     decorators to read recent events and current values, then returns a
-     JSON object with relationship changes.}
+     Picks the most overdue follower if multiple are past their cooldown.}
     If AssessmentInProgress
         Return
     EndIf
@@ -1330,31 +1328,69 @@ Function CheckRelationshipAssessments()
 
     Actor[] followers = GetAllFollowers()
     Float now = GetGameTimeInSeconds()
-    Float cooldownSeconds = AssessmentCooldownHours * SECONDS_PER_GAME_HOUR
+    Float baseCooldownSeconds = AssessmentCooldownHours * SECONDS_PER_GAME_HOUR
+
+    ; Track the best candidate: the follower most overdue for assessment
+    Actor bestCandidate = None
+    Float bestOverdue = 0.0  ; How far past their cooldown (higher = more overdue)
 
     Int i = 0
     While i < followers.Length
         Actor follower = followers[i]
         If follower && !follower.IsDead() && follower.GetParentCell() == playerCell
             Float lastAssess = StorageUtil.GetFloatValue(follower, KEY_LAST_ASSESS_GT, 0.0)
-            If (now - lastAssess) >= cooldownSeconds
-                FireRelationshipAssessment(follower)
-                Return ; Only one at a time
+            Float elapsed = now - lastAssess
+
+            If elapsed >= baseCooldownSeconds
+                ; This follower is past their cooldown — score by how overdue they are
+                Float overdue = elapsed - baseCooldownSeconds
+                If !bestCandidate || overdue > bestOverdue
+                    bestCandidate = follower
+                    bestOverdue = overdue
+                EndIf
             EndIf
         EndIf
         i += 1
     EndWhile
+
+    ; Fire assessment for the most overdue follower (if any)
+    If bestCandidate
+        FireRelationshipAssessment(bestCandidate)
+    EndIf
 EndFunction
 
 Function FireRelationshipAssessment(Actor akActor)
     {Send the relationship assessment prompt to the LLM for a specific follower.
      Passes the follower's FormID in contextJson so the prompt template can
-     resolve it to a UUID via formid_to_uuid() and access all NPC data.}
+     resolve it to a UUID via formid_to_uuid() and access all NPC data.
+
+     When PublicAPI is available, enriches the context with:
+     - socialGraph: who this NPC interacts with besides the player
+     - relevantMemories: semantic search for relationship-relevant memories}
     AssessmentInProgress = true
     PendingAssessmentFormId = akActor.GetFormID()
     StorageUtil.SetFloatValue(akActor, KEY_LAST_ASSESS_GT, GetGameTimeInSeconds())
 
-    String contextJson = "{\"npcFormId\":" + PendingAssessmentFormId + "}"
+    ; Build context JSON — start with the base
+    String contextJson = "{\"npcFormId\":" + PendingAssessmentFormId
+
+    ; Enrich with PublicAPI data if available
+    If SeverActionsNative.IsPublicAPIReady()
+        ; Social graph: who does this NPC interact with?
+        String social = SeverActionsNative.GetFollowerSocialGraph(akActor)
+        If social != "[]"
+            contextJson += ",\"socialGraph\":" + social
+        EndIf
+
+        ; Semantic memory search: find memories relevant to the player relationship
+        String relMemories = SeverActionsNative.SearchActorMemories(akActor, \
+            "relationship with player trust loyalty feelings")
+        If relMemories != "[]"
+            contextJson += ",\"relevantMemories\":" + relMemories
+        EndIf
+    EndIf
+
+    contextJson += "}"
 
     Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_relationship_assess", "", contextJson, \
         Self as Quest, "SeverActions_FollowerManager", "OnRelationshipAssessment")
@@ -1363,7 +1399,7 @@ Function FireRelationshipAssessment(Actor akActor)
         AssessmentInProgress = false
         DebugMsg("Relationship assessment LLM call failed for " + akActor.GetDisplayName() + ", code " + result)
     Else
-        DebugMsg("Relationship assessment queued for " + akActor.GetDisplayName())
+        DebugMsg("Relationship assessment queued for " + akActor.GetDisplayName() + " (enriched=" + SeverActionsNative.IsPublicAPIReady() + ")")
     EndIf
 EndFunction
 

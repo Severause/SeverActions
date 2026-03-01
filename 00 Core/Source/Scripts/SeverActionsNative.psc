@@ -332,6 +332,28 @@ String Function GetAlchemyDBStats() Global Native
 {Get alchemy database statistics string (potion/poison counts)}
 
 ; =============================================================================
+; SPELL DATABASE
+; Native spell lookup by name with fuzzy matching.
+; Scans all loaded spells at game start. Provides name-based resolution for
+; spell teaching actions.
+; =============================================================================
+
+Bool Function IsSpellDBLoaded() Global Native
+{Check if the spell database has been loaded}
+
+Form Function FindSpellByName(String spellName) Global Native
+{Find a spell by name from the global spell database (fuzzy match)}
+
+Form Function FindSpellOnActor(Actor akActor, String spellName) Global Native
+{Find a spell known by a specific actor by name (fuzzy match)}
+
+String Function GetTeachableSpells(Actor akTeacher, Actor akLearner) Global Native
+{Get JSON of spells teacher knows that learner doesn't, grouped by school}
+
+String Function GetSpellDBStats() Global Native
+{Get spell database statistics string}
+
+; =============================================================================
 ; NEARBY SEARCH - Extended
 ; Additional workstation search functions
 ; =============================================================================
@@ -913,3 +935,23 @@ Int Function PluginConfig_GetInt(String path, Int defaultValue = 0) Global Nativ
 
 Float Function PluginConfig_GetFloat(String path, Float defaultValue = 0.0) Global Native
 {Read a float setting from the WebUI plugin config by dot-path (e.g. "survival.hunger_rate")}
+
+; =============================================================================
+; SKYRIMNET PUBLIC API DATA QUERIES
+; Access SkyrimNet's engagement stats, social graphs, and semantic memory search
+; via the PublicAPI (v3+). Requires SkyrimNet with PublicAPI support.
+; Returns empty JSON ("{}","[]") gracefully when unavailable.
+; =============================================================================
+
+Bool Function IsPublicAPIReady() Global Native
+{Returns true if SkyrimNet's PublicAPI is loaded and the memory system is ready for queries}
+
+String Function GetFollowerEngagement(Actor akActor) Global Native
+{Get engagement stats for an actor - event counts, memory importance, recency. Returns JSON object.}
+
+String Function GetFollowerSocialGraph(Actor akActor) Global Native
+{Get actors related to this actor via shared event history. Returns JSON array.}
+
+String Function SearchActorMemories(Actor akActor, String query) Global Native
+{Semantic search for memories relevant to a query string.
+ Returns JSON array of memory objects ranked by relevance, or "[]"}

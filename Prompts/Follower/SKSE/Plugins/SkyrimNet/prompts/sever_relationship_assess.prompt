@@ -23,14 +23,24 @@ Current Relationship with {{ player.name }}:
 
 Moral Compass: {% if morality == 0 %}Amoral — will do anything without ethical hesitation{% elif morality == 1 %}Violent but honest — fights freely but won't steal or deceive{% elif morality == 2 %}Flexible — may steal but won't harm innocent people{% else %}Principled — won't commit crimes or harm innocents{% endif %}
 
-Recent events involving {{ npc.name }}:
-{% set events = get_recent_events(20, npcUUID) %}
+Recent dialogue between {{ npc.name }} and {{ player.name }}:
+{% set events = get_recent_events(40) %}
 {% set newEvents = [] %}
 {% set maxEventId = lastEventId %}
 {% for ev in events %}
 {% set evId = to_number(to_string(ev.id)) %}
 {% if evId > lastEventId %}
+{% if existsIn(ev.data, "dialogue") %}
+{% if ev.type == "dialogue" and existsIn(ev.data, "speaker") and existsIn(ev.data, "listener") %}
+{% if (ev.data.speaker == npc.name and ev.data.listener == player.name) or (ev.data.speaker == player.name and ev.data.listener == npc.name) %}
 {% set newEvents = append(newEvents, ev) %}
+{% endif %}
+{% elif ev.type == "dialogue_player_text" or ev.type == "dialogue_player_stt" %}
+{% if not existsIn(ev.data, "listener") or ev.data.listener == npc.name %}
+{% set newEvents = append(newEvents, ev) %}
+{% endif %}
+{% endif %}
+{% endif %}
 {% if evId > maxEventId %}
 {% set maxEventId = evId %}
 {% endif %}
@@ -38,12 +48,10 @@ Recent events involving {{ npc.name }}:
 {% endfor %}
 {% if length(newEvents) > 0 %}
 {% for ev in newEvents %}
-{% if ev.type == "dialogue" and existsIn(ev.data, "dialogue") %}
-[{{ ev.gameTimeStr }}] {{ default(ev.data.speaker, "Someone") }} to {{ default(ev.data.listener, "someone") }}: {{ ev.data.dialogue }}
-{% endif %}
+[{{ ev.gameTimeStr }}] {{ default(ev.data.speaker, player.name) }} to {{ default(ev.data.listener, npc.name) }}: {{ ev.data.dialogue }}
 {% endfor %}
 {% else %}
-No new events since last assessment.
+No new dialogue between them since last assessment.
 {% endif %}
 
 Recent memories for {{ npc.name }}:
@@ -79,6 +87,20 @@ Last diary entry:
 No new diary entries since last assessment.
 {% endif %}
 
+{% if existsIn(socialGraph, 0) %}
+Social connections (other NPCs {{ npc.name }} has interacted with recently):
+{% for actor in socialGraph %}
+- {{ actor.name }}: {{ actor.sharedEventCount }} shared events{% if existsIn(actor, "recentSharedEventsShort") %} ({{ actor.recentSharedEventsShort }} recent){% endif %}
+{% endfor %}
+{% endif %}
+
+{% if existsIn(relevantMemories, 0) %}
+Memories most relevant to {{ npc.name }}'s relationship with {{ player.name }}:
+{% for m in relevantMemories %}
+- {{ m.text }}{% if existsIn(m, "importance") %} (importance: {{ m.importance }}){% endif %}
+{% endfor %}
+{% endif %}
+
 {% endif %}
 [ user ]
 {% if npcUUID and npcUUID != 0 %}
@@ -95,6 +117,7 @@ Rules:
 - Rapport reflects emotional warmth. Trust reflects faith in judgment and safety. Loyalty reflects commitment through hardship. Mood reflects short-term emotional state.
 - Diary entries represent the companion's deepest internal reflections — weigh them more heavily than momentary dialogue. A diary expressing profound gratitude or resentment should shift rapport/loyalty by at least 4-6, not 1-3.
 - Mood is volatile and situational. Do not let a bad mood suppress rapport/loyalty gains from meaningful memories or diary entries. They are independent dimensions.
+- Consider the companion's social connections. Frequent interaction with other NPCs may affect mood positively from camaraderie, or indicate the companion has social needs being met beyond just the player.
 
 Respond with ONLY this JSON. No spaces after colons. No explanation. One line.
 Include "eid" with the value {{ maxEventId }}, "mid" with the value {{ maxMemoryId }}, and "did" with the value {{ diaryId }} so the system knows which events, memories, and diary entries were assessed:

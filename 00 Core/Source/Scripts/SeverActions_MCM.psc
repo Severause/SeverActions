@@ -14,6 +14,7 @@ SeverActions_WheelMenu Property WheelMenuScript Auto
 SeverActions_Arrest Property ArrestScript Auto
 SeverActions_Survival Property SurvivalScript Auto
 SeverActions_FollowerManager Property FollowerManagerScript Auto
+SeverActions_Loot Property LootScript Auto
 
 ; =============================================================================
 ; SETTINGS - These mirror the properties in other scripts
@@ -93,6 +94,7 @@ int OID_PersuasionTimeLimit
 ; General page - Native DLL toggles
 int OID_DialogueAnimEnabled
 int OID_SilenceChance
+int OID_BookReadMode
 
 ; Survival page
 int OID_SurvivalEnabled
@@ -137,6 +139,9 @@ string[] CombatStyleOptions
 ; Framework mode dropdown options
 string[] FrameworkModeOptions
 
+; Book reading mode dropdown options
+string[] BookReadModeOptions
+
 ; Companion selector
 int OID_FM_CompanionSelect
 int SelectedCompanionIdx = 0
@@ -160,7 +165,7 @@ string[] TargetModeOptions
 Int Function GetVersion()
     {Override SKI_ConfigBase. SkyUI compares this against the saved version
      to trigger OnVersionUpdate. Increment when MCM structure changes.}
-    Return 117
+    Return 118
 EndFunction
 
 Event OnConfigInit()
@@ -168,7 +173,7 @@ Event OnConfigInit()
 
     ; Set current version - increment this when you make MCM changes
     ; Format: major * 100 + minor (e.g., 107 = version 1.07)
-    CurrentVersion = 117
+    CurrentVersion = 118
 
     Pages = new string[7]
     Pages[0] = PAGE_GENERAL
@@ -198,6 +203,11 @@ Event OnConfigInit()
     FrameworkModeOptions[0] = "Auto"
     FrameworkModeOptions[1] = "SeverActions Only"
     FrameworkModeOptions[2] = "Tracking Only"
+
+    ; Initialize book reading mode dropdown options
+    BookReadModeOptions = new string[2]
+    BookReadModeOptions[0] = "Read Aloud (Verbatim)"
+    BookReadModeOptions[1] = "Summarize & React"
 EndEvent
 
 Event OnVersionUpdate(int newVersion)
@@ -233,6 +243,11 @@ Event OnVersionUpdate(int newVersion)
     FrameworkModeOptions[0] = "Auto"
     FrameworkModeOptions[1] = "SeverActions Only"
     FrameworkModeOptions[2] = "Tracking Only"
+
+    ; Re-initialize book reading mode dropdown options
+    BookReadModeOptions = new string[2]
+    BookReadModeOptions[0] = "Read Aloud (Verbatim)"
+    BookReadModeOptions[1] = "Summarize & React"
 EndEvent
 
 ; Force MCM to rebuild - call this on game load
@@ -284,6 +299,14 @@ Function DrawGeneralPage()
     AddHeaderOption("Native Features")
     OID_DialogueAnimEnabled = AddToggleOption("Dialogue Animations", DialogueAnimEnabled)
     OID_SilenceChance = AddSliderOption("Silence Chance", SilenceChance as Float, "{0}%")
+    if LootScript
+        if !BookReadModeOptions
+            BookReadModeOptions = new string[2]
+            BookReadModeOptions[0] = "Read Aloud (Verbatim)"
+            BookReadModeOptions[1] = "Summarize & React"
+        endif
+        OID_BookReadMode = AddMenuOption("Book Reading Style", BookReadModeOptions[LootScript.BookReadMode])
+    endif
 
     AddEmptyOption()
     AddHeaderOption("Quick Reference")
@@ -1008,6 +1031,12 @@ Event OnOptionMenuOpen(int option)
         SetMenuDialogStartIndex(TargetMode)
         SetMenuDialogDefaultIndex(0)
         SetMenuDialogOptions(TargetModeOptions)
+    elseif option == OID_BookReadMode
+        If LootScript
+            SetMenuDialogStartIndex(LootScript.BookReadMode)
+            SetMenuDialogDefaultIndex(0)
+            SetMenuDialogOptions(BookReadModeOptions)
+        EndIf
     elseif option == OID_FM_FrameworkMode
         If FollowerManagerScript
             SetMenuDialogStartIndex(FollowerManagerScript.FrameworkMode)
@@ -1063,6 +1092,11 @@ Event OnOptionMenuAccept(int option, int index)
         ApplyHotkeySettings()
         ; Force page refresh to show/hide radius slider
         ForcePageReset()
+    elseif option == OID_BookReadMode
+        If LootScript
+            LootScript.BookReadMode = index
+            SetMenuOptionValue(OID_BookReadMode, BookReadModeOptions[index])
+        EndIf
     elseif option == OID_FM_FrameworkMode
         If FollowerManagerScript
             FollowerManagerScript.FrameworkMode = index
@@ -1301,6 +1335,8 @@ Event OnOptionHighlight(int option)
         SetInfoText("Enable or disable conversation animations on NPCs during SkyrimNet dialogue. When enabled, NPCs will use vanilla Skyrim talking gestures while conversing.")
     elseif option == OID_SilenceChance
         SetInfoText("Probability (0-100%) that silence is offered as an option when choosing the next speaker. 0% = NPCs always speak, 100% = silence always available. Default: 50%")
+    elseif option == OID_BookReadMode
+        SetInfoText("How NPCs read books aloud. Verbatim: reads word-for-word (takes longer). Summarize: gives a summary and shares their in-character thoughts. Default: Read Aloud.")
 
     elseif option == OID_AllowConjuredGold
         SetInfoText("Allow NPCs to give gold they don't actually have. Useful for rewards and quest payments. Disable for hardcore economy.")
@@ -1474,6 +1510,11 @@ Event OnOptionDefault(int option)
         SilenceChance = 50
         StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", 50)
         SetSliderOptionValue(OID_SilenceChance, 50.0, "{0}%")
+    elseif option == OID_BookReadMode
+        If LootScript
+            LootScript.BookReadMode = 0
+            SetMenuOptionValue(OID_BookReadMode, BookReadModeOptions[0])
+        EndIf
 
     elseif option == OID_AllowConjuredGold
         AllowConjuredGold = true

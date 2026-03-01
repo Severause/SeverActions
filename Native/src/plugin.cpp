@@ -22,6 +22,7 @@
 #include "ArrivalMonitor.h"
 #include "GuardFinder.h"
 #include "PackageManager.h"
+#include "SpellDB.h"
 #include "SkyrimNetBridge.h"
 
 namespace SeverActionsNative
@@ -105,6 +106,13 @@ namespace SeverActionsNative
             // Package manager — native LinkedRef management with cosave persistence
             SKSE::log::info("Initializing package manager...");
             PackageManager::GetSingleton()->Initialize();
+
+            // Spell database — scan all castable spells for name-based lookup
+            SKSE::log::info("Initializing spell database...");
+            if (!SpellDB::GetInstance().Initialize()) {
+                SKSE::log::error("SpellDB initialization FAILED — spell teaching unavailable");
+                failCount++;
+            }
 
             if (failCount > 0) {
                 SKSE::log::warn("SeverActionsNative: {} database(s) failed to initialize — some features will be unavailable", failCount);

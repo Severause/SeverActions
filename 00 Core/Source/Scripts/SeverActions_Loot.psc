@@ -43,6 +43,9 @@ Float Property BookReadingContinueDelay = 15.0 Auto Hidden
 Float Property BookReadingUpdateInterval = 5.0 Auto Hidden
 {How often to check speech queue during book reading (seconds).}
 
+Int Property BookReadMode = 0 Auto Hidden
+{0 = Read Aloud (Verbatim), 1 = Summarize and React}
+
 ; =============================================================================
 ; ANIMATION PROPERTIES
 ; =============================================================================
@@ -1188,7 +1191,12 @@ naturally first (e.g. "What shall I read?") and the player drives the conversati
 
     ; Store in StorageUtil — papyrus_util reads these natively, available immediately
     ; The prompt will detect this on the NPC's next dialogue response
-    StorageUtil.SetIntValue(akActor, "SeverActions_ReadingBook", 1)
+    ; BookReadMode: 0 = Verbatim (StorageUtil value 1), 1 = Summary (StorageUtil value 2)
+    Int readingModeValue = 1
+    if BookReadMode == 1
+        readingModeValue = 2
+    endif
+    StorageUtil.SetIntValue(akActor, "SeverActions_ReadingBook", readingModeValue)
     StorageUtil.SetStringValue(akActor, "SeverActions_ReadingBookTitle", actualBookName)
     StorageUtil.SetStringValue(akActor, "SeverActions_ReadingBookText", bookText)
 
@@ -1204,9 +1212,15 @@ naturally first (e.g. "What shall I read?") and the player drives the conversati
         akActor.PlayIdle(IdleBook_Reading)
     endif
 
-    ; Single narration: NPC opens the book — worded to prevent LLM from reading ahead
-    ; The auto-continue loop will nudge them to start and keep reading once the prompt has the book text
-    String openNarration = "*" + npcName + " pulls out '" + actualBookName + "' and begins searching for the right page. They haven't started reading yet — do not read or recite any of the book's contents until the full text is available.*"
+    ; Initial narration depends on reading mode
+    String openNarration
+    if BookReadMode == 1
+        ; Summary mode — NPC reads through the book silently first
+        openNarration = "*" + npcName + " opens '" + actualBookName + "' and begins reading through it quietly.*"
+    else
+        ; Verbatim mode — NPC prepares to read aloud, worded to prevent LLM from reading ahead
+        openNarration = "*" + npcName + " pulls out '" + actualBookName + "' and begins searching for the right page. They haven't started reading yet — do not read or recite any of the book's contents until the full text is available.*"
+    endif
     SkyrimNetApi.DirectNarration(openNarration, akActor, None)
 
     ; Persistent event for long-term context
@@ -1255,9 +1269,18 @@ Event OnUpdate()
         return
     endif
 
+    ; Summary mode uses shorter timeout (2 min vs 5 min) and longer silence threshold
+    Bool isSummaryMode = (BookReadMode == 1)
+    Float activeTimeout = BookReadingTimeout
+    Float activeContinueDelay = BookReadingContinueDelay
+    if isSummaryMode
+        activeTimeout = 120.0
+        activeContinueDelay = 30.0
+    endif
+
     ; Check timeout
     Float totalElapsed = Utility.GetCurrentRealTime() - BookReadingStartTime
-    if totalElapsed > BookReadingTimeout
+    if totalElapsed > activeTimeout
         Debug.Trace("[SeverActions_Loot] ReadBook: Auto-continue timeout reached, stopping")
         String npcName = BookReader.GetDisplayName()
         ClearBookReadingState()
@@ -1269,10 +1292,14 @@ Event OnUpdate()
     Int queueSize = SkyrimNetApi.GetSpeechQueueSize()
     Float timeSinceLastNarration = Utility.GetCurrentRealTime() - BookReadingLastNarrationTime
 
-    if queueSize == 0 && timeSinceLastNarration >= BookReadingContinueDelay
-        ; NPC has been silent long enough — nudge them to continue reading
+    if queueSize == 0 && timeSinceLastNarration >= activeContinueDelay
         String npcName = BookReader.GetDisplayName()
-        String narration = "*" + npcName + " continues reading aloud.*"
+        String narration
+        if isSummaryMode
+            narration = "*" + npcName + " shares their thoughts on what they've read.*"
+        else
+            narration = "*" + npcName + " continues reading aloud.*"
+        endif
         SkyrimNetApi.DirectNarration(narration, BookReader, None)
         BookReadingLastNarrationTime = Utility.GetCurrentRealTime()
         Debug.Trace("[SeverActions_Loot] ReadBook: Auto-continue triggered for " + npcName)
