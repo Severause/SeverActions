@@ -43,47 +43,15 @@ namespace SeverActionsNative
     {
         if (!ref || !keyword) return;
 
-        // Access the ExtraLinkedRef extra data on this reference.
-        // ExtraLinkedRef contains a BSTSmallArray of {keyword, refr} pairs.
-        // We search for an existing entry with this keyword and update,
-        // or add a new entry if not found.
-        auto* extra = ref->extraList.GetByType<RE::ExtraLinkedRef>();
-
-        if (target) {
-            // SETTING a linked ref
-            if (!extra) {
-                // Create via BSExtraData factory — allocates engine memory with
-                // proper vtable from address library. Zero-initialized BSTSmallArray
-                // is safe: push_back handles growth from capacity=0 correctly.
-                extra = RE::BSExtraData::Create<RE::ExtraLinkedRef>();
-                ref->extraList.Add(extra);
-            }
-
-            // Search for existing entry with this keyword
-            for (std::uint32_t i = 0; i < extra->linkedRefs.size(); i++) {
-                if (extra->linkedRefs[i].keyword == keyword) {
-                    extra->linkedRefs[i].refr = target;
-                    return;
-                }
-            }
-
-            // Not found — add new entry
-            RE::ExtraLinkedRef::LinkedRef entry;
-            entry.keyword = keyword;
-            entry.refr = target;
-            extra->linkedRefs.push_back(entry);
-        } else {
-            // CLEARING a linked ref — set refr to nullptr
-            // (same behavior as PO3_SKSEFunctions.SetLinkedRef(actor, None, keyword))
-            if (!extra) return;
-
-            for (std::uint32_t i = 0; i < extra->linkedRefs.size(); i++) {
-                if (extra->linkedRefs[i].keyword == keyword) {
-                    extra->linkedRefs[i].refr = nullptr;
-                    break;
-                }
-            }
-        }
+        // Call the engine's native SetLinkedRef via address library relocation.
+        // This is the same approach PO3_SKSEFunctions uses — the engine handles
+        // ExtraLinkedRef creation/modification/clearing internally and safely.
+        // Our previous manual approach (BSExtraData::Create + ExtraDataList::Add)
+        // crashed because Create() zero-initializes without calling the constructor,
+        // leaving BSTSmallArray in an invalid state.
+        using func_t = void(RE::ExtraDataList::*)(RE::TESObjectREFR*, RE::BGSKeyword*);
+        static REL::Relocation<func_t> SetLinkedRef{ RELOCATION_ID(11633, 11779) };
+        SetLinkedRef(&ref->extraList, target, keyword);
     }
 
     // ========================================================================

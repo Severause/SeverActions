@@ -249,15 +249,27 @@ Function HandleFollowToggle(Actor target)
         return
     endif
 
+    ; Check if target is a registered companion (uses CK alias follow, not SkyrimNet)
+    bool isCompanion = FollowerManagerScript && FollowerManagerScript.IsRegisteredFollower(target)
+
     ; Check current follow state and toggle
-    bool isCurrentlyFollowing = FollowScript.HasFollowPackage(target)
+    bool isCurrentlyFollowing = isCompanion || FollowScript.HasFollowPackage(target)
 
     if isCurrentlyFollowing
         ; Check if they're waiting - if so, resume following instead of stopping
         if target.GetAV("WaitingForPlayer") > 0
-            FollowScript.StartFollowing(target)
+            if isCompanion
+                FollowerManagerScript.CompanionFollow(target)
+            else
+                FollowScript.StartFollowing(target)
+            endif
         else
-            FollowScript.StopFollowing(target)
+            if isCompanion
+                ; Companions use dismiss, not stop following
+                Debug.Notification(target.GetDisplayName() + " is a companion — use Dismiss instead")
+            else
+                FollowScript.StopFollowing(target)
+            endif
         endif
     else
         ; Not following - start following
@@ -357,11 +369,21 @@ Function HandleWait(Actor target)
 
     ; Toggle: if waiting, resume following; if not, wait here
     if target.GetAV("WaitingForPlayer") > 0
-        if FollowScript
+        ; Resume following — use companion path if registered, casual path if not
+        if FollowerManagerScript.IsRegisteredFollower(target)
+            FollowerManagerScript.CompanionFollow(target)
+        elseif FollowScript
             FollowScript.StartFollowing(target)
         endif
     else
-        FollowerManagerScript.CompanionWait(target)
+        ; Wait here — route to correct system based on follower type
+        if FollowerManagerScript.IsRegisteredFollower(target)
+            FollowerManagerScript.CompanionWait(target)
+        elseif FollowScript && FollowScript.HasFollowPackage(target)
+            FollowScript.WaitHere(target)
+        else
+            Debug.Notification(target.GetDisplayName() + " is not following you")
+        endif
     endif
 EndFunction
 

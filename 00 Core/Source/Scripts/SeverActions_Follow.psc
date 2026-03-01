@@ -310,14 +310,20 @@ Function CompanionStartFollowing(Actor akActor)
         return
     endif
 
-    ; Clear sandbox if active
-    if SkyrimNetApi.HasPackage(akActor, "Sandbox")
-        SeverActionsNative.UnregisterSandboxUser(akActor)
-        if SandboxPackage
-            ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
-        endif
-        SkyrimNetApi.UnregisterPackage(akActor, "Sandbox")
+    ; Always clean up sandbox state unconditionally (defensive).
+    ; Don't gate on SkyrimNetApi.HasPackage — if SkyrimNet lost tracking
+    ; (save/load, timing), the PO3 override would stay forever since it
+    ; was added with flag 1 (forced top of stack). These are all safe no-ops
+    ; if nothing is active.
+    SeverActionsNative.UnregisterSandboxUser(akActor)
+    if SandboxPackage
+        ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
     endif
+    SkyrimNetApi.UnregisterPackage(akActor, "Sandbox")
+
+    ; Also clean up any stale casual FollowPlayer package (shouldn't be here
+    ; for companions, but defensive cleanup in case of prior bugs)
+    SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
 
     ; Clear waiting state
     akActor.SetAV("WaitingForPlayer", 0)
@@ -350,14 +356,12 @@ Function CompanionStopFollowing(Actor akActor)
         return
     endif
 
-    ; Clear sandbox if active
-    if SkyrimNetApi.HasPackage(akActor, "Sandbox")
-        SeverActionsNative.UnregisterSandboxUser(akActor)
-        if SandboxPackage
-            ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
-        endif
-        SkyrimNetApi.UnregisterPackage(akActor, "Sandbox")
+    ; Always clean up sandbox state unconditionally (defensive)
+    SeverActionsNative.UnregisterSandboxUser(akActor)
+    if SandboxPackage
+        ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
     endif
+    SkyrimNetApi.UnregisterPackage(akActor, "Sandbox")
 
     ; Clear alias slot — CK package auto-removes
     ClearFollowerSlot(akActor)

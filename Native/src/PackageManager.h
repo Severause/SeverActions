@@ -158,9 +158,10 @@ namespace SeverActionsNative
         PackageManager& operator=(const PackageManager&) = delete;
 
         /**
-         * Native LinkedRef manipulation via RE::ExtraLinkedRef
-         * Sets or clears a LinkedRef on a reference's extra data list.
-         * Must be called on the game thread.
+         * Native LinkedRef manipulation via engine relocation.
+         * Calls the engine's own SetLinkedRef (RELOCATION_ID 11633/11779),
+         * which safely handles ExtraLinkedRef creation/modification/clearing.
+         * Same approach as PO3_SKSEFunctions.
          *
          * @param ref     The reference to modify
          * @param target  The target to link to (nullptr to clear)

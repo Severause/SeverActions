@@ -11,6 +11,13 @@ parameterMapping:
 enabled: true
 eligibilityRules:
   - conditions:
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
       - decoratorName: "is_in_combat"
         arguments: ["currentActor"]
         comparisonOperator: "=="
