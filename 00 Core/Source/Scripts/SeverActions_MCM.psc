@@ -299,6 +299,12 @@ Function DrawGeneralPage()
     AddHeaderOption("Native Features")
     OID_DialogueAnimEnabled = AddToggleOption("Dialogue Animations", DialogueAnimEnabled)
     OID_SilenceChance = AddSliderOption("Silence Chance", SilenceChance as Float, "{0}%")
+    if !LootScript
+        Quest myQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
+        if myQuest
+            LootScript = myQuest as SeverActions_Loot
+        endif
+    endif
     if LootScript
         if !BookReadModeOptions
             BookReadModeOptions = new string[2]
