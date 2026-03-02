@@ -688,6 +688,10 @@ Bool Function HasBooks(Actor akActor) Global Native
 String Function ListBooks(Actor akActor) Global Native
 {Get a comma-separated list of book names in an actor's inventory}
 
+Bool Function IsNote(Form akForm) Global Native
+{Check if a book form is a note/scroll rather than a book/tome.
+Returns true for notes and scrolls, false for books and tomes.}
+
 ; =============================================================================
 ; COLLISION UTILITIES
 ; Control actor bump/collision behavior

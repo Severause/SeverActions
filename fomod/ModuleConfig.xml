@@ -195,14 +195,16 @@ Install with Follower Prompts for full companion awareness.</description>
                     <plugins order="Explicit">
 
                         <plugin name="Core Awareness Prompts">
-                            <description>Basic NPC awareness:
+                            <description>Core NPC awareness and action selection:
+• Enhanced Action Selector - Improved action matching with full exchange context and parameter schemas
 • Known Spells - NPCs know what spells they have
 • Gold Awareness - NPCs know their gold amount
 • Inventory Awareness - NPCs know their items
+• Player Inventory Awareness - NPCs can see what the player is carrying (categorized, top 7 per type)
 • Nearby Objects - NPCs aware of surroundings (items, flora, furniture)
 • Book Reading Rules - Prevents NPCs from fabricating book content
 
-Recommended for immersion.</description>
+Recommended — includes the action selector needed for all SeverActions action YAMLs.</description>
                             <files>
                                 <folder source="Prompts/Core" destination="" priority="1"/>
                             </files>
@@ -295,25 +297,6 @@ Recommended if you travel with multiple followers. Install with Follower Prompts
                             </files>
                             <typeDescriptor>
                                 <type name="Recommended"/>
-                            </typeDescriptor>
-                        </plugin>
-
-                        <plugin name="Enhanced Action Selector">
-                            <description>Replaces SkyrimNet's native action selector prompt with an improved version optimized for SeverActions' streamlined YAML descriptions.
-
-Features:
-• Reads the full player-NPC exchange (pulls player speech from event history) for better action matching
-• Shows parameter schemas so the LLM uses correct parameter names
-• Player-intent and implicit-agreement guidelines reduce missed actions
-• One-action-per-turn enforcement prevents duplicate action calls
-• Exchange-centric design works better across all model backends (Claude, Grok, etc.)
-
-Recommended if you are using SeverActions' action YAMLs. Ensures the LLM picks the right action with the right parameters.</description>
-                            <files>
-                                <folder source="Prompts/ActionSelector" destination="" priority="2"/>
-                            </files>
-                            <typeDescriptor>
-                                <type name="Optional"/>
                             </typeDescriptor>
                         </plugin>
 

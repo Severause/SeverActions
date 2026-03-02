@@ -1,6 +1,6 @@
 customCategory: basic
 name: StopReading
-description: "Stop reading a book aloud and close it."
+description: "Stop reading a book or note aloud and put it away."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: StopReading_Execute

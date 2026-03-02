@@ -51,6 +51,7 @@ Int Property BookReadMode = 0 Auto Hidden
 ; =============================================================================
 
 Idle Property IdleGive Auto
+Idle Property IdleTake Auto
 Idle Property IdlePickUpItem Auto
 Idle Property IdleSearchingChest Auto
 Idle Property IdleLootBody Auto
@@ -60,9 +61,10 @@ Idle Property IdleForceDefaultState Auto
 Idle Property IdleDrinkPotion Auto
 Idle Property IdleEatSoup Auto
 
-; Book reading animations
+; Book/note reading animations
 Idle Property IdleBook_Reading Auto
 Idle Property IdleBook_ReadingSitting Auto
+Idle Property IdleNoteRead Auto
 
 ; =============================================================================
 ; SCRIPT REFERENCES
@@ -411,6 +413,67 @@ Function GiveItem_Execute(Actor akActor, Actor akTarget, String itemName, Int ai
         else
             SkyrimNetApi.RegisterEvent("item_give_failed", akActor.GetDisplayName() + " doesn't have " + itemName + " to give", akActor, akTarget)
         endif
+    endif
+EndFunction
+
+; =============================================================================
+; ACTION: TakeItemFromPlayer - NPC takes an item from the player's inventory
+; =============================================================================
+
+Function TakeItemFromPlayer_Execute(Actor akActor, String itemName, Int aiCount = 1)
+{NPC walks to the player, plays take animation, and transfers an item from the player's inventory.}
+    if !akActor || itemName == ""
+        return
+    endif
+
+    ; Ensure at least 1
+    if aiCount < 1
+        aiCount = 1
+    endif
+
+    Actor playerRef = Game.GetPlayer()
+    if !playerRef
+        return
+    endif
+
+    ; Find the item in the player's inventory
+    Form itemForm = GetItemFormByName(playerRef, itemName)
+    if !itemForm || playerRef.GetItemCount(itemForm) <= 0
+        SkyrimNetApi.RegisterEvent("take_item_failed", akActor.GetDisplayName() + " couldn't find " + itemName + " in the player's inventory", akActor, playerRef)
+        return
+    endif
+
+    String actualName = itemForm.GetName()
+
+    ; Walk to the player
+    if WalkToReference(akActor, playerRef)
+        if IdleTake
+            PlayAnimationAndWait(akActor, IdleTake, 2.0)
+        endif
+
+        ; Transfer the item
+        Int available = playerRef.GetItemCount(itemForm)
+        Int transferred = aiCount
+        if transferred > available
+            transferred = available
+        endif
+
+        if transferred > 0
+            playerRef.RemoveItem(itemForm, transferred, true, akActor)
+        endif
+
+        ResetToDefaultIdle(akActor)
+
+        ; Register event
+        if transferred > 1
+            SkyrimNetApi.RegisterEvent("item_taken_from_player", akActor.GetDisplayName() + " took " + transferred + " " + actualName + " from the player", akActor, playerRef)
+        elseif transferred == 1
+            SkyrimNetApi.RegisterEvent("item_taken_from_player", akActor.GetDisplayName() + " took " + actualName + " from the player", akActor, playerRef)
+        else
+            SkyrimNetApi.RegisterEvent("take_item_failed", akActor.GetDisplayName() + " couldn't take " + itemName + " from the player", akActor, playerRef)
+        endif
+    else
+        SkyrimNetApi.RegisterEvent("take_item_failed", akActor.GetDisplayName() + " couldn't reach the player to take " + itemName, akActor, playerRef)
     endif
 EndFunction
 
@@ -1200,9 +1263,16 @@ naturally first (e.g. "What shall I read?") and the player drives the conversati
     StorageUtil.SetStringValue(akActor, "SeverActions_ReadingBookTitle", actualBookName)
     StorageUtil.SetStringValue(akActor, "SeverActions_ReadingBookText", bookText)
 
-    ; Play book reading animation
+    ; Play reading animation — use note animation for notes/scrolls, book animation for books
+    Bool isNote = SeverActionsNative.IsNote(bookForm)
     Bool isSitting = akActor.GetSitState() >= 2  ; 2 = wanting to sit, 3 = sitting
-    if isSitting && IdleBook_ReadingSitting
+    if isNote && IdleNoteRead
+        if IdleForceDefaultState
+            akActor.PlayIdle(IdleForceDefaultState)
+            Utility.Wait(0.2)
+        endif
+        akActor.PlayIdle(IdleNoteRead)
+    elseif isSitting && IdleBook_ReadingSitting
         akActor.PlayIdle(IdleBook_ReadingSitting)
     elseif IdleBook_Reading
         if IdleForceDefaultState

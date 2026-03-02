@@ -1,16 +1,21 @@
 customCategory: basic
-name: ReadBook
-description: "Read a specific book or note aloud from inventory by name. Must know the exact name first - ask if unsure. Must have the book or note in inventory."
+name: TakeItemFromPlayer
+description: "Accept or receive an item the player is offering or giving to you. Use when the player hands over, gives, or transfers an item from their inventory to you. Do NOT use EquipArmor for this — this is about receiving the item, not equipping it."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
-executionFunctionName: ReadBook_Execute
+executionFunctionName: TakeItemFromPlayer_Execute
 parameterMapping:
-  - type: dynamic
+  - type: speaker
     name: akActor
-    description: The person who will read the book
+    description: Speaker Actor parameter (triggering entity)
   - type: dynamic
-    name: bookName
-    description: The exact name of the book or note to read
+    name: itemName
+    description: The name of the item to take from the player (e.g. "Iron Sword", "Health Potion")
+  - type: dynamic
+    name: aiCount
+    description: Number of items to take (default 1)
+    optional: true
+    default: 1
 enabled: true
 eligibilityRules:
   - conditions:

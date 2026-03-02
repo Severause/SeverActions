@@ -155,6 +155,21 @@ namespace SeverActionsNative
             return result;
         }
 
+        /**
+         * Check if a book form is a note/scroll rather than a book/tome.
+         * Uses TESObjectBOOK::IsNoteScroll() to check the record's Type field.
+         *
+         * @param form The form to check (must be a TESObjectBOOK)
+         * @return true if the form is a note/scroll, false if a book/tome or not a book
+         */
+        static bool IsNote(RE::TESForm* form)
+        {
+            if (!form) return false;
+            auto* book = form->As<RE::TESObjectBOOK>();
+            if (!book) return false;
+            return book->IsNoteScroll();
+        }
+
     private:
         /**
          * Strip HTML-like formatting tags from book text.
@@ -267,12 +282,18 @@ namespace SeverActionsNative
             return RE::BSFixedString(list.c_str());
         }
 
+        static bool Papyrus_IsNote(RE::StaticFunctionTag*, RE::TESForm* form)
+        {
+            return IsNote(form);
+        }
+
         static void RegisterFunctions(RE::BSScript::IVirtualMachine* a_vm, const char* scriptName)
         {
             a_vm->RegisterFunction("GetBookText", scriptName, Papyrus_GetBookText);
             a_vm->RegisterFunction("FindBookInInventory", scriptName, Papyrus_FindBookInInventory);
             a_vm->RegisterFunction("HasBooks", scriptName, Papyrus_HasBooks);
             a_vm->RegisterFunction("ListBooks", scriptName, Papyrus_ListBooks);
+            a_vm->RegisterFunction("IsNote", scriptName, Papyrus_IsNote);
 
             SKSE::log::info("Registered book utility functions");
         }

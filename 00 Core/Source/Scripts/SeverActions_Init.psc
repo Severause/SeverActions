@@ -26,6 +26,9 @@ SeverActions_WheelMenu Property WheelMenuSystem Auto
 SeverActions_FollowerManager Property FollowerManagerSystem Auto
 {Optional - Link to the Follower Manager system for companion tracking}
 
+SeverActions_Loot Property LootSystem Auto
+{Optional - Link to the Loot system for book reading and item actions}
+
 ; =============================================================================
 ; INITIALIZATION
 ; =============================================================================
@@ -518,6 +521,16 @@ Function SyncPluginConfig()
         If mcm
             mcm.DialogueAnimEnabled = SeverActionsNative.PluginConfig_GetBool("general.dialogue_animations", true)
             mcm.SilenceChance = silenceChanceVal
+        EndIf
+
+        ; Book reading mode — "verbatim" (0) or "summarize" (1)
+        If LootSystem
+            String readMode = SeverActionsNative.PluginConfig_GetString("general.book_reading_mode", "verbatim")
+            If readMode == "summarize"
+                LootSystem.BookReadMode = 1
+            Else
+                LootSystem.BookReadMode = 0
+            EndIf
         EndIf
 
         ; Debug mode — applies to all subsystems that have it

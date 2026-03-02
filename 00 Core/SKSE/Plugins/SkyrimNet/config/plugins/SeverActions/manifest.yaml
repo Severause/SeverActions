@@ -147,6 +147,16 @@ schema:
       category: "General"
       defaultValue: true
 
+    - name: "Book Reading Style"
+      path: "general.book_reading_mode"
+      type: "select"
+      description: "How NPCs read books aloud. Verbatim reads word-for-word (can be lengthy). Summarize gives a brief summary with in-character reactions."
+      category: "General"
+      defaultValue: "verbatim"
+      options:
+        - "verbatim"
+        - "summarize"
+
     - name: "Debug Mode"
       path: "general.debug_mode"
       type: "bool"
