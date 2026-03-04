@@ -38,11 +38,13 @@ Create in CK — just a new faction, no special setup needed.}
 Package Property SandboxPackage Auto
 {Sandbox package for relaxing in place - NPC wanders and interacts with nearby furniture}
 
-int Property SandboxPackagePriority = 40 AutoReadOnly
-{Below follow (50) so orphaned FF sandbox packages can never block following.
- When we want an NPC to sandbox, we explicitly pause/remove the follow package
- first so sandbox can take effect. This makes the system self-healing: if a
- sandbox FF orphan survives a bad transition, follow still wins.}
+int Property SandboxPackagePriority = 55 AutoReadOnly
+{Above follow (50) so sandbox overrides the FollowPlayer package immediately.
+ SkyrimNet's UnregisterPackage is queued/async in 0.15.4+, so the FollowPlayer
+ package may still be active when sandbox is applied. Priority 55 ensures
+ sandbox wins without waiting for the queue. All cleanup paths (StopSandbox,
+ OnNativeSandboxCleanup, StartFollowing, CompanionStartFollowing) explicitly
+ remove the sandbox package override, so orphans are handled properly.}
 
 float Property SandboxAutoStandDistance = 2000.0 Auto
 {Distance at which sandboxing actors auto-resume following when player moves away}
@@ -79,6 +81,25 @@ Function Maintenance()
 EndFunction
 
 ; =============================================================================
+; SANDBOX STATE HELPERS
+; StorageUtil-based tracking replaces the broken SkyrimNetApi.HasPackage("Sandbox").
+; "Sandbox" isn't in SkyrimNet's PackageFormCache, so RegisterPackage always fails
+; and HasPackage returns false. StorageUtil flags are immediate and reliable.
+; =============================================================================
+
+Bool Function IsSandboxing(Actor akActor)
+    return akActor && StorageUtil.GetIntValue(akActor, "SeverActions_IsSandboxing") == 1
+EndFunction
+
+Function SetSandboxFlag(Actor akActor, Bool active)
+    If active
+        StorageUtil.SetIntValue(akActor, "SeverActions_IsSandboxing", 1)
+    Else
+        StorageUtil.UnsetIntValue(akActor, "SeverActions_IsSandboxing")
+    EndIf
+EndFunction
+
+; =============================================================================
 ; NATIVE SANDBOX CLEANUP EVENT HANDLER
 ; Called by native SandboxManager when player changes cells or moves too far
 ; =============================================================================
@@ -94,19 +115,19 @@ Event OnNativeSandboxCleanup(string eventName, string strArg, float numArg, Form
     endif
 
     ; Only handle actors that are sandboxing through our system
-    if !SkyrimNetApi.HasPackage(akActor, "Sandbox")
+    if !IsSandboxing(akActor)
         return
     endif
 
     Debug.Trace("[SeverActions_Follow] Native sandbox cleanup for: " + akActor.GetDisplayName())
 
+    ; Clear sandbox state
+    SetSandboxFlag(akActor, false)
+
     ; Remove sandbox package
     if SandboxPackage
         ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
     endif
-
-    ; Unregister from SkyrimNet
-    SkyrimNetApi.UnregisterPackage(akActor, "Sandbox")
 
     ; Resume following
     akActor.SetAV("WaitingForPlayer", 0)
@@ -221,7 +242,7 @@ Function ReapplyFollowTracking(Actor[] followers)
             ; If they were waiting/sandboxing, re-apply sandbox package + tracking
             If isWaiting && SandboxPackage
                 ActorUtil.AddPackageOverride(akActor, SandboxPackage, SandboxPackagePriority, 1)
-                SkyrimNetApi.RegisterPackage(akActor, "Sandbox", SandboxPackagePriority, 0, false)
+                SetSandboxFlag(akActor, true)
             EndIf
 
             ; Re-apply actively following faction based on current state
@@ -247,13 +268,13 @@ Function StartFollowing(Actor akActor)
         return
     endif
 
-    ; Clear sandbox tracking if active
-    if SkyrimNetApi.HasPackage(akActor, "Sandbox")
-        SeverActionsNative.UnregisterSandboxUser(akActor)
-        if SandboxPackage
-            ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
-        endif
-        SkyrimNetApi.UnregisterPackage(akActor, "Sandbox")
+    ; Always clean up sandbox state unconditionally (defensive).
+    ; Don't gate on IsSandboxing — if tracking was lost (save/load, timing),
+    ; the PO3 override would stay forever. These are all safe no-ops if nothing is active.
+    SetSandboxFlag(akActor, false)
+    SeverActionsNative.UnregisterSandboxUser(akActor)
+    if SandboxPackage
+        ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
     endif
 
     ; Clear waiting state (in case they were waiting)
@@ -277,13 +298,11 @@ Function StopFollowing(Actor akActor)
         return
     endif
 
-    ; Clear sandbox if active
-    if SkyrimNetApi.HasPackage(akActor, "Sandbox")
-        SeverActionsNative.UnregisterSandboxUser(akActor)
-        if SandboxPackage
-            ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
-        endif
-        SkyrimNetApi.UnregisterPackage(akActor, "Sandbox")
+    ; Always clean up sandbox state unconditionally (defensive)
+    SetSandboxFlag(akActor, false)
+    SeverActionsNative.UnregisterSandboxUser(akActor)
+    if SandboxPackage
+        ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
     endif
 
     ; Unregister SkyrimNet's follow package
@@ -311,15 +330,14 @@ Function CompanionStartFollowing(Actor akActor)
     endif
 
     ; Always clean up sandbox state unconditionally (defensive).
-    ; Don't gate on SkyrimNetApi.HasPackage — if SkyrimNet lost tracking
-    ; (save/load, timing), the PO3 override would stay forever since it
-    ; was added with flag 1 (forced top of stack). These are all safe no-ops
-    ; if nothing is active.
+    ; Don't gate on IsSandboxing — if tracking was lost (save/load, timing),
+    ; the PO3 override would stay forever since it was added with flag 1
+    ; (forced top of stack). These are all safe no-ops if nothing is active.
+    SetSandboxFlag(akActor, false)
     SeverActionsNative.UnregisterSandboxUser(akActor)
     if SandboxPackage
         ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
     endif
-    SkyrimNetApi.UnregisterPackage(akActor, "Sandbox")
 
     ; Also clean up any stale casual FollowPlayer package (shouldn't be here
     ; for companions, but defensive cleanup in case of prior bugs)
@@ -357,11 +375,11 @@ Function CompanionStopFollowing(Actor akActor)
     endif
 
     ; Always clean up sandbox state unconditionally (defensive)
+    SetSandboxFlag(akActor, false)
     SeverActionsNative.UnregisterSandboxUser(akActor)
     if SandboxPackage
         ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
     endif
-    SkyrimNetApi.UnregisterPackage(akActor, "Sandbox")
 
     ; Clear alias slot — CK package auto-removes
     ClearFollowerSlot(akActor)
@@ -414,20 +432,27 @@ Function Sandbox(Actor akActor)
         return
     endif
 
-    ; Remove follow package so sandbox (lower priority) can take effect
-    ; For casual follow: unregister SkyrimNet's FollowPlayer package
-    ; For companion follow: WaitingForPlayer=1 deactivates the CK follow package condition
+    ; Remove SkyrimNet's FollowPlayer package from PapyrusUtil's override map.
+    ; This is the proper removal — UnregisterPackage removes from SkyrimNet tracking
+    ; AND dispatches game-thread removal from PapyrusUtil via PackageFormCache lookup.
     SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
+
+    ; Set waiting state — deactivates companion CK follow packages via condition,
+    ; and signals to other systems that this NPC is paused
     akActor.SetAV("WaitingForPlayer", 1)
 
     ; Apply sandbox package at current location
+    ; Priority 55 > FollowPlayer's 50 — ensures sandbox wins immediately in PapyrusUtil
+    ; even if the async FollowPlayer removal hasn't completed yet
     ActorUtil.AddPackageOverride(akActor, SandboxPackage, SandboxPackagePriority, 1)
 
-    ; Register with SkyrimNet for tracking
-    SkyrimNetApi.RegisterPackage(akActor, "Sandbox", SandboxPackagePriority, 0, false)
+    ; Track sandbox state via StorageUtil (reliable, immediate).
+    ; We skip SkyrimNet's RegisterPackage("Sandbox") entirely — "Sandbox" isn't in
+    ; PackageFormCache so it always fails. Our StorageUtil flag replaces it.
+    SetSandboxFlag(akActor, true)
 
-    ; Register with native SandboxManager for auto-cleanup when player moves away/changes cells
-    SeverActionsNative.RegisterSandboxUser(akActor, SandboxPackage, SandboxAutoStandDistance)
+    ; No SandboxManager registration — the wait action means "stay here" permanently.
+    ; Player manually resumes via StopSandbox/hotkey when they want the NPC back.
 
     ; No longer actively following (relaxing in place)
     SetActivelyFollowing(akActor, false)
@@ -443,11 +468,11 @@ Function StopSandbox(Actor akActor)
         return
     endif
 
+    ; Clear sandbox state
+    SetSandboxFlag(akActor, false)
+
     ; Unregister from native SandboxManager
     SeverActionsNative.UnregisterSandboxUser(akActor)
-
-    ; Unregister from SkyrimNet (queued)
-    SkyrimNetApi.UnregisterPackage(akActor, "Sandbox")
 
     ; Remove sandbox package override directly (synchronous)
     if SandboxPackage
@@ -487,7 +512,7 @@ Bool Function StartFollowing_IsEligible(Actor akActor) Global
     ; Allow if: not following, OR following but waiting/sandboxing (to resume)
     Bool hasPackage = SkyrimNetApi.HasPackage(akActor, "FollowPlayer")
     Bool isWaiting = akActor.GetAV("WaitingForPlayer") > 0
-    Bool isSandboxing = SkyrimNetApi.HasPackage(akActor, "Sandbox")
+    Bool isSandboxing = StorageUtil.GetIntValue(akActor, "SeverActions_IsSandboxing") == 1
 
     if hasPackage && !isWaiting && !isSandboxing
         return false  ; Already following and not waiting/sandboxing
@@ -554,7 +579,7 @@ Bool Function Sandbox_IsEligible(Actor akActor) Global
     endif
 
     ; Must not already be sandboxing
-    if SkyrimNetApi.HasPackage(akActor, "Sandbox")
+    if StorageUtil.GetIntValue(akActor, "SeverActions_IsSandboxing") == 1
         return false
     endif
 
@@ -575,7 +600,7 @@ Bool Function StopSandbox_IsEligible(Actor akActor) Global
         return false
     endif
 
-    return SkyrimNetApi.HasPackage(akActor, "Sandbox")
+    return StorageUtil.GetIntValue(akActor, "SeverActions_IsSandboxing") == 1
 EndFunction
 
 Function StopSandbox_Execute(Actor akActor) Global

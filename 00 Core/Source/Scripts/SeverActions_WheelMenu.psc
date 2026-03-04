@@ -142,13 +142,9 @@ Function OpenWheelMenu()
     ; Set up options with icons
     ; Option 0 - Toggle Follow
     if target && FollowScript
-        bool isFollowing = FollowScript.HasFollowPackage(target)
+        bool isFollowing = FollowScript.HasFollowPackage(target) || FollowScript.IsSandboxing(target)
         if isFollowing
-            if target.GetAV("WaitingForPlayer") > 0
-                UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_TOGGLE_FOLLOW, "Resume Follow")
-            else
-                UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_TOGGLE_FOLLOW, "Stop Follow")
-            endif
+            UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_TOGGLE_FOLLOW, "Stop Follow")
         else
             UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_TOGGLE_FOLLOW, "Start Follow")
         endif
@@ -178,7 +174,7 @@ Function OpenWheelMenu()
     UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_DRESS, "Dress")
 
     ; Option 6 - Wait Here (context-aware label)
-    if target && target.GetAV("WaitingForPlayer") > 0
+    if target && (target.GetAV("WaitingForPlayer") > 0 || (FollowScript && FollowScript.IsSandboxing(target)))
         UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_WAIT, "Resume Follow")
     else
         UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_WAIT, "Wait Here")
@@ -253,15 +249,20 @@ Function HandleFollowToggle(Actor target)
     bool isCompanion = FollowerManagerScript && FollowerManagerScript.IsRegisteredFollower(target)
 
     ; Check current follow state and toggle
-    bool isCurrentlyFollowing = isCompanion || FollowScript.HasFollowPackage(target)
+    ; Also check sandboxing — sandboxing NPCs had FollowPlayer unregistered
+    bool isSandboxing = FollowScript.IsSandboxing(target)
+    bool isCurrentlyFollowing = isCompanion || FollowScript.HasFollowPackage(target) || isSandboxing
 
     if isCurrentlyFollowing
-        ; Check if they're waiting - if so, resume following instead of stopping
-        if target.GetAV("WaitingForPlayer") > 0
+        if isSandboxing && !isCompanion
+            ; Sandboxing casual follower — stop entirely
+            FollowScript.StopFollowing(target)
+        elseif target.GetAV("WaitingForPlayer") > 0
+            ; Waiting — resume following
             if isCompanion
                 FollowerManagerScript.CompanionFollow(target)
             else
-                FollowScript.StartFollowing(target)
+                FollowScript.StopFollowing(target)
             endif
         else
             if isCompanion
@@ -367,20 +368,26 @@ Function HandleWait(Actor target)
         return
     endif
 
-    ; Toggle: if waiting, resume following; if not, wait here
-    if target.GetAV("WaitingForPlayer") > 0
-        ; Resume following — use companion path if registered, casual path if not
-        if FollowerManagerScript.IsRegisteredFollower(target)
+    ; Toggle: if waiting/sandboxing, resume; if not, sandbox
+    Bool isCasual = FollowScript && FollowScript.HasFollowPackage(target) && !FollowerManagerScript.IsRegisteredFollower(target)
+    Bool isSandboxing = FollowScript && FollowScript.IsSandboxing(target)
+
+    if isSandboxing
+        ; Currently sandboxing — resume following
+        if isCasual || !FollowerManagerScript.IsRegisteredFollower(target)
+            FollowScript.StopSandbox(target)
+        else
             FollowerManagerScript.CompanionFollow(target)
-        elseif FollowScript
-            FollowScript.StartFollowing(target)
         endif
+    elseif target.GetAV("WaitingForPlayer") > 0
+        ; Waiting (companion path) — resume
+        FollowerManagerScript.CompanionFollow(target)
     else
-        ; Wait here — route to correct system based on follower type
-        if FollowerManagerScript.IsRegisteredFollower(target)
+        ; Not waiting — sandbox them
+        if isCasual
+            FollowScript.Sandbox(target)
+        elseif FollowerManagerScript.IsRegisteredFollower(target)
             FollowerManagerScript.CompanionWait(target)
-        elseif FollowScript && FollowScript.HasFollowPackage(target)
-            FollowScript.WaitHere(target)
         else
             Debug.Notification(target.GetDisplayName() + " is not following you")
         endif

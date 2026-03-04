@@ -330,25 +330,19 @@ Function HandleFollowToggle()
     endif
     
     ; Check current follow state and toggle
+    ; Also check sandboxing — sandboxing NPCs had FollowPlayer unregistered so
+    ; HasFollowPackage returns false, but they're still in our "paused follow" state
     bool isCurrentlyFollowing = FollowScript.HasFollowPackage(target)
-    
-    if isCurrentlyFollowing
-        ; Check if they're waiting - if so, resume following instead of stopping
-        if target.GetAV("WaitingForPlayer") > 0
-            FollowScript.StartFollowing(target)
-            ;Debug.Notification(target.GetDisplayName() + " is following again")
-        else
-            FollowScript.StopFollowing(target)
-            ;Debug.Notification(target.GetDisplayName() + " stopped following")
-        endif
+    bool isSandboxing = FollowScript.IsSandboxing(target)
+
+    if isCurrentlyFollowing || isSandboxing
+        ; Following or sandboxing (paused follow) — stop entirely
+        ; StopFollowing already cleans up sandbox state defensively
+        FollowScript.StopFollowing(target)
     else
         ; Not following - start following
-        ; Note: StartFollowing_IsEligible is a Global function, must call on type not instance
         if SeverActions_Follow.StartFollowing_IsEligible(target)
             FollowScript.StartFollowing(target)
-            ;Debug.Notification(target.GetDisplayName() + " is now following")
-        else
-            ;Debug.Notification(target.GetDisplayName() + " cannot follow you")
         endif
     endif
 EndFunction
@@ -569,13 +563,28 @@ Function HandleCompanionWait()
         return
     endif
 
-    ; Toggle: if waiting, resume following; if not, wait
-    if target.GetAV("WaitingForPlayer") > 0
-        if FollowScript
-            FollowScript.StartFollowing(target)
+    ; Route casual followers directly through FollowScript to avoid intermediary issues.
+    ; Companions go through FollowerManager which handles alias/LinkedRef concerns.
+    Bool isCasual = FollowScript && FollowScript.HasFollowPackage(target) && !FollowerManagerScript.IsRegisteredFollower(target)
+    Bool isSandboxing = FollowScript && FollowScript.IsSandboxing(target)
+
+    if isSandboxing
+        ; Currently sandboxing — resume
+        if isCasual || !FollowerManagerScript.IsRegisteredFollower(target)
+            FollowScript.StopSandbox(target)
+        else
+            FollowerManagerScript.CompanionFollow(target)
         endif
+    elseif target.GetAV("WaitingForPlayer") > 0
+        ; Waiting (companion path) — resume
+        FollowerManagerScript.CompanionFollow(target)
     else
-        FollowerManagerScript.CompanionWait(target)
+        ; Not waiting — sandbox them
+        if isCasual
+            FollowScript.Sandbox(target)
+        else
+            FollowerManagerScript.CompanionWait(target)
+        endif
     endif
 EndFunction
 

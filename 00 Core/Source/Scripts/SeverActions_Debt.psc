@@ -307,6 +307,177 @@ Int Function GetTotalOwedTo(Actor creditor)
     Return total
 EndFunction
 
+String[] Function GetPlayerOwesDetails()
+    {Get formatted debt detail strings for debts the player owes.
+     Each entry: "Name: Xg (rate, reason, timeframe)".
+     Used by the MCM to show per-actor debt breakdowns.}
+    Actor player = Game.GetPlayer()
+    String[] result = PapyrusUtil.StringArray(0)
+    Float currentTime = GetGameTimeInSeconds()
+    Int count = GetDebtCount()
+    Int i = 0
+    While i < count
+        Actor creditor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
+        Actor debtor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
+        If debtor == player && creditor
+            Int amount = StorageUtil.GetIntValue(self, GetDebtKey(i, "Amount"), 0)
+            String reason = StorageUtil.GetStringValue(self, GetDebtKey(i, "Reason"), "")
+            Bool isRecurring = StorageUtil.GetIntValue(self, GetDebtKey(i, "IsRecurring"), 0) == 1
+            Float dueTime = StorageUtil.GetFloatValue(self, GetDebtKey(i, "DueTime"), 0.0)
+            String line = creditor.GetDisplayName() + ": " + amount + "g"
+            ; Build detail parenthetical
+            String details = ""
+            If isRecurring
+                Int chargeAmount = StorageUtil.GetIntValue(self, GetDebtKey(i, "RecurringCharge"), 0)
+                Float intervalHours = StorageUtil.GetFloatValue(self, GetDebtKey(i, "RecurringInterval"), 0.0)
+                If chargeAmount > 0
+                    details = FormatRecurringRate(chargeAmount, intervalHours)
+                Else
+                    details = FormatRecurringRate(amount, intervalHours)
+                EndIf
+            EndIf
+            If reason != ""
+                If details != ""
+                    details += ", " + reason
+                Else
+                    details = reason
+                EndIf
+            EndIf
+            ; Add timeframe
+            String timeStr = FormatTimeRemaining(dueTime, currentTime)
+            If timeStr != ""
+                If details != ""
+                    details += ", " + timeStr
+                Else
+                    details = timeStr
+                EndIf
+            EndIf
+            If details != ""
+                line += " (" + details + ")"
+            EndIf
+            result = PapyrusUtil.PushString(result, line)
+        EndIf
+        i += 1
+    EndWhile
+    Return result
+EndFunction
+
+String[] Function GetOwedToPlayerDetails()
+    {Get formatted debt detail strings for debts owed TO the player.
+     Each entry: "Name: Xg (rate, reason, timeframe)".
+     Used by the MCM to show per-actor debt breakdowns.}
+    Actor player = Game.GetPlayer()
+    String[] result = PapyrusUtil.StringArray(0)
+    Float currentTime = GetGameTimeInSeconds()
+    Int count = GetDebtCount()
+    Int i = 0
+    While i < count
+        Actor creditor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
+        Actor debtor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
+        If creditor == player && debtor
+            Int amount = StorageUtil.GetIntValue(self, GetDebtKey(i, "Amount"), 0)
+            String reason = StorageUtil.GetStringValue(self, GetDebtKey(i, "Reason"), "")
+            Bool isRecurring = StorageUtil.GetIntValue(self, GetDebtKey(i, "IsRecurring"), 0) == 1
+            Float dueTime = StorageUtil.GetFloatValue(self, GetDebtKey(i, "DueTime"), 0.0)
+            String line = debtor.GetDisplayName() + ": " + amount + "g"
+            ; Build detail parenthetical
+            String details = ""
+            If isRecurring
+                Int chargeAmount = StorageUtil.GetIntValue(self, GetDebtKey(i, "RecurringCharge"), 0)
+                Float intervalHours = StorageUtil.GetFloatValue(self, GetDebtKey(i, "RecurringInterval"), 0.0)
+                If chargeAmount > 0
+                    details = FormatRecurringRate(chargeAmount, intervalHours)
+                Else
+                    details = FormatRecurringRate(amount, intervalHours)
+                EndIf
+            EndIf
+            If reason != ""
+                If details != ""
+                    details += ", " + reason
+                Else
+                    details = reason
+                EndIf
+            EndIf
+            ; Add timeframe
+            String timeStr = FormatTimeRemaining(dueTime, currentTime)
+            If timeStr != ""
+                If details != ""
+                    details += ", " + timeStr
+                Else
+                    details = timeStr
+                EndIf
+            EndIf
+            If details != ""
+                line += " (" + details + ")"
+            EndIf
+            result = PapyrusUtil.PushString(result, line)
+        EndIf
+        i += 1
+    EndWhile
+    Return result
+EndFunction
+
+String Function FormatRecurringRate(Int amount, Float intervalHours)
+    {Format a recurring rate into a human-readable string like "50g/day" or "100g/week".}
+    If intervalHours <= 0.0
+        Return amount + "g/cycle"
+    ElseIf intervalHours <= 24.0
+        Return amount + "g/day"
+    ElseIf intervalHours <= 168.0
+        Int days = (intervalHours / 24.0) as Int
+        If days == 7
+            Return amount + "g/week"
+        Else
+            Return amount + "g/" + days + " days"
+        EndIf
+    Else
+        Int days = (intervalHours / 24.0) as Int
+        Return amount + "g/" + days + " days"
+    EndIf
+EndFunction
+
+String Function FormatTimeRemaining(Float dueTime, Float currentTime)
+    {Format the time remaining or overdue status for a debt.
+     Returns "" for open-ended debts (dueTime == 0), "overdue" or "due in X days/hours".}
+    If dueTime <= 0.0
+        Return ""
+    EndIf
+    Float diffSeconds = dueTime - currentTime
+    If diffSeconds <= 0.0
+        ; Overdue
+        Float overdueHours = (currentTime - dueTime) / SECONDS_PER_GAME_HOUR
+        If overdueHours >= 48.0
+            Int days = (overdueHours / 24.0) as Int
+            Return "overdue " + days + " days"
+        ElseIf overdueHours >= 24.0
+            Return "overdue 1 day"
+        Else
+            Int hours = overdueHours as Int
+            If hours < 1
+                Return "overdue"
+            Else
+                Return "overdue " + hours + "h"
+            EndIf
+        EndIf
+    Else
+        ; Not yet due
+        Float remainHours = diffSeconds / SECONDS_PER_GAME_HOUR
+        If remainHours >= 48.0
+            Int days = (remainHours / 24.0) as Int
+            Return "due in " + days + " days"
+        ElseIf remainHours >= 24.0
+            Return "due in 1 day"
+        Else
+            Int hours = remainHours as Int
+            If hours < 1
+                Return "due soon"
+            Else
+                Return "due in " + hours + "h"
+            EndIf
+        EndIf
+    EndIf
+EndFunction
+
 Bool Function HasAnyDebt(Actor akActor)
     {Check if the actor is involved in any debt (as creditor or debtor)}
     Int count = GetDebtCount()

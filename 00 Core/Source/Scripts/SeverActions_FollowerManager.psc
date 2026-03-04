@@ -1758,26 +1758,15 @@ EndFunction
 Function CompanionWait(Actor akActor)
     {Tell any NPC to wait and sandbox at the current location.
      Called by SkyrimNet via companionwait.yaml. Works for both companions and non-companions.
-     Unlike Relax (followSys.Sandbox), this does NOT register with SandboxManager,
-     so there is no distance check — the NPC stays put until told otherwise.
-     Cleanup is handled by StartFollowing() or UnregisterFollower().}
+     Delegates to SeverActions_Follow.Sandbox() which handles all package management:
+     removing FollowPlayer, applying sandbox override, SandboxManager registration, etc.}
     If !akActor
         Return
     EndIf
 
     SeverActions_Follow followSys = GetFollowScript()
-    If followSys && followSys.SandboxPackage
-        ; Set waiting state so follow package yields
-        akActor.SetAV("WaitingForPlayer", 1)
-
-        ; Apply sandbox package — NPC wanders, sits, interacts with furniture for immersion
-        ; No SandboxManager registration = no distance-based auto-return
-        ActorUtil.AddPackageOverride(akActor, followSys.SandboxPackage, followSys.SandboxPackagePriority, 1)
-
-        ; Register with SkyrimNet for package tracking (so StartFollowing cleanup finds it)
-        SkyrimNetApi.RegisterPackage(akActor, "Sandbox", followSys.SandboxPackagePriority, 0, false)
-
-        akActor.EvaluatePackage()
+    If followSys
+        followSys.Sandbox(akActor)
     Else
         ; Fallback: just set waiting flag if Follow system unavailable
         akActor.SetAV("WaitingForPlayer", 1)
@@ -1794,16 +1783,23 @@ Function CompanionWait(Actor akActor)
 EndFunction
 
 Function CompanionFollow(Actor akActor)
-    {Tell a waiting companion to resume following. Called by SkyrimNet via companionfollow.yaml.
-     Clears the wait sandbox and restarts the follow package.}
+    {Tell a waiting NPC to resume following. Called by SkyrimNet via companionfollow.yaml.
+     Routes to the companion alias path for registered followers, or restarts the casual
+     FollowPlayer package for non-companions who were following via StartFollowing.}
     If !akActor
         Return
     EndIf
 
     SeverActions_Follow followSys = GetFollowScript()
     If followSys
-        ; CompanionStartFollowing handles: clear sandbox, clear WaitingForPlayer, re-set LinkedRef + alias
-        followSys.CompanionStartFollowing(akActor)
+        If IsRegisteredFollower(akActor)
+            ; Companion path: CompanionStartFollowing handles alias + LinkedRef + cleanup
+            followSys.CompanionStartFollowing(akActor)
+        Else
+            ; Non-companion path: clean up sandbox and restart casual follow package
+            followSys.StopSandbox(akActor)
+            followSys.StartFollowing(akActor)
+        EndIf
     Else
         ; Fallback: just clear waiting flag
         akActor.SetAV("WaitingForPlayer", 0)

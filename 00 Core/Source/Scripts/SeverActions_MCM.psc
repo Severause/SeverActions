@@ -173,7 +173,7 @@ Event OnConfigInit()
 
     ; Set current version - increment this when you make MCM changes
     ; Format: major * 100 + minor (e.g., 107 = version 1.07)
-    CurrentVersion = 118
+    CurrentVersion = 119
 
     Pages = new string[7]
     Pages[0] = PAGE_GENERAL
@@ -411,8 +411,28 @@ Function DrawCurrencyPage()
         Int totalOwedToPlayer = debtSys.GetTotalOwedTo(Game.GetPlayer())
         Int activeDebts = debtSys.GetDebtCount()
         OID_DebtActiveCount = AddTextOption("Active Debts", activeDebts)
+
+        ; --- You Owe ---
         OID_DebtPlayerOwes = AddTextOption("You Owe", totalPlayerOwes + " gold")
+        If totalPlayerOwes > 0
+            String[] owesDetails = debtSys.GetPlayerOwesDetails()
+            Int i = 0
+            While i < owesDetails.Length
+                AddTextOption("  " + owesDetails[i], "")
+                i += 1
+            EndWhile
+        EndIf
+
+        ; --- Owed to You ---
         OID_DebtOwedToPlayer = AddTextOption("Owed to You", totalOwedToPlayer + " gold")
+        If totalOwedToPlayer > 0
+            String[] owedDetails = debtSys.GetOwedToPlayerDetails()
+            Int i = 0
+            While i < owedDetails.Length
+                AddTextOption("  " + owedDetails[i], "")
+                i += 1
+            EndWhile
+        EndIf
     Else
         AddTextOption("", "Debt system not connected")
     EndIf
