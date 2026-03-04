@@ -3490,34 +3490,57 @@ EndFunction
 
 Function CheckDispatchPhase2_Approach()
     {Phase 2: Guard approaching target in same cell. Arrival is detected natively by
-     ArrivalMonitor (fires OnDispatchApproachArrival). This function is kept minimal
-     as a safety fallback — if both are unloaded with no snapshots, trust same-cell.}
+     ArrivalMonitor (fires OnDispatchApproachArrival). This function handles fallbacks:
+     1. Guard already within approach distance (ArrivalMonitor missed because already there)
+     2. Both actors unloaded with no snapshots (trust same-cell)}
 
-    ; Safety fallback: if both actors are unloaded and ArrivalMonitor can't get position data,
-    ; trust that same-cell was already confirmed in Phase 1 transition and proceed with arrest.
-    ; This handles the edge case where C++ has no position info for either actor.
-    If !DispatchGuard.Is3DLoaded() && !DispatchTarget.Is3DLoaded()
-        Float dist = SeverActionsNative.GetDistanceBetweenActors(DispatchGuard, DispatchTarget)
-        If dist < 0.0
-            DebugMsg("Phase 2: both unloaded, no snapshot — trusting same-cell, triggering arrest")
-            ; Cancel the native tracker (we're handling it here)
-            SeverActionsNative.Arrival_Cancel(DispatchGuard)
-            ; Use the same logic as OnDispatchApproachArrival
-            If SeverActions_GuardApproachTarget
-                ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_GuardApproachTarget)
-            EndIf
-            If SeverActions_DispatchJog
-                ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchJog)
-            EndIf
-            ApplyDispatchArrestEffects()
-            String guardName = DispatchGuard.GetDisplayName()
-            String targetName = DispatchTarget.GetDisplayName()
-            String narration = "*" + guardName + " seizes " + targetName + " and places them under arrest.*"
-            SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
-            Debug.Notification(guardName + " has arrested " + targetName)
-            StartDispatchReturnPhase()
-            Return
+    ; Check if guard is already within approach distance — ArrivalMonitor only fires on
+    ; threshold crossing, so if the guard was already close when Phase 2 started, it never fires.
+    Float dist = -1.0
+    If DispatchGuard.Is3DLoaded() && DispatchTarget.Is3DLoaded()
+        dist = DispatchGuard.GetDistance(DispatchTarget)
+    Else
+        dist = SeverActionsNative.GetDistanceBetweenActors(DispatchGuard, DispatchTarget)
+    EndIf
+
+    If dist >= 0.0 && dist <= ApproachDistance
+        DebugMsg("Phase 2: guard already within approach distance (" + dist + "), triggering arrest")
+        SeverActionsNative.Arrival_Cancel(DispatchGuard)
+        If SeverActions_GuardApproachTarget
+            ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_GuardApproachTarget)
         EndIf
+        If SeverActions_DispatchJog
+            ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchJog)
+        EndIf
+        ApplyDispatchArrestEffects()
+        String guardName = DispatchGuard.GetDisplayName()
+        String targetName = DispatchTarget.GetDisplayName()
+        String narration = "*" + guardName + " seizes " + targetName + " and places them under arrest.*"
+        SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
+        Debug.Notification(guardName + " has arrested " + targetName)
+        StartDispatchReturnPhase()
+        Return
+    EndIf
+
+    ; Safety fallback: if both actors are unloaded and no position data available,
+    ; trust that same-cell was already confirmed in Phase 1 transition and proceed.
+    If !DispatchGuard.Is3DLoaded() && !DispatchTarget.Is3DLoaded() && dist < 0.0
+        DebugMsg("Phase 2: both unloaded, no snapshot — trusting same-cell, triggering arrest")
+        SeverActionsNative.Arrival_Cancel(DispatchGuard)
+        If SeverActions_GuardApproachTarget
+            ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_GuardApproachTarget)
+        EndIf
+        If SeverActions_DispatchJog
+            ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchJog)
+        EndIf
+        ApplyDispatchArrestEffects()
+        String guardName2 = DispatchGuard.GetDisplayName()
+        String targetName2 = DispatchTarget.GetDisplayName()
+        String narration2 = "*" + guardName2 + " seizes " + targetName2 + " and places them under arrest.*"
+        SkyrimNetApi.DirectNarration(narration2, DispatchGuard, DispatchTarget)
+        Debug.Notification(guardName2 + " has arrested " + targetName2)
+        StartDispatchReturnPhase()
+        Return
     EndIf
 
     RegisterForSingleUpdate(UpdateInterval)

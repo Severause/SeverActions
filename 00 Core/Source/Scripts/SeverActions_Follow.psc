@@ -459,7 +459,7 @@ Function Sandbox(Actor akActor)
 
     akActor.EvaluatePackage()
 
-    Debug.Notification(akActor.GetDisplayName() + " is relaxing.")
+    Debug.Notification(akActor.GetDisplayName() + " is waiting here.")
     SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " decides to relax and wander around the area.", akActor, Game.GetPlayer())
 EndFunction
 

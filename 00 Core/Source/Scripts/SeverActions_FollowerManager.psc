@@ -1759,27 +1759,26 @@ Function CompanionWait(Actor akActor)
     {Tell any NPC to wait and sandbox at the current location.
      Called by SkyrimNet via companionwait.yaml. Works for both companions and non-companions.
      Delegates to SeverActions_Follow.Sandbox() which handles all package management:
-     removing FollowPlayer, applying sandbox override, SandboxManager registration, etc.}
+     removing FollowPlayer, applying sandbox override, notifications, and events.}
     If !akActor
         Return
     EndIf
 
     SeverActions_Follow followSys = GetFollowScript()
     If followSys
+        ; Sandbox() handles notification + event registration internally
         followSys.Sandbox(akActor)
     Else
         ; Fallback: just set waiting flag if Follow system unavailable
         akActor.SetAV("WaitingForPlayer", 1)
         akActor.EvaluatePackage()
+        If ShowNotifications
+            Debug.Notification(akActor.GetDisplayName() + " is waiting here for you.")
+        EndIf
+        SkyrimNetApi.RegisterEvent("companion_waiting", \
+            akActor.GetDisplayName() + " is waiting for " + Game.GetPlayer().GetDisplayName() + " at the current location.", \
+            akActor, Game.GetPlayer())
     EndIf
-
-    If ShowNotifications
-        Debug.Notification(akActor.GetDisplayName() + " is waiting here for you.")
-    EndIf
-
-    SkyrimNetApi.RegisterEvent("companion_waiting", \
-        akActor.GetDisplayName() + " is waiting for " + Game.GetPlayer().GetDisplayName() + " at the current location.", \
-        akActor, Game.GetPlayer())
 EndFunction
 
 Function CompanionFollow(Actor akActor)
