@@ -15,6 +15,7 @@ SeverActions_Arrest Property ArrestScript Auto
 SeverActions_Survival Property SurvivalScript Auto
 SeverActions_FollowerManager Property FollowerManagerScript Auto
 SeverActions_Loot Property LootScript Auto
+SeverActions_SpellTeach Property SpellTeachScript Auto
 
 ; =============================================================================
 ; SETTINGS - These mirror the properties in other scripts
@@ -95,6 +96,10 @@ int OID_PersuasionTimeLimit
 int OID_DialogueAnimEnabled
 int OID_SilenceChance
 int OID_BookReadMode
+
+; General page - Spell Teaching
+int OID_SpellFailEnabled
+int OID_SpellFailDifficulty
 
 ; Survival page
 int OID_SurvivalEnabled
@@ -312,6 +317,19 @@ Function DrawGeneralPage()
             BookReadModeOptions[1] = "Summarize & React"
         endif
         OID_BookReadMode = AddMenuOption("Book Reading Style", BookReadModeOptions[LootScript.BookReadMode])
+    endif
+
+    AddEmptyOption()
+    AddHeaderOption("Spell Teaching")
+    if !SpellTeachScript
+        Quest myQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
+        if myQuest
+            SpellTeachScript = myQuest as SeverActions_SpellTeach
+        endif
+    endif
+    if SpellTeachScript
+        OID_SpellFailEnabled = AddToggleOption("Failure System", SpellTeachScript.EnableFailureSystem)
+        OID_SpellFailDifficulty = AddSliderOption("Failure Difficulty", SpellTeachScript.FailureDifficultyMult, "{1}x")
     endif
 
     AddEmptyOption()
@@ -720,6 +738,12 @@ Event OnOptionSelect(int option)
         DialogueAnimEnabled = !DialogueAnimEnabled
         SetToggleOptionValue(OID_DialogueAnimEnabled, DialogueAnimEnabled)
         SeverActionsNative.SetDialogueAnimEnabled(DialogueAnimEnabled)
+
+    elseif option == OID_SpellFailEnabled
+        if SpellTeachScript
+            SpellTeachScript.EnableFailureSystem = !SpellTeachScript.EnableFailureSystem
+            SetToggleOptionValue(OID_SpellFailEnabled, SpellTeachScript.EnableFailureSystem)
+        endif
 
     elseif option == OID_AllowConjuredGold
         AllowConjuredGold = !AllowConjuredGold
@@ -1172,6 +1196,14 @@ Event OnOptionSliderOpen(int option)
         SetSliderDialogRange(0.0, 100.0)
         SetSliderDialogInterval(5.0)
 
+    elseif option == OID_SpellFailDifficulty
+        if SpellTeachScript
+            SetSliderDialogStartValue(SpellTeachScript.FailureDifficultyMult)
+            SetSliderDialogDefaultValue(1.0)
+            SetSliderDialogRange(0.0, 3.0)
+            SetSliderDialogInterval(0.1)
+        endif
+
     ; Survival sliders
     elseif option == OID_HungerRate
         If SurvivalScript
@@ -1282,6 +1314,12 @@ Event OnOptionSliderAccept(int option, float value)
         StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", SilenceChance)
         SetSliderOptionValue(OID_SilenceChance, value, "{0}%")
 
+    elseif option == OID_SpellFailDifficulty
+        if SpellTeachScript
+            SpellTeachScript.FailureDifficultyMult = value
+            SetSliderOptionValue(OID_SpellFailDifficulty, value, "{1}x")
+        endif
+
     ; Survival sliders
     elseif option == OID_HungerRate
         If SurvivalScript
@@ -1363,6 +1401,11 @@ Event OnOptionHighlight(int option)
         SetInfoText("Probability (0-100%) that silence is offered as an option when choosing the next speaker. 0% = NPCs always speak, 100% = silence always available. Default: 50%")
     elseif option == OID_BookReadMode
         SetInfoText("How NPCs read books aloud. Verbatim: reads word-for-word (takes longer). Summarize: gives a summary and shares their in-character thoughts. Default: Read Aloud.")
+
+    elseif option == OID_SpellFailEnabled
+        SetInfoText("Enable the spell failure system. When enabled, learning spells above Novice tier has a chance to fail with school-specific consequences (explosions, hostile summons, etc).")
+    elseif option == OID_SpellFailDifficulty
+        SetInfoText("Multiplier for failure chance. 0.5 = half as likely to fail, 1.0 = normal, 2.0 = twice as likely. Set to 0 to disable failures without turning off the system.")
 
     elseif option == OID_AllowConjuredGold
         SetInfoText("Allow NPCs to give gold they don't actually have. Useful for rewards and quest payments. Disable for hardcore economy.")
@@ -1541,6 +1584,17 @@ Event OnOptionDefault(int option)
             LootScript.BookReadMode = 0
             SetMenuOptionValue(OID_BookReadMode, BookReadModeOptions[0])
         EndIf
+
+    elseif option == OID_SpellFailEnabled
+        if SpellTeachScript
+            SpellTeachScript.EnableFailureSystem = true
+            SetToggleOptionValue(OID_SpellFailEnabled, true)
+        endif
+    elseif option == OID_SpellFailDifficulty
+        if SpellTeachScript
+            SpellTeachScript.FailureDifficultyMult = 1.0
+            SetSliderOptionValue(OID_SpellFailDifficulty, 1.0, "{1}x")
+        endif
 
     elseif option == OID_AllowConjuredGold
         AllowConjuredGold = true
