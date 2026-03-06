@@ -733,6 +733,7 @@ Function TransferSpell_Execute(Actor teacher, Actor learner, Spell akSpell)
                 SkyrimNetApi.RegisterEvent("spell_transfer_failed", narration, teacher, learner)
                 SkyrimNetApi.DirectNarration(narration, teacher, learner)
                 _WaitForNarrationComplete()
+                Debug.Notification("[SeverActions] Spell failed: " + spellName)
                 return
             else
                 ; PARTIAL SUCCESS: suffer consequence but continue learning
@@ -783,6 +784,11 @@ Function TransferSpell_Execute(Actor teacher, Actor learner, Spell akSpell)
 
     ; Success (full or partial)! Transfer the spell
     learner.AddSpell(akSpell, false)
+    if isPartialSuccess
+        Debug.Notification("[SeverActions] Spell learned (partial): " + spellName)
+    else
+        Debug.Notification("[SeverActions] Spell learned: " + spellName)
+    endif
 
     ; Apply exhaustion (normal amount for both full and partial)
     _ApplyExhaustion(learner, akSpell)
