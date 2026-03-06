@@ -417,6 +417,27 @@ Function GiveItem_Execute(Actor akActor, Actor akTarget, String itemName, Int ai
 EndFunction
 
 ; =============================================================================
+; ACTION: GiveItemTrue - Give item to a named target (string-based lookup)
+; Same as GiveItem but target is resolved by name via FindActorByName
+; =============================================================================
+
+Function GiveItemTrue_Execute(Actor akActor, String asRecipient, String itemName, Int aiCount = 1)
+    if !akActor || asRecipient == "" || itemName == ""
+        return
+    endif
+
+    Actor akTarget = SeverActionsNative.FindActorByName(asRecipient)
+    if !akTarget
+        Debug.Trace("[SeverActions_Loot] GiveItemTrue: Could not find actor named '" + asRecipient + "'")
+        SkyrimNetApi.RegisterEvent("item_give_failed", akActor.GetDisplayName() + " tried to give " + itemName + " to " + asRecipient + " but could not find them", akActor, None)
+        return
+    endif
+
+    Debug.Trace("[SeverActions_Loot] GiveItemTrue: " + akActor.GetDisplayName() + " giving " + aiCount + "x " + itemName + " to " + akTarget.GetDisplayName() + " (resolved from '" + asRecipient + "')")
+    GiveItem_Execute(akActor, akTarget, itemName, aiCount)
+EndFunction
+
+; =============================================================================
 ; ACTION: TakeItemFromPlayer - NPC takes an item from the player's inventory
 ; =============================================================================
 
@@ -464,13 +485,16 @@ Function TakeItemFromPlayer_Execute(Actor akActor, String itemName, Int aiCount 
 
         ResetToDefaultIdle(akActor)
 
-        ; Register event
+        ; Notify player and register event
+        String npcName = akActor.GetDisplayName()
         if transferred > 1
-            SkyrimNetApi.RegisterEvent("item_taken_from_player", akActor.GetDisplayName() + " took " + transferred + " " + actualName + " from the player", akActor, playerRef)
+            Debug.Notification(npcName + " took " + actualName + " (" + transferred + ")")
+            SkyrimNetApi.RegisterEvent("item_taken_from_player", npcName + " took " + transferred + " " + actualName + " from the player", akActor, playerRef)
         elseif transferred == 1
-            SkyrimNetApi.RegisterEvent("item_taken_from_player", akActor.GetDisplayName() + " took " + actualName + " from the player", akActor, playerRef)
+            Debug.Notification(npcName + " took " + actualName)
+            SkyrimNetApi.RegisterEvent("item_taken_from_player", npcName + " took " + actualName + " from the player", akActor, playerRef)
         else
-            SkyrimNetApi.RegisterEvent("take_item_failed", akActor.GetDisplayName() + " couldn't take " + itemName + " from the player", akActor, playerRef)
+            SkyrimNetApi.RegisterEvent("take_item_failed", npcName + " couldn't take " + itemName + " from the player", akActor, playerRef)
         endif
     else
         SkyrimNetApi.RegisterEvent("take_item_failed", akActor.GetDisplayName() + " couldn't reach the player to take " + itemName, akActor, playerRef)

@@ -28,6 +28,11 @@ bool Property AllowConjuredGold = true Auto
 bool Property DialogueAnimEnabled = true Auto Hidden
 int Property SilenceChance = 50 Auto Hidden
 
+; Speaker Tag Toggles (stored here, synced to StorageUtil for prompt access)
+bool Property TagCompanionEnabled = true Auto Hidden
+bool Property TagEngagedEnabled = true Auto Hidden
+bool Property TagInSceneEnabled = true Auto Hidden
+
 ; Hotkey Settings (stored here, applied to HotkeyScript)
 int Property FollowToggleKey = -1 Auto Hidden
 int Property DismissKey = -1 Auto Hidden
@@ -96,6 +101,11 @@ int OID_PersuasionTimeLimit
 int OID_DialogueAnimEnabled
 int OID_SilenceChance
 int OID_BookReadMode
+
+; General page - Speaker Tags
+int OID_TagCompanion
+int OID_TagEngaged
+int OID_TagInScene
 
 ; General page - Spell Teaching
 int OID_SpellFailEnabled
@@ -318,6 +328,12 @@ Function DrawGeneralPage()
         endif
         OID_BookReadMode = AddMenuOption("Book Reading Style", BookReadModeOptions[LootScript.BookReadMode])
     endif
+
+    AddEmptyOption()
+    AddHeaderOption("Speaker Tags")
+    OID_TagCompanion = AddToggleOption("[COMPANION] Tag", TagCompanionEnabled)
+    OID_TagEngaged = AddToggleOption("[ENGAGED] Tag", TagEngagedEnabled)
+    OID_TagInScene = AddToggleOption("[IN SCENE] Tag", TagInSceneEnabled)
 
     AddEmptyOption()
     AddHeaderOption("Spell Teaching")
@@ -739,10 +755,26 @@ Event OnOptionSelect(int option)
         SetToggleOptionValue(OID_DialogueAnimEnabled, DialogueAnimEnabled)
         SeverActionsNative.SetDialogueAnimEnabled(DialogueAnimEnabled)
 
+    elseif option == OID_TagCompanion
+        TagCompanionEnabled = !TagCompanionEnabled
+        SetToggleOptionValue(OID_TagCompanion, TagCompanionEnabled)
+        StorageUtil.SetIntValue(None, "SeverActions_TagCompanion", TagCompanionEnabled as Int)
+
+    elseif option == OID_TagEngaged
+        TagEngagedEnabled = !TagEngagedEnabled
+        SetToggleOptionValue(OID_TagEngaged, TagEngagedEnabled)
+        StorageUtil.SetIntValue(None, "SeverActions_TagEngaged", TagEngagedEnabled as Int)
+
+    elseif option == OID_TagInScene
+        TagInSceneEnabled = !TagInSceneEnabled
+        SetToggleOptionValue(OID_TagInScene, TagInSceneEnabled)
+        StorageUtil.SetIntValue(None, "SeverActions_TagInScene", TagInSceneEnabled as Int)
+
     elseif option == OID_SpellFailEnabled
         if SpellTeachScript
             SpellTeachScript.EnableFailureSystem = !SpellTeachScript.EnableFailureSystem
             SetToggleOptionValue(OID_SpellFailEnabled, SpellTeachScript.EnableFailureSystem)
+            StorageUtil.SetIntValue(None, "SeverActions_SpellFailEnabled", SpellTeachScript.EnableFailureSystem as Int)
         endif
 
     elseif option == OID_AllowConjuredGold
@@ -1317,6 +1349,7 @@ Event OnOptionSliderAccept(int option, float value)
     elseif option == OID_SpellFailDifficulty
         if SpellTeachScript
             SpellTeachScript.FailureDifficultyMult = value
+            StorageUtil.SetFloatValue(None, "SeverActions_SpellFailDifficulty", value)
             SetSliderOptionValue(OID_SpellFailDifficulty, value, "{1}x")
         endif
 
@@ -1406,6 +1439,13 @@ Event OnOptionHighlight(int option)
         SetInfoText("Enable the spell failure system. When enabled, learning spells above Novice tier has a chance to fail with school-specific consequences (explosions, hostile summons, etc).")
     elseif option == OID_SpellFailDifficulty
         SetInfoText("Multiplier for failure chance. 0.5 = half as likely to fail, 1.0 = normal, 2.0 = twice as likely. Set to 0 to disable failures without turning off the system.")
+
+    elseif option == OID_TagCompanion
+        SetInfoText("Show the [COMPANION] tag in the speaker selector prompt. When enabled, the AI sees which NPCs are your followers and weighs them more heavily for conversation. Disable to make companions less chatty.")
+    elseif option == OID_TagEngaged
+        SetInfoText("Show the [ENGAGED] tag in the speaker selector prompt. Engaged NPCs have a lower threshold to speak up. Disable to remove the engagement bias from speaker selection.")
+    elseif option == OID_TagInScene
+        SetInfoText("Show the [IN SCENE] tag in the speaker selector prompt. NPCs in intimate scenes are strongly deprioritized from speaking. Disable to remove this tag from the AI's consideration.")
 
     elseif option == OID_AllowConjuredGold
         SetInfoText("Allow NPCs to give gold they don't actually have. Useful for rewards and quest payments. Disable for hardcore economy.")
@@ -1588,13 +1628,28 @@ Event OnOptionDefault(int option)
     elseif option == OID_SpellFailEnabled
         if SpellTeachScript
             SpellTeachScript.EnableFailureSystem = true
+            StorageUtil.SetIntValue(None, "SeverActions_SpellFailEnabled", 1)
             SetToggleOptionValue(OID_SpellFailEnabled, true)
         endif
     elseif option == OID_SpellFailDifficulty
         if SpellTeachScript
             SpellTeachScript.FailureDifficultyMult = 1.0
+            StorageUtil.SetFloatValue(None, "SeverActions_SpellFailDifficulty", 1.0)
             SetSliderOptionValue(OID_SpellFailDifficulty, 1.0, "{1}x")
         endif
+
+    elseif option == OID_TagCompanion
+        TagCompanionEnabled = true
+        StorageUtil.SetIntValue(None, "SeverActions_TagCompanion", 1)
+        SetToggleOptionValue(OID_TagCompanion, true)
+    elseif option == OID_TagEngaged
+        TagEngagedEnabled = true
+        StorageUtil.SetIntValue(None, "SeverActions_TagEngaged", 1)
+        SetToggleOptionValue(OID_TagEngaged, true)
+    elseif option == OID_TagInScene
+        TagInSceneEnabled = true
+        StorageUtil.SetIntValue(None, "SeverActions_TagInScene", 1)
+        SetToggleOptionValue(OID_TagInScene, true)
 
     elseif option == OID_AllowConjuredGold
         AllowConjuredGold = true
@@ -1869,6 +1924,26 @@ Function SyncAllSettings()
     ; Sync prompt-accessible settings via StorageUtil
     StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", SilenceChance)
     Debug.Trace("[SeverActions_MCM] Silence Chance: " + SilenceChance + "%")
+
+    ; Sync spell teaching settings
+    if !SpellTeachScript
+        Quest myQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
+        if myQuest
+            SpellTeachScript = myQuest as SeverActions_SpellTeach
+        endif
+    endif
+    if SpellTeachScript
+        StorageUtil.SetIntValue(None, "SeverActions_SpellFailEnabled", SpellTeachScript.EnableFailureSystem as Int)
+        StorageUtil.SetFloatValue(None, "SeverActions_SpellFailDifficulty", SpellTeachScript.FailureDifficultyMult)
+        Debug.Trace("[SeverActions_MCM] Spell Fail Enabled: " + SpellTeachScript.EnableFailureSystem)
+        Debug.Trace("[SeverActions_MCM] Spell Fail Difficulty: " + SpellTeachScript.FailureDifficultyMult + "x")
+    endif
+
+    ; Sync speaker tag settings
+    StorageUtil.SetIntValue(None, "SeverActions_TagCompanion", TagCompanionEnabled as Int)
+    StorageUtil.SetIntValue(None, "SeverActions_TagEngaged", TagEngagedEnabled as Int)
+    StorageUtil.SetIntValue(None, "SeverActions_TagInScene", TagInSceneEnabled as Int)
+    Debug.Trace("[SeverActions_MCM] Speaker Tags - Companion: " + TagCompanionEnabled + ", Engaged: " + TagEngagedEnabled + ", InScene: " + TagInSceneEnabled)
 
     Debug.Trace("[SeverActions_MCM] All settings synced and menu rebuilt")
 EndFunction

@@ -495,6 +495,14 @@ Function SyncPluginConfig()
     Int silenceChanceVal = SeverActionsNative.PluginConfig_GetInt("dialogue.silence_chance", 50)
     StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", silenceChanceVal)
 
+    ; Speaker tag settings — control which tags appear in the speaker selector prompt
+    Bool tagCompanion = SeverActionsNative.PluginConfig_GetBool("dialogue.tag_companion", true)
+    Bool tagEngaged = SeverActionsNative.PluginConfig_GetBool("dialogue.tag_engaged", true)
+    Bool tagInScene = SeverActionsNative.PluginConfig_GetBool("dialogue.tag_in_scene", true)
+    StorageUtil.SetIntValue(None, "SeverActions_TagCompanion", tagCompanion as Int)
+    StorageUtil.SetIntValue(None, "SeverActions_TagEngaged", tagEngaged as Int)
+    StorageUtil.SetIntValue(None, "SeverActions_TagInScene", tagInScene as Int)
+
     ; Follower settings (WebUI overrides MCM for these)
     If FollowerManagerSystem
         FollowerManagerSystem.MaxFollowers = SeverActionsNative.PluginConfig_GetInt("followers.max_companions", 10)
@@ -521,6 +529,18 @@ Function SyncPluginConfig()
         If mcm
             mcm.DialogueAnimEnabled = SeverActionsNative.PluginConfig_GetBool("general.dialogue_animations", true)
             mcm.SilenceChance = silenceChanceVal
+            mcm.TagCompanionEnabled = tagCompanion
+            mcm.TagEngagedEnabled = tagEngaged
+            mcm.TagInSceneEnabled = tagInScene
+        EndIf
+
+        ; Spell teaching settings
+        SeverActions_SpellTeach spellTeach = myQuest as SeverActions_SpellTeach
+        If spellTeach
+            spellTeach.EnableFailureSystem = SeverActionsNative.PluginConfig_GetBool("spellteach.failure_enabled", true)
+            spellTeach.FailureDifficultyMult = SeverActionsNative.PluginConfig_GetFloat("spellteach.failure_difficulty", 1.0)
+            StorageUtil.SetIntValue(None, "SeverActions_SpellFailEnabled", spellTeach.EnableFailureSystem as Int)
+            StorageUtil.SetFloatValue(None, "SeverActions_SpellFailDifficulty", spellTeach.FailureDifficultyMult)
         EndIf
 
         ; Book reading mode — "verbatim" (0) or "summarize" (1)

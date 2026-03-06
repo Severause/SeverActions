@@ -1,5 +1,8 @@
 [ system ]
 {% set zerochance = papyrus_util("GetIntValue", 0, "SeverActions_ZeroChance", 50) %}
+{% set tagCompanion = papyrus_util("GetIntValue", 0, "SeverActions_TagCompanion", 1) %}
+{% set tagEngaged = papyrus_util("GetIntValue", 0, "SeverActions_TagEngaged", 1) %}
+{% set tagInScene = papyrus_util("GetIntValue", 0, "SeverActions_TagInScene", 1) %}
 ## Task
 Select which NPC should speak next, if anyone. Output only: {% if random < zerochance %}`0` (silence) or {% endif %}`[speaker]>[target]`
 
@@ -14,13 +17,13 @@ Evaluate candidates using these factors (highest priority first):
 1. **Direct involvement**: Was this NPC explicitly addressed, referenced by name, or directly involved in what just happened?
 2. **Unresolved exchange**: Someone was asked a direct question or given a request that hasn't been answered yet. This is the ONLY momentum that demands continuation — not vague topical interest.
 3. **Authority/duty**: Does their role (guard, merchant, innkeeper, jarl) demand a response in this situation?
-4. **Companion awareness**: Is this NPC a follower or companion? Companions are traveling with the player — they react to combat, close calls, discoveries, new locations, strange situations, and what's being discussed. They have opinions, personalities, and things to say. A companion speaking up feels natural; a party of silent followers does not.
-5. **Personal stakes**: Are they emotionally affected (friend, family, ally, rival involved)?
+{% if tagCompanion %}4. **Companion awareness**: Is this NPC a follower or companion? Companions are traveling with the player — they react to combat, close calls, discoveries, new locations, strange situations, and what's being discussed. They have opinions, personalities, and things to say. A companion speaking up feels natural; a party of silent followers does not.
+{% endif %}5. **Personal stakes**: Are they emotionally affected (friend, family, ally, rival involved)?
 6. **Witnessed event**: Did they clearly witness something noteworthy that they'd realistically react to?
 7. **Interjection profile**: Does their Interjection guidance indicate they'd speak here?
 
 ## When to Choose Silence (0)
-Not every line needs a reply — conversations should end naturally. But don't default to silence when a companion would realistically have something to say. Traveling companions talk; err toward letting them speak when there's even a mild reason to.
+Not every line needs a reply — conversations should end naturally.{% if tagCompanion %} But don't default to silence when a companion would realistically have something to say. Traveling companions talk; err toward letting them speak when there's even a mild reason to.{% endif %}
 
 Choose silence when:
 {% if lastDialogueTarget.name %}- **Direct question to the player** — {{ lastSpeaker.name }} just spoke to {% if lastDialogueTarget.UUID == player.UUID %}the player{% else %}{{ lastDialogueTarget.name }}{% endif %}. {% if lastDialogueTarget.UUID == player.UUID %}If it was a **direct question or request**, choose silence — the player should answer. However, if it was just a statement, observation, or comment, another companion may react (speaking to each other or to {{ lastSpeaker.name }}, NOT to the player).{% endif %}
@@ -35,11 +38,11 @@ Choose silence when:
 Do NOT choose silence when:
 - Someone was asked a direct question that hasn't been answered
 - Something dramatic, dangerous, funny, or unexpected just happened
-- A companion witnessed something involving the player — even a short reaction counts
+{% if tagCompanion %}- A companion witnessed something involving the player — even a short reaction counts
 - The player just made a decision, statement, or action that a companion would have thoughts on
 - The party just arrived somewhere new or interesting
 - A companion's personality or background makes them likely to comment on the current situation
-- Two companions are mid-conversation — let it reach a natural conclusion before going silent
+{% endif %}- Two NPCs are mid-conversation — let it reach a natural conclusion before going silent
 
 **Restrictions:**
 - Never select a non-companion NPC just because they're listed — proximity alone is not a reason for bystanders to speak
@@ -73,16 +76,18 @@ Do NOT choose silence when:
    - {{ render_character_profile("short_inline", candidate.UUID) }}
    - **Interjection**: {{ render_character_profile("interject_inline", candidate.UUID) }}
 {% else %}
-{{ candidate.id }}. **{{ cinfo.name }}** ({{ cinfo.gender }} {{ cinfo.race }}, {{ units_to_meters(candidate.distance) }}m){% if is_follower(candidate.UUID) %} **[COMPANION]**{% endif %}{% if is_in_faction(candidate.UUID, "SeverActions_ActivelyFollowing") %} **[ENGAGED]**{% endif %}{% if is_in_faction(candidate.UUID, "SexLabAnimatingFaction") or is_in_faction(candidate.UUID, "OStimExcitementFaction") %} **[IN SCENE]**{% endif %}
+{{ candidate.id }}. **{{ cinfo.name }}** ({{ cinfo.gender }} {{ cinfo.race }}, {{ units_to_meters(candidate.distance) }}m){% if tagCompanion and is_follower(candidate.UUID) %} **[COMPANION]**{% endif %}{% if tagEngaged and is_in_faction(candidate.UUID, "SeverActions_ActivelyFollowing") %} **[ENGAGED]**{% endif %}{% if tagInScene and (is_in_faction(candidate.UUID, "SexLabAnimatingFaction") or is_in_faction(candidate.UUID, "OStimExcitementFaction")) %} **[IN SCENE]**{% endif %}
    - {{ render_character_profile("short_inline", candidate.UUID) }}
    - **Interjection**: {{ render_character_profile("interject_inline", candidate.UUID) }}
 {% endif %}
 {% endfor %}
 
+{% if tagCompanion or tagEngaged or tagInScene %}
 **Tag meanings:**
-- `[COMPANION]` — Player's active follower. More invested in the player's affairs and naturally reacts to things around the player.
-- `[ENGAGED]` — This NPC has heightened conversational engagement and a lower threshold to speak. They are more likely to initiate or join conversations. If multiple ENGAGED NPCs are present, don't let them dominate — mix in other speakers or natural pauses so the player and non-ENGAGED NPCs have room to participate.
-- `[IN SCENE]` — This NPC is currently in an intimate/sexual scene. **Strongly deprioritize** — they are physically occupied and should almost never be selected as speaker. Only select them if directly addressed by name or asked a direct question. Their companion/engaged status is overridden while in a scene.
+{% if tagCompanion %}- `[COMPANION]` — Player's active follower. More invested in the player's affairs and naturally reacts to things around the player.
+{% endif %}{% if tagEngaged %}- `[ENGAGED]` — This NPC has heightened conversational engagement and a lower threshold to speak. They are more likely to initiate or join conversations. If multiple ENGAGED NPCs are present, don't let them dominate — mix in other speakers or natural pauses so the player and non-ENGAGED NPCs have room to participate.
+{% endif %}{% if tagInScene %}- `[IN SCENE]` — This NPC is currently in an intimate/sexual scene. **Strongly deprioritize** — they are physically occupied and should almost never be selected as speaker. Only select them if directly addressed by name or asked a direct question. Their companion/engaged status is overridden while in a scene.
+{% endif %}{% endif %}
 
 **Targeting rule:** When selecting a target, consider who was just speaking to whom.{% if existsIn(lastSpeaker, "name") and existsIn(lastDialogueTarget, "name") %} {{ lastSpeaker.name }} was just speaking to {{ lastDialogueTarget.name }} — if {{ lastDialogueTarget.name }} is a candidate, they should typically respond back to {{ lastSpeaker.name }}, not redirect to the player.{% endif %} Only use `player` as target when the NPC is genuinely addressing the player. If two NPCs are mid-conversation, keep the target between them.
 

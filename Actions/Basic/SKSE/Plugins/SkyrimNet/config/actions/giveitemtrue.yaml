@@ -1,19 +1,24 @@
-customCategory: economy
-name: GiveGoldTrue
-description: "Give gold to another person by name."
+customCategory: basic
+name: GiveItemTrue
+description: "Give a physical item from inventory to another person by name."
 questEditorId: SeverActions
-scriptName: SeverActions_Currency
-executionFunctionName: GiveGoldTrue_Execute
+scriptName: SeverActions_Loot
+executionFunctionName: GiveItemTrue_Execute
 parameterMapping:
   - type: speaker
-    name: akGiver
+    name: akActor
     description: Speaker Actor parameter (triggering entity)
   - type: dynamic
     name: asRecipient
-    description: Name of the person receiving gold (e.g. "Lydia", "Hulda")
+    description: Name of the person receiving the item (e.g. "Lydia", "Hulda")
   - type: dynamic
-    name: aiAmount
-    description: Amount of gold to give
+    name: itemName
+    description: The name of the item to give (e.g. "Iron Sword", "Health Potion")
+  - type: dynamic
+    name: aiCount
+    description: Number of items to give (default 1)
+    optional: true
+    default: 1
 enabled: false
 defaultPriority: 6
 eligibilityRules:

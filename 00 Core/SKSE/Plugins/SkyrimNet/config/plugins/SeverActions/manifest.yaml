@@ -129,6 +129,23 @@ schema:
       min: 0.1
       max: 5.0
 
+    # ── Spell Teaching ──
+    - name: "Failure System"
+      path: "spellteach.failure_enabled"
+      type: "bool"
+      description: "When enabled, learning spells above Novice tier can fail with school-specific consequences (explosions, hostile summons, stamina drain, etc.)"
+      category: "Spell Teaching"
+      defaultValue: true
+
+    - name: "Failure Difficulty"
+      path: "spellteach.failure_difficulty"
+      type: "float"
+      description: "Multiplier for failure chance. 0.5 = half as likely, 1.0 = normal, 2.0 = twice as likely. Set to 0 to disable failures without turning off the system."
+      category: "Spell Teaching"
+      defaultValue: 1.0
+      min: 0.0
+      max: 3.0
+
     # ── Dialogue ──
     - name: "Silence Chance"
       path: "dialogue.silence_chance"
@@ -138,6 +155,27 @@ schema:
       defaultValue: 50
       min: 0
       max: 100
+
+    - name: "Companion Tag"
+      path: "dialogue.tag_companion"
+      type: "bool"
+      description: "Show the [COMPANION] tag in speaker selection. When enabled, the AI knows which NPCs are your followers and weighs them more heavily for conversation. Disable to make companions less chatty."
+      category: "Dialogue"
+      defaultValue: true
+
+    - name: "Engaged Tag"
+      path: "dialogue.tag_engaged"
+      type: "bool"
+      description: "Show the [ENGAGED] tag in speaker selection. Engaged NPCs have a lower threshold to speak up. Disable to remove the engagement bias."
+      category: "Dialogue"
+      defaultValue: true
+
+    - name: "In Scene Tag"
+      path: "dialogue.tag_in_scene"
+      type: "bool"
+      description: "Show the [IN SCENE] tag in speaker selection. NPCs in intimate scenes are strongly deprioritized from speaking. Disable to remove this consideration."
+      category: "Dialogue"
+      defaultValue: true
 
     # ── General ──
     - name: "Dialogue Animations"
