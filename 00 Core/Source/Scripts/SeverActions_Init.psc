@@ -503,6 +503,10 @@ Function SyncPluginConfig()
     StorageUtil.SetIntValue(None, "SeverActions_TagEngaged", tagEngaged as Int)
     StorageUtil.SetIntValue(None, "SeverActions_TagInScene", tagInScene as Int)
 
+    ; Player inventory prompt — items shown per category
+    Int invLimit = SeverActionsNative.PluginConfig_GetInt("inventory.item_limit", 7)
+    StorageUtil.SetIntValue(None, "SeverActions_InventoryLimit", invLimit)
+
     ; Follower settings (WebUI overrides MCM for these)
     If FollowerManagerSystem
         FollowerManagerSystem.MaxFollowers = SeverActionsNative.PluginConfig_GetInt("followers.max_companions", 10)

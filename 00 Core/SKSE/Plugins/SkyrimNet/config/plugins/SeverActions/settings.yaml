@@ -32,6 +32,9 @@ dialogue.tag_companion: true
 dialogue.tag_engaged: true
 dialogue.tag_in_scene: true
 
+# Inventory
+inventory.item_limit: 7
+
 # General
 general.dialogue_animations: true
 general.book_reading_mode: "verbatim"

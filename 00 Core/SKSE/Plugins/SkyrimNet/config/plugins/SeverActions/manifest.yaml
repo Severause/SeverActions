@@ -177,6 +177,16 @@ schema:
       category: "Dialogue"
       defaultValue: true
 
+    # ── Inventory ──
+    - name: "Items Per Category"
+      path: "inventory.item_limit"
+      type: "int"
+      description: "Maximum number of items shown per category in the player inventory prompt. Higher values give NPCs more visibility into your inventory but use more prompt tokens."
+      category: "Inventory"
+      defaultValue: 7
+      min: 3
+      max: 20
+
     # ── General ──
     - name: "Dialogue Animations"
       path: "general.dialogue_animations"
