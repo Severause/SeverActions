@@ -1,0 +1,35 @@
+customCategory: companion
+name: FollowerLeaves
+description: "The companion permanently leaves {{ player.name }}'s service on their own. EXTREMELY RARE — only after severe, sustained mistreatment with very low rapport/trust."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: FollowerLeaves
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The companion choosing to leave
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} has decided to leave {{ player.name }}'s service"

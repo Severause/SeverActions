@@ -1,0 +1,26 @@
+customCategory: inventory
+name: StopReading
+description: "Stop reading a book or note aloud and put it away."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: StopReading_Execute
+parameterMapping:
+  - type: dynamic
+    name: akActor
+    description: The person stopping their reading
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

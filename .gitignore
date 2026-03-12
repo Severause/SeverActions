@@ -1,0 +1,19 @@
+# ── Source / Dev files (keep private in SeverActions-Dev) ──
+Native/
+PrismaUI-frontend/
+.claude/
+CLAUDE.md
+build_fomod.ps1
+build-ui.ps1
+
+# Build artifacts
+*.exp
+*.lib
+
+# SkyrimNet DLL (testing only, not part of our mod)
+SkyrimNet.dll
+
+# IDE/editor
+.vs/
+.vscode/
+*.user

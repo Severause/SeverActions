@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SeverActions Configuration</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app" class="menu-container">
+        <!-- Header -->
+        <header class="menu-header">
+            <div class="header-left">
+                <h1>SeverActions</h1>
+                <span class="version" id="versionDisplay">v1.1</span>
+            </div>
+            <button class="close-btn" onclick="closeMenu()" title="Close (ESC)">&#x2715;</button>
+        </header>
+
+        <!-- Tab navigation -->
+        <nav class="tab-bar">
+            <button class="tab active" data-page="general">General</button>
+            <button class="tab" data-page="hotkeys">Hotkeys</button>
+            <button class="tab" data-page="currency">Currency</button>
+            <button class="tab" data-page="travel">Travel</button>
+            <button class="tab" data-page="bounty">Bounty</button>
+            <button class="tab" data-page="survival">Survival</button>
+            <button class="tab" data-page="followers">Followers</button>
+            <button class="tab" data-page="outfits">Outfits</button>
+        </nav>
+
+        <!-- Page containers -->
+        <main class="page-content">
+            <div id="page-general" class="page active">
+                <div class="loading">Loading...</div>
+            </div>
+            <div id="page-hotkeys" class="page">
+                <div class="loading">Loading...</div>
+            </div>
+            <div id="page-currency" class="page">
+                <div class="loading">Loading...</div>
+            </div>
+            <div id="page-travel" class="page">
+                <div class="loading">Loading...</div>
+            </div>
+            <div id="page-bounty" class="page">
+                <div class="loading">Loading...</div>
+            </div>
+            <div id="page-survival" class="page">
+                <div class="loading">Loading...</div>
+            </div>
+            <div id="page-followers" class="page">
+                <div class="loading">Loading...</div>
+            </div>
+            <div id="page-outfits" class="page">
+                <div class="loading">Loading...</div>
+            </div>
+        </main>
+
+        <!-- Notification toast -->
+        <div id="notification" class="notification hidden"></div>
+
+        <!-- Confirmation dialog overlay -->
+        <div id="confirmDialog" class="dialog-overlay hidden">
+            <div class="dialog-box">
+                <p id="confirmMessage"></p>
+                <div class="dialog-buttons">
+                    <button class="btn btn-danger" id="confirmYes">Yes</button>
+                    <button class="btn btn-secondary" id="confirmNo">No</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

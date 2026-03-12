@@ -1,0 +1,4 @@
+customCategory: inventory
+name: Inventory
+description: "Item management — give, take, pick up, loot, use items, or read books and notes."
+enabled: true

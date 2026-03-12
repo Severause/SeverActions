@@ -1,0 +1,36 @@
+customCategory: inventory
+name: PickUpItem
+description: "Pick up a loose item from the ground or a surface (not from a container or body)."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: PickUpItem_Execute
+parameterMapping:
+  - type: dynamic
+    name: akActor
+    description: The person picking up the item
+  - type: dynamic
+    name: itemType
+    description: The name or type of item to pick up (e.g. "Iron Sword", "potion", "gold")
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

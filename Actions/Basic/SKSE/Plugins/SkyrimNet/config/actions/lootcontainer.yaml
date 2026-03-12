@@ -1,0 +1,41 @@
+customCategory: inventory
+name: LootContainer
+description: "Loot items from a nearby container (chest, barrel, sack, end table)."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: LootContainer_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: containerName
+    description: The name of the container to loot (e.g. "Chest", "Barrel", "Sack")
+  - type: dynamic
+    name: itemsToTake
+    description: "'all', 'valuables', 'gold', or comma-separated item names"
+    optional: true
+    default: "all"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

@@ -1,0 +1,4 @@
+customCategory: furniture
+name: Furniture
+description: "Interact with furniture — sit, sleep, or stand up."
+enabled: true

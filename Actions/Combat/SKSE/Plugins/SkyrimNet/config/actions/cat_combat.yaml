@@ -1,0 +1,4 @@
+customCategory: combat
+name: Combat
+description: "Combat actions — attack, yield, or call a ceasefire."
+enabled: true

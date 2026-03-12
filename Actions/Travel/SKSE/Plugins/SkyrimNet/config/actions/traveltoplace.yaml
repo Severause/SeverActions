@@ -1,0 +1,48 @@
+customCategory: travel
+name: TravelToPlace
+description: "Travel to a named location when {{ player.name }} explicitly directs it. Accepts named locations, semantic directions (outside, upstairs), or nearby features (bar, forge, bed)."
+questEditorId: SeverActions
+scriptName: SeverActions_Travel
+executionFunctionName: TravelToPlace
+parameterMapping:
+  - type: speaker
+    name: akNPC
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: placeName
+    description: "Where to go: named location, direction (outside, upstairs), or feature (bar, forge, bed)"
+  - type: static
+    value: 24
+    name: WaitHours
+    description: Static float parameter
+  - type: static
+    value: true
+    name: stopFollowing
+    description: Static bool parameter
+  - type: static
+    value: 0
+    name: Speed
+    description: Static int parameter
+enabled: false
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
