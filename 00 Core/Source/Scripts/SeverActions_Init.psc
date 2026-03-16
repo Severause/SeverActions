@@ -1,0 +1,650 @@
+Scriptname SeverActions_Init extends ReferenceAlias
+{Initializer script for SeverActions - attach to Player alias on your quest}
+
+; =============================================================================
+; PROPERTIES - Set these in CK
+; =============================================================================
+
+SeverActions_FertilityMode_Bridge Property FertilityBridge Auto
+{Optional - Link to the FM bridge script if using Fertility Mode}
+
+SeverActions_Travel Property TravelSystem Auto
+{Optional - Link to the Travel system quest script}
+
+SeverActions_Hotkeys Property HotkeySystem Auto
+{Optional - Link to the Hotkeys system for keyboard shortcuts}
+
+SeverActions_Furniture Property FurnitureSystem Auto
+{Optional - Link to the Furniture system for auto-cleanup}
+
+SeverActions_Follow Property FollowSystem Auto
+{Optional - Link to the Follow system for sandbox auto-cleanup}
+
+SeverActions_WheelMenu Property WheelMenuSystem Auto
+{Optional - Link to the Wheel Menu system for UIExtensions integration}
+
+SeverActions_FollowerManager Property FollowerManagerSystem Auto
+{Optional - Link to the Follower Manager system for companion tracking}
+
+SeverActions_Loot Property LootSystem Auto
+{Optional - Link to the Loot system for book reading and item actions}
+
+SeverActions_PrismaUI Property PrismaUISystem Auto
+{Optional - Link to the PrismaUI config menu system}
+
+; =============================================================================
+; INITIALIZATION
+; =============================================================================
+
+Event OnInit()
+    Debug.Trace("[SeverActions] OnInit - First time initialization")
+    ; Small delay to ensure all quest scripts have run their OnInit first
+    Utility.Wait(0.5)
+    Initialize(true)
+EndEvent
+
+Event OnPlayerLoadGame()
+    Debug.Trace("[SeverActions] OnPlayerLoadGame - Save game loaded")
+    Initialize(false)
+EndEvent
+
+Function Initialize(Bool isFirstInit)
+    Debug.Trace("[SeverActions] Initializing SeverActions...")
+
+    RegisterDecorators()
+    InitializeBridge()
+    InitializeTravelSystem(isFirstInit)
+    InitializeHotkeySystem()
+    InitializeFurnitureSystem()
+    InitializeFollowSystem()
+    InitializeWheelMenuSystem()
+    InitializeFollowerManagerSystem()
+    InitializeDebtSystem()
+    InitializePrismaUI()
+    SyncMCMSettings()
+    SyncPluginConfig()
+    InitializeSurvivalSystem()
+
+    ; Migrate existing outfit data from StorageUtil to native OutfitDataStore
+    ; Safe to call every load — idempotent, re-pushes current state
+    Quest q = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
+    SeverActions_Outfit outfitScript = q as SeverActions_Outfit
+    if outfitScript
+        outfitScript.MigrateOutfitDataToNative()
+        outfitScript.Maintenance()
+    endif
+
+    ; Register for real-time WebUI plugin config changes (SkyrimNet 0.15.5+)
+    ; When user saves plugin config in the browser, SkyrimNet fires this ModEvent
+    ; so we can re-sync without reloading the save.
+    RegisterForModEvent("SkyrimNet_OnPluginConfigSaved", "OnPluginConfigSaved")
+
+    Debug.Trace("[SeverActions] Initialization complete!")
+    Debug.Notification("SeverActions loaded")
+EndFunction
+
+; =============================================================================
+; WEBUI REAL-TIME CONFIG CALLBACK
+; Fired by SkyrimNet when any plugin config is saved via the WebUI.
+; strArg = plugin name (e.g. "SeverActions"), so we only re-sync our own.
+; =============================================================================
+
+Event OnPluginConfigSaved(string eventName, string strArg, float numArg, Form sender)
+    If strArg == "SeverActions"
+        Debug.Trace("[SeverActions] WebUI plugin config changed — re-syncing settings...")
+        SyncPluginConfig()
+        Debug.Notification("SeverActions config updated from WebUI")
+    EndIf
+EndEvent
+
+; =============================================================================
+; HOTKEY SYSTEM INITIALIZATION
+; =============================================================================
+
+Function InitializeHotkeySystem()
+    Debug.Trace("[SeverActions] Initializing Hotkey System...")
+    
+    if HotkeySystem
+        ; Re-register keys on game load
+        HotkeySystem.RegisterKeys()
+        Debug.Trace("[SeverActions] Hotkey System initialized successfully")
+    else
+        ; Try to find it on the owning quest
+        Quest myQuest = GetOwningQuest()
+        if myQuest
+            SeverActions_Hotkeys hotkeys = myQuest as SeverActions_Hotkeys
+            if hotkeys
+                Debug.Trace("[SeverActions] Found Hotkey System via quest cast")
+                hotkeys.RegisterKeys()
+            else
+                Debug.Trace("[SeverActions] Hotkey System not found (optional)")
+            endif
+        endif
+    endif
+EndFunction
+
+; =============================================================================
+; FURNITURE SYSTEM INITIALIZATION
+; =============================================================================
+
+Function InitializeFurnitureSystem()
+    Debug.Trace("[SeverActions] Initializing Furniture System...")
+
+    SeverActions_Furniture furnSys = GetFurnitureSystem()
+
+    If furnSys
+        ; Re-register for mod events on game load
+        furnSys.Maintenance()
+        Debug.Trace("[SeverActions] Furniture System initialized successfully")
+    Else
+        Debug.Trace("[SeverActions] Furniture System not found (optional)")
+    EndIf
+EndFunction
+
+; Helper to get furniture system reference
+SeverActions_Furniture Function GetFurnitureSystem()
+    If FurnitureSystem
+        Return FurnitureSystem
+    EndIf
+
+    ; Try to find it on the owning quest
+    Quest myQuest = GetOwningQuest()
+    If myQuest
+        SeverActions_Furniture furnSys = myQuest as SeverActions_Furniture
+        If furnSys
+            Debug.Trace("[SeverActions] Found Furniture System via quest cast")
+            Return furnSys
+        EndIf
+    EndIf
+
+    ; Try to get instance via global function
+    Return SeverActions_Furniture.GetInstance()
+EndFunction
+
+; =============================================================================
+; FOLLOW SYSTEM INITIALIZATION
+; =============================================================================
+
+Function InitializeFollowSystem()
+    Debug.Trace("[SeverActions] Initializing Follow System...")
+
+    SeverActions_Follow followSys = GetFollowSystem()
+
+    If followSys
+        ; Re-register for mod events on game load (sandbox cleanup)
+        followSys.Maintenance()
+        Debug.Trace("[SeverActions] Follow System initialized successfully")
+    Else
+        Debug.Trace("[SeverActions] Follow System not found (optional)")
+    EndIf
+EndFunction
+
+; Helper to get follow system reference
+SeverActions_Follow Function GetFollowSystem()
+    If FollowSystem
+        Return FollowSystem
+    EndIf
+
+    ; Try to find it via FormID
+    SeverActions_Follow followSys = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
+    If followSys
+        Debug.Trace("[SeverActions] Found Follow System via GetFormFromFile")
+        Return followSys
+    EndIf
+
+    Return None
+EndFunction
+
+; =============================================================================
+; WHEEL MENU SYSTEM INITIALIZATION
+; =============================================================================
+
+Function InitializeWheelMenuSystem()
+    Debug.Trace("[SeverActions] Initializing Wheel Menu System...")
+
+    SeverActions_WheelMenu wheelMenu = GetWheelMenuSystem()
+
+    If wheelMenu
+        ; Re-register key on game load
+        wheelMenu.RegisterWheelKey()
+        If Game.GetModByName("UIExtensions.esp") != 255
+            Debug.Trace("[SeverActions] Wheel Menu System initialized (UIExtensions found)")
+        Else
+            Debug.Trace("[SeverActions] Wheel Menu System initialized (UIExtensions NOT installed)")
+        EndIf
+    Else
+        Debug.Trace("[SeverActions] Wheel Menu System not found (optional)")
+    EndIf
+EndFunction
+
+; Helper to get wheel menu system reference
+SeverActions_WheelMenu Function GetWheelMenuSystem()
+    If WheelMenuSystem
+        Return WheelMenuSystem
+    EndIf
+
+    ; Try to find it on the owning quest
+    Quest myQuest = GetOwningQuest()
+    If myQuest
+        SeverActions_WheelMenu wheelMenu = myQuest as SeverActions_WheelMenu
+        If wheelMenu
+            Debug.Trace("[SeverActions] Found Wheel Menu System via quest cast")
+            Return wheelMenu
+        EndIf
+    EndIf
+
+    ; Try to get instance via global function
+    Return SeverActions_WheelMenu.GetInstance()
+EndFunction
+
+; =============================================================================
+; FOLLOWER MANAGER INITIALIZATION
+; =============================================================================
+
+Function InitializeFollowerManagerSystem()
+    Debug.Trace("[SeverActions] Initializing Follower Manager...")
+
+    SeverActions_FollowerManager fmSys = GetFollowerManagerSystem()
+
+    If fmSys
+        fmSys.Maintenance()
+        Int count = fmSys.GetFollowerCount()
+        Debug.Trace("[SeverActions] Follower Manager initialized - " + count + " companions tracked")
+    Else
+        Debug.Trace("[SeverActions] Follower Manager not found (optional)")
+    EndIf
+EndFunction
+
+; Helper to get follower manager system reference
+SeverActions_FollowerManager Function GetFollowerManagerSystem()
+    If FollowerManagerSystem
+        Return FollowerManagerSystem
+    EndIf
+
+    ; Try to find it via FormID
+    SeverActions_FollowerManager fmSys = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+    If fmSys
+        Debug.Trace("[SeverActions] Found Follower Manager via GetFormFromFile")
+        Return fmSys
+    EndIf
+
+    Return None
+EndFunction
+
+; =============================================================================
+; DEBT SYSTEM INITIALIZATION
+; =============================================================================
+
+Function InitializeDebtSystem()
+    Debug.Trace("[SeverActions] Initializing Debt System...")
+
+    ; DebtScript is wired via CK property on FollowerManager
+    SeverActions_FollowerManager fmSys = GetFollowerManagerSystem()
+    If fmSys && fmSys.DebtScript
+        fmSys.DebtScript.Maintenance()
+        Int debtCount = fmSys.DebtScript.GetDebtCount()
+        Debug.Trace("[SeverActions] Debt System initialized - " + debtCount + " active debts")
+    Else
+        Debug.Trace("[SeverActions] Debt System not found (optional)")
+    EndIf
+EndFunction
+
+; =============================================================================
+; SURVIVAL SYSTEM INITIALIZATION
+; Runs AFTER SyncPluginConfig so the rates are already set from WebUI.
+; The Enabled toggle comes from the save (MCM property), not WebUI.
+; =============================================================================
+
+Function InitializeSurvivalSystem()
+    Debug.Trace("[SeverActions] Initializing Survival System...")
+
+    Quest myQuest = GetOwningQuest()
+    If !myQuest
+        Return
+    EndIf
+
+    SeverActions_Survival survival = myQuest as SeverActions_Survival
+    If survival
+        survival.Maintenance()
+        Debug.Trace("[SeverActions] Survival System initialized — Enabled: " + survival.Enabled)
+    Else
+        Debug.Trace("[SeverActions] Survival System not found (optional)")
+    EndIf
+EndFunction
+
+; =============================================================================
+; TRAVEL SYSTEM INITIALIZATION
+; =============================================================================
+
+Function InitializeTravelSystem(Bool isFirstInit)
+    Debug.Trace("[SeverActions] Initializing Travel System...")
+
+    SeverActions_Travel travel = GetTravelSystem()
+
+    If travel
+        ; Native LocationResolver auto-initializes on kDataLoaded
+        ; Just verify it's ready and show status
+        If SeverActionsNative.IsLocationResolverReady()
+            Int locCount = SeverActionsNative.GetLocationCount()
+            Debug.Trace("[SeverActions] Travel System ready - " + locCount + " locations indexed natively")
+        Else
+            Debug.Trace("[SeverActions] WARNING: Native LocationResolver not yet initialized")
+        EndIf
+
+        ; Show status for debugging
+        If travel.EnableDebugMessages
+            travel.ShowStatus()
+        EndIf
+
+        Debug.Trace("[SeverActions] Travel System initialized successfully")
+    Else
+        Debug.Trace("[SeverActions] WARNING: Travel System not found!")
+    EndIf
+EndFunction
+
+; Helper to get travel system reference
+SeverActions_Travel Function GetTravelSystem()
+    If TravelSystem
+        Return TravelSystem
+    EndIf
+    
+    ; Try to find it on the owning quest
+    Quest myQuest = GetOwningQuest()
+    If myQuest
+        SeverActions_Travel travel = myQuest as SeverActions_Travel
+        If travel
+            Debug.Trace("[SeverActions] Found Travel System via quest cast")
+            Return travel
+        EndIf
+    EndIf
+    
+    Return None
+EndFunction
+
+; =============================================================================
+; BRIDGE INITIALIZATION
+; =============================================================================
+
+Function InitializeBridge()
+    ; Initialize Fertility Mode bridge if available
+    If Game.GetModByName("Fertility Mode.esm") != 255
+        ; Initialize native FM module first (before Papyrus bridge)
+        If SeverActionsNative.FM_Initialize()
+            Debug.Trace("[SeverActions] Native FM module initialized")
+        Else
+            Debug.Trace("[SeverActions] Native FM module init returned false (may already be initialized)")
+        EndIf
+
+        If FertilityBridge
+            Debug.Trace("[SeverActions] Calling FertilityBridge.Maintenance()...")
+            FertilityBridge.Maintenance()
+        Else
+            ; Try to find it via quest cast if property not set
+            Debug.Trace("[SeverActions] FertilityBridge property not set, trying to find quest...")
+            Quest myQuest = GetOwningQuest()
+            If myQuest
+                SeverActions_FertilityMode_Bridge bridge = myQuest as SeverActions_FertilityMode_Bridge
+                If bridge
+                    Debug.Trace("[SeverActions] Found bridge on quest, initializing...")
+                    bridge.Maintenance()
+                Else
+                    Debug.Trace("[SeverActions] WARNING: Could not cast quest to FertilityBridge")
+                EndIf
+            EndIf
+        EndIf
+    Else
+        Debug.Trace("[SeverActions] Fertility Mode not installed - skipping FM initialization")
+    EndIf
+EndFunction
+
+; =============================================================================
+; DECORATOR REGISTRATION
+; =============================================================================
+
+Function RegisterDecorators()
+    Debug.Trace("[SeverActions] Registering decorators...")
+    
+    Int result
+    
+    ; -------------------------------------------------------------------------
+    ; AROUSAL DECORATORS
+    ; -------------------------------------------------------------------------
+    
+    ; OSLAroused (if using OSLAroused.esp with native SKSE plugin)
+    ; SLO Aroused ships a dummy OSLAroused.esp for compatibility - if SexLabAroused.esm
+    ; is also loaded, it's SLO's dummy, not the real standalone OSL Aroused.
+    If Game.GetModByName("OSLAroused.esp") != 255 && Game.GetModByName("SexLabAroused.esm") == 255
+        result = SkyrimNetApi.RegisterDecorator("get_arousal_state", "SeverActions_Arousal", "GetArousalState")
+        Debug.Trace("[SeverActions] get_arousal_state (OSLAroused): " + (result == 0) as String)
+    EndIf
+    
+    ; SLO Aroused NG / OAroused (if using SexLabAroused.esm)
+    If Game.GetModByName("SexLabAroused.esm") != 255
+        ; Full JSON state
+        result = SkyrimNetApi.RegisterDecorator("get_slo_arousal_state", "SeverActions_SLOArousal", "GetSLOArousalState")
+        Debug.Trace("[SeverActions] get_slo_arousal_state: " + (result == 0) as String)
+        
+        ; Simple arousal value (just the number as string)
+        result = SkyrimNetApi.RegisterDecorator("get_slo_arousal", "SeverActions_SLOArousal", "GetSLOArousal")
+        Debug.Trace("[SeverActions] get_slo_arousal: " + (result == 0) as String)
+        
+        ; Simple arousal description (just the text)
+        result = SkyrimNetApi.RegisterDecorator("get_slo_arousal_desc", "SeverActions_SLOArousal", "GetSLOArousalDesc")
+        Debug.Trace("[SeverActions] get_slo_arousal_desc: " + (result == 0) as String)
+        
+        ; Nakedness check (returns "true" or "false")
+        result = SkyrimNetApi.RegisterDecorator("get_slo_is_naked", "SeverActions_SLOArousal", "GetSLOIsNaked")
+        Debug.Trace("[SeverActions] get_slo_is_naked: " + (result == 0) as String)
+    EndIf
+    
+    ; -------------------------------------------------------------------------
+    ; FERTILITY MODE DECORATORS - Only register if FM is installed
+    ; -------------------------------------------------------------------------
+
+    If Game.GetModByName("Fertility Mode.esm") != 255
+        ; Batch decorator (preferred - 5x faster, single call for all data)
+        result = SkyrimNetApi.RegisterDecorator("fertility_data_batch", "SeverActions_FertilityMode_Bridge", "GetFertilityDataBatch")
+        Debug.Trace("[SeverActions] fertility_data_batch: " + (result == 0) as String)
+
+         ;Individual decorators (for backwards compatibility)
+        result = SkyrimNetApi.RegisterDecorator("fertility_state", "SeverActions_FertilityMode_Bridge", "GetFertilityState")
+        Debug.Trace("[SeverActions] fertility_state: " + (result == 0) as String)
+        result = SkyrimNetApi.RegisterDecorator("fertility_father", "SeverActions_FertilityMode_Bridge", "GetFertilityFather")
+        Debug.Trace("[SeverActions] fertility_father: " + (result == 0) as String)
+        result = SkyrimNetApi.RegisterDecorator("fertility_cycle_day", "SeverActions_FertilityMode_Bridge", "GetCycleDay")
+        Debug.Trace("[SeverActions] fertility_cycle_day: " + (result == 0) as String)
+        result = SkyrimNetApi.RegisterDecorator("fertility_pregnant_days", "SeverActions_FertilityMode_Bridge", "GetPregnantDays")
+        Debug.Trace("[SeverActions] fertility_pregnant_days: " + (result == 0) as String)
+        result = SkyrimNetApi.RegisterDecorator("fertility_has_baby", "SeverActions_FertilityMode_Bridge", "GetHasBaby")
+        Debug.Trace("[SeverActions] fertility_has_baby: " + (result == 0) as String)
+        Debug.Trace("[SeverActions] Fertility Mode decorators registered")
+    Else
+        Debug.Trace("[SeverActions] Fertility Mode not installed - skipping FM decorators")
+    EndIf
+    
+    ; -------------------------------------------------------------------------
+    ; OTHER DECORATORS
+    ; -------------------------------------------------------------------------
+    
+    ; Environmental awareness - uses WorldCache for VR performance
+    ;result = SkyrimNetApi.RegisterDecorator("get_nearby_objects", "SeverActions_WorldCache", "GetNearbyObjects")
+    ;Debug.Trace("[SeverActions] get_nearby_objects: " + (result == 0) as String)
+    
+    ; Travel System decorators - NOT NEEDED!
+    ; The travel system stores state via StorageUtil, which can be read directly
+    ; using the native papyrus_util decorator in prompt templates:
+    ;   {{ papyrus_util("GetStringValue", actorUUID, "SeverTravel_State", "") }}
+    ;   {{ papyrus_util("GetStringValue", actorUUID, "SeverTravel_Destination", "") }}
+    ;   {{ papyrus_util("GetFloatValue", actorUUID, "SeverTravel_WaitUntil", 0) }}
+    ; Or use the new query functions:
+    ;   travel.IsNPCTraveling(actor)
+    ;   travel.GetNPCTravelState(actor)  ; returns "", "traveling", or "waiting"
+    Debug.Trace("[SeverActions] Travel system uses native papyrus_util decorator")
+    
+    ; Spell Cast
+    ;SkyrimNetApi.RegisterDecorator("get_known_spells", "SeverActions_Magic", "GetKnownSpells")
+    
+    Debug.Trace("[SeverActions] Decorator registration complete")
+EndFunction
+
+; =============================================================================
+; PRISMAUI INITIALIZATION
+; =============================================================================
+
+Function InitializePrismaUI()
+    Debug.Trace("[SeverActions] Initializing PrismaUI...")
+
+    SeverActions_PrismaUI prisma = GetPrismaUISystem()
+
+    If prisma
+        ; Re-register ModEvents and re-send C++ quest references on every game load.
+        ; SKSE's RegisterForModEvent persists through save/load, but the C++ quest
+        ; references passed via PrismaUI_SetQuestRefs are in-memory only and lost
+        ; when the DLL reloads (new game session).
+        prisma.RegisterForPrismaEvents()
+        Debug.Trace("[SeverActions] PrismaUI initialized successfully")
+    Else
+        Debug.Trace("[SeverActions] PrismaUI not found (optional)")
+    EndIf
+EndFunction
+
+; Helper to get PrismaUI system reference
+SeverActions_PrismaUI Function GetPrismaUISystem()
+    If PrismaUISystem
+        Return PrismaUISystem
+    EndIf
+
+    ; Try to find it on the owning quest
+    Quest myQuest = GetOwningQuest()
+    If myQuest
+        SeverActions_PrismaUI prisma = myQuest as SeverActions_PrismaUI
+        If prisma
+            Debug.Trace("[SeverActions] Found PrismaUI via quest cast")
+            Return prisma
+        EndIf
+    EndIf
+
+    Return None
+EndFunction
+
+; =============================================================================
+; MCM SETTINGS SYNC
+; =============================================================================
+
+Function SyncMCMSettings()
+    Debug.Trace("[SeverActions] Syncing MCM settings...")
+
+    SeverActions_MCM mcm = SeverActions_MCM.GetInstance()
+    If mcm
+        mcm.SyncAllSettings()
+        Debug.Trace("[SeverActions] MCM settings synced")
+    Else
+        Debug.Trace("[SeverActions] MCM not found - using defaults")
+    EndIf
+EndFunction
+
+; =============================================================================
+; SKYRIMNET WEBUI PLUGIN CONFIG SYNC
+; Reads settings from SkyrimNet's Plugin Configuration WebUI and applies them.
+; Runs after SyncMCMSettings — WebUI values override MCM for shared settings.
+; Gracefully skips if SkyrimNet doesn't support plugin config (older versions).
+;
+; Synced categories: Travel, Followers, Survival, General (dialogue anims + debug)
+; =============================================================================
+
+Function SyncPluginConfig()
+    If !SeverActionsNative.PluginConfig_IsAvailable()
+        Debug.Trace("[SeverActions] WebUI plugin config not available — using MCM/defaults")
+        Return
+    EndIf
+
+    Debug.Trace("[SeverActions] Syncing WebUI plugin config settings...")
+
+    ; Travel settings (NOT in MCM — WebUI is the only way to tune these)
+    If TravelSystem
+        TravelSystem.ArrivalDistance = SeverActionsNative.PluginConfig_GetFloat("travel.arrival_distance", 300.0)
+        TravelSystem.DefaultWaitTime = SeverActionsNative.PluginConfig_GetFloat("travel.default_wait_hours", 48.0)
+        TravelSystem.MinWaitTime = SeverActionsNative.PluginConfig_GetFloat("travel.min_wait_hours", 6.0)
+        TravelSystem.MaxWaitTime = SeverActionsNative.PluginConfig_GetFloat("travel.max_wait_hours", 168.0)
+    EndIf
+
+    ; Dialogue settings — stored in StorageUtil so prompt templates can read via papyrus_util()
+    Int silenceChanceVal = SeverActionsNative.PluginConfig_GetInt("dialogue.silence_chance", 50)
+    StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", silenceChanceVal)
+
+    ; Speaker tag settings — control which tags appear in the speaker selector prompt
+    Bool tagCompanion = SeverActionsNative.PluginConfig_GetBool("dialogue.tag_companion", true)
+    Bool tagEngaged = SeverActionsNative.PluginConfig_GetBool("dialogue.tag_engaged", true)
+    Bool tagInScene = SeverActionsNative.PluginConfig_GetBool("dialogue.tag_in_scene", true)
+    StorageUtil.SetIntValue(None, "SeverActions_TagCompanion", tagCompanion as Int)
+    StorageUtil.SetIntValue(None, "SeverActions_TagEngaged", tagEngaged as Int)
+    StorageUtil.SetIntValue(None, "SeverActions_TagInScene", tagInScene as Int)
+
+    ; Player inventory prompt — items shown per category
+    Int invLimit = SeverActionsNative.PluginConfig_GetInt("inventory.item_limit", 7)
+    StorageUtil.SetIntValue(None, "SeverActions_InventoryLimit", invLimit)
+
+    ; Follower settings (WebUI overrides MCM for these)
+    If FollowerManagerSystem
+        FollowerManagerSystem.MaxFollowers = SeverActionsNative.PluginConfig_GetInt("followers.max_companions", 20)
+        FollowerManagerSystem.RapportDecayRate = SeverActionsNative.PluginConfig_GetFloat("followers.rapport_decay_rate", 1.0)
+        FollowerManagerSystem.AutoRelAssessment = SeverActionsNative.PluginConfig_GetBool("followers.auto_assessment", true)
+        FollowerManagerSystem.AssessmentCooldownHours = SeverActionsNative.PluginConfig_GetFloat("followers.assessment_cooldown_hours", 5.0)
+        FollowerManagerSystem.AllowAutonomousLeaving = SeverActionsNative.PluginConfig_GetBool("followers.allow_leaving", true)
+        FollowerManagerSystem.LeavingThreshold = SeverActionsNative.PluginConfig_GetInt("followers.leaving_threshold", -60) as Float
+    EndIf
+
+    ; Survival settings — rates from WebUI, but Enabled is MCM-only
+    ; The Enabled toggle is a Papyrus property that persists in the save.
+    ; Overwriting it here would clobber the MCM value on every load because
+    ; PluginConfig_GetBool defaults to false when the key doesn't exist.
+    Quest myQuest = GetOwningQuest()
+    If myQuest
+        SeverActions_Survival survival = myQuest as SeverActions_Survival
+        If survival
+            survival.HungerRate = SeverActionsNative.PluginConfig_GetFloat("survival.hunger_rate", 1.0)
+            survival.FatigueRate = SeverActionsNative.PluginConfig_GetFloat("survival.fatigue_rate", 1.0)
+            survival.ColdRate = SeverActionsNative.PluginConfig_GetFloat("survival.cold_rate", 1.0)
+        EndIf
+
+        ; General settings
+        SeverActions_MCM mcm = myQuest as SeverActions_MCM
+        If mcm
+            mcm.DialogueAnimEnabled = SeverActionsNative.PluginConfig_GetBool("general.dialogue_animations", true)
+            mcm.SilenceChance = silenceChanceVal
+            mcm.TagCompanionEnabled = tagCompanion
+            mcm.TagEngagedEnabled = tagEngaged
+            mcm.TagInSceneEnabled = tagInScene
+        EndIf
+
+        ; Spell teaching settings
+        SeverActions_SpellTeach spellTeach = myQuest as SeverActions_SpellTeach
+        If spellTeach
+            spellTeach.EnableFailureSystem = SeverActionsNative.PluginConfig_GetBool("spellteach.failure_enabled", true)
+            spellTeach.FailureDifficultyMult = SeverActionsNative.PluginConfig_GetFloat("spellteach.failure_difficulty", 1.0)
+            StorageUtil.SetIntValue(None, "SeverActions_SpellFailEnabled", spellTeach.EnableFailureSystem as Int)
+            StorageUtil.SetFloatValue(None, "SeverActions_SpellFailDifficulty", spellTeach.FailureDifficultyMult)
+        EndIf
+
+        ; Book reading mode — "verbatim" (0) or "summarize" (1)
+        If LootSystem
+            String readMode = SeverActionsNative.PluginConfig_GetString("general.book_reading_mode", "verbatim")
+            If readMode == "summarize"
+                LootSystem.BookReadMode = 1
+            Else
+                LootSystem.BookReadMode = 0
+            EndIf
+        EndIf
+
+        ; Debug mode — applies to all subsystems that have it
+        Bool debugMode = SeverActionsNative.PluginConfig_GetBool("general.debug_mode", false)
+        If survival
+            survival.DebugMode = debugMode
+        EndIf
+        If FollowerManagerSystem
+            FollowerManagerSystem.DebugMode = debugMode
+        EndIf
+    EndIf
+
+    Debug.Trace("[SeverActions] WebUI plugin config synced successfully")
+EndFunction

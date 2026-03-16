@@ -1,0 +1,65 @@
+{# Survival Status - Tracks hunger, fatigue, and cold for followers and nearby NPCs #}
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "dialog" or render_mode == "action" %}
+{% if actorUUID and actorUUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% if actor and actor.UUID %}
+{# Check if this actor is a companion (native follower or SeverActions faction) #}
+{% set is_companion = is_follower(actorUUID) or is_in_faction(actorUUID, "SeverActions_FollowerFaction") %}
+{% set excluded = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Excluded", 0) %}
+{% if excluded == 0 %}
+{% set hunger = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Hunger", 0) %}
+{% set fatigue = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Fatigue", 0) %}
+{% set cold = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Cold", 0) %}
+{% if (hunger >= 25) or (fatigue >= 25) or (cold >= 25) %}
+{% if is_companion %}
+## How You Feel
+{% if hunger >= 75 %}
+Your stomach has been growling for hours. You're lightheaded and need to eat soon — it's getting hard to focus on anything else.
+{% elif hunger >= 50 %}
+You're getting hungry. A proper meal would do you a lot of good right now.
+{% elif hunger >= 25 %}
+You could eat. Nothing urgent, but your stomach is starting to notice.
+{% endif %}
+{% if fatigue >= 75 %}
+You're running on nothing. Your reactions are slow, your body aches, and you need sleep before you make a mistake that costs someone.
+{% elif fatigue >= 50 %}
+The tiredness is catching up with you. You keep stifling yawns and your limbs feel heavy.
+{% elif fatigue >= 25 %}
+You're a little tired. Rest would be welcome, but you can push through for now.
+{% endif %}
+{% if cold >= 75 %}
+The cold has seeped into your bones. Your hands are stiff, your breathing is shallow, and you need warmth before this gets dangerous.
+{% elif cold >= 50 %}
+You're properly cold now. Shivering, arms crossed tight, wishing for a fire or at least some shelter.
+{% elif cold >= 25 %}
+There's a chill in the air. Nothing you can't handle, but you notice it.
+{% endif %}
+{% else %}
+## Physical State
+{% if hunger >= 75 %}
+You haven't had a proper meal in far too long and it shows — you feel weak and distracted.
+{% elif hunger >= 50 %}
+You're hungry and your thoughts keep drifting to food.
+{% elif hunger >= 25 %}
+You could use something to eat. Your stomach has been grumbling.
+{% endif %}
+{% if fatigue >= 75 %}
+You've been up far too long. Everything feels heavy and slow.
+{% elif fatigue >= 50 %}
+Tiredness hangs on you. You keep losing your train of thought.
+{% elif fatigue >= 25 %}
+You're a bit worn out. Rest would be nice.
+{% endif %}
+{% if cold >= 75 %}
+The cold is brutal. Your fingers are numb and you can barely think straight.
+{% elif cold >= 50 %}
+You're chilled through and it's making everything harder.
+{% elif cold >= 25 %}
+It's a bit cold. You notice the chill but push through.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

@@ -1,0 +1,4 @@
+customCategory: companion
+name: Companion
+description: "Companion management — follow, wait, dismiss, recruit, or set combat style."
+enabled: true

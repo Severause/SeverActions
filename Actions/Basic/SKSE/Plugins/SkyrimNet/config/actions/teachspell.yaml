@@ -1,0 +1,38 @@
+customCategory: magic
+name: TeachSpell
+description: "Teach the player a spell that you know. You must actually know the spell to teach it. Refer to your Known Spells list to see what you can teach. Only use this when the player asks you to teach them a specific spell, or during roleplay where spell teaching would make sense."
+questEditorId: SeverActions
+scriptName: SeverActions_SpellTeach
+executionFunctionName: TeachSpell
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The NPC who is teaching the spell
+  - type: dynamic
+    name: spellName
+    description: "The name of the spell to teach (e.g. 'Fireball', 'Close Wounds', 'Oakflesh')"
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} teaches {{ spellName }} to {{ player.name }}"

@@ -1,0 +1,22 @@
+{% if render_mode == "action" %}
+## {{ decnpc(actorUUID).name }}'s Current State
+- Gender: {{ decnpc(actorUUID).gender }}, Race: {{ decnpc(actorUUID).race }}
+{% if decnpc(actorUUID).maxHealth > 0 %}
+{% set healthRatio = decnpc(actorUUID).health / decnpc(actorUUID).maxHealth %}
+{% if healthRatio < 0.25 %}- Health: Gravely wounded
+{% elif healthRatio < 0.5 %}- Health: Injured
+{% elif healthRatio < 0.75 %}- Health: Somewhat wounded
+{% else %}- Health: Healthy
+{% endif %}
+{% endif %}
+{% if decnpc(actorUUID).maxMagicka > 0 %}
+{% set magickaRatio = decnpc(actorUUID).magicka / decnpc(actorUUID).maxMagicka %}
+{% if decnpc(actorUUID).magicka == 0 %}{% set magickaRatio = 0 %}{% endif %}
+{% if magickaRatio < 0.25 %}- Magicka: Nearly depleted
+{% elif magickaRatio < 0.5 %}- Magicka: Low
+{% else %}- Magicka: Sufficient
+{% endif %}
+{% endif %}
+{% if is_unconscious(actorUUID) %}- Status: Unconscious{% endif %}
+{% if is_knocked_down(actorUUID) %}- Status: Badly wounded, kneeling{% endif %}
+{% endif %}

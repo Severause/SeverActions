@@ -1,0 +1,41 @@
+# SeverActions Plugin Configuration — Current Values
+# These are read by SyncPluginConfig() on game load and via WebUI live changes.
+# Edit in-game via SkyrimNet WebUI or MCM. Manual edits apply on next game load.
+
+# Travel
+travel.arrival_distance: 300.0
+travel.default_wait_hours: 48.0
+travel.min_wait_hours: 6.0
+travel.max_wait_hours: 168.0
+
+# Followers
+followers.max_companions: 10
+followers.rapport_decay_rate: 1.0
+followers.auto_assessment: true
+followers.assessment_cooldown_hours: 5.0
+followers.allow_leaving: true
+followers.leaving_threshold: -60
+
+# Survival
+survival.enabled: false
+survival.hunger_rate: 1.0
+survival.fatigue_rate: 1.0
+survival.cold_rate: 1.0
+
+# Spell Teaching
+spellteach.failure_enabled: true
+spellteach.failure_difficulty: 1.0
+
+# Dialogue
+dialogue.silence_chance: 50
+dialogue.tag_companion: true
+dialogue.tag_engaged: true
+dialogue.tag_in_scene: true
+
+# Inventory
+inventory.item_limit: 15
+
+# General
+general.dialogue_animations: true
+general.book_reading_mode: "verbatim"
+general.debug_mode: false

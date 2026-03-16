@@ -1,0 +1,42 @@
+customCategory: companion
+name: SetCompanion
+description: "Register this person as a companion. Use only when they genuinely agree to travel with {{ player.name }}. Also for re-recruiting a previously dismissed companion."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: RegisterFollower
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The NPC being set as a companion
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} has joined {{ player.name }} as a companion"

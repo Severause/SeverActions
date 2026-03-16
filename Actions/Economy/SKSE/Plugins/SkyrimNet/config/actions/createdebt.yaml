@@ -1,0 +1,57 @@
+customCategory: economy
+name: CreateDebt
+description: "Record a debt between two parties. Creditor = who is owed, debtor = who owes. Optional due date (aiDueDays) and credit limit (aiCreditLimit)."
+questEditorId: SeverActions
+scriptName: SeverActions_Debt
+executionFunctionName: CreateDebt_Execute
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: The speaking actor
+  - type: dynamic
+    name: akCreditor
+    description: Who is owed the gold
+  - type: dynamic
+    name: akDebtor
+    description: Who owes the gold
+  - type: dynamic
+    name: aiAmount
+    description: Amount of gold owed
+  - type: dynamic
+    name: asReason
+    description: "Brief reason (e.g. 'tavern tab', 'borrowed gold', 'armor repair')"
+    optional: true
+    default: "unspecified"
+  - type: dynamic
+    name: aiDueDays
+    description: Days until due (0 for open-ended)
+    optional: true
+    default: 0
+  - type: dynamic
+    name: aiCreditLimit
+    description: Max debt before credit is cut off (0 for unlimited)
+    optional: true
+    default: 0
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
