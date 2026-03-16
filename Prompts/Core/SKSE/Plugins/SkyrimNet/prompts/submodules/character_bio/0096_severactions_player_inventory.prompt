@@ -1,0 +1,69 @@
+{% set first_person = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" or render_mode == "action") %}
+{% if not is_player(actorUUID) and first_person %}
+{# Build inventory array from object, filtering nameless items #}
+{% set pinventory = get_inventory(player.UUID) %}
+{% set itemList = [] %}
+{% for formID, item in pinventory %}
+{% if length(item.name) > 0 %}{% set itemList = append(itemList, item) %}{% endif %}
+{% endfor %}
+{% set grouped = group_by(itemList, "type") %}
+{% set inv_limit = papyrus_util("GetIntValue", 0, "SeverActions_InventoryLimit", 15) %}
+{% if length(itemList) > 0 %}
+
+## {{ player.name }}'s Inventory
+{% if existsIn(grouped, "weapon") %}
+**Weapons ({{ length(grouped.weapon) }}):**
+{% for item in grouped.weapon %}{% if loop.index1 <= inv_limit %}- {{ item.name }}{% if item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.value }}g
+{% endif %}{% endfor %}{% if length(grouped.weapon) > inv_limit %}- ... +{{ length(grouped.weapon) - inv_limit }} more
+{% endif %}
+{% endif %}
+{% if existsIn(grouped, "armor") %}
+**Armor & Jewelry ({{ length(grouped.armor) }}):**
+{% for item in grouped.armor %}{% if loop.index1 <= inv_limit %}- {{ item.name }}{% if item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.value }}g
+{% endif %}{% endfor %}{% if length(grouped.armor) > inv_limit %}- ... +{{ length(grouped.armor) - inv_limit }} more
+{% endif %}
+{% endif %}
+{% if existsIn(grouped, "potion") %}
+**Potions & Consumables ({{ length(grouped.potion) }}):**
+{% for item in grouped.potion %}{% if loop.index1 <= inv_limit %}- {{ item.name }}{% if item.count > 1 %} x{{ item.count }}{% endif %}
+{% endif %}{% endfor %}{% if length(grouped.potion) > inv_limit %}- ... +{{ length(grouped.potion) - inv_limit }} more
+{% endif %}
+{% endif %}
+{% if existsIn(grouped, "ingredient") %}
+**Ingredients ({{ length(grouped.ingredient) }}):**
+{% for item in grouped.ingredient %}{% if loop.index1 <= inv_limit %}- {{ item.name }}{% if item.count > 1 %} x{{ item.count }}{% endif %}
+{% endif %}{% endfor %}{% if length(grouped.ingredient) > inv_limit %}- ... +{{ length(grouped.ingredient) - inv_limit }} more
+{% endif %}
+{% endif %}
+{% if existsIn(grouped, "book") %}
+**Books ({{ length(grouped.book) }}):**
+{% for item in grouped.book %}{% if loop.index1 <= inv_limit %}- {{ item.name }}
+{% endif %}{% endfor %}{% if length(grouped.book) > inv_limit %}- ... +{{ length(grouped.book) - inv_limit }} more
+{% endif %}
+{% endif %}
+{% if existsIn(grouped, "scroll") %}
+**Scrolls ({{ length(grouped.scroll) }}):**
+{% for item in grouped.scroll %}{% if loop.index1 <= inv_limit %}- {{ item.name }}{% if item.count > 1 %} x{{ item.count }}{% endif %}
+{% endif %}{% endfor %}{% if length(grouped.scroll) > inv_limit %}- ... +{{ length(grouped.scroll) - inv_limit }} more
+{% endif %}
+{% endif %}
+{% if existsIn(grouped, "ammo") %}
+**Ammo ({{ length(grouped.ammo) }}):**
+{% for item in grouped.ammo %}{% if loop.index1 <= inv_limit %}- {{ item.name }}{% if item.count > 1 %} x{{ item.count }}{% endif %}
+{% endif %}{% endfor %}{% if length(grouped.ammo) > inv_limit %}- ... +{{ length(grouped.ammo) - inv_limit }} more
+{% endif %}
+{% endif %}
+{% if existsIn(grouped, "key") %}
+**Keys ({{ length(grouped.key) }}):**
+{% for item in grouped.key %}{% if loop.index1 <= inv_limit %}- {{ item.name }}
+{% endif %}{% endfor %}{% if length(grouped.key) > inv_limit %}- ... +{{ length(grouped.key) - inv_limit }} more
+{% endif %}
+{% endif %}
+{% if existsIn(grouped, "misc") %}
+**Misc ({{ length(grouped.misc) }}):**
+{% for item in grouped.misc %}{% if loop.index1 <= inv_limit %}- {{ item.name }}{% if item.count > 1 %} x{{ item.count }}{% endif %}
+{% endif %}{% endfor %}{% if length(grouped.misc) > inv_limit %}- ... +{{ length(grouped.misc) - inv_limit }} more
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

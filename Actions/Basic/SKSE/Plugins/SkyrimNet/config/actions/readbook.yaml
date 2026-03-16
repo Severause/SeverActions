@@ -1,0 +1,36 @@
+customCategory: items
+name: ReadBook
+description: "Read a specific book or note aloud from inventory by name. Must know the exact name first - ask if unsure. Must have the book or note in inventory."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: ReadBook_Execute
+parameterMapping:
+  - type: dynamic
+    name: akActor
+    description: The person who will read the book
+  - type: dynamic
+    name: bookName
+    description: The exact name of the book or note to read
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

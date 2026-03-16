@@ -1,0 +1,40 @@
+customCategory: outfit
+name: SetSituationOutfit
+description: "Assign an outfit preset to automatically wear in a specific situation (town, adventure, home, sleep)."
+questEditorId: SeverActions
+scriptName: SeverActions_Outfit
+executionFunctionName: SetSituationPreset_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: situation
+    description: "Situation name: 'town', 'adventure', 'home', or 'sleep'"
+  - type: dynamic
+    name: presetName
+    description: "Name of the saved outfit preset to wear in this situation"
+enabled: true
+eventString: "{{ actor.name }} assigns their {{ presetName }} outfit for {{ situation }} situations"
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

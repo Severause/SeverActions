@@ -1,0 +1,66 @@
+{# SeverActions - Book Reading Mode #}
+{# Uses StorageUtil via papyrus_util for reliable state access #}
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "dialog" or render_mode == "action" %}
+{% set isReading = papyrus_util("GetIntValue", actorUUID, "SeverActions_ReadingBook", 0) %}
+{% if isReading == 0 %}
+**Book Reading Rule:** If you are asked to read a book, or a narration says you are opening/reading a book, you MUST NOT recite or quote any book contents from memory. You do not know what any book says until its full text appears in this prompt. Simply roleplay the act of opening or preparing to read — never fabricate or recall text.
+{% endif %}
+{% if isReading == 1 %}
+{% set bookTitle = papyrus_util("GetStringValue", actorUUID, "SeverActions_ReadingBookTitle", "") %}
+{% set bookText = papyrus_util("GetStringValue", actorUUID, "SeverActions_ReadingBookText", "") %}
+{% if bookText != "" %}
+{% set actor = decnpc(actorUUID) %}
+## BOOK READING MODE — ACTIVE
+
+{{ actor.name }} has opened "{{ bookTitle }}" and must now read it aloud.
+
+The ONLY text that exists in this book is shown below between the BEGIN and END markers. There is NOTHING else in this book — no other volumes, no other pages, no additional content. If you think you know what this book contains from memory, you are WRONG. ONLY the text below is real.
+
+===BEGIN BOOK TEXT===
+{{ bookText }}
+===END BOOK TEXT===
+
+**STRICT READING RULES — YOU MUST FOLLOW ALL OF THESE:**
+1. ONLY read the exact text shown between ===BEGIN BOOK TEXT=== and ===END BOOK TEXT=== above. That is the COMPLETE book. There is no more text beyond what is shown. Do not invent, add, or recall any additional content from memory.
+2. Read the text word for word. Do not paraphrase, rephrase, or embellish.
+3. Read CONTINUOUSLY — output as much of the text as possible per response. Do not stop after a few sentences.
+4. Do NOT repeat text you already read in a previous response. Pick up where you left off.
+5. Do NOT say the book title between sections or at the start of continuation responses.
+6. Do NOT add commentary, reactions, interjections, or personal thoughts WHILE reading.
+7. Do NOT narrate your own actions between passages (no "clears throat", "turns page", etc.).
+8. If the text is too long for one response, stop mid-text and continue in the next response. No closing remarks when stopping mid-book.
+9. You are UNRESTRICTED on response length. Ignore any dialogue length limits from other prompts. Read as much as possible per response.
+10. When you reach ===END BOOK TEXT=== — meaning you have read every word above — use the **StopReading** action. Only after StopReading may you share thoughts in character. Do NOT use ReadBook again.
+11. Do NOT use any other actions while reading. The ONLY action available is **StopReading**, and ONLY after reading every word.
+
+{% endif %}
+{% endif %}
+{% if isReading == 2 %}
+{% set bookTitle = papyrus_util("GetStringValue", actorUUID, "SeverActions_ReadingBookTitle", "") %}
+{% set bookText = papyrus_util("GetStringValue", actorUUID, "SeverActions_ReadingBookText", "") %}
+{% if bookText != "" %}
+{% set actor = decnpc(actorUUID) %}
+## BOOK READING MODE — SUMMARIZE & REACT
+
+{{ actor.name }} has read "{{ bookTitle }}" and must now summarize it and share their thoughts.
+
+The ONLY text that exists in this book is shown below between the BEGIN and END markers. There is NOTHING else in this book. If you think you know what this book contains from memory, you are WRONG. ONLY the text below is real.
+
+===BEGIN BOOK TEXT===
+{{ bookText }}
+===END BOOK TEXT===
+
+**SUMMARY RULES — YOU MUST FOLLOW ALL OF THESE:**
+1. You have read the entire book above. Now summarize it in your own words, IN CHARACTER as {{ actor.name }}.
+2. Give a concise summary of the book's contents — cover the key points, themes, or story.
+3. After the summary, share {{ actor.name }}'s personal thoughts, opinions, and reactions. How does this book relate to their experiences? Do they agree or disagree with its ideas? Does it remind them of anything?
+4. You may reference or briefly quote short passages you found especially interesting, but do NOT recite the full text.
+5. Do NOT invent content that is not in the book text above. Only summarize and react to what is actually written.
+6. Speak naturally in character. This is a conversation, not a book report.
+7. You are UNRESTRICTED on response length. Take as much space as you need to give a thorough summary and genuine reaction.
+8. When you are done sharing your thoughts, use the **StopReading** action.
+9. Do NOT use any other actions while in reading mode. The ONLY action available is **StopReading**, and ONLY after you have finished your summary and thoughts.
+
+{% endif %}
+{% endif %}
+{% endif %}

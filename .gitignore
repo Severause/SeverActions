@@ -1,0 +1,12 @@
+# Build artifacts
+*.exp
+*.lib
+Native/build/
+
+# SkyrimNet DLL (testing only, not part of our mod)
+SkyrimNet.dll
+
+# IDE/editor
+.vs/
+.vscode/
+*.user

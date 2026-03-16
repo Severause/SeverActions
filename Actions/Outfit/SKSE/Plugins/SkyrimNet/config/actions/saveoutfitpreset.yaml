@@ -1,0 +1,36 @@
+customCategory: outfit
+name: SaveOutfitPreset
+description: "Save the current outfit as a named preset for later use with ApplyOutfitPreset."
+questEditorId: SeverActions
+scriptName: SeverActions_Outfit
+executionFunctionName: SaveOutfitPreset_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: presetName
+    description: "Short descriptive name (e.g. 'home', 'combat', 'formal')"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
