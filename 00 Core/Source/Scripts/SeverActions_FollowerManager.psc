@@ -716,8 +716,9 @@ Event OnNativeTeammateDetected(string eventName, string strArg, float numArg, Fo
         Debug.Trace("[SeverActions_FollowerManager] Native teammate detected (RETURNING): " + akActor.GetDisplayName())
     EndIf
 
-    ; --- StorageUtil tracking keys ---
+    ; --- StorageUtil + native tracking keys ---
     StorageUtil.SetIntValue(akActor, KEY_IS_FOLLOWER, 1)
+    SeverActionsNative.Native_SetIsFollower(akActor, true)
     StorageUtil.SetFloatValue(akActor, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
 
     ; Only set defaults if they've never had relationship values set
