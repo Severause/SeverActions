@@ -1,0 +1,19 @@
+name: "Night Travel"
+description: "Companions occasionally comment on traveling at night in the wilderness."
+
+eventCriteria:
+  - eventType: "location_change"
+    schemaConditions:
+      - fieldPath: "to_location"
+        operator: "not_equals"
+        value: ""
+
+response:
+  type: "direct_narration"
+  content: "The party travels onward through the dark of night, the moons casting long shadows across the road."
+
+audience: "everyone"
+enabled: true
+probability: 0.10
+cooldownSeconds: 3600
+priority: 1

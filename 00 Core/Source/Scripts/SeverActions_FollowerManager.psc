@@ -61,17 +61,48 @@ Bool Property AutoRelAssessment = true Auto
 periodically sends recent events to the LLM for background relationship evaluation,
 replacing the need for the AdjustRelationship action to compete for action slots.}
 
-Float Property AssessmentCooldownHours = 5.0 Auto
-{Game hours between automatic relationship assessments per follower.
-Default 5.0 (5 game hours). Lower values mean more frequent LLM calls.}
+Float Property AssessmentCooldownMinHours = 4.0 Auto
+{Minimum game hours between automatic relationship assessments per follower.
+Each follower gets a random cooldown between min and max after each assessment.}
+
+Float Property AssessmentCooldownMaxHours = 10.0 Auto
+{Maximum game hours between automatic relationship assessments per follower.}
 
 Bool Property AutoInterFollowerAssessment = true Auto
 {Enable automatic inter-follower relationship assessment. When true, followers
 periodically evaluate how they feel about each other based on shared events.}
 
-Float Property InterFollowerCooldownHours = 8.0 Auto
-{Game hours between inter-follower relationship assessments per follower.
-Default 8.0 (8 game hours). Each follower is assessed in rotation.}
+Float Property InterFollowerCooldownMinHours = 6.0 Auto
+{Minimum game hours between inter-follower relationship assessments per follower.}
+
+Float Property InterFollowerCooldownMaxHours = 14.0 Auto
+{Maximum game hours between inter-follower relationship assessments per follower.}
+
+Bool Property AutoOffScreenLife = true Auto
+{Enable off-screen life event generation for dismissed followers with homes.
+When true, dismissed followers generate believable daily events that become
+memories and gossip. They'll naturally mention what happened when you return.}
+
+Float Property OffScreenLifeCooldownMinHours = 10.0 Auto
+{Minimum game hours between off-screen life event generation per dismissed follower.}
+
+Float Property OffScreenLifeCooldownMaxHours = 40.0 Auto
+{Maximum game hours between off-screen life event generation per dismissed follower.}
+
+Bool Property OffScreenConsequences = true Auto
+{Enable off-screen life consequences (arrest/bounty, gold changes, debt).
+When false, only narrative events and gossip are generated.}
+
+Float Property ConsequenceCooldownHours = 36.0 Auto
+{Game hours between consequential off-screen events per follower.
+Separate from event cooldown — consequences are rarer. Default 36 hours.}
+
+Int Property MaxOffScreenBounty = 1000 Auto
+{Maximum cumulative bounty a follower can accumulate from off-screen events.
+Prevents runaway bounties from LLM overgeneration. Default 1000.}
+
+Int Property MaxOffScreenGoldChange = 500 Auto
+{Maximum gold gained or lost per off-screen event. Default 500.}
 
 Float Property DeathGracePeriodHours = 4.0 Auto
 {Game hours to wait after a follower's death before auto-removing them from the roster.
@@ -164,6 +195,9 @@ Package Property HomeSandboxPackage_39 Auto
 SeverActions_Debt Property DebtScript Auto
 {Reference to the Debt tracking system for tick-based processing}
 
+SeverActions_Arrest Property ArrestScript Auto
+{Reference to the Arrest system for off-screen crime consequences}
+
 SeverActions_Furniture Property FurnitureScript Auto
 {Reference to the Furniture system for orphan package cleanup}
 
@@ -225,11 +259,41 @@ String Property KEY_WAS_ALREADY_TEAMMATE = "SeverFollower_WasAlreadyTeammate" Au
 ; Cooldown tracking for AdjustRelationship (real-time seconds via Utility.GetCurrentRealTime)
 String Property KEY_LAST_REL_ADJUST = "SeverFollower_LastRelAdjust" AutoReadOnly
 
-; Cooldown tracking for automatic LLM relationship assessment (game hours)
+; Cooldown tracking for automatic LLM relationship assessment (game time seconds)
 String Property KEY_LAST_ASSESS_GT = "SeverFollower_LastAssessGT" AutoReadOnly
+; Per-NPC randomized next-eligible time (game time seconds) — set after each assessment
+String Property KEY_NEXT_ASSESS_GT = "SeverFollower_NextAssessGT" AutoReadOnly
 
-; Cooldown tracking for inter-follower relationship assessment (game hours)
+; Cooldown tracking for inter-follower relationship assessment (game time seconds)
 String Property KEY_LAST_INTER_ASSESS_GT = "SeverFollower_LastInterAssessGT" AutoReadOnly
+String Property KEY_NEXT_INTER_ASSESS_GT = "SeverFollower_NextInterAssessGT" AutoReadOnly
+
+; Cooldown tracking for off-screen life event generation (game time seconds)
+String Property KEY_LAST_LIFE_EVENT_GT = "SeverFollower_LastLifeEventGT" AutoReadOnly
+String Property KEY_NEXT_LIFE_EVENT_GT = "SeverFollower_NextLifeEventGT" AutoReadOnly
+
+; Life summary for dismissed followers (what happened while away)
+String Property KEY_LIFE_SUMMARY = "SeverFollower_LifeSummary" AutoReadOnly
+
+; Per-follower exclusion from off-screen life events
+String Property KEY_OFFSCREEN_EXCLUDED = "SeverFollower_OffScreenExcluded" AutoReadOnly
+
+; Game-time stamp of when follower was dismissed (used as grace period for off-screen life)
+String Property KEY_DISMISS_GT = "SeverFollower_DismissGT" AutoReadOnly
+
+; Minimum game hours after dismiss before off-screen life events can fire
+Float Property OffScreenGracePeriodHours = 6.0 Auto
+{Dismissed followers wont generate off-screen events for this many game hours.
+ Prevents immersion-breaking events while player is still nearby. Default 6 hours.}
+
+; Cooldown tracking for off-screen consequences (separate from events)
+String Property KEY_LAST_CONSEQUENCE_GT = "SeverFollower_LastConsequenceGT" AutoReadOnly
+
+; Cumulative bounty from off-screen crime events
+String Property KEY_OFFSCREEN_BOUNTY_TOTAL = "SeverFollower_OffScreenBountyTotal" AutoReadOnly
+
+; Simple debt accumulator for off-screen debt events
+String Property KEY_OFFSCREEN_DEBT = "SeverFollower_OffScreenDebt" AutoReadOnly
 
 ; Global tracking key for all NPCs with custom home assignments (stored on None form)
 String Property KEY_HOMED_NPCS = "SeverActions_HomedNPCs" AutoReadOnly
@@ -242,12 +306,17 @@ Float LastTickTime
 Bool IsUpdating = false
 
 ; Relationship assessment tracking — only one assessment in flight at a time
-Int PendingAssessmentFormId = 0
+; Store Actor references directly to avoid ESL FormID sign issues with Game.GetForm()
+Actor PendingAssessmentActor = None
 Bool AssessmentInProgress = false
 
 ; Inter-follower assessment tracking — separate from player-centric assessment
-Int PendingInterAssessFormId = 0
+Actor PendingInterAssessActor = None
 Bool InterFollowerAssessmentInProgress = false
+
+; Off-screen life event tracking — separate from both assessment types
+Actor PendingOffScreenLifeActor = None
+Bool OffScreenLifeInProgress = false
 
 ; =============================================================================
 ; INITIALIZATION
@@ -296,37 +365,43 @@ Function Maintenance()
     ; Clear any stuck assessment flags from previous session (callback may not have fired if pex was stale)
     AssessmentInProgress = false
     InterFollowerAssessmentInProgress = false
+    OffScreenLifeInProgress = false
 
     ; Auto-detect followers recruited outside our system (vanilla dialogue, NFF, other mods)
     DetectExistingFollowers()
 
+    ; === CACHED FOLLOWER ARRAY ===
+    ; GetAllFollowers() does a full Papyrus cell scan (GetNthRef on every NPC).
+    ; Cache once and pass to all sub-functions to avoid 8+ redundant cell scans.
+    Actor[] cachedFollowers = GetAllFollowers()
+
     ; Sync all relationship values from StorageUtil to native FollowerDataStore.
     ; PrismaUI reads from native store (C++ fast path), but values live in StorageUtil.
     ; This ensures PrismaUI shows correct values after every game load.
-    SyncAllRelationshipsOnLoad()
+    SyncAllRelationshipsOnLoad(cachedFollowers)
 
     ; Re-assign outfit alias slots after load (ForceRefTo doesn't survive save/load)
-    ReassignOutfitSlots()
+    ReassignOutfitSlots(cachedFollowers)
 
     ; Re-apply combat style actor values after load
     ; NFF/EFF or the dismiss/recruit cycle can revert Confidence/Aggression to defaults.
     ; The StorageUtil string persists, but the actor value effects may not.
-    ReapplyCombatStyles()
+    ReapplyCombatStyles(cachedFollowers)
 
     ; Patch-up: ensure all vanilla-path followers have CurrentFollowerFaction + Ally rank
     ; (retroactively applies to followers recruited before this code existed)
-    PatchUpVanillaFollowerStatus()
+    PatchUpVanillaFollowerStatus(cachedFollowers)
 
     ; Sync inter-follower pair relationships from StorageUtil to native store
-    SyncAllPairRelationshipsOnLoad()
+    SyncAllPairRelationshipsOnLoad(cachedFollowers)
 
     ; Rebuild pre-formatted companion opinions strings from float values.
     ; StorageUtil strings are unreliable across save/load, but the individual
     ; Affinity/Respect float values persist fine. Rebuild on every load.
-    RebuildAllCompanionOpinions()
+    RebuildAllCompanionOpinions(cachedFollowers)
 
     ; Update the roster string for prompt template access
-    SyncFollowerRoster()
+    SyncFollowerRoster(cachedFollowers)
 
     ; Re-apply follow tracking after load (LinkedRef is runtime-only)
     ; The CK alias packages persist natively, but LinkedRef must be re-set
@@ -336,8 +411,7 @@ Function Maintenance()
     If FrameworkMode != 2 && (FrameworkMode == 1 || (!HasNFF() && !HasEFF()))
         SeverActions_Follow followSys = GetFollowScript()
         If followSys
-            Actor[] followers = GetAllFollowers()
-            followSys.ReapplyFollowTracking(followers)
+            followSys.ReapplyFollowTracking(cachedFollowers)
         EndIf
     EndIf
 
@@ -409,6 +483,11 @@ Function DetectExistingFollowers()
      keys so the MCM and relationship system recognize them.
      Does NOT touch faction/teammate status - they're already followers.
 
+     PERF: If the native cosave already has tracked followers, skip the
+     expensive cell scan — those followers are already in our system.
+     Only fall back to cell scanning when the cosave is empty (first
+     install, or all followers were dismissed).
+
      NFF quirk: NFF sets CurrentFollowerFaction rank to -1 on dismiss
      instead of removing from the faction. We must check faction rank >= 0
      to avoid detecting dismissed NFF followers as active.}
@@ -417,6 +496,12 @@ Function DetectExistingFollowers()
     If !playerCell
         Return
     EndIf
+
+    ; Fast path: if native cosave already has tracked followers, skip the
+    ; full cell scan. The cosave is the authoritative source after first load.
+    ; This saves ~300ms in a 60-NPC city cell on every reload.
+    Actor[] nativeTracked = SeverActionsNative.Native_GetAllTrackedFollowers()
+    Bool hasNativeData = nativeTracked && nativeTracked.Length > 0
 
     Faction currentFollowerFaction = Game.GetFormFromFile(0x0005C84E, "Skyrim.esm") as Faction
 
@@ -439,116 +524,107 @@ Function DetectExistingFollowers()
         Actor actorRef = ref as Actor
 
         If actorRef && actorRef != player && !actorRef.IsDead() && !actorRef.IsCommandedActor()
-            ; Check if they're a follower but NOT in our system yet.
-            ; IMPORTANT: IsPlayerTeammate() alone is NOT sufficient for detection.
-            ; Many mods (Katana, Inigo, Lucien, IntelEngine, etc.) set teammate status
-            ; for their own purposes without the actor being a "recruited follower."
-            ; We require membership in a recognized follower FACTION to trigger auto-detection.
-            Bool isGameFollower = false
+            ; Fast skip: if actor is already in our faction, they're tracked.
+            ; Faction check is an engine call (fast), avoids StorageUtil per NPC.
+            If SeverActions_FollowerFaction && actorRef.IsInFaction(SeverActions_FollowerFaction)
+                ; Already in our system — nothing to detect
+            Else
+                ; If native cosave has data, skip expensive faction checks for non-followers.
+                ; New followers recruited via vanilla dialogue while our plugin was active
+                ; are caught by TeammateMonitor (native event). This cell scan is only
+                ; needed when the cosave is empty (first install / fresh start).
+                If hasNativeData
+                    ; Skip — cosave covers all known followers
+                Else
+                    ; Check if they're a follower but NOT in our system yet.
+                    ; IMPORTANT: IsPlayerTeammate() alone is NOT sufficient for detection.
+                    ; Many mods (Katana, Inigo, Lucien, IntelEngine, etc.) set teammate status
+                    ; for their own purposes without the actor being a "recruited follower."
+                    ; We require membership in a recognized follower FACTION to trigger auto-detection.
+                    Bool isGameFollower = false
 
-            ; Check CurrentFollowerFaction — but require rank >= 0
-            ; NFF sets rank to -1 on dismiss instead of removing from faction,
-            ; so IsInFaction alone would false-positive on dismissed NFF followers
-            If currentFollowerFaction
-                If actorRef.IsInFaction(currentFollowerFaction) && actorRef.GetFactionRank(currentFollowerFaction) >= 0
-                    isGameFollower = true
-                EndIf
-            EndIf
+                    ; Check CurrentFollowerFaction — but require rank >= 0
+                    ; NFF sets rank to -1 on dismiss instead of removing from faction,
+                    ; so IsInFaction alone would false-positive on dismissed NFF followers
+                    If currentFollowerFaction
+                        If actorRef.IsInFaction(currentFollowerFaction) && actorRef.GetFactionRank(currentFollowerFaction) >= 0
+                            isGameFollower = true
+                        EndIf
+                    EndIf
 
-            If !isGameFollower && effFollowerFaction
-                isGameFollower = actorRef.IsInFaction(effFollowerFaction)
-            EndIf
+                    If !isGameFollower && effFollowerFaction
+                        isGameFollower = actorRef.IsInFaction(effFollowerFaction)
+                    EndIf
 
-            ; Serana uses her own DLC faction instead of CurrentFollowerFaction
-            If !isGameFollower && seranaFaction
-                isGameFollower = actorRef.IsInFaction(seranaFaction)
-            EndIf
+                    ; Serana uses her own DLC faction instead of CurrentFollowerFaction
+                    If !isGameFollower && seranaFaction
+                        isGameFollower = actorRef.IsInFaction(seranaFaction)
+                    EndIf
 
-            ; Also check our own faction — catches followers whose StorageUtil
-            ; co-save data hasn't loaded yet or got corrupted
-            If !isGameFollower && SeverActions_FollowerFaction
-                If actorRef.IsInFaction(SeverActions_FollowerFaction)
-                    isGameFollower = true
-                EndIf
-            EndIf
-
-            If isGameFollower && !IsRegisteredFollower(actorRef)
-                ; Found an untracked follower - fully onboard them into our system.
+                    If isGameFollower && !IsRegisteredFollower(actorRef)
+                        ; Found an untracked follower - fully onboard them into our system.
                 ; These are actors recruited via vanilla dialogue, another mod, or before
                 ; our plugin was installed. They already have a working follow system,
-                ; so we treat them like custom-framework followers: track everything
-                ; but don't override their AI packages.
+                        ; so we treat them like custom-framework followers: track everything
+                        ; but don't override their AI packages.
 
-                ; Check if this is a returning follower vs a truly new detection.
-                ; Use multiple signals to avoid false-positive resets when StorageUtil
-                ; co-save loads slightly after Papyrus fires OnPlayerLoadGame.
-                ; Our faction persists in the .esp save (not co-save), so it's always reliable.
-                Bool isReturning = false
-                If SeverActions_FollowerFaction && actorRef.IsInFaction(SeverActions_FollowerFaction)
-                    isReturning = true
-                EndIf
-                If !isReturning && StorageUtil.HasFloatValue(actorRef, KEY_RAPPORT)
-                    isReturning = true
-                EndIf
-                If !isReturning && StorageUtil.HasStringValue(actorRef, KEY_COMBAT_STYLE)
-                    isReturning = true
-                EndIf
-                If !isReturning && StorageUtil.HasStringValue(actorRef, KEY_HOME_LOCATION)
-                    isReturning = true
-                EndIf
+                        ; Check if this is a returning follower vs a truly new detection.
+                        Bool isReturning = false
+                        If SeverActions_FollowerFaction && actorRef.IsInFaction(SeverActions_FollowerFaction)
+                            isReturning = true
+                        EndIf
+                        If !isReturning && StorageUtil.HasFloatValue(actorRef, KEY_RAPPORT)
+                            isReturning = true
+                        EndIf
+                        If !isReturning && StorageUtil.HasStringValue(actorRef, KEY_COMBAT_STYLE)
+                            isReturning = true
+                        EndIf
+                        If !isReturning && StorageUtil.HasStringValue(actorRef, KEY_HOME_LOCATION)
+                            isReturning = true
+                        EndIf
 
-                ; --- StorageUtil tracking keys ---
-                StorageUtil.SetIntValue(actorRef, KEY_IS_FOLLOWER, 1)
-                SeverActionsNative.Native_SetIsFollower(actorRef, true)
-                StorageUtil.SetFloatValue(actorRef, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
+                        ; --- StorageUtil tracking keys ---
+                        StorageUtil.SetIntValue(actorRef, KEY_IS_FOLLOWER, 1)
+                        SeverActionsNative.Native_SetIsFollower(actorRef, true)
+                        StorageUtil.SetFloatValue(actorRef, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
 
-                ; Only set defaults for truly new followers (never in our system before)
-                If !isReturning
-                    StorageUtil.SetFloatValue(actorRef, KEY_RECRUIT_TIME, GetGameTimeInSeconds())
-                    StorageUtil.SetFloatValue(actorRef, KEY_RAPPORT, DEFAULT_RAPPORT)
-                    StorageUtil.SetFloatValue(actorRef, KEY_TRUST, DEFAULT_TRUST)
-                    StorageUtil.SetFloatValue(actorRef, KEY_LOYALTY, DEFAULT_LOYALTY)
-                    StorageUtil.SetFloatValue(actorRef, KEY_MOOD, DEFAULT_MOOD)
-                    SeverActionsNative.Native_SetCombatStyle(actorRef, "balanced")
-                    SeverActionsNative.Native_SetRelationship(actorRef, DEFAULT_RAPPORT, DEFAULT_TRUST, DEFAULT_LOYALTY, DEFAULT_MOOD)
-                    StorageUtil.SetStringValue(actorRef, KEY_COMBAT_STYLE, "balanced")
-                    Debug.Trace("[SeverActions_FollowerManager] New follower detected — initialized defaults for " + actorRef.GetDisplayName())
-                Else
-                    ; Returning follower — sync existing StorageUtil relationship values
-                    ; to native FollowerDataStore so PrismaUI shows correct values
-                    SyncRelationshipToNative(actorRef)
-                    Debug.Trace("[SeverActions_FollowerManager] Returning follower re-detected — preserving existing data for " + actorRef.GetDisplayName())
-                EndIf
+                        ; Only set defaults for truly new followers (never in our system before)
+                        If !isReturning
+                            StorageUtil.SetFloatValue(actorRef, KEY_RECRUIT_TIME, GetGameTimeInSeconds())
+                            StorageUtil.SetFloatValue(actorRef, KEY_RAPPORT, DEFAULT_RAPPORT)
+                            StorageUtil.SetFloatValue(actorRef, KEY_TRUST, DEFAULT_TRUST)
+                            StorageUtil.SetFloatValue(actorRef, KEY_LOYALTY, DEFAULT_LOYALTY)
+                            StorageUtil.SetFloatValue(actorRef, KEY_MOOD, DEFAULT_MOOD)
+                            SeverActionsNative.Native_SetCombatStyle(actorRef, "balanced")
+                            SeverActionsNative.Native_SetRelationship(actorRef, DEFAULT_RAPPORT, DEFAULT_TRUST, DEFAULT_LOYALTY, DEFAULT_MOOD)
+                            StorageUtil.SetStringValue(actorRef, KEY_COMBAT_STYLE, "balanced")
+                            Debug.Trace("[SeverActions_FollowerManager] New follower detected — initialized defaults for " + actorRef.GetDisplayName())
+                        Else
+                            SyncRelationshipToNative(actorRef)
+                            Debug.Trace("[SeverActions_FollowerManager] Returning follower re-detected — preserving existing data for " + actorRef.GetDisplayName())
+                        EndIf
 
-                ; Snapshot vanilla Morality AV for prompt context
-                StorageUtil.SetIntValue(actorRef, KEY_MORALITY, actorRef.GetAV("Morality") as Int)
+                        StorageUtil.SetIntValue(actorRef, KEY_MORALITY, actorRef.GetAV("Morality") as Int)
+                        StorageUtil.SetIntValue(actorRef, KEY_WAS_ALREADY_TEAMMATE, 1)
 
-                ; Mark as already-teammate so dismiss path doesn't undo their teammate status
-                StorageUtil.SetIntValue(actorRef, KEY_WAS_ALREADY_TEAMMATE, 1)
+                        If SeverActions_FollowerFaction
+                            actorRef.AddToFaction(SeverActions_FollowerFaction)
+                        EndIf
 
-                ; --- Faction ---
-                ; Add to our faction for fast detection (doesn't conflict with anything)
-                If SeverActions_FollowerFaction
-                    actorRef.AddToFaction(SeverActions_FollowerFaction)
-                EndIf
+                        AssignOutfitSlot(actorRef)
 
-                ; --- Outfit alias slot ---
-                ; Gives them outfit persistence via OnLoad/OnCellLoad events
-                AssignOutfitSlot(actorRef)
+                        If FrameworkMode != 2 && !ShouldUseFramework(actorRef) && !IsTrackOnlyFollower(actorRef)
+                            SeverActions_Follow followSys = GetFollowScript()
+                            If followSys
+                                followSys.CompanionStartFollowing(actorRef)
+                            EndIf
+                        EndIf
 
-                ; --- Follow system ---
-                ; Route through ShouldUseFramework for consistent routing
-                ; Skip for track-only followers (NFF ignore token, DLC-managed, Tracking Only mode)
-                If FrameworkMode != 2 && !ShouldUseFramework(actorRef) && !IsTrackOnlyFollower(actorRef)
-                    SeverActions_Follow followSys = GetFollowScript()
-                    If followSys
-                        followSys.CompanionStartFollowing(actorRef)
+                        detected += 1
+                        Debug.Trace("[SeverActions_FollowerManager] Auto-detected existing follower: " + actorRef.GetDisplayName())
                     EndIf
-                EndIf
-
-                detected += 1
-                Debug.Trace("[SeverActions_FollowerManager] Auto-detected existing follower: " + actorRef.GetDisplayName())
-            EndIf
+                EndIf ; hasNativeData else
+            EndIf ; faction fast-skip
         EndIf
 
         i += 1
@@ -755,15 +831,20 @@ EndEvent
 
 Event OnPrismaAssignHome(string eventName, string strArg, float numArg, Form sender)
     {Fired by PrismaUI when user clicks "Assign Home Here".
-     strArg = location name, numArg = actor FormID.
-     Runs the full AssignHome path (alias acquisition, XMarker placement, sandbox package).}
-    Actor akActor = Game.GetFormEx(numArg as Int) as Actor
+     strArg = "actorName|locationName" — name-based to avoid ESL FormID sign issues.}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    String actorName = StringUtil.Substring(strArg, 0, pipePos)
+    String locName = StringUtil.Substring(strArg, pipePos + 1)
+
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
     If !akActor
-        Debug.Trace("[SeverActions_FollowerManager] PrismaAssignHome: could not resolve actor FormID " + (numArg as Int))
+        Debug.Trace("[SeverActions_FollowerManager] PrismaAssignHome: could not resolve actor '" + actorName + "'")
         Return
     EndIf
 
-    String locName = strArg
     If locName == ""
         Debug.Trace("[SeverActions_FollowerManager] PrismaAssignHome: empty location name")
         Return
@@ -775,11 +856,16 @@ EndEvent
 
 Event OnPrismaClearHome(string eventName, string strArg, float numArg, Form sender)
     {Fired by PrismaUI when user clicks "Clear Home".
-     numArg = actor FormID.
-     Runs the full ClearHome path (alias release, package removal).}
-    Actor akActor = Game.GetFormEx(numArg as Int) as Actor
+     strArg = "actorName|" — name-based to avoid ESL FormID sign issues.}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    String actorName = StringUtil.Substring(strArg, 0, pipePos)
+
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
     If !akActor
-        Debug.Trace("[SeverActions_FollowerManager] PrismaClearHome: could not resolve actor FormID " + (numArg as Int))
+        Debug.Trace("[SeverActions_FollowerManager] PrismaClearHome: could not resolve actor '" + actorName + "'")
         Return
     EndIf
 
@@ -846,12 +932,25 @@ EndFunction
 
 Bool Function IsTrackOnlyFollower(Actor akActor)
     {Returns true if this actor should be tracked but not package-managed.
-     Covers: NFF ignore-token holders, DLC-managed followers (Serana), and
-     Tracking Only mode (FrameworkMode == 2).}
+     Covers: Custom AI keyword holders (SPID-distributed), NFF ignore-token holders,
+     DLC-managed followers (Serana), and Tracking Only mode (FrameworkMode == 2).}
     If FrameworkMode == 2
         Return true
     EndIf
-    Return HasNFFIgnoreToken(akActor) || IsDLCManagedFollower(akActor)
+    Return HasCustomAIKeyword(akActor) || HasNFFIgnoreToken(akActor) || IsDLCManagedFollower(akActor)
+EndFunction
+
+Bool Function HasCustomAIKeyword(Actor akActor)
+    {Check if an actor has the SeverActions_CustomAIFollower keyword.
+     Distributed via SPID to modded followers with custom AI systems
+     (Inigo, Lucien, Kaidan, etc.) so SeverActions tracks them for
+     relationships and gossip without overriding their AI packages.
+     Works independently of NFF — covers users without any follower framework.}
+    Keyword customAIKW = Game.GetFormFromFile(0x13258A, "SeverActions.esp") as Keyword
+    If !customAIKW
+        Return false
+    EndIf
+    Return akActor.HasKeyword(customAIKW)
 EndFunction
 
 Bool Function ShouldUseFramework(Actor akActor)
@@ -938,6 +1037,11 @@ Event OnUpdate()
     ; Inter-follower assessment — only fires if no player-centric assessment is in flight
     If AutoInterFollowerAssessment && !AssessmentInProgress && !InterFollowerAssessmentInProgress
         CheckInterFollowerAssessments()
+    EndIf
+
+    ; Off-screen life events — only fires if no other LLM assessments are in flight
+    If AutoOffScreenLife && !AssessmentInProgress && !InterFollowerAssessmentInProgress && !OffScreenLifeInProgress
+        CheckOffScreenLifeEvents()
     EndIf
 
     IsUpdating = false
@@ -1088,7 +1192,7 @@ Function ClearOutfitSlot(Actor akActor)
     EndWhile
 EndFunction
 
-Function ReassignOutfitSlots()
+Function ReassignOutfitSlots(Actor[] followers)
     {Re-assign outfit alias slots after a game load.
      ForceRefTo is runtime-only and doesn't survive save/load, so we need to
      repopulate the alias slots every time Maintenance() runs.
@@ -1109,7 +1213,6 @@ Function ReassignOutfitSlots()
     Int totalAssigned = 0
 
     ; Re-assign slots for all current followers
-    Actor[] followers = GetAllFollowers()
     i = 0
     While i < followers.Length
         If followers[i]
@@ -1234,6 +1337,15 @@ Function PurgeFollower(Actor akActor)
     StorageUtil.UnsetFloatValue(akActor, KEY_LAST_REL_ADJUST)
     StorageUtil.UnsetFloatValue(akActor, KEY_LAST_ASSESS_GT)
     StorageUtil.UnsetFloatValue(akActor, KEY_LAST_INTER_ASSESS_GT)
+    StorageUtil.UnsetFloatValue(akActor, KEY_LAST_LIFE_EVENT_GT)
+    StorageUtil.UnsetStringValue(akActor, KEY_LIFE_SUMMARY)
+    StorageUtil.UnsetIntValue(akActor, KEY_OFFSCREEN_EXCLUDED)
+    StorageUtil.UnsetFloatValue(akActor, KEY_LAST_CONSEQUENCE_GT)
+    StorageUtil.UnsetIntValue(akActor, KEY_OFFSCREEN_BOUNTY_TOTAL)
+    StorageUtil.UnsetIntValue(akActor, KEY_OFFSCREEN_DEBT)
+
+    ; Clear native off-screen life data
+    SeverActionsNative.Native_OffScreen_ClearActor(akActor)
 
     ; Assessment dedup watermarks
     StorageUtil.UnsetIntValue(akActor, "SeverFollower_LastAssessEventId")
@@ -1279,28 +1391,31 @@ EndFunction
 
 Event OnPrismaForceRemove(string eventName, string strArg, float numArg, Form sender)
     {Handle force-remove from PrismaUI. The C++ side already clears native stores;
-     this handles Papyrus-side cleanup (StorageUtil, factions, aliases).}
-    Int formID = numArg as Int
-    If formID == 0
+     this handles Papyrus-side cleanup (StorageUtil, factions, aliases).
+     strArg = "actorName|" — actor display name encoded for ESL compatibility.}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
         Return
     EndIf
-
-    Actor akActor = Game.GetForm(formID) as Actor
+    String actorName = StringUtil.Substring(strArg, 0, pipePos)
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
     If akActor
         DebugMsg("PrismaUI force-remove: " + akActor.GetDisplayName())
         PurgeFollower(akActor)
     Else
-        Debug.Trace("[SeverActions_FollowerManager] PrismaUI force-remove: actor " + formID + " not resolvable (orphan) — native stores already cleared")
+        Debug.Trace("[SeverActions_FollowerManager] PrismaUI force-remove: actor '" + actorName + "' not resolvable (orphan) — native stores already cleared")
     EndIf
 EndEvent
 
 Event OnPrismaDismiss(string eventName, string strArg, float numArg, Form sender)
-    {PrismaUI: Dismiss a specific follower. numArg = actor FormID.}
-    Int formID = numArg as Int
-    If formID == 0
+    {PrismaUI: Dismiss a specific follower.
+     strArg = "actorName|" — actor display name encoded for ESL compatibility.}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
         Return
     EndIf
-    Actor akActor = Game.GetForm(formID) as Actor
+    String actorName = StringUtil.Substring(strArg, 0, pipePos)
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
     If akActor
         DebugMsg("PrismaUI dismiss: " + akActor.GetDisplayName())
         DismissCompanion(akActor)
@@ -1440,6 +1555,19 @@ Function RegisterFollower(Actor akActor)
 
         ; Set relationship rank to Ally (3) so vanilla systems treat them as a real companion
         akActor.SetRelationshipRank(Game.GetPlayer(), 3)
+
+        ; If NFF is in the load order and we're in SeverActions Only mode, give the actor
+        ; an NFF ignore token so NFF doesn't try to manage them behind our back.
+        ; NFF monitors CurrentFollowerFaction — the token tells it to leave this NPC alone.
+        ; We track this with a StorageUtil flag so we only remove tokens WE added on dismiss.
+        If HasNFF() && FrameworkMode == 1
+            Form ignoreToken = Game.GetFormFromFile(0x051CFC8D, "nwsFollowerFramework.esp")
+            If ignoreToken && akActor.GetItemCount(ignoreToken) == 0
+                akActor.AddItem(ignoreToken, 1, true)
+                StorageUtil.SetIntValue(akActor, "SeverActions_AddedNFFToken", 1)
+                DebugMsg("Added NFF ignore token to " + akActor.GetDisplayName() + " (SeverActions Only mode)")
+            EndIf
+        EndIf
     EndIf
 
     ; Ensure ALL registered followers are in CurrentFollowerFaction regardless of routing.
@@ -1517,6 +1645,7 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
 
     ; --- Our own tracking cleanup (always, regardless of framework) ---
     StorageUtil.SetIntValue(akActor, KEY_IS_FOLLOWER, 0)
+    StorageUtil.SetFloatValue(akActor, KEY_DISMISS_GT, GetGameTimeInSeconds())
     SeverActionsNative.Native_ClearFollowerData(akActor)
 
     ; Remove from our faction
@@ -1547,6 +1676,21 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
         ; Do NOT touch packages or send home — NFF owns the NPC's AI after RemoveFollower.
         DebugMsg("NFF dismiss: " + akActor.GetDisplayName())
         nffController.RemoveFollower(akActor, -1, 0)
+
+        ; Safety net: NFF may silently fail for NPCs it never registered (mod followers,
+        ; actors recruited via dialogue). Wait briefly then verify faction was actually removed.
+        Utility.Wait(0.5)
+        Faction currentFollowerFaction = Game.GetFormFromFile(0x0005C84E, "Skyrim.esm") as Faction
+        If currentFollowerFaction && akActor.IsInFaction(currentFollowerFaction)
+            DebugMsg("NFF dismiss safety net: " + akActor.GetDisplayName() + " still in CurrentFollowerFaction after NFF.RemoveFollower — clearing manually")
+            akActor.RemoveFromFaction(currentFollowerFaction)
+            akActor.SetPlayerTeammate(false)
+            Faction playerFollowerFaction = Game.GetFormFromFile(0x084D1B, "Skyrim.esm") as Faction
+            If playerFollowerFaction
+                akActor.RemoveFromFaction(playerFollowerFaction)
+            EndIf
+        EndIf
+
         StorageUtil.UnsetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE)
         frameworkHandledAI = true
     ElseIf effController
@@ -1558,16 +1702,18 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
         frameworkHandledAI = true
     ElseIf wasAlreadyTeammate && IsTrackOnlyFollower(akActor)
         ; Track-only cleanup: NFF-ignore-token holder, DLC-managed (Serana), or Tracking Only mode
-        ; Still need to remove teammate/faction status so their follow packages deactivate.
-        ; Most mod follow packages condition on IsPlayerTeammate or GetInFaction checks.
-        DebugMsg("Track-only dismiss: " + akActor.GetDisplayName())
+        ; These actors were already teammates when recruited — we tracked them but didn't
+        ; set up factions. However, if WE recruited them (via SeverActions dialogue/action),
+        ; we DID add factions, so we must clean them up on dismiss.
+        ; Remove factions and teammate status to ensure they actually stop following.
+        DebugMsg("Track-only dismiss: " + akActor.GetDisplayName() + " — cleaning up factions and teammate status")
         akActor.SetPlayerTeammate(false)
         Faction currentFollowerFaction = Game.GetFormFromFile(0x0005C84E, "Skyrim.esm") as Faction
-        If currentFollowerFaction
+        If currentFollowerFaction && akActor.IsInFaction(currentFollowerFaction)
             akActor.RemoveFromFaction(currentFollowerFaction)
         EndIf
         Faction playerFollowerFaction = Game.GetFormFromFile(0x084D1B, "Skyrim.esm") as Faction
-        If playerFollowerFaction
+        If playerFollowerFaction && akActor.IsInFaction(playerFollowerFaction)
             akActor.RemoveFromFaction(playerFollowerFaction)
         EndIf
         StorageUtil.UnsetIntValue(akActor, KEY_WAS_ALREADY_TEAMMATE)
@@ -1589,6 +1735,17 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
         Faction playerFollowerFaction = Game.GetFormFromFile(0x084D1B, "Skyrim.esm") as Faction
         If playerFollowerFaction
             akActor.RemoveFromFaction(playerFollowerFaction)
+        EndIf
+
+        ; Remove NFF ignore token if WE added it during SeverActions Only recruitment.
+        ; This allows NFF to manage the NPC again if the user switches back to Auto mode.
+        If StorageUtil.GetIntValue(akActor, "SeverActions_AddedNFFToken", 0) == 1
+            Form ignoreToken = Game.GetFormFromFile(0x051CFC8D, "nwsFollowerFramework.esp")
+            If ignoreToken && akActor.GetItemCount(ignoreToken) > 0
+                akActor.RemoveItem(ignoreToken, 1, true)
+                DebugMsg("Removed NFF ignore token from " + akActor.GetDisplayName() + " (dismiss)")
+            EndIf
+            StorageUtil.UnsetIntValue(akActor, "SeverActions_AddedNFFToken")
         EndIf
 
         ; Restore original relationship rank (default to 0 = Acquaintance if not saved)
@@ -1687,11 +1844,13 @@ Actor[] Function GetAllFollowers()
     Actor[] result = PapyrusUtil.ActorArray(0)
 
     ; Source 1: Native cosave — all tracked followers regardless of cell
+    ; Filter to only active followers (isFollower=true). Dismissed NPCs with homes
+    ; are returned by GetDismissedWithHomes() instead.
     Actor[] nativeFollowers = SeverActionsNative.Native_GetAllTrackedFollowers()
     If nativeFollowers
         Int i = 0
         While i < nativeFollowers.Length
-            If nativeFollowers[i] && nativeFollowers[i] != player
+            If nativeFollowers[i] && nativeFollowers[i] != player && IsRegisteredFollower(nativeFollowers[i])
                 result = PapyrusUtil.PushActor(result, nativeFollowers[i])
             EndIf
             i += 1
@@ -1729,6 +1888,27 @@ Actor[] Function GetAllFollowers()
                         result = PapyrusUtil.PushActor(result, slotActor)
                     EndIf
                 EndIf
+            EndIf
+            i += 1
+        EndWhile
+    EndIf
+
+    Return result
+EndFunction
+
+Actor[] Function GetDismissedWithHomes()
+    {Get all dismissed NPCs that have an assigned home but are not active followers.
+     Used by MCM to show a separate "Assigned NPCs" section.}
+    Actor player = Game.GetPlayer()
+    Actor[] result = PapyrusUtil.ActorArray(0)
+
+    Actor[] tracked = SeverActionsNative.Native_GetAllTrackedFollowers()
+    If tracked
+        Int i = 0
+        While i < tracked.Length
+            If tracked[i] && tracked[i] != player && !IsRegisteredFollower(tracked[i])
+                ; Dismissed but tracked — they have a home (native filter ensures this)
+                result = PapyrusUtil.PushActor(result, tracked[i])
             EndIf
             i += 1
         EndWhile
@@ -1811,11 +1991,10 @@ Function SyncRelationshipToNative(Actor akActor)
         StorageUtil.GetFloatValue(akActor, KEY_MOOD, DEFAULT_MOOD))
 EndFunction
 
-Function SyncAllRelationshipsOnLoad()
+Function SyncAllRelationshipsOnLoad(Actor[] followers)
     {On game load, push all registered followers' StorageUtil relationship
      values into the native FollowerDataStore so PrismaUI shows correct data.
      Must run AFTER DetectExistingFollowers so all followers are registered.}
-    Actor[] followers = GetAllFollowers()
     Int i = 0
     While i < followers.Length
         If followers[i]
@@ -1856,9 +2035,9 @@ EndFunction
 Function CheckRelationshipAssessments()
     {Check if any follower is due for an automatic relationship assessment.
      Fires at most ONE assessment per tick to avoid flooding the LLM queue.
-     Each follower is assessed on a game-time cooldown (AssessmentCooldownHours).
+     Each follower has a per-NPC randomized next-eligible time (min/max range).
      Only followers in the same cell as the player are assessed.
-     Picks the most overdue follower if multiple are past their cooldown.}
+     Picks the most overdue follower if multiple are past their threshold.}
     If AssessmentInProgress
         Return
     EndIf
@@ -1871,22 +2050,24 @@ Function CheckRelationshipAssessments()
 
     Actor[] followers = GetAllFollowers()
     Float now = GetGameTimeInSeconds()
-    Float baseCooldownSeconds = AssessmentCooldownHours * SECONDS_PER_GAME_HOUR
 
     ; Track the best candidate: the follower most overdue for assessment
     Actor bestCandidate = None
-    Float bestOverdue = 0.0  ; How far past their cooldown (higher = more overdue)
+    Float bestOverdue = 0.0  ; How far past their threshold (higher = more overdue)
 
     Int i = 0
     While i < followers.Length
         Actor follower = followers[i]
         If follower && !follower.IsDead() && follower.GetParentCell() == playerCell
-            Float lastAssess = StorageUtil.GetFloatValue(follower, KEY_LAST_ASSESS_GT, 0.0)
-            Float elapsed = now - lastAssess
+            Float nextEligible = StorageUtil.GetFloatValue(follower, KEY_NEXT_ASSESS_GT, 0.0)
+            ; If no next-eligible set yet, use last assess time + min cooldown as fallback
+            If nextEligible == 0.0
+                Float lastAssess = StorageUtil.GetFloatValue(follower, KEY_LAST_ASSESS_GT, 0.0)
+                nextEligible = lastAssess + (AssessmentCooldownMinHours * SECONDS_PER_GAME_HOUR)
+            EndIf
 
-            If elapsed >= baseCooldownSeconds
-                ; This follower is past their cooldown — score by how overdue they are
-                Float overdue = elapsed - baseCooldownSeconds
+            If now >= nextEligible
+                Float overdue = now - nextEligible
                 If !bestCandidate || overdue > bestOverdue
                     bestCandidate = follower
                     bestOverdue = overdue
@@ -1911,11 +2092,15 @@ Function FireRelationshipAssessment(Actor akActor)
      - socialGraph: who this NPC interacts with besides the player
      - relevantMemories: semantic search for relationship-relevant memories}
     AssessmentInProgress = true
-    PendingAssessmentFormId = akActor.GetFormID()
-    StorageUtil.SetFloatValue(akActor, KEY_LAST_ASSESS_GT, GetGameTimeInSeconds())
+    PendingAssessmentActor = akActor
+    Float nowTime = GetGameTimeInSeconds()
+    StorageUtil.SetFloatValue(akActor, KEY_LAST_ASSESS_GT, nowTime)
+    ; Set randomized next-eligible time for this NPC
+    Float nextCooldown = Utility.RandomFloat(AssessmentCooldownMinHours, AssessmentCooldownMaxHours) * SECONDS_PER_GAME_HOUR
+    StorageUtil.SetFloatValue(akActor, KEY_NEXT_ASSESS_GT, nowTime + nextCooldown)
 
     ; Build context JSON — start with the base
-    String contextJson = "{\"npcFormId\":" + PendingAssessmentFormId
+    String contextJson = "{\"npcFormId\":" + akActor.GetFormID()
 
     ; Enrich with PublicAPI data if available
     If SeverActionsNative.IsPublicAPIReady()
@@ -1957,10 +2142,10 @@ Function OnRelationshipAssessment(String response, Int success)
         Return
     EndIf
 
-    ; Resolve the follower from the stored FormID
-    Actor akActor = Game.GetForm(PendingAssessmentFormId) as Actor
+    ; Use the stored Actor reference directly (avoids ESL FormID sign issues with Game.GetForm)
+    Actor akActor = PendingAssessmentActor
     If !akActor || !IsRegisteredFollower(akActor)
-        DebugMsg("Relationship assessment: actor not found or no longer a follower (FormID " + PendingAssessmentFormId + ")")
+        DebugMsg("Relationship assessment: actor not found or no longer a follower")
         Return
     EndIf
 
@@ -2095,7 +2280,6 @@ Function CheckInterFollowerAssessments()
     EndIf
 
     Float now = GetGameTimeInSeconds()
-    Float baseCooldownSeconds = InterFollowerCooldownHours * SECONDS_PER_GAME_HOUR
 
     ; Track the best candidate: the follower most overdue for inter-assessment
     Actor bestCandidate = None
@@ -2105,11 +2289,14 @@ Function CheckInterFollowerAssessments()
     While i < followers.Length
         Actor follower = followers[i]
         If follower && !follower.IsDead()
-            Float lastAssess = StorageUtil.GetFloatValue(follower, KEY_LAST_INTER_ASSESS_GT, 0.0)
-            Float elapsed = now - lastAssess
+            Float nextEligible = StorageUtil.GetFloatValue(follower, KEY_NEXT_INTER_ASSESS_GT, 0.0)
+            If nextEligible == 0.0
+                Float lastAssess = StorageUtil.GetFloatValue(follower, KEY_LAST_INTER_ASSESS_GT, 0.0)
+                nextEligible = lastAssess + (InterFollowerCooldownMinHours * SECONDS_PER_GAME_HOUR)
+            EndIf
 
-            If elapsed >= baseCooldownSeconds
-                Float overdue = elapsed - baseCooldownSeconds
+            If now >= nextEligible
+                Float overdue = now - nextEligible
                 If !bestCandidate || overdue > bestOverdue
                     bestCandidate = follower
                     bestOverdue = overdue
@@ -2129,13 +2316,17 @@ Function FireInterFollowerAssessment(Actor akActor)
      Builds a context JSON with the assessor's FormID and all other party members'
      FormIDs along with current affinity/respect values.}
     InterFollowerAssessmentInProgress = true
-    PendingInterAssessFormId = akActor.GetFormID()
-    StorageUtil.SetFloatValue(akActor, KEY_LAST_INTER_ASSESS_GT, GetGameTimeInSeconds())
+    PendingInterAssessActor = akActor
+    Float nowTime = GetGameTimeInSeconds()
+    StorageUtil.SetFloatValue(akActor, KEY_LAST_INTER_ASSESS_GT, nowTime)
+    ; Set randomized next-eligible time for this NPC
+    Float nextCooldown = Utility.RandomFloat(InterFollowerCooldownMinHours, InterFollowerCooldownMaxHours) * SECONDS_PER_GAME_HOUR
+    StorageUtil.SetFloatValue(akActor, KEY_NEXT_INTER_ASSESS_GT, nowTime + nextCooldown)
 
     ; Build context JSON with party member list
     ; Include npcName for name-based resolution in callback (avoids light-plugin FormID issues)
     String npcName = akActor.GetDisplayName()
-    String contextJson = "{\"npcFormId\":" + PendingInterAssessFormId + ",\"npcName\":\"" + npcName + "\""
+    String contextJson = "{\"npcFormId\":" + akActor.GetFormID() + ",\"npcName\":\"" + npcName + "\""
 
     ; Add party members array with current pair values
     Actor[] followers = GetAllFollowers()
@@ -2200,13 +2391,13 @@ Function OnInterFollowerAssessment(String response, Int success)
         EndIf
     EndIf
 
-    ; Fallback 2: Try stored PendingInterAssessFormId
+    ; Fallback 2: Try stored Actor reference directly (avoids ESL FormID sign issues)
     If !akActor
-        akActor = Game.GetForm(PendingInterAssessFormId) as Actor
+        akActor = PendingInterAssessActor
     EndIf
 
     If !akActor || !IsRegisteredFollower(akActor)
-        DebugMsg("Inter-follower assessment: assessor not found (name=" + assessorName + ", pending=" + PendingInterAssessFormId + ")")
+        DebugMsg("Inter-follower assessment: assessor not found (name=" + assessorName + ")")
         Return
     EndIf
 
@@ -2335,6 +2526,13 @@ EndFunction
 String Function ExtractJsonString(String json, String jsonKey)
     {Extract a string value from a flat JSON object. Searches from the beginning.}
     Return ExtractJsonStringAt(json, jsonKey, 0)
+EndFunction
+
+String Function WrapPersistentEvent(String line)
+    {Wrap a plain string into JSON for SkyrimNet persistent_generic event schema.
+     persistent_generic is persistent (custom has 60s TTL) and does not trigger
+     NPC reactions (custom does). Schema field is line:String.}
+    Return "{\"line\":\"" + line + "\"}"
 EndFunction
 
 String Function ExtractJsonStringAt(String json, String jsonKey, Int searchStart)
@@ -2475,26 +2673,100 @@ Function RebuildCompanionOpinionsString(Actor akActor)
     StorageUtil.SetStringValue(akActor, "SeverFollower_CompanionOpinions", opinions)
 EndFunction
 
-Function RebuildAllCompanionOpinions()
+Function RebuildCompanionOpinionsStringCached(Actor akActor, Actor[] followers)
+    {Same as RebuildCompanionOpinionsString but accepts a pre-built followers array
+     to avoid redundant GetAllFollowers() cell scans during bulk init.}
+    If !akActor
+        Return
+    EndIf
+
+    String opinions = ""
+    Int i = 0
+    While i < followers.Length
+        Actor target = followers[i]
+        If target && target != akActor && !target.IsDead()
+            Int targetFormId = target.GetFormID()
+            Float aff = StorageUtil.GetFloatValue(akActor, "SeverFollower_Affinity_" + targetFormId, 0.0)
+            Float resp = StorageUtil.GetFloatValue(akActor, "SeverFollower_Respect_" + targetFormId, 0.0)
+
+            ; Only include if non-default values exist
+            If aff != 0.0 || resp != 0.0
+                String targetName = target.GetDisplayName()
+
+                ; Prefer the LLM-generated blurb — it's unique and contextual
+                String blurb = StorageUtil.GetStringValue(akActor, "SeverFollower_Blurb_" + targetFormId, "")
+
+                If blurb != ""
+                    If opinions != ""
+                        opinions += "\n"
+                    EndIf
+                    opinions += "**" + targetName + "**: " + blurb
+                Else
+                    ; No blurb yet — use varied fallback descriptions based on affinity + respect bands
+                    String affDesc = ""
+                    If aff >= 60.0
+                        affDesc = "You consider " + targetName + " a true friend — someone you'd fight beside without hesitation and trust to watch your back."
+                    ElseIf aff >= 30.0
+                        affDesc = "You genuinely enjoy " + targetName + "'s company. Traveling together feels natural, and you find yourself looking forward to conversations with them."
+                    ElseIf aff >= 10.0
+                        affDesc = "You're warming up to " + targetName + ". You don't know them well yet, but what you've seen so far is promising."
+                    ElseIf aff >= -10.0
+                        affDesc = "You don't have strong feelings about " + targetName + " one way or another. They're just another member of the group for now."
+                    ElseIf aff >= -30.0
+                        affDesc = "Something about " + targetName + " rubs you the wrong way. Small things they do get under your skin more than they probably should."
+                    ElseIf aff >= -60.0
+                        affDesc = "You genuinely dislike " + targetName + ". Being around them puts you in a worse mood, and you'd rather keep your distance."
+                    Else
+                        affDesc = "You can barely tolerate " + targetName + "'s presence. Every interaction with them is an exercise in restraint."
+                    EndIf
+
+                    String respDesc = ""
+                    If resp >= 80.0
+                        respDesc = " You hold their abilities in the highest regard — they're one of the most capable people you've met."
+                    ElseIf resp >= 60.0
+                        respDesc = " You respect what they bring to the group. They've proven themselves when it counted."
+                    ElseIf resp >= 40.0
+                        respDesc = " They seem competent enough, though you haven't seen them truly tested yet."
+                    ElseIf resp >= 20.0
+                        respDesc = " You're not entirely convinced they can handle themselves when things get serious."
+                    Else
+                        respDesc = " Frankly, you question whether they're cut out for this life."
+                    EndIf
+
+                    If opinions != ""
+                        opinions += "\n"
+                    EndIf
+                    opinions += "**" + targetName + "**: " + affDesc + respDesc
+                EndIf
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+
+    StorageUtil.SetStringValue(akActor, "SeverFollower_CompanionOpinions", opinions)
+EndFunction
+
+Function RebuildAllCompanionOpinions(Actor[] followers)
     {Rebuild the companion opinions string for every active follower on game load.
      StorageUtil strings don't persist reliably across save/load, but the individual
      Affinity/Respect float values do. This ensures the prompt template always has
      current data without waiting for the next inter-follower assessment cycle.}
-    Actor[] followers = GetAllFollowers()
     Int i = 0
     While i < followers.Length
         If followers[i]
-            RebuildCompanionOpinionsString(followers[i])
+            RebuildCompanionOpinionsStringCached(followers[i], followers)
         EndIf
         i += 1
     EndWhile
     DebugMsg("Rebuilt companion opinions strings for " + followers.Length + " followers")
 EndFunction
 
-Function SyncFollowerRoster()
+Function SyncFollowerRoster(Actor[] followers = None)
     {Update the comma-separated roster string in StorageUtil for prompt template access.
-     Called on recruit, dismiss, and game load.}
-    Actor[] followers = GetAllFollowers()
+     Called on recruit, dismiss, and game load. Pass cached array to avoid redundant cell scan.}
+    If !followers
+        followers = GetAllFollowers()
+    EndIf
     String roster = ""
     Int i = 0
     While i < followers.Length
@@ -2510,10 +2782,9 @@ Function SyncFollowerRoster()
     DebugMsg("Updated follower roster string: " + roster)
 EndFunction
 
-Function SyncAllPairRelationshipsOnLoad()
+Function SyncAllPairRelationshipsOnLoad(Actor[] followers)
     {Called from Maintenance on game load. Syncs inter-follower pair data from
      StorageUtil to native FollowerDataStore for PrismaUI display.}
-    Actor[] followers = GetAllFollowers()
     Int i = 0
     While i < followers.Length
         Actor source = followers[i]
@@ -2536,6 +2807,723 @@ Function SyncAllPairRelationshipsOnLoad()
         i += 1
     EndWhile
     DebugMsg("Synced inter-follower pair relationships to native store")
+EndFunction
+
+; =============================================================================
+; OFF-SCREEN LIFE EVENTS
+; =============================================================================
+
+Function CheckOffScreenLifeEvents()
+    {Check if any dismissed follower with a home is due for an off-screen life event.
+     Fires at most ONE event per tick to avoid flooding the LLM queue.
+     Targets dismissed followers (not active) who have an assigned home.
+     Each follower has a per-NPC randomized next-eligible time (min/max range).}
+    If OffScreenLifeInProgress
+        Return
+    EndIf
+
+    ; Get all tracked followers from native cosave (includes dismissed with homes)
+    Actor[] allTracked = SeverActionsNative.Native_GetAllTrackedFollowers()
+    If !allTracked || allTracked.Length == 0
+        Return
+    EndIf
+
+    Float now = GetGameTimeInSeconds()
+    Float gracePeriodSeconds = OffScreenGracePeriodHours * SECONDS_PER_GAME_HOUR
+    Cell playerCell = Game.GetPlayer().GetParentCell()
+
+    ; Track the best candidate: the dismissed follower most overdue for a life event
+    Actor bestCandidate = None
+    Float bestOverdue = 0.0
+
+    Int i = 0
+    While i < allTracked.Length
+        Actor follower = allTracked[i]
+        If follower && !follower.IsDead() && !IsRegisteredFollower(follower)
+            ; Skip if player is in the same cell — immersion-breaking to generate
+            ; off-screen life events for NPCs the player can literally see
+            Bool skipFollower = false
+            If playerCell && follower.GetParentCell() == playerCell
+                skipFollower = true
+            EndIf
+
+            ; Grace period: skip if dismissed too recently
+            If !skipFollower
+                Float dismissTime = StorageUtil.GetFloatValue(follower, KEY_DISMISS_GT, 0.0)
+                If dismissTime > 0.0 && (now - dismissTime) < gracePeriodSeconds
+                    skipFollower = true
+                EndIf
+            EndIf
+
+            If !skipFollower
+                String home = SeverActionsNative.Native_GetHome(follower)
+                If home != ""
+                    If StorageUtil.GetIntValue(follower, KEY_OFFSCREEN_EXCLUDED, 0) == 0
+                        Float nextEligible = StorageUtil.GetFloatValue(follower, KEY_NEXT_LIFE_EVENT_GT, 0.0)
+                        ; If no next-eligible set yet, use last event time + min cooldown as fallback
+                        If nextEligible == 0.0
+                            Float lastEvent = StorageUtil.GetFloatValue(follower, KEY_LAST_LIFE_EVENT_GT, 0.0)
+                            nextEligible = lastEvent + (OffScreenLifeCooldownMinHours * SECONDS_PER_GAME_HOUR)
+                        EndIf
+
+                        If now >= nextEligible
+                            Float overdue = now - nextEligible
+                            If !bestCandidate || overdue > bestOverdue
+                                bestCandidate = follower
+                                bestOverdue = overdue
+                            EndIf
+                        EndIf
+                    EndIf
+                EndIf
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+
+    ; Fire off-screen life event for the most overdue follower (if any)
+    If bestCandidate
+        FireOffScreenLifeEvent(bestCandidate)
+    EndIf
+EndFunction
+
+Function FireOffScreenLifeEvent(Actor akActor)
+    {Send the off-screen life prompt to the LLM for a dismissed follower.
+     Generates 1-2 believable daily events based on personality, home, and history.
+     Context JSON is built natively in C++ for proper JSON serialization and performance.}
+    OffScreenLifeInProgress = true
+    PendingOffScreenLifeActor = akActor
+    Float nowTime = GetGameTimeInSeconds()
+    StorageUtil.SetFloatValue(akActor, KEY_LAST_LIFE_EVENT_GT, nowTime)
+    ; Set randomized next-eligible time for this NPC
+    Float nextCooldown = Utility.RandomFloat(OffScreenLifeCooldownMinHours, OffScreenLifeCooldownMaxHours) * SECONDS_PER_GAME_HOUR
+    StorageUtil.SetFloatValue(akActor, KEY_NEXT_LIFE_EVENT_GT, nowTime + nextCooldown)
+
+    ; Build context JSON natively — reads home from FollowerDataStore, queries
+    ; social graph from PublicAPI, finds nearby dismissed followers, checks consequences
+    Float lastConsequence = StorageUtil.GetFloatValue(akActor, KEY_LAST_CONSEQUENCE_GT, 0.0)
+    Float consequenceCooldown = ConsequenceCooldownHours * SECONDS_PER_GAME_HOUR
+
+    String contextJson = SeverActionsNative.Native_OffScreen_BuildContext(akActor, \
+        OffScreenConsequences, consequenceCooldown, lastConsequence, nowTime)
+
+    If contextJson == ""
+        OffScreenLifeInProgress = false
+        DebugMsg("Off-screen life: native context build failed for " + akActor.GetDisplayName())
+        Return
+    EndIf
+
+    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_offscreen_life", "", contextJson, \
+        Self as Quest, "SeverActions_FollowerManager", "OnOffScreenLifeEvent")
+
+    If result < 0
+        OffScreenLifeInProgress = false
+        DebugMsg("Off-screen life LLM call failed for " + akActor.GetDisplayName() + ", code " + result)
+    Else
+        String home = SeverActionsNative.Native_GetHome(akActor)
+        DebugMsg("Off-screen life event queued for " + akActor.GetDisplayName() + " at " + home)
+    EndIf
+EndFunction
+
+Function OnOffScreenLifeEvent(String response, Int success)
+    {Callback from SendCustomPromptToLLM. Uses native C++ JSON parser to extract events,
+     then handles persistent event registration, gossip, consequences, and diary.
+     Native parser stores events directly in OffScreenLifeDataStore (cosave-persisted).}
+    OffScreenLifeInProgress = false
+    Debug.Notification("[SA] LifeEvent ENTERED success=" + success)
+
+    If success != 1
+        Debug.Notification("[SA] LifeEvent BAIL: success != 1")
+        DebugMsg("Off-screen life LLM failed: " + response)
+        Return
+    EndIf
+
+    ; Use the stored Actor reference directly (avoids ESL FormID sign issues with Game.GetForm)
+    Actor akActor = PendingOffScreenLifeActor
+    If !akActor
+        Debug.Notification("[SA] LifeEvent BAIL: actor is None")
+        DebugMsg("Off-screen life: actor reference is None")
+        Return
+    EndIf
+
+    Debug.Notification("[SA] LifeEvent: " + akActor.GetDisplayName() + " isReg=" + IsRegisteredFollower(akActor))
+
+    ; If they were re-recruited while the LLM was processing, skip
+    If IsRegisteredFollower(akActor)
+        Debug.Notification("[SA] LifeEvent BAIL: re-recruited " + akActor.GetDisplayName())
+        DebugMsg("Off-screen life: " + akActor.GetDisplayName() + " was re-recruited, skipping")
+        Return
+    EndIf
+
+    String actorName = akActor.GetDisplayName()
+    String home = SeverActionsNative.Native_GetHome(akActor)
+    Float currentGameTime = GetGameTimeInSeconds()
+
+    ; === Native JSON parsing — replaces fragile Papyrus string parsing ===
+    ; C++ parses with nlohmann::json, stores events in native data store, returns
+    ; pipe-delimited: summary1|type1|gossip1|summary2|type2|gossip2|
+    ;   conseqAction|conseqAmount|conseqReason|conseqCrime|
+    ;   conseqItem|conseqCategory|conseqCount|involved|diary
+    Debug.Notification("[SA] LifeEvent: calling parser for " + actorName)
+    String parsed = SeverActionsNative.Native_OffScreen_ParseLLMResponse(akActor, response, currentGameTime)
+    Debug.Notification("[SA] LifeEvent: parsed len=" + StringUtil.GetLength(parsed))
+    If parsed == ""
+        Debug.Notification("[SA] LifeEvent BAIL: parsed empty for " + actorName)
+        DebugMsg("Off-screen life: native parser returned empty for " + actorName)
+        Return
+    EndIf
+
+    ; Extract fields by pipe position (15 fields, indices 0-14)
+    String summary1 = PipeField(parsed, 0)
+    String type1    = PipeField(parsed, 1)
+    Bool gossip1    = PipeField(parsed, 2) == "1"
+    String summary2 = PipeField(parsed, 3)
+    String type2    = PipeField(parsed, 4)
+    Bool gossip2    = PipeField(parsed, 5) == "1"
+
+    If summary1 == ""
+        DebugMsg("Off-screen life: no events parsed from response for " + actorName)
+        Return
+    EndIf
+
+    ; Build the life summary (stored on the actor for the dialogue submodule prompt)
+    String lifeSummary = summary1
+    If summary2 != ""
+        lifeSummary += " " + summary2
+    EndIf
+    StorageUtil.SetStringValue(akActor, KEY_LIFE_SUMMARY, lifeSummary)
+
+    ; Register as persistent events so the follower "remembers" them
+    SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(actorName + ": " + summary1), akActor, None)
+    If summary2 != ""
+        SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(actorName + ": " + summary2), akActor, None)
+    EndIf
+
+    ; Store gossip for the home location (ring buffer of last 3)
+    If gossip1 && home != ""
+        AppendGossip(home, actorName + " " + summary1)
+        SeverActionsNative.Native_OffScreen_AddGossip(home, actorName + " " + summary1, currentGameTime)
+    EndIf
+    If gossip2 && summary2 != "" && home != ""
+        AppendGossip(home, actorName + " " + summary2)
+        SeverActionsNative.Native_OffScreen_AddGossip(home, actorName + " " + summary2, currentGameTime)
+    EndIf
+
+    ; --- Process consequences ---
+    If OffScreenConsequences
+        String conseqAction = PipeField(parsed, 6)
+        If conseqAction != ""
+            Int conseqAmount    = PipeField(parsed, 7) as Int
+            String conseqReason = PipeField(parsed, 8)
+            String conseqCrime  = PipeField(parsed, 9)
+
+            If conseqAction == "item_acquired"
+                String itemName = PipeField(parsed, 10)
+                String itemCat  = PipeField(parsed, 11)
+                Int itemCount   = PipeField(parsed, 12) as Int
+                If itemCount <= 0
+                    itemCount = 1
+                EndIf
+                ProcessOffScreenConsequence(akActor, home, conseqAction, itemCount, itemName, itemCat)
+            Else
+                ProcessOffScreenConsequence(akActor, home, conseqAction, conseqAmount, conseqReason, conseqCrime)
+            EndIf
+        EndIf
+    EndIf
+
+    ; --- Process involved NPCs for shared events ---
+    String involvedStr = PipeField(parsed, 13)
+    If involvedStr != ""
+        ; involvedStr is comma-separated names
+        Int commaPos = StringUtil.Find(involvedStr, ",")
+        Int searchFrom = 0
+        While searchFrom < StringUtil.GetLength(involvedStr)
+            String involvedName = ""
+            If commaPos >= 0
+                involvedName = StringUtil.Substring(involvedStr, searchFrom, commaPos - searchFrom)
+                searchFrom = commaPos + 1
+                commaPos = StringUtil.Find(involvedStr, ",", searchFrom)
+            Else
+                involvedName = StringUtil.Substring(involvedStr, searchFrom)
+                searchFrom = StringUtil.GetLength(involvedStr) ; exit loop
+            EndIf
+
+            If involvedName != ""
+                Actor involvedActor = SeverActionsNative.FindActorByName(involvedName)
+                If involvedActor && involvedActor != akActor
+                    SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(involvedName + ": " + summary1), involvedActor, akActor)
+                    If summary2 != ""
+                        SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(involvedName + ": " + summary2), involvedActor, akActor)
+                    EndIf
+                    If gossip1 && home != ""
+                        AppendGossip(home, actorName + " and " + involvedName + " were seen together in " + home)
+                    EndIf
+                    DebugMsg("Off-screen life: shared event registered for " + involvedName)
+                EndIf
+            EndIf
+        EndWhile
+    EndIf
+
+    ; Check if diary generation was requested
+    If PipeField(parsed, 14) == "1"
+        SkyrimNetApi.GenerateDiaryEntry(akActor)
+        DebugMsg("Off-screen life: diary entry requested for " + actorName)
+    EndIf
+
+    If ShowNotifications
+        Debug.Notification(actorName + " has been busy at " + home + ".")
+    EndIf
+
+    DebugMsg("Off-screen life: " + actorName + " → " + lifeSummary)
+EndFunction
+
+String Function PipeField(String data, Int fieldIndex)
+    {Extract a field from a pipe-delimited string by index (0-based).
+     Returns empty string if index is out of range.}
+    Int pos = 0
+    Int fieldNum = 0
+    Int dataLen = StringUtil.GetLength(data)
+
+    While fieldNum < fieldIndex && pos < dataLen
+        Int pipePos = StringUtil.Find(data, "|", pos)
+        If pipePos < 0
+            Return "" ; not enough fields
+        EndIf
+        pos = pipePos + 1
+        fieldNum += 1
+    EndWhile
+
+    If pos >= dataLen
+        Return ""
+    EndIf
+
+    Int nextPipe = StringUtil.Find(data, "|", pos)
+    If nextPipe < 0
+        Return StringUtil.Substring(data, pos)
+    EndIf
+    Return StringUtil.Substring(data, pos, nextPipe - pos)
+EndFunction
+
+Function AppendGossip(String locationName, String gossipText)
+    {Append a gossip item to a location's gossip ring buffer (max 3 items).
+     Stored in StorageUtil as pipe-delimited strings keyed by location name.
+     Old items are dropped when new ones are added beyond the limit.}
+    String gossipKey = "SeverGossip_" + locationName
+    String existing = StorageUtil.GetStringValue(None, gossipKey, "")
+
+    If existing == ""
+        StorageUtil.SetStringValue(None, gossipKey, gossipText)
+        Return
+    EndIf
+
+    ; Count existing items (pipe-delimited)
+    Int count = 1
+    Int searchPos = 0
+    Int pipePos = StringUtil.Find(existing, "|", searchPos)
+    While pipePos >= 0
+        count += 1
+        searchPos = pipePos + 1
+        pipePos = StringUtil.Find(existing, "|", searchPos)
+    EndWhile
+
+    If count >= 3
+        ; Drop the oldest (first) item
+        Int firstPipe = StringUtil.Find(existing, "|")
+        If firstPipe >= 0
+            existing = StringUtil.Substring(existing, firstPipe + 1)
+        Else
+            existing = ""
+        EndIf
+    EndIf
+
+    If existing != ""
+        StorageUtil.SetStringValue(None, gossipKey, existing + "|" + gossipText)
+    Else
+        StorageUtil.SetStringValue(None, gossipKey, gossipText)
+    EndIf
+EndFunction
+
+Bool Function IsOffScreenExcluded(Actor akActor)
+    {Check if a follower is excluded from off-screen life events.}
+    Return StorageUtil.GetIntValue(akActor, KEY_OFFSCREEN_EXCLUDED, 0) == 1
+EndFunction
+
+Function SetOffScreenExcluded(Actor akActor, Bool excluded)
+    {Set or clear the off-screen life exclusion flag for a follower.}
+    If excluded
+        StorageUtil.SetIntValue(akActor, KEY_OFFSCREEN_EXCLUDED, 1)
+    Else
+        StorageUtil.UnsetIntValue(akActor, KEY_OFFSCREEN_EXCLUDED)
+    EndIf
+EndFunction
+
+Function ToggleOffScreenExcluded(Actor akActor)
+    {Toggle the off-screen life exclusion flag for a follower.}
+    If IsOffScreenExcluded(akActor)
+        SetOffScreenExcluded(akActor, false)
+    Else
+        SetOffScreenExcluded(akActor, true)
+    EndIf
+EndFunction
+
+; =============================================================================
+; OFF-SCREEN CONSEQUENCES (Phase 2a)
+; =============================================================================
+
+Actor[] Function GetDismissedFollowersInHold(String holdName)
+    {Find all dismissed followers whose home location matches a given hold/location.
+     Used to populate nearby follower context for shared events.
+     Returns actors whose home contains the holdName as a substring.}
+    Actor[] result = new Actor[10]
+    Int resultCount = 0
+
+    If holdName == ""
+        Return result
+    EndIf
+
+    Actor[] allTracked = SeverActionsNative.Native_GetAllTrackedFollowers()
+    If !allTracked || allTracked.Length == 0
+        Return result
+    EndIf
+
+    Int i = 0
+    While i < allTracked.Length && resultCount < 10
+        Actor follower = allTracked[i]
+        If follower && !follower.IsDead() && !IsRegisteredFollower(follower)
+            String followerHome = SeverActionsNative.Native_GetHome(follower)
+            If followerHome != ""
+                ; Substring match — e.g., "Whiterun" matches "Whiterun Breezehome"
+                If StringUtil.Find(followerHome, holdName) >= 0 || StringUtil.Find(holdName, followerHome) >= 0
+                    If StorageUtil.GetIntValue(follower, KEY_OFFSCREEN_EXCLUDED, 0) == 0
+                        result[resultCount] = follower
+                        resultCount += 1
+                    EndIf
+                EndIf
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+
+    ; Trim to actual count
+    If resultCount == 0
+        Return new Actor[1]
+    EndIf
+    Return result
+EndFunction
+
+Actor Function FindFollowerByName(String targetName)
+    {Find any tracked follower by display name. Searches all tracked followers
+     (active and dismissed). Uses ResolveFollowerByName with substring fallback.}
+    If targetName == ""
+        Return None
+    EndIf
+    Actor[] allTracked = SeverActionsNative.Native_GetAllTrackedFollowers()
+    If !allTracked || allTracked.Length == 0
+        Return None
+    EndIf
+    Return ResolveFollowerByName(targetName, allTracked)
+EndFunction
+
+Faction Function GetCrimeFactionForHoldName(String holdName)
+    {Map a location/hold name string to its crime faction for bounty assignment.
+     Uses substring matching to handle variations like "Riften", "The Rift", etc.}
+    If !ArrestScript || holdName == ""
+        Return None
+    EndIf
+
+    If StringUtil.Find(holdName, "Whiterun") >= 0
+        Return ArrestScript.CrimeFactionWhiterun
+    ElseIf StringUtil.Find(holdName, "Riften") >= 0 || StringUtil.Find(holdName, "Rift") >= 0
+        Return ArrestScript.CrimeFactionRift
+    ElseIf StringUtil.Find(holdName, "Solitude") >= 0 || StringUtil.Find(holdName, "Haafingar") >= 0
+        Return ArrestScript.CrimeFactionHaafingar
+    ElseIf StringUtil.Find(holdName, "Windhelm") >= 0 || StringUtil.Find(holdName, "Eastmarch") >= 0
+        Return ArrestScript.CrimeFactionEastmarch
+    ElseIf StringUtil.Find(holdName, "Markarth") >= 0 || StringUtil.Find(holdName, "Reach") >= 0
+        Return ArrestScript.CrimeFactionReach
+    ElseIf StringUtil.Find(holdName, "Falkreath") >= 0
+        Return ArrestScript.CrimeFactionFalkreath
+    ElseIf StringUtil.Find(holdName, "Dawnstar") >= 0 || StringUtil.Find(holdName, "Pale") >= 0
+        Return ArrestScript.CrimeFactionPale
+    ElseIf StringUtil.Find(holdName, "Morthal") >= 0 || StringUtil.Find(holdName, "Hjaalmarch") >= 0
+        Return ArrestScript.CrimeFactionHjaalmarch
+    ElseIf StringUtil.Find(holdName, "Winterhold") >= 0
+        Return ArrestScript.CrimeFactionWinterhold
+    EndIf
+
+    Return None
+EndFunction
+
+Function ProcessOffScreenConsequence(Actor akActor, String home, String conseqType, Int amount, String reason, String crime)
+    {Dispatch an off-screen consequence to the appropriate system.
+     Routes arrest, gold_change, and debt actions. Fails silently if systems unavailable.}
+    String actorName = akActor.GetDisplayName()
+
+    If conseqType == "arrest"
+        ProcessOffScreenArrest(akActor, home, crime, amount)
+    ElseIf conseqType == "gold_change"
+        ProcessOffScreenGoldChange(akActor, amount, reason)
+    ElseIf conseqType == "debt"
+        ProcessOffScreenDebt(akActor, amount, reason)
+    ElseIf conseqType == "bounty"
+        ; Bounty without arrest — wanted but not caught
+        ProcessOffScreenBounty(akActor, home, crime, amount)
+    ElseIf conseqType == "item_acquired"
+        ; Item acquisition — uses native fuzzy resolver
+        ProcessOffScreenItemAcquired(akActor, reason, crime, amount)
+    Else
+        DebugMsg("Off-screen consequence: unknown type '" + conseqType + "' for " + actorName)
+        Return
+    EndIf
+
+    ; Stamp consequence cooldown
+    StorageUtil.SetFloatValue(akActor, KEY_LAST_CONSEQUENCE_GT, GetGameTimeInSeconds())
+EndFunction
+
+Function ProcessOffScreenArrest(Actor akActor, String home, String crime, Int bounty)
+    {Apply arrest consequence to a dismissed follower.
+     Stores bounty, registers event, and physically places the NPC in jail
+     using the ArrestScript's jail infrastructure (marker, outfit, faction, tracking).}
+    String actorName = akActor.GetDisplayName()
+
+    If bounty <= 0
+        bounty = 100
+    EndIf
+
+    ; Cap against cumulative maximum
+    Int currentTotal = StorageUtil.GetIntValue(akActor, KEY_OFFSCREEN_BOUNTY_TOTAL, 0)
+    If currentTotal + bounty > MaxOffScreenBounty
+        bounty = MaxOffScreenBounty - currentTotal
+        If bounty <= 0
+            DebugMsg("Off-screen arrest: " + actorName + " at bounty cap (" + MaxOffScreenBounty + "), skipping")
+            Return
+        EndIf
+    EndIf
+
+    ; Update cumulative bounty
+    StorageUtil.SetIntValue(akActor, KEY_OFFSCREEN_BOUNTY_TOTAL, currentTotal + bounty)
+
+    String crimeStr = crime
+    If crimeStr == ""
+        crimeStr = "a minor offense"
+    EndIf
+
+    DebugMsg("Off-screen arrest: " + actorName + " +" + bounty + " bounty for " + crimeStr + " in " + home)
+
+    ; Register as memorable event
+    SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(actorName + " was arrested for " + crimeStr + " in " + home + " and has a " + (currentTotal + bounty) + " gold bounty."), akActor, None)
+
+    ; Add to gossip
+    AppendGossip(home, actorName + " was arrested for " + crimeStr + "!")
+
+    ; Write to native store for PrismaUI
+    SeverActionsNative.Native_OffScreen_IncrementBounty(akActor, bounty)
+    SeverActionsNative.Native_OffScreen_IncrementArrestCount(akActor)
+    SeverActionsNative.Native_OffScreen_AddEvent(akActor, actorName + " was arrested for " + crimeStr + " in " + home, "significant", GetGameTimeInSeconds(), true, "arrest", bounty, crimeStr, "")
+
+    ; ── Physical jail placement ──
+    ; Uses ArrestScript's infrastructure: jail marker, outfit, faction, sandbox package.
+    ; Simplified from OnArrivedAtJail() — no guard escort needed for off-screen arrest.
+    If ArrestScript
+        ; Check if already jailed
+        If ArrestScript.IsNPCJailed(akActor)
+            DebugMsg("Off-screen arrest: " + actorName + " is already jailed, skipping placement")
+        Else
+            ; Resolve crime faction from home location → jail marker
+            Faction crimeFaction = GetCrimeFactionForHoldName(home)
+            If crimeFaction
+                ObjectReference jailMarker = SeverActionsNative.GetFactionJailMarker(crimeFaction)
+                If jailMarker
+                    ; Add to Jailed faction
+                    akActor.AddToFaction(ArrestScript.SeverActions_Jailed)
+
+                    ; Teleport to jail — use Disable/Enable for cross-cell reliability
+                    akActor.Disable()
+                    Utility.Wait(0.1)
+                    akActor.MoveTo(jailMarker, 0.0, 0.0, 0.0)
+                    Utility.Wait(0.1)
+                    akActor.Enable()
+
+                    ; Change to jail clothes (faction outfit or fallback)
+                    ArrestScript.ChangeToJailClothes(akActor, crimeFaction)
+
+                    ; Track via ArrestScript's jailed NPC list
+                    ArrestScript.AddJailedNPC(akActor)
+                    StorageUtil.SetFormValue(akActor, "SeverActions_JailMarker", jailMarker)
+
+                    ; Apply sandbox package so they pace around the cell
+                    If ArrestScript.SeverActions_PrisonerSandBox && jailMarker
+                        SeverActionsNative.LinkedRef_Set(akActor, jailMarker, ArrestScript.SeverActions_SandboxAnchorKW)
+                        ActorUtil.AddPackageOverride(akActor, ArrestScript.SeverActions_PrisonerSandBox, 110, 1)
+                        akActor.EvaluatePackage()
+                    EndIf
+
+                    ; Register persistent event for SkyrimNet
+                    SkyrimNetApi.RegisterPersistentEvent(actorName + " has been jailed in " + home + ".", akActor, None)
+
+                    DebugMsg("Off-screen arrest: " + actorName + " placed in jail at " + home)
+                Else
+                    DebugMsg("Off-screen arrest: no jail marker found for " + home + " — arrest recorded but NPC not moved")
+                EndIf
+            Else
+                DebugMsg("Off-screen arrest: no crime faction found for '" + home + "' — arrest recorded but NPC not moved")
+            EndIf
+        EndIf
+    Else
+        DebugMsg("Off-screen arrest: ArrestScript not available — arrest recorded but NPC not moved")
+    EndIf
+
+    If ShowNotifications
+        Debug.Notification(actorName + " was arrested in " + home + "! (" + bounty + " bounty)")
+    EndIf
+EndFunction
+
+Function ProcessOffScreenBounty(Actor akActor, String home, String crime, Int bounty)
+    {Apply bounty without arrest — wanted but not yet caught.}
+    String actorName = akActor.GetDisplayName()
+
+    If bounty <= 0
+        bounty = 50
+    EndIf
+
+    ; Cap against cumulative maximum
+    Int currentTotal = StorageUtil.GetIntValue(akActor, KEY_OFFSCREEN_BOUNTY_TOTAL, 0)
+    If currentTotal + bounty > MaxOffScreenBounty
+        bounty = MaxOffScreenBounty - currentTotal
+        If bounty <= 0
+            Return
+        EndIf
+    EndIf
+
+    StorageUtil.SetIntValue(akActor, KEY_OFFSCREEN_BOUNTY_TOTAL, currentTotal + bounty)
+
+    String crimeStr = crime
+    If crimeStr == ""
+        crimeStr = "suspicious activity"
+    EndIf
+    SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(actorName + " is wanted for " + crimeStr + " in " + home + "."), akActor, None)
+
+    ; Write to native store
+    SeverActionsNative.Native_OffScreen_IncrementBounty(akActor, bounty)
+    SeverActionsNative.Native_OffScreen_AddEvent(akActor, actorName + " is wanted for " + crimeStr + " in " + home, "notable", GetGameTimeInSeconds(), true, "bounty", bounty, crimeStr, "")
+
+    DebugMsg("Off-screen bounty: " + actorName + " +" + bounty + " for " + crimeStr + " in " + home)
+EndFunction
+
+Function ProcessOffScreenGoldChange(Actor akActor, Int amount, String reason)
+    {Apply gold gain or loss to a dismissed follower's inventory.
+     Caps at MaxOffScreenGoldChange. Cannot reduce below 0 gold.}
+    String actorName = akActor.GetDisplayName()
+
+    ; Cap magnitude
+    If amount > MaxOffScreenGoldChange
+        amount = MaxOffScreenGoldChange
+    ElseIf amount < 0 && (0 - amount) > MaxOffScreenGoldChange
+        amount = 0 - MaxOffScreenGoldChange
+    EndIf
+
+    Form goldForm = Game.GetFormFromFile(0x0000000F, "Skyrim.esm")
+    If !goldForm
+        Return
+    EndIf
+
+    If amount > 0
+        akActor.AddItem(goldForm, amount, true)
+        SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(actorName + " earned " + amount + " gold from " + reason + "."), akActor, None)
+        SeverActionsNative.Native_OffScreen_IncrementGoldEarned(akActor, amount)
+        SeverActionsNative.Native_OffScreen_AddEvent(akActor, actorName + " earned " + amount + " gold from " + reason, "notable", GetGameTimeInSeconds(), true, "gold_change", amount, "", "")
+        DebugMsg("Off-screen gold: " + actorName + " +" + amount + "g (" + reason + ")")
+    ElseIf amount < 0
+        Int toRemove = 0 - amount
+        Int currentGold = akActor.GetItemCount(goldForm)
+        If toRemove > currentGold
+            toRemove = currentGold
+        EndIf
+        If toRemove > 0
+            akActor.RemoveItem(goldForm, toRemove, true)
+            SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(actorName + " lost " + toRemove + " gold due to " + reason + "."), akActor, None)
+            SeverActionsNative.Native_OffScreen_IncrementGoldLost(akActor, toRemove)
+            SeverActionsNative.Native_OffScreen_AddEvent(akActor, actorName + " lost " + toRemove + " gold due to " + reason, "notable", GetGameTimeInSeconds(), true, "gold_change", 0 - toRemove, "", "")
+            DebugMsg("Off-screen gold: " + actorName + " -" + toRemove + "g (" + reason + ")")
+        EndIf
+    EndIf
+EndFunction
+
+Function ProcessOffScreenDebt(Actor akActor, Int amount, String reason)
+    {Track debt from off-screen events. Simple StorageUtil accumulator.
+     Proper Debt system integration (with creditor actors) is Phase 2b.}
+    String actorName = akActor.GetDisplayName()
+
+    If amount <= 0
+        Return
+    EndIf
+
+    ; Cap
+    If amount > MaxOffScreenGoldChange
+        amount = MaxOffScreenGoldChange
+    EndIf
+
+    Int currentDebt = StorageUtil.GetIntValue(akActor, KEY_OFFSCREEN_DEBT, 0)
+    StorageUtil.SetIntValue(akActor, KEY_OFFSCREEN_DEBT, currentDebt + amount)
+
+    SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(actorName + " incurred a debt of " + amount + " gold for " + reason + "."), akActor, None)
+
+    ; Write to native store
+    SeverActionsNative.Native_OffScreen_IncrementDebt(akActor, amount)
+    SeverActionsNative.Native_OffScreen_AddEvent(akActor, actorName + " incurred " + amount + " gold debt for " + reason, "notable", GetGameTimeInSeconds(), true, "debt", amount, "", "")
+
+    If ShowNotifications
+        Debug.Notification(actorName + " took on " + amount + " gold in debt.")
+    EndIf
+
+    DebugMsg("Off-screen debt: " + actorName + " +" + amount + "g (" + reason + ")")
+EndFunction
+
+Function ProcessOffScreenItemAcquired(Actor akActor, String itemName, String category, Int count)
+    {Give an item to a dismissed follower via native fuzzy name resolver.
+     Called from off-screen consequence parsing. item_acquired consequence uses:
+     reason=item name, crime=category, amount=count (repurposed in dispatch).}
+    String actorName = akActor.GetDisplayName()
+
+    If itemName == "" || count <= 0
+        DebugMsg("Off-screen item: invalid params for " + actorName + " (item='" + itemName + "', count=" + count + ")")
+        Return
+    EndIf
+
+    ; Cap count to prevent abuse
+    If count > 5
+        count = 5
+    EndIf
+
+    ; Default category to "any" if not specified
+    If category == ""
+        category = "any"
+    EndIf
+
+    ; Resolve and give via native item resolver (fuzzy 4-stage lookup)
+    String resolvedName = SeverActionsNative.Native_ResolveItemName(itemName, category)
+    If resolvedName == ""
+        DebugMsg("Off-screen item: could not resolve '" + itemName + "' (category: " + category + ") for " + actorName)
+        Return
+    EndIf
+
+    Bool success = SeverActionsNative.Native_GiveItemByName(akActor, itemName, category, count)
+    If !success
+        DebugMsg("Off-screen item: failed to give '" + itemName + "' to " + actorName)
+        Return
+    EndIf
+
+    ; Register event
+    String eventDesc = actorName + " acquired " + count + "x " + resolvedName
+    SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(eventDesc + "."), akActor, None)
+
+    ; Write to native store for PrismaUI
+    SeverActionsNative.Native_OffScreen_AddEvent(akActor, eventDesc, "notable", GetGameTimeInSeconds(), true, "item_acquired", count, itemName, category)
+
+    If ShowNotifications
+        Debug.Notification(actorName + " acquired " + count + "x " + resolvedName)
+    EndIf
+
+    DebugMsg("Off-screen item: " + actorName + " +" + count + "x " + resolvedName + " (searched: '" + itemName + "', cat: " + category + ")")
 EndFunction
 
 ; =============================================================================
@@ -2936,13 +3924,12 @@ Function ApplyCombatStyleValues(Actor akActor, String style)
     EndIf
 EndFunction
 
-Function ReapplyCombatStyles()
+Function ReapplyCombatStyles(Actor[] followers)
     {Re-apply combat style actor values for all registered followers.
      StorageUtil strings persist across save/load, but the actor value
      effects (Confidence, Aggression) may be reverted by NFF/EFF restoring
      their own saved values, or by the dismiss/recruit cycle.
      Called from Maintenance() on every game load.}
-    Actor[] followers = GetAllFollowers()
     Int i = 0
     While i < followers.Length
         If followers[i]
@@ -3015,7 +4002,7 @@ Function ReapplyHomeSandboxing()
     EndIf
 EndFunction
 
-Function PatchUpVanillaFollowerStatus()
+Function PatchUpVanillaFollowerStatus(Actor[] followers)
     {Ensure ALL registered followers have CurrentFollowerFaction membership on every game load.
      SkyrimNet's is_follower() decorator checks this faction — without it, DLC followers
      like Serana cause decnpc/is_in_faction errors in prompt templates.
@@ -3027,7 +4014,6 @@ Function PatchUpVanillaFollowerStatus()
     EndIf
 
     Actor player = Game.GetPlayer()
-    Actor[] followers = GetAllFollowers()
     Int i = 0
     While i < followers.Length
         Actor follower = followers[i]

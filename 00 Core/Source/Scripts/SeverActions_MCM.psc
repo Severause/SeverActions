@@ -101,6 +101,7 @@ int OID_BountyHjaalmarch
 int OID_BountyWinterhold
 int OID_ClearAllBounties
 int OID_ArrestCooldown
+int OID_NPCArrestCooldown
 int OID_PersuasionTimeLimit
 
 ; General page - Native DLL toggles
@@ -147,11 +148,20 @@ int OID_FM_StabilityDelay
 int OID_FM_PerActorAutoSwitch
 int OID_FM_FrameworkMode
 int OID_FM_AutoAssessment
-int OID_FM_AssessCooldown
+int OID_FM_AssessCooldownMin
+int OID_FM_AssessCooldownMax
 int OID_FM_AutoInterAssessment
-int OID_FM_InterAssessCooldown
+int OID_FM_InterAssessCooldownMin
+int OID_FM_InterAssessCooldownMax
 int OID_FM_ResetAll
 int OID_FM_DeathGracePeriod
+int OID_FM_AutoOffScreenLife
+int OID_FM_OffScreenCooldownMin
+int OID_FM_OffScreenCooldownMax
+int OID_FM_OffScreenConsequences
+int OID_FM_ConsequenceCooldown
+int OID_FM_MaxBounty
+int OID_FM_MaxGoldChange
 int[] OID_FM_DismissFollower
 int OID_FM_ForceRemove
 int[] OID_FM_ClearHome
@@ -168,6 +178,13 @@ Actor[] CachedManagedFollowers
 ; NPC Homes section (General page)
 int[] OID_ClearNPCHome
 Actor[] CachedHomedNPCs
+
+; Dismissed NPCs section (Followers page)
+int OID_FM_DismissedSelect
+int[] OID_FM_DismissedClearHome
+int[] OID_FM_DismissedReRecruit
+Actor[] CachedDismissedFollowers
+int SelectedDismissedIdx = 0
 
 ; Combat style dropdown options
 string[] CombatStyleOptions
@@ -658,6 +675,7 @@ Function DrawCrimePage()
         AddEmptyOption()
         AddHeaderOption("Settings")
         OID_ArrestCooldown = AddSliderOption("Arrest Cooldown", ArrestScript.ArrestPlayerCooldown, "{0} sec")
+        OID_NPCArrestCooldown = AddSliderOption("NPC Arrest Cooldown", ArrestScript.NPCArrestCooldown, "{0} sec")
         OID_PersuasionTimeLimit = AddSliderOption("Persuasion Time", ArrestScript.PersuasionTimeLimit, "{0} sec")
 
         AddEmptyOption()
@@ -787,9 +805,18 @@ Function DrawFollowersPage()
         OID_FM_Notifications = AddToggleOption("Show Notifications", FollowerManagerScript.ShowNotifications)
         OID_FM_Debug = AddToggleOption("Debug Mode", FollowerManagerScript.DebugMode)
         OID_FM_AutoAssessment = AddToggleOption("Auto Relationship Assessment", FollowerManagerScript.AutoRelAssessment)
-        OID_FM_AssessCooldown = AddSliderOption("Assessment Cooldown", FollowerManagerScript.AssessmentCooldownHours, "{1} hrs")
+        OID_FM_AssessCooldownMin = AddSliderOption("Assessment Min Cooldown", FollowerManagerScript.AssessmentCooldownMinHours, "{1} hrs")
+        OID_FM_AssessCooldownMax = AddSliderOption("Assessment Max Cooldown", FollowerManagerScript.AssessmentCooldownMaxHours, "{1} hrs")
         OID_FM_AutoInterAssessment = AddToggleOption("Inter-Follower Assessment", FollowerManagerScript.AutoInterFollowerAssessment)
-        OID_FM_InterAssessCooldown = AddSliderOption("Inter-Follower Cooldown", FollowerManagerScript.InterFollowerCooldownHours, "{1} hrs")
+        OID_FM_InterAssessCooldownMin = AddSliderOption("Inter-Follower Min Cooldown", FollowerManagerScript.InterFollowerCooldownMinHours, "{1} hrs")
+        OID_FM_InterAssessCooldownMax = AddSliderOption("Inter-Follower Max Cooldown", FollowerManagerScript.InterFollowerCooldownMaxHours, "{1} hrs")
+        OID_FM_AutoOffScreenLife = AddToggleOption("Off-Screen Life Events", FollowerManagerScript.AutoOffScreenLife)
+        OID_FM_OffScreenCooldownMin = AddSliderOption("Off-Screen Min Cooldown", FollowerManagerScript.OffScreenLifeCooldownMinHours, "{1} hrs")
+        OID_FM_OffScreenCooldownMax = AddSliderOption("Off-Screen Max Cooldown", FollowerManagerScript.OffScreenLifeCooldownMaxHours, "{1} hrs")
+        OID_FM_OffScreenConsequences = AddToggleOption("Off-Screen Consequences", FollowerManagerScript.OffScreenConsequences)
+        OID_FM_ConsequenceCooldown = AddSliderOption("Consequence Cooldown", FollowerManagerScript.ConsequenceCooldownHours, "{1} hrs")
+        OID_FM_MaxBounty = AddSliderOption("Max Off-Screen Bounty", FollowerManagerScript.MaxOffScreenBounty as Float, "{0}")
+        OID_FM_MaxGoldChange = AddSliderOption("Max Gold Change", FollowerManagerScript.MaxOffScreenGoldChange as Float, "{0}")
         OID_FM_DeathGracePeriod = AddSliderOption("Death Cleanup Delay", FollowerManagerScript.DeathGracePeriodHours, "{0} hrs")
 
         AddEmptyOption()
@@ -911,6 +938,32 @@ Function DrawFollowersPage()
                         OID_FM_DeletePreset = new int[1]
                     EndIf
                 EndIf
+            EndIf
+        EndIf
+
+        ; --- Dismissed NPCs with Homes ---
+        AddEmptyOption()
+        AddHeaderOption("Assigned NPCs")
+        CachedDismissedFollowers = FollowerManagerScript.GetDismissedWithHomes()
+        OID_FM_DismissedClearHome = new int[20]
+        OID_FM_DismissedReRecruit = new int[20]
+
+        If CachedDismissedFollowers.Length == 0
+            AddTextOption("", "No dismissed NPCs with homes", OPTION_FLAG_DISABLED)
+        Else
+            If SelectedDismissedIdx >= CachedDismissedFollowers.Length
+                SelectedDismissedIdx = 0
+            EndIf
+            AddTextOption("Assigned", CachedDismissedFollowers.Length + " NPCs", OPTION_FLAG_DISABLED)
+            OID_FM_DismissedSelect = AddMenuOption("Select NPC", CachedDismissedFollowers[SelectedDismissedIdx].GetDisplayName())
+
+            Int d = SelectedDismissedIdx
+            Actor dismissed = CachedDismissedFollowers[d]
+            If dismissed
+                String dHome = FollowerManagerScript.GetAssignedHome(dismissed)
+                AddTextOption("Home", dHome, OPTION_FLAG_DISABLED)
+                OID_FM_DismissedClearHome[d] = AddTextOption("Clear Home", "CLICK")
+                OID_FM_DismissedReRecruit[d] = AddTextOption("Re-Recruit", "CLICK")
             EndIf
         EndIf
 
@@ -1089,6 +1142,16 @@ Event OnOptionSelect(int option)
             FollowerManagerScript.AutoInterFollowerAssessment = !FollowerManagerScript.AutoInterFollowerAssessment
             SetToggleOptionValue(OID_FM_AutoInterAssessment, FollowerManagerScript.AutoInterFollowerAssessment)
         EndIf
+    elseif option == OID_FM_AutoOffScreenLife
+        If FollowerManagerScript
+            FollowerManagerScript.AutoOffScreenLife = !FollowerManagerScript.AutoOffScreenLife
+            SetToggleOptionValue(OID_FM_AutoOffScreenLife, FollowerManagerScript.AutoOffScreenLife)
+        EndIf
+    elseif option == OID_FM_OffScreenConsequences
+        If FollowerManagerScript
+            FollowerManagerScript.OffScreenConsequences = !FollowerManagerScript.OffScreenConsequences
+            SetToggleOptionValue(OID_FM_OffScreenConsequences, FollowerManagerScript.OffScreenConsequences)
+        EndIf
     elseif option == OID_FM_ForceRemove
         If FollowerManagerScript && CachedManagedFollowers && SelectedCompanionIdx < CachedManagedFollowers.Length
             Actor follower = CachedManagedFollowers[SelectedCompanionIdx]
@@ -1158,6 +1221,25 @@ Event OnOptionSelect(int option)
                     ForcePageReset()
                 EndIf
                 j += 1
+            EndWhile
+        EndIf
+
+        ; Dismissed NPCs: clear home / re-recruit
+        If FollowerManagerScript && OID_FM_DismissedClearHome && CachedDismissedFollowers
+            Int d = 0
+            While d < CachedDismissedFollowers.Length && d < 20
+                If option == OID_FM_DismissedClearHome[d] && CachedDismissedFollowers[d]
+                    FollowerManagerScript.ClearHome(CachedDismissedFollowers[d])
+                    Debug.Notification(CachedDismissedFollowers[d].GetDisplayName() + "'s home cleared.")
+                    ForcePageReset()
+                ElseIf OID_FM_DismissedReRecruit && option == OID_FM_DismissedReRecruit[d] && CachedDismissedFollowers[d]
+                    bool confirm = ShowMessage("Re-recruit " + CachedDismissedFollowers[d].GetDisplayName() + "?", true, "Yes", "No")
+                    If confirm
+                        FollowerManagerScript.RegisterFollower(CachedDismissedFollowers[d])
+                        ForcePageReset()
+                    EndIf
+                EndIf
+                d += 1
             EndWhile
         EndIf
 
@@ -1489,6 +1571,29 @@ Event OnOptionMenuOpen(int option)
             SetMenuDialogDefaultIndex(0)
             SetMenuDialogOptions(trimmed)
         EndIf
+    elseif option == OID_FM_DismissedSelect
+        ; Build dismissed NPC name list for the dropdown
+        If CachedDismissedFollowers && CachedDismissedFollowers.Length > 0
+            string[] dnames = new string[10]
+            Int j = 0
+            Int count = 0
+            While j < CachedDismissedFollowers.Length && j < 20
+                If CachedDismissedFollowers[j]
+                    dnames[count] = CachedDismissedFollowers[j].GetDisplayName()
+                    count += 1
+                EndIf
+                j += 1
+            EndWhile
+            string[] dtrimmed = PapyrusUtil.StringArray(count)
+            j = 0
+            While j < count
+                dtrimmed[j] = dnames[j]
+                j += 1
+            EndWhile
+            SetMenuDialogStartIndex(SelectedDismissedIdx)
+            SetMenuDialogDefaultIndex(0)
+            SetMenuDialogOptions(dtrimmed)
+        EndIf
     else
         ; Per-follower combat style menus
         If FollowerManagerScript && CachedManagedFollowers && OID_FM_CombatStyle
@@ -1530,6 +1635,9 @@ Event OnOptionMenuAccept(int option, int index)
     elseif option == OID_FM_CompanionSelect
         SelectedCompanionIdx = index
         ForcePageReset()
+    elseif option == OID_FM_DismissedSelect
+        SelectedDismissedIdx = index
+        ForcePageReset()
     else
         ; Per-follower combat style menus
         If FollowerManagerScript && CachedManagedFollowers && OID_FM_CombatStyle
@@ -1560,6 +1668,11 @@ Event OnOptionSliderOpen(int option)
         SetSliderDialogDefaultValue(60.0)
         SetSliderDialogRange(0.0, 300.0)
         SetSliderDialogInterval(5.0)
+    elseif option == OID_NPCArrestCooldown
+        SetSliderDialogStartValue(ArrestScript.NPCArrestCooldown)
+        SetSliderDialogDefaultValue(300.0)
+        SetSliderDialogRange(0.0, 600.0)
+        SetSliderDialogInterval(15.0)
     elseif option == OID_PersuasionTimeLimit
         SetSliderDialogStartValue(ArrestScript.PersuasionTimeLimit)
         SetSliderDialogDefaultValue(90.0)
@@ -1638,19 +1751,68 @@ Event OnOptionSliderOpen(int option)
             SetSliderDialogRange(60.0, 300.0)
             SetSliderDialogInterval(15.0)
         EndIf
-    elseif option == OID_FM_AssessCooldown
+    elseif option == OID_FM_AssessCooldownMin
         If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.AssessmentCooldownHours)
-            SetSliderDialogDefaultValue(5.0)
+            SetSliderDialogStartValue(FollowerManagerScript.AssessmentCooldownMinHours)
+            SetSliderDialogDefaultValue(4.0)
             SetSliderDialogRange(1.0, 24.0)
             SetSliderDialogInterval(1.0)
         EndIf
-    elseif option == OID_FM_InterAssessCooldown
+    elseif option == OID_FM_AssessCooldownMax
         If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.InterFollowerCooldownHours)
-            SetSliderDialogDefaultValue(8.0)
+            SetSliderDialogStartValue(FollowerManagerScript.AssessmentCooldownMaxHours)
+            SetSliderDialogDefaultValue(10.0)
+            SetSliderDialogRange(1.0, 48.0)
+            SetSliderDialogInterval(1.0)
+        EndIf
+    elseif option == OID_FM_InterAssessCooldownMin
+        If FollowerManagerScript
+            SetSliderDialogStartValue(FollowerManagerScript.InterFollowerCooldownMinHours)
+            SetSliderDialogDefaultValue(6.0)
             SetSliderDialogRange(2.0, 48.0)
             SetSliderDialogInterval(1.0)
+        EndIf
+    elseif option == OID_FM_InterAssessCooldownMax
+        If FollowerManagerScript
+            SetSliderDialogStartValue(FollowerManagerScript.InterFollowerCooldownMaxHours)
+            SetSliderDialogDefaultValue(14.0)
+            SetSliderDialogRange(2.0, 72.0)
+            SetSliderDialogInterval(1.0)
+        EndIf
+    elseif option == OID_FM_OffScreenCooldownMin
+        If FollowerManagerScript
+            SetSliderDialogStartValue(FollowerManagerScript.OffScreenLifeCooldownMinHours)
+            SetSliderDialogDefaultValue(10.0)
+            SetSliderDialogRange(4.0, 48.0)
+            SetSliderDialogInterval(1.0)
+        EndIf
+    elseif option == OID_FM_OffScreenCooldownMax
+        If FollowerManagerScript
+            SetSliderDialogStartValue(FollowerManagerScript.OffScreenLifeCooldownMaxHours)
+            SetSliderDialogDefaultValue(40.0)
+            SetSliderDialogRange(6.0, 96.0)
+            SetSliderDialogInterval(1.0)
+        EndIf
+    elseif option == OID_FM_ConsequenceCooldown
+        If FollowerManagerScript
+            SetSliderDialogStartValue(FollowerManagerScript.ConsequenceCooldownHours)
+            SetSliderDialogDefaultValue(36.0)
+            SetSliderDialogRange(6.0, 72.0)
+            SetSliderDialogInterval(1.0)
+        EndIf
+    elseif option == OID_FM_MaxBounty
+        If FollowerManagerScript
+            SetSliderDialogStartValue(FollowerManagerScript.MaxOffScreenBounty as Float)
+            SetSliderDialogDefaultValue(1000.0)
+            SetSliderDialogRange(100.0, 5000.0)
+            SetSliderDialogInterval(100.0)
+        EndIf
+    elseif option == OID_FM_MaxGoldChange
+        If FollowerManagerScript
+            SetSliderDialogStartValue(FollowerManagerScript.MaxOffScreenGoldChange as Float)
+            SetSliderDialogDefaultValue(500.0)
+            SetSliderDialogRange(50.0, 2000.0)
+            SetSliderDialogInterval(50.0)
         EndIf
     elseif option == OID_FM_DeathGracePeriod
         If FollowerManagerScript
@@ -1707,6 +1869,9 @@ Event OnOptionSliderAccept(int option, float value)
     elseif option == OID_ArrestCooldown
         ArrestScript.ArrestPlayerCooldown = value
         SetSliderOptionValue(OID_ArrestCooldown, value, "{0} sec")
+    elseif option == OID_NPCArrestCooldown
+        ArrestScript.NPCArrestCooldown = value
+        SetSliderOptionValue(OID_NPCArrestCooldown, value, "{0} sec")
     elseif option == OID_PersuasionTimeLimit
         ArrestScript.PersuasionTimeLimit = value
         SetSliderOptionValue(OID_PersuasionTimeLimit, value, "{0} sec")
@@ -1765,15 +1930,76 @@ Event OnOptionSliderAccept(int option, float value)
             FollowerManagerScript.RelationshipCooldown = value
             SetSliderOptionValue(OID_FM_RelCooldown, value, "{0} sec")
         EndIf
-    elseif option == OID_FM_AssessCooldown
+    elseif option == OID_FM_AssessCooldownMin
         If FollowerManagerScript
-            FollowerManagerScript.AssessmentCooldownHours = value
-            SetSliderOptionValue(OID_FM_AssessCooldown, value, "{1} hrs")
+            FollowerManagerScript.AssessmentCooldownMinHours = value
+            ; Clamp max if min exceeds it
+            If value > FollowerManagerScript.AssessmentCooldownMaxHours
+                FollowerManagerScript.AssessmentCooldownMaxHours = value
+                SetSliderOptionValue(OID_FM_AssessCooldownMax, value, "{1} hrs")
+            EndIf
+            SetSliderOptionValue(OID_FM_AssessCooldownMin, value, "{1} hrs")
         EndIf
-    elseif option == OID_FM_InterAssessCooldown
+    elseif option == OID_FM_AssessCooldownMax
         If FollowerManagerScript
-            FollowerManagerScript.InterFollowerCooldownHours = value
-            SetSliderOptionValue(OID_FM_InterAssessCooldown, value, "{1} hrs")
+            FollowerManagerScript.AssessmentCooldownMaxHours = value
+            ; Clamp min if max falls below it
+            If value < FollowerManagerScript.AssessmentCooldownMinHours
+                FollowerManagerScript.AssessmentCooldownMinHours = value
+                SetSliderOptionValue(OID_FM_AssessCooldownMin, value, "{1} hrs")
+            EndIf
+            SetSliderOptionValue(OID_FM_AssessCooldownMax, value, "{1} hrs")
+        EndIf
+    elseif option == OID_FM_InterAssessCooldownMin
+        If FollowerManagerScript
+            FollowerManagerScript.InterFollowerCooldownMinHours = value
+            If value > FollowerManagerScript.InterFollowerCooldownMaxHours
+                FollowerManagerScript.InterFollowerCooldownMaxHours = value
+                SetSliderOptionValue(OID_FM_InterAssessCooldownMax, value, "{1} hrs")
+            EndIf
+            SetSliderOptionValue(OID_FM_InterAssessCooldownMin, value, "{1} hrs")
+        EndIf
+    elseif option == OID_FM_InterAssessCooldownMax
+        If FollowerManagerScript
+            FollowerManagerScript.InterFollowerCooldownMaxHours = value
+            If value < FollowerManagerScript.InterFollowerCooldownMinHours
+                FollowerManagerScript.InterFollowerCooldownMinHours = value
+                SetSliderOptionValue(OID_FM_InterAssessCooldownMin, value, "{1} hrs")
+            EndIf
+            SetSliderOptionValue(OID_FM_InterAssessCooldownMax, value, "{1} hrs")
+        EndIf
+    elseif option == OID_FM_OffScreenCooldownMin
+        If FollowerManagerScript
+            FollowerManagerScript.OffScreenLifeCooldownMinHours = value
+            If value > FollowerManagerScript.OffScreenLifeCooldownMaxHours
+                FollowerManagerScript.OffScreenLifeCooldownMaxHours = value
+                SetSliderOptionValue(OID_FM_OffScreenCooldownMax, value, "{1} hrs")
+            EndIf
+            SetSliderOptionValue(OID_FM_OffScreenCooldownMin, value, "{1} hrs")
+        EndIf
+    elseif option == OID_FM_OffScreenCooldownMax
+        If FollowerManagerScript
+            FollowerManagerScript.OffScreenLifeCooldownMaxHours = value
+            If value < FollowerManagerScript.OffScreenLifeCooldownMinHours
+                FollowerManagerScript.OffScreenLifeCooldownMinHours = value
+                SetSliderOptionValue(OID_FM_OffScreenCooldownMin, value, "{1} hrs")
+            EndIf
+            SetSliderOptionValue(OID_FM_OffScreenCooldownMax, value, "{1} hrs")
+        EndIf
+    elseif option == OID_FM_ConsequenceCooldown
+        If FollowerManagerScript
+            FollowerManagerScript.ConsequenceCooldownHours = value
+            SetSliderOptionValue(OID_FM_ConsequenceCooldown, value, "{1} hrs")
+        EndIf
+    elseif option == OID_FM_MaxBounty
+        If FollowerManagerScript
+            FollowerManagerScript.MaxOffScreenBounty = value as Int
+            SetSliderOptionValue(OID_FM_MaxBounty, value, "{0}")
+        EndIf
+    elseif option == OID_FM_MaxGoldChange
+        If FollowerManagerScript
+            FollowerManagerScript.MaxOffScreenGoldChange = value as Int
+            SetSliderOptionValue(OID_FM_MaxGoldChange, value, "{0}")
         EndIf
     elseif option == OID_FM_DeathGracePeriod
         If FollowerManagerScript
@@ -1899,6 +2125,9 @@ Event OnOptionHighlight(int option)
     elseif option == OID_ArrestCooldown
         SetInfoText("Cooldown in seconds before guards can use the ArrestPlayer action again. Prevents guards from spamming arrest during persuasion. Set to 0 to disable. Default: 60 seconds.")
 
+    elseif option == OID_NPCArrestCooldown
+        SetInfoText("Cooldown in seconds before the ArrestNPC and Dispatch actions can be used again. Set to 0 to disable. Default: 300 seconds (5 minutes).")
+
     elseif option == OID_PersuasionTimeLimit
         SetInfoText("Time in seconds the player has to convince the guard during the persuasion phase. After this time expires, the guard will demand a decision. Default: 90 seconds.")
 
@@ -1958,12 +2187,30 @@ Event OnOptionHighlight(int option)
         SetInfoText("Enable debug messages for companion framework. Shows relationship value changes in the console.")
     elseif option == OID_FM_AutoAssessment
         SetInfoText("When enabled, companions periodically reflect on recent events, memories, and diary entries. The system automatically adjusts rapport, trust, loyalty, and mood based on these reflections. Disable to manage relationship values manually or through actions only.")
-    elseif option == OID_FM_AssessCooldown
-        SetInfoText("Game hours between automatic relationship assessments per follower. Lower values = more frequent LLM calls. Default: 5 hours.")
+    elseif option == OID_FM_AssessCooldownMin
+        SetInfoText("Minimum game hours between relationship assessments per follower. Each follower gets a random cooldown between min and max after each assessment. Default: 4 hours.")
+    elseif option == OID_FM_AssessCooldownMax
+        SetInfoText("Maximum game hours between relationship assessments per follower. Each follower gets a random cooldown between min and max after each assessment. Default: 10 hours.")
     elseif option == OID_FM_AutoInterAssessment
         SetInfoText("When enabled, followers periodically evaluate how they feel about each other. Builds inter-party opinions based on shared events, memories, and interactions.")
-    elseif option == OID_FM_InterAssessCooldown
-        SetInfoText("Game hours between inter-follower relationship assessments per follower. Each follower is assessed in rotation. Default: 8 hours.")
+    elseif option == OID_FM_InterAssessCooldownMin
+        SetInfoText("Minimum game hours between inter-follower assessments per follower. Random cooldown between min and max. Default: 6 hours.")
+    elseif option == OID_FM_InterAssessCooldownMax
+        SetInfoText("Maximum game hours between inter-follower assessments per follower. Random cooldown between min and max. Default: 14 hours.")
+    elseif option == OID_FM_AutoOffScreenLife
+        SetInfoText("When enabled, dismissed followers with assigned homes will generate life events while you're away. They'll have things to talk about when you return, and local NPCs may gossip about their activities.")
+    elseif option == OID_FM_OffScreenCooldownMin
+        SetInfoText("Minimum game hours between off-screen life events per dismissed follower. Random cooldown between min and max. Default: 10 hours.")
+    elseif option == OID_FM_OffScreenCooldownMax
+        SetInfoText("Maximum game hours between off-screen life events per dismissed follower. Random cooldown between min and max. Default: 40 hours.")
+    elseif option == OID_FM_OffScreenConsequences
+        SetInfoText("When enabled, off-screen life events may have real consequences: followers can get arrested, earn or lose gold, or take on debt. Events are personality-driven — principled followers rarely commit crimes. Default: OFF.")
+    elseif option == OID_FM_ConsequenceCooldown
+        SetInfoText("Game hours between consequential off-screen events per follower. Consequences are rarer than regular events. Default: 36 hours.")
+    elseif option == OID_FM_MaxBounty
+        SetInfoText("Maximum cumulative bounty a follower can accumulate from off-screen crime events. Prevents runaway bounties. Default: 1000 gold.")
+    elseif option == OID_FM_MaxGoldChange
+        SetInfoText("Maximum gold a follower can gain or lose per off-screen event. Keeps the economy grounded. Default: 500 gold.")
     elseif option == OID_FM_DeathGracePeriod
         SetInfoText("Hours after a follower's death before they are automatically removed from the roster. Set to 0 to never auto-remove (manual only via PrismaUI). Default: 4 hours.")
     elseif option == OID_FM_RelCooldown
@@ -2158,6 +2405,12 @@ Event OnOptionDefault(int option)
             SetSliderOptionValue(OID_ArrestCooldown, 60.0, "{0} sec")
         EndIf
 
+    elseif option == OID_NPCArrestCooldown
+        If ArrestScript
+            ArrestScript.NPCArrestCooldown = 300.0
+            SetSliderOptionValue(OID_NPCArrestCooldown, 300.0, "{0} sec")
+        EndIf
+
     elseif option == OID_PersuasionTimeLimit
         If ArrestScript
             ArrestScript.PersuasionTimeLimit = 90.0
@@ -2294,20 +2547,65 @@ Event OnOptionDefault(int option)
             FollowerManagerScript.AutoRelAssessment = true
             SetToggleOptionValue(OID_FM_AutoAssessment, true)
         EndIf
-    elseif option == OID_FM_AssessCooldown
+    elseif option == OID_FM_AssessCooldownMin
         If FollowerManagerScript
-            FollowerManagerScript.AssessmentCooldownHours = 5.0
-            SetSliderOptionValue(OID_FM_AssessCooldown, 5.0, "{1} hrs")
+            FollowerManagerScript.AssessmentCooldownMinHours = 4.0
+            SetSliderOptionValue(OID_FM_AssessCooldownMin, 4.0, "{1} hrs")
+        EndIf
+    elseif option == OID_FM_AssessCooldownMax
+        If FollowerManagerScript
+            FollowerManagerScript.AssessmentCooldownMaxHours = 10.0
+            SetSliderOptionValue(OID_FM_AssessCooldownMax, 10.0, "{1} hrs")
         EndIf
     elseif option == OID_FM_AutoInterAssessment
         If FollowerManagerScript
             FollowerManagerScript.AutoInterFollowerAssessment = true
             SetToggleOptionValue(OID_FM_AutoInterAssessment, true)
         EndIf
-    elseif option == OID_FM_InterAssessCooldown
+    elseif option == OID_FM_InterAssessCooldownMin
         If FollowerManagerScript
-            FollowerManagerScript.InterFollowerCooldownHours = 8.0
-            SetSliderOptionValue(OID_FM_InterAssessCooldown, 8.0, "{1} hrs")
+            FollowerManagerScript.InterFollowerCooldownMinHours = 6.0
+            SetSliderOptionValue(OID_FM_InterAssessCooldownMin, 6.0, "{1} hrs")
+        EndIf
+    elseif option == OID_FM_InterAssessCooldownMax
+        If FollowerManagerScript
+            FollowerManagerScript.InterFollowerCooldownMaxHours = 14.0
+            SetSliderOptionValue(OID_FM_InterAssessCooldownMax, 14.0, "{1} hrs")
+        EndIf
+    elseif option == OID_FM_AutoOffScreenLife
+        If FollowerManagerScript
+            FollowerManagerScript.AutoOffScreenLife = true
+            SetToggleOptionValue(OID_FM_AutoOffScreenLife, true)
+        EndIf
+    elseif option == OID_FM_OffScreenCooldownMin
+        If FollowerManagerScript
+            FollowerManagerScript.OffScreenLifeCooldownMinHours = 10.0
+            SetSliderOptionValue(OID_FM_OffScreenCooldownMin, 10.0, "{1} hrs")
+        EndIf
+    elseif option == OID_FM_OffScreenCooldownMax
+        If FollowerManagerScript
+            FollowerManagerScript.OffScreenLifeCooldownMaxHours = 40.0
+            SetSliderOptionValue(OID_FM_OffScreenCooldownMax, 40.0, "{1} hrs")
+        EndIf
+    elseif option == OID_FM_OffScreenConsequences
+        If FollowerManagerScript
+            FollowerManagerScript.OffScreenConsequences = false
+            SetToggleOptionValue(OID_FM_OffScreenConsequences, false)
+        EndIf
+    elseif option == OID_FM_ConsequenceCooldown
+        If FollowerManagerScript
+            FollowerManagerScript.ConsequenceCooldownHours = 36.0
+            SetSliderOptionValue(OID_FM_ConsequenceCooldown, 36.0, "{1} hrs")
+        EndIf
+    elseif option == OID_FM_MaxBounty
+        If FollowerManagerScript
+            FollowerManagerScript.MaxOffScreenBounty = 1000
+            SetSliderOptionValue(OID_FM_MaxBounty, 1000.0, "{0}")
+        EndIf
+    elseif option == OID_FM_MaxGoldChange
+        If FollowerManagerScript
+            FollowerManagerScript.MaxOffScreenGoldChange = 500
+            SetSliderOptionValue(OID_FM_MaxGoldChange, 500.0, "{0}")
         EndIf
     elseif option == OID_FM_DeathGracePeriod
         If FollowerManagerScript

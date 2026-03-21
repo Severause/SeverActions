@@ -743,6 +743,28 @@ Function SetYieldHitThreshold(Int threshold) Global Native
 {Set how many hits a yielded actor must take before auto-reverting surrender. Default: 3.}
 
 ; =============================================================================
+; CEASEFIRE MONITOR
+; Tracks player hits on ceasefire'd actors — breaks group ceasefire when player attacks
+; =============================================================================
+
+Function Ceasefire_Register(Actor akActor, Float originalAggression) Global Native
+{Start monitoring a ceasefire'd actor for player hits. On hit, restores aggression
+ and fires SeverActionsNative_CeasefireBroken ModEvent for Papyrus cleanup.}
+
+Function Ceasefire_Unregister(Actor akActor) Global Native
+{Stop monitoring a ceasefire'd actor.}
+
+Bool Function Ceasefire_IsMonitored(Actor akActor) Global Native
+{Check if an actor is currently being monitored for ceasefire-break hits.}
+
+Function Ceasefire_ClearAll() Global Native
+{Clear all ceasefire tracking data.}
+
+Actor[] Function Ceasefire_FindNearbyAllies(Actor akActor, Float radius) Global Native
+{Find all loaded actors within radius that share at least one faction with the given actor.
+ Used to propagate group ceasefire to nearby allies. Excludes dead actors and the player.}
+
+; =============================================================================
 ; DEPARTURE DETECTION (extension of StuckDetector)
 ; Verifies an NPC actually started moving after receiving a travel package.
 ; Uses baseline position from Stuck_StartTracking. Grace period: 15s, recovery: 30s.
@@ -1099,6 +1121,9 @@ Function Native_SetTravelState(Actor akActor, String travelState, String destina
 Function Native_SetPackageState(Actor akActor, Bool hasFollow, Bool hasTalkPlayer, Bool hasTalkNPC) Global Native
 {Set package state flags in SKSE cosave.}
 
+Bool Function Native_GetHasFollowPkg(Actor akActor) Global Native
+{Check if actor had a follow package before save/load. Used to re-register casual follow packages on game load.}
+
 ; --- Roster flag ---
 
 Function Native_SetIsFollower(Actor akActor, Bool val) Global Native
@@ -1305,3 +1330,70 @@ Form Function ArmorCatalog_SearchByName(String query) Global Native
 
 Int Function ArmorCatalog_GetPluginCount() Global Native
 {Get the number of plugins that contain armor records.}
+
+; =============================================================================
+; OFF-SCREEN LIFE DATA STORE (SKSE cosave)
+; Native C++ data store for dismissed follower life events, consequences, and gossip.
+; Persists across save/load via cosave record 'OSLD'.
+; =============================================================================
+
+Function Native_OffScreen_AddEvent(Actor akActor, String summary, String eventType, Float gameTime, Bool hasConsequence, String consequenceType, Int consequenceAmount, String consequenceCrime, String involvedName) Global Native
+{Add a life event for a dismissed follower. Stored in ring buffer (max 20 per actor).}
+
+Function Native_OffScreen_AddGossip(String locationName, String gossipText, Float gameTime) Global Native
+{Add a gossip entry for a location. Ring buffer, max 5 per location.}
+
+Function Native_OffScreen_ClearActor(Actor akActor) Global Native
+{Remove all off-screen life data for an actor (used by PurgeFollower).}
+
+Function Native_OffScreen_IncrementBounty(Actor akActor, Int amount) Global Native
+{Increment cumulative off-screen bounty for an actor.}
+
+Function Native_OffScreen_IncrementDebt(Actor akActor, Int amount) Global Native
+{Increment cumulative off-screen debt for an actor.}
+
+Function Native_OffScreen_IncrementGoldEarned(Actor akActor, Int amount) Global Native
+{Increment total gold earned off-screen for an actor.}
+
+Function Native_OffScreen_IncrementGoldLost(Actor akActor, Int amount) Global Native
+{Increment total gold lost off-screen for an actor.}
+
+Function Native_OffScreen_IncrementArrestCount(Actor akActor) Global Native
+{Increment the off-screen arrest counter for an actor.}
+
+String Function Native_OffScreen_ParseLLMResponse(Actor akActor, String response, Float gameTime) Global Native
+{Parse the raw JSON from the off-screen life LLM callback using nlohmann::json. \
+Stores events directly in the native data store and returns a pipe-delimited string \
+with parsed fields: summary1|type1|gossip1|summary2|type2|gossip2|conseqAction|conseqAmount| \
+conseqReason|conseqCrime|conseqItem|conseqCategory|conseqCount|involved|diary. \
+Returns empty string on parse failure.}
+
+String Function Native_OffScreen_BuildContext(Actor akActor, Bool consequencesEnabled, Float consequenceCooldownSec, Float lastConsequenceGT, Float currentGameTime) Global Native
+{Build the full context JSON for the off-screen life LLM prompt natively in C++. \
+Reads home from FollowerDataStore, queries social graph from SkyrimNet PublicAPI, \
+finds nearby dismissed followers in the same hold, and checks consequence eligibility. \
+Returns a properly serialized JSON string ready for SendCustomPromptToLLM, or empty on failure.}
+
+; =============================================================================
+; ITEM RESOLVER
+; Native item lookup by name with fuzzy matching and inventory give/take.
+; Searches weapons, armor, potions, food, ingredients, misc items.
+; Prefers vanilla Skyrim.esm items over mod-added forms.
+; =============================================================================
+
+Bool Function Native_GiveItemByName(Actor akActor, String itemName, String category, Int count) Global Native
+{Give an item to an actor by resolving itemName to a game form.
+category: "weapon", "armor", "potion", "food", "ingredient", "misc", "any"
+Returns true if item was found and added. Runs on game thread.}
+
+Bool Function Native_TakeItemByName(Actor akActor, String itemName, String category, Int count) Global Native
+{Take an item from an actor by resolving itemName to a game form.
+Returns false if actor doesn't have the item. Runs on game thread.}
+
+Int Function Native_ResolveItemFormID(String itemName, String category) Global Native
+{Resolve an item name to its FormID without modifying any inventory.
+Returns 0 if not found. Useful for checking if an item exists.}
+
+String Function Native_ResolveItemName(String itemName, String category) Global Native
+{Resolve a fuzzy item name to the actual in-game item name.
+Returns "" if not found. Useful for normalizing LLM-generated item names.}

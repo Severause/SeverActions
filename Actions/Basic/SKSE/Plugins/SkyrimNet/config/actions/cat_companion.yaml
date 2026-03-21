@@ -1,4 +1,4 @@
 customCategory: companion
 name: Companion
-description: "Companion management — follow, wait, dismiss, recruit, or set combat style."
+description: "Companion commands — SELECT THIS when {{ npc.name }} agrees to: wait here, stay here, stop following, follow me, come with me, go home, join the party, leave the party, be dismissed, change combat style, assign a home, live here, make this your home, or any order given to a traveling companion."
 enabled: true

@@ -1,0 +1,20 @@
+name: "New City Arrival"
+description: "Companions remark upon arriving at a major hold capital."
+
+eventCriteria:
+  - eventType: "location_change"
+    schemaConditions:
+      - fieldPath: "to_location"
+        operator: "regex"
+        value: "(whiterun|solitude|windhelm|riften|markarth|falkreath|morthal|dawnstar|winterhold)"
+        caseSensitive: false
+
+response:
+  type: "direct_narration"
+  content: "The party arrives at {{ event_json.to_location }}."
+
+audience: "everyone"
+enabled: true
+probability: 0.65
+cooldownSeconds: 1800
+priority: 3

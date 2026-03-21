@@ -178,14 +178,18 @@ Event OnPlayerLoadGame()
 EndEvent
 
 Event OnPrismaClearTravel(string eventName, string strArg, float numArg, Form sender)
-    {PrismaUI: Clear a specific travel slot. numArg = slot index.}
-    Int slot = numArg as Int
+    {PrismaUI: Clear a specific travel slot. strArg = "slotIndex|".}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    Int slot = 0
+    If pipePos >= 0
+        slot = StringUtil.Substring(strArg, 0, pipePos) as Int
+    EndIf
     DebugMsg("PrismaUI clear travel slot: " + slot)
     ClearSlotFromMCM(slot)
 EndEvent
 
 Event OnPrismaResetTravel(string eventName, string strArg, float numArg, Form sender)
-    {PrismaUI: Cancel all active travel.}
+    {PrismaUI: Cancel all active travel. strArg = "0|".}
     DebugMsg("PrismaUI reset all travel")
     CancelAllTravel()
 EndEvent

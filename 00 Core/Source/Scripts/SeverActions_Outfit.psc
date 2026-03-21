@@ -1373,7 +1373,16 @@ EndFunction
 
 Function MigrateOutfitDataToNative()
     {Reads existing outfit data from StorageUtil and pushes to native OutfitDataStore.
-     Covers both locked outfits and saved presets for all tracked actors.}
+     Covers both locked outfits and saved presets for all tracked actors.
+     One-time migration — skips if already done (native cosave persists across loads).}
+
+    ; Fix #2: Skip if already migrated. Native OutfitDataStore persists via cosave,
+    ; so re-pushing every load is redundant. Version 1 = initial migration done.
+    Int migrationVersion = StorageUtil.GetIntValue(None, "SeverOutfit_MigrationVersion", 0)
+    if migrationVersion >= 1
+        Debug.Trace("[SeverActions_Outfit] MigrateOutfitDataToNative: Already migrated (v" + migrationVersion + "), skipping")
+        return
+    endif
 
     Debug.Trace("[SeverActions_Outfit] MigrateOutfitDataToNative: Starting migration...")
     Int migratedLocks = 0
@@ -1437,7 +1446,7 @@ Function MigrateOutfitDataToNative()
             ; Skip if already migrated above (they have locks too)
             Bool alreadyMigrated = false
             Int li = 0
-            While li < lockedActors.Length
+            While li < lockedActors.Length && !alreadyMigrated
                 if lockedActors[li] == pActor
                     alreadyMigrated = true
                 endif
@@ -1489,7 +1498,7 @@ Function MigrateOutfitDataToNative()
             ; Avoid duplicates
             Bool found = false
             Int ci = 0
-            While ci < allActors.Length
+            While ci < allActors.Length && !found
                 if allActors[ci] == presetActors[ai]
                     found = true
                 endif
@@ -1543,6 +1552,9 @@ Function MigrateOutfitDataToNative()
         endif
         ai += 1
     EndWhile
+
+    ; Mark migration as complete so we skip on future loads
+    StorageUtil.SetIntValue(None, "SeverOutfit_MigrationVersion", 1)
 
     Debug.Trace("[SeverActions_Outfit] MigrateOutfitDataToNative: Done — " + migratedLocks + " locks, " + migratedPresets + " presets, " + migratedSituations + " situation mappings migrated")
 EndFunction
@@ -2052,7 +2064,11 @@ EndEvent
 ; =============================================================================
 
 Event OnPrismaSnapshot(String eventName, String strArg, Float numArg, Form sender)
-    Actor akActor = Game.GetForm(numArg as Int) as Actor
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    Actor akActor = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
     If !akActor
         Return
     EndIf
@@ -2061,7 +2077,11 @@ Event OnPrismaSnapshot(String eventName, String strArg, Float numArg, Form sende
 EndEvent
 
 Event OnPrismaClearLock(String eventName, String strArg, Float numArg, Form sender)
-    Actor akActor = Game.GetForm(numArg as Int) as Actor
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    Actor akActor = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
     If !akActor
         Return
     EndIf
@@ -2070,56 +2090,81 @@ Event OnPrismaClearLock(String eventName, String strArg, Float numArg, Form send
 EndEvent
 
 Event OnPrismaApplyPreset(String eventName, String strArg, Float numArg, Form sender)
-    Actor akActor = Game.GetForm(numArg as Int) as Actor
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    Actor akActor = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
+    String presetName = StringUtil.Substring(strArg, pipePos + 1)
     If !akActor
         Return
     EndIf
-    ApplyOutfitPreset_Execute(akActor, strArg)
-    Debug.Trace("[SeverActions_Outfit] PrismaApplyPreset: Applied '" + strArg + "' to " + akActor.GetDisplayName())
+    ApplyOutfitPreset_Execute(akActor, presetName)
+    Debug.Trace("[SeverActions_Outfit] PrismaApplyPreset: Applied '" + presetName + "' to " + akActor.GetDisplayName())
 EndEvent
 
 Event OnPrismaDeletePreset(String eventName, String strArg, Float numArg, Form sender)
-    Actor akActor = Game.GetForm(numArg as Int) as Actor
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    Actor akActor = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
+    String presetName = StringUtil.Substring(strArg, pipePos + 1)
     If !akActor
         Return
     EndIf
-    DeletePreset(akActor, strArg)
-    Debug.Trace("[SeverActions_Outfit] PrismaDeletePreset: Deleted '" + strArg + "' for " + akActor.GetDisplayName())
+    DeletePreset(akActor, presetName)
+    Debug.Trace("[SeverActions_Outfit] PrismaDeletePreset: Deleted '" + presetName + "' for " + akActor.GetDisplayName())
 EndEvent
 
 Event OnPrismaSavePreset(String eventName, String strArg, Float numArg, Form sender)
-    Actor akActor = Game.GetForm(numArg as Int) as Actor
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    Actor akActor = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
+    String presetName = StringUtil.Substring(strArg, pipePos + 1)
     If !akActor
         Return
     EndIf
-    SaveOutfitPreset_Execute(akActor, strArg)
-    Debug.Trace("[SeverActions_Outfit] PrismaSavePreset: Saved '" + strArg + "' for " + akActor.GetDisplayName())
+    SaveOutfitPreset_Execute(akActor, presetName)
+    Debug.Trace("[SeverActions_Outfit] PrismaSavePreset: Saved '" + presetName + "' for " + akActor.GetDisplayName())
 EndEvent
 
 Event OnPrismaSetSitPreset(String eventName, String strArg, Float numArg, Form sender)
-    Actor akActor = Game.GetForm(numArg as Int) as Actor
+    ; strArg = "actorName|situation|presetName"
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    Actor akActor = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
     If !akActor
         Return
     EndIf
-    ; strArg is pipe-delimited: "situation|presetName"
-    Int pipePos = StringUtil.Find(strArg, "|")
-    If pipePos < 0
-        Debug.Trace("[SeverActions_Outfit] PrismaSetSitPreset: Invalid format — no pipe in '" + strArg + "'")
+    String remainder = StringUtil.Substring(strArg, pipePos + 1)
+    Int pipe2 = StringUtil.Find(remainder, "|")
+    If pipe2 < 0
+        Debug.Trace("[SeverActions_Outfit] PrismaSetSitPreset: Invalid format — no second pipe")
         Return
     EndIf
-    String situation = StringUtil.Substring(strArg, 0, pipePos)
-    String presetName = StringUtil.Substring(strArg, pipePos + 1)
+    String situation = StringUtil.Substring(remainder, 0, pipe2)
+    String presetName = StringUtil.Substring(remainder, pipe2 + 1)
     SetSituationPreset_Execute(akActor, situation, presetName)
     Debug.Trace("[SeverActions_Outfit] PrismaSetSitPreset: " + akActor.GetDisplayName() + " — " + situation + " → " + presetName)
 EndEvent
 
 Event OnPrismaClearSitPreset(String eventName, String strArg, Float numArg, Form sender)
-    Actor akActor = Game.GetForm(numArg as Int) as Actor
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    Actor akActor = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
+    String situation = StringUtil.Substring(strArg, pipePos + 1)
     If !akActor
         Return
     EndIf
-    ClearSituationPreset_Execute(akActor, strArg)
-    Debug.Trace("[SeverActions_Outfit] PrismaClearSitPreset: " + akActor.GetDisplayName() + " — cleared " + strArg)
+    ClearSituationPreset_Execute(akActor, situation)
+    Debug.Trace("[SeverActions_Outfit] PrismaClearSitPreset: " + akActor.GetDisplayName() + " — cleared " + situation)
 EndEvent
 
 ; =============================================================================
@@ -2129,17 +2174,27 @@ EndEvent
 ; =============================================================================
 
 Event OnPrismaToggleAutoSwitch(String eventName, String strArg, Float numArg, Form sender)
-    Bool enabled = (strArg == "1")
+    ; strArg = "0|0" or "0|1" (formId=0 for global, data=0/1)
+    Int pipePos = StringUtil.Find(strArg, "|")
+    String valStr = strArg
+    If pipePos >= 0
+        valStr = StringUtil.Substring(strArg, pipePos + 1)
+    EndIf
+    Bool enabled = (valStr == "1")
     StorageUtil.SetIntValue(None, "SeverOutfit_GlobalAutoSwitch", enabled as Int)
     Debug.Trace("[SeverActions_Outfit] PrismaToggleAutoSwitch: Global auto-switch → " + enabled)
 EndEvent
 
 Event OnPrismaToggleActorAutoSwitch(String eventName, String strArg, Float numArg, Form sender)
-    Actor akActor = Game.GetForm(numArg as Int) as Actor
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    Actor akActor = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
     If !akActor
         Return
     EndIf
-    Bool enabled = (strArg == "1")
+    Bool enabled = (StringUtil.Substring(strArg, pipePos + 1) == "1")
     StorageUtil.SetIntValue(akActor, "SeverOutfit_AutoSwitch", enabled as Int)
     Debug.Trace("[SeverActions_Outfit] PrismaToggleActorAutoSwitch: " + akActor.GetDisplayName() + " auto-switch → " + enabled)
 EndEvent

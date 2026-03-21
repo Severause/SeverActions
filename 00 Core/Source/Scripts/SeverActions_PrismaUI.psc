@@ -872,12 +872,13 @@ EndFunction
 ; =============================================================================
 
 Event OnPrismaClearPkgs(string eventName, string strArg, float numArg, Form sender)
-    {PrismaUI: Clear all packages on an actor. numArg = actor FormID.}
-    Int formID = numArg as Int
-    If formID == 0
+    {PrismaUI: Clear all packages on an actor. strArg = "actorName|".}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
         Return
     EndIf
-    Actor akActor = Game.GetForm(formID) as Actor
+    String actorName = StringUtil.Substring(strArg, 0, pipePos)
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
     If akActor
         Debug.Trace("[SeverActions_PrismaUI] ClearAllPackages: " + akActor.GetDisplayName())
         SkyrimNetApi.ClearAllPackages(akActor)
@@ -886,13 +887,14 @@ Event OnPrismaClearPkgs(string eventName, string strArg, float numArg, Form send
 EndEvent
 
 Event OnPrismaRemovePkg(string eventName, string strArg, float numArg, Form sender)
-    {PrismaUI: Remove a specific package from an actor. numArg = actor FormID, strArg = packageName.}
-    Int formID = numArg as Int
-    String packageName = strArg
-    If formID == 0
+    {PrismaUI: Remove a specific package from an actor. strArg = "actorName|packageName".}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
         Return
     EndIf
-    Actor akActor = Game.GetForm(formID) as Actor
+    String actorName = StringUtil.Substring(strArg, 0, pipePos)
+    String packageName = StringUtil.Substring(strArg, pipePos + 1)
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
     If akActor
         Debug.Trace("[SeverActions_PrismaUI] RemovePackage: " + packageName + " from " + akActor.GetDisplayName())
         SkyrimNetApi.UnregisterPackage(akActor, packageName)

@@ -206,8 +206,12 @@ EndEvent
 
 Event OnPrismaIncludeFollower(String eventName, String strArg, Float numArg, Form sender)
     {Called by native SKSE when PrismaUI includes a follower in survival tracking.
-     numArg contains the actor FormID.}
-    Actor follower = Game.GetForm(numArg as Int) as Actor
+     strArg = "actorName|".}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    Actor follower = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
     If follower
         Debug.Trace("[SeverActions_Survival] PrismaUI including " + follower.GetDisplayName())
         SetFollowerExcluded(follower, false)
@@ -216,8 +220,12 @@ EndEvent
 
 Event OnPrismaExcludeFollower(String eventName, String strArg, Float numArg, Form sender)
     {Called by native SKSE when PrismaUI excludes a follower from survival tracking.
-     numArg contains the actor FormID.}
-    Actor follower = Game.GetForm(numArg as Int) as Actor
+     strArg = "actorName|".}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    Actor follower = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
     If follower
         Debug.Trace("[SeverActions_Survival] PrismaUI excluding " + follower.GetDisplayName())
         SetFollowerExcluded(follower, true)
@@ -225,8 +233,12 @@ Event OnPrismaExcludeFollower(String eventName, String strArg, Float numArg, For
 EndEvent
 
 Event OnPrismaToggleSurvivalExclude(String eventName, String strArg, Float numArg, Form sender)
-    {PrismaUI: Toggle a follower's survival tracking exclusion. numArg = actor FormID.}
-    Actor follower = Game.GetForm(numArg as Int) as Actor
+    {PrismaUI: Toggle a follower's survival tracking exclusion. strArg = "actorName|".}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    Actor follower = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
     If follower
         Debug.Trace("[SeverActions_Survival] PrismaUI toggling exclusion for " + follower.GetDisplayName())
         ToggleFollowerExcluded(follower)
@@ -235,8 +247,13 @@ EndEvent
 
 Event OnPrismaSurvivalToggle(String eventName, String strArg, Float numArg, Form sender)
     {Called by PrismaUI settings handler when the master survival toggle changes.
-     strArg = "on" or "off". Mirrors what MCM does: StartTracking / StopTracking.}
-    If strArg == "on"
+     strArg = "0|on" or "0|off". Mirrors what MCM does: StartTracking / StopTracking.}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    String val = strArg
+    If pipePos >= 0
+        val = StringUtil.Substring(strArg, pipePos + 1)
+    EndIf
+    If val == "on"
         Debug.Trace("[SeverActions_Survival] PrismaUI enabled survival system")
         StartTracking()
     Else

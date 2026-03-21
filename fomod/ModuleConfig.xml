@@ -356,7 +356,44 @@ Includes debt awareness for the Economy Actions debt system.</description>
             </optionalFileGroups>
         </installStep>
 
-        <!-- Page 3: Adult Content -->
+        <!-- Page 3: Trigger Modules -->
+        <installStep name="Trigger Modules (Event Reactions)">
+            <optionalFileGroups order="Explicit">
+
+                <group name="Select which trigger packs to install:" type="SelectAny">
+                    <plugins order="Explicit">
+
+                        <plugin name="Immersion Triggers">
+                            <description>Event-driven companion reactions and world awareness:
+• Dragon Slain - Companions react when a dragon is killed
+• Player Near Death - Companions react when you enter bleedout
+• Companion Injured - React when a follower is gravely wounded
+• Quest Completed - Companions acknowledge quest completion
+• New City Arrival - Remarks upon arriving at a hold capital
+• Dungeon Entered - Occasional comments when entering caves, ruins, and tombs
+• Night Travel - Rare comments about traveling after dark
+• Player Commits Crime - Companions react to your crimes
+• Witnessed Crime - Companions react to crimes they see
+• Powerful Enemy Slain - React to killing dragons priests, giants, dremora, etc.
+• Player Uses Shout - Companions react to your Thu'um
+• Major Quest Diary - Followers silently write diary entries after quests
+
+All triggers use probability and cooldowns to feel natural — companions won't comment on every event, just occasionally when it matters.</description>
+                            <files>
+                                <folder source="Triggers/Immersion" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                    </plugins>
+                </group>
+
+            </optionalFileGroups>
+        </installStep>
+
+        <!-- Page 4: Adult Content -->
         <installStep name="Adult Content (Optional)">
             <optionalFileGroups order="Explicit">
 

@@ -1,0 +1,26 @@
+{# Off-Screen Life - What a dismissed follower did while the player was away #}
+{% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" %}
+{% if actorUUID and actorUUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% if actor and actor.UUID %}
+{% set is_fol = is_follower(actorUUID) %}
+{% set was_follower = papyrus_util("GetIntValue", actor.UUID, "SeverFollower_TimesRecruited", 0) %}
+{% if not is_fol and was_follower > 0 %}
+{% set life_summary = papyrus_util("GetStringValue", actor.UUID, "SeverFollower_LifeSummary", "") %}
+{% set home_loc = papyrus_util("GetStringValue", actor.UUID, "SeverFollower_HomeLocation", "") %}
+{% if life_summary != "" %}
+
+## What You've Been Up To
+{% if home_loc != "" %}
+Since {{ player.name }} left, you've been living in {{ home_loc }}.
+{% else %}
+Since {{ player.name }} went their separate way, you've been on your own.
+{% endif %}
+Recently: {{ life_summary }}
+
+If {{ player.name }} comes to talk to you, you may naturally mention what you've been doing — but only if it fits the conversation. Don't force it. You have your own life now, and bringing up daily routine only makes sense if asked or if the topic comes up.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

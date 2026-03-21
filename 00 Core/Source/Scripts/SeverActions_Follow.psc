@@ -67,23 +67,6 @@ EndEvent
 ; Called on game load to re-register events and restore state
 Function Maintenance()
     RegisterForModEvent("SeverActionsNative_SandboxCleanup", "OnNativeSandboxCleanup")
-
-    ; Re-apply ENGAGED faction to any NPCs that already have the FollowPlayer package
-    ; (faction state doesn't persist across save/load, but SkyrimNet packages do)
-    Actor player = Game.GetPlayer()
-    Cell playerCell = player.GetParentCell()
-    If playerCell
-        Int numRefs = playerCell.GetNumRefs(43) ; 43 = kNPC
-        Int i = 0
-        While i < numRefs
-            ObjectReference ref = playerCell.GetNthRef(i, 43)
-            Actor actorRef = ref as Actor
-            If actorRef && actorRef != player && !actorRef.IsDead() && SkyrimNetApi.HasPackage(actorRef, "FollowPlayer")
-                SetActivelyFollowing(actorRef, true)
-            EndIf
-            i += 1
-        EndWhile
-    EndIf
 EndFunction
 
 ; =============================================================================
@@ -128,16 +111,17 @@ Event OnNativeSandboxCleanup(string eventName, string strArg, float numArg, Form
 
     Debug.Trace("[SeverActions_Follow] Native sandbox cleanup for: " + akActor.GetDisplayName())
 
+    ; Clear waiting state FIRST — so the follow package becomes eligible
+    ; before the sandbox override is removed, preventing FF-prefix runtime sandbox.
+    akActor.SetAV("WaitingForPlayer", 0)
+
     ; Clear sandbox state
     SetSandboxFlag(akActor, false)
 
-    ; Remove sandbox package
+    ; Now safe to remove sandbox package
     if SandboxPackage
         ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
     endif
-
-    ; Resume following
-    akActor.SetAV("WaitingForPlayer", 0)
 
     ; Back to actively following
     SetActivelyFollowing(akActor, true)
@@ -256,6 +240,14 @@ Function ReapplyFollowTracking(Actor[] followers)
     While i < followers.Length
         Actor akActor = followers[i]
         If akActor && !akActor.IsDead()
+            ; Clean up any stale SkyrimNet FollowPlayer package that may have been
+            ; layered on companions from prior versions. Companions use CK alias
+            ; packages — a dual FollowPlayer causes AI flicker. Safe no-op if none exists.
+            If IsInFollowerSlot(akActor) && SkyrimNetApi.HasPackage(akActor, "FollowPlayer")
+                SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
+                Debug.Trace("[SeverActions_Follow] Cleaned stale SkyrimNet FollowPlayer from companion: " + akActor.GetDisplayName())
+            EndIf
+
             ; Re-set linked ref (runtime-only, doesn't survive save/load)
             If SeverActions_FollowerFollowKW
                 SeverActionsNative.LinkedRef_Set(akActor, player, SeverActions_FollowerFollowKW)
@@ -294,7 +286,11 @@ Function StartFollowing(Actor akActor)
         return
     endif
 
-    ; Always clean up sandbox state unconditionally (defensive).
+    ; Clear waiting state FIRST — prevents the engine from creating an FF-prefix
+    ; runtime sandbox in the gap between sandbox removal and follow package registration.
+    akActor.SetAV("WaitingForPlayer", 0)
+
+    ; Now safe to remove sandbox — follow package registration below will take over.
     ; Don't gate on IsSandboxing — if tracking was lost (save/load, timing),
     ; the PO3 override would stay forever. These are all safe no-ops if nothing is active.
     SetSandboxFlag(akActor, false)
@@ -302,9 +298,6 @@ Function StartFollowing(Actor akActor)
     if SandboxPackage
         ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
     endif
-
-    ; Clear waiting state (in case they were waiting)
-    akActor.SetAV("WaitingForPlayer", 0)
 
     ; Register SkyrimNet's built-in follow package
     ; NOTE: SkyrimNet 0.15.4+ queues package operations and calls EvaluatePackage
@@ -357,10 +350,13 @@ Function CompanionStartFollowing(Actor akActor)
         return
     endif
 
-    ; Always clean up sandbox state unconditionally (defensive).
-    ; Don't gate on IsSandboxing — if tracking was lost (save/load, timing),
-    ; the PO3 override would stay forever since it was added with flag 1
-    ; (forced top of stack). These are all safe no-ops if nothing is active.
+    ; Clear waiting state FIRST — so the CK alias follow package condition
+    ; (WaitingForPlayer == 0) becomes valid BEFORE we remove the sandbox override.
+    ; This prevents the engine from creating an FF-prefix runtime sandbox in the
+    ; gap between sandbox removal and follow package activation.
+    akActor.SetAV("WaitingForPlayer", 0)
+
+    ; Now safe to remove sandbox — CK follow package is already eligible
     SetSandboxFlag(akActor, false)
     SeverActionsNative.UnregisterSandboxUser(akActor)
     if SandboxPackage
@@ -370,9 +366,6 @@ Function CompanionStartFollowing(Actor akActor)
     ; Also clean up any stale casual FollowPlayer package (shouldn't be here
     ; for companions, but defensive cleanup in case of prior bugs)
     SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
-
-    ; Clear waiting state
-    akActor.SetAV("WaitingForPlayer", 0)
 
     ; Set linked ref to player (so CK follow package knows who to follow)
     If SeverActions_FollowerFollowKW
@@ -503,6 +496,12 @@ Function StopSandbox(Actor akActor)
         return
     endif
 
+    ; Clear waiting state FIRST — so the CK alias follow package condition
+    ; (WaitingForPlayer == 0) becomes valid BEFORE we remove the sandbox override.
+    ; For casual followers, this ensures SkyrimNet's FollowPlayer (re-registered below)
+    ; isn't competing with an FF-prefix runtime sandbox the engine creates in the gap.
+    akActor.SetAV("WaitingForPlayer", 0)
+
     ; Clear sandbox state
     SetSandboxFlag(akActor, false)
 
@@ -514,13 +513,10 @@ Function StopSandbox(Actor akActor)
     ; Unregister from native SandboxManager
     SeverActionsNative.UnregisterSandboxUser(akActor)
 
-    ; Remove sandbox package override directly (synchronous)
+    ; Now safe to remove sandbox override — follow package is already eligible
     if SandboxPackage
         ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
     endif
-
-    ; Resume following
-    akActor.SetAV("WaitingForPlayer", 0)
 
     ; Re-apply follow package only for casual followers.
     ; Companions use CK alias-based packages which auto-reassert when WaitingForPlayer clears.
@@ -555,13 +551,21 @@ Bool Function StartFollowing_IsEligible(Actor akActor) Global
         return false
     endif
 
-    ; Allow if: not following, OR following but waiting/sandboxing (to resume)
+    ; Check both casual (SkyrimNet package) and companion (alias slot) follow state
     Bool hasPackage = SkyrimNetApi.HasPackage(akActor, "FollowPlayer")
+    SeverActions_Follow instance = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
+    Bool isCompanion = instance && instance.IsInFollowerSlot(akActor)
     Bool isWaiting = akActor.GetAV("WaitingForPlayer") > 0
     Bool isSandboxing = StorageUtil.GetIntValue(akActor, "SeverActions_IsSandboxing") == 1
 
+    ; Companions who are waiting/sandboxing — eligible (will route to CompanionStartFollowing)
+    If isCompanion
+        return isWaiting || isSandboxing
+    EndIf
+
+    ; Casual followers already actively following — not eligible
     if hasPackage && !isWaiting && !isSandboxing
-        return false  ; Already following and not waiting/sandboxing
+        return false
     endif
 
     return true
@@ -570,7 +574,14 @@ EndFunction
 Function StartFollowing_Execute(Actor akActor) Global
     SeverActions_Follow instance = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
     if instance
-        instance.StartFollowing(akActor)
+        ; If this actor is a formal companion (in alias slot), route to the companion
+        ; follow path instead of casual. Prevents dual-package AI flicker and ensures
+        ; the CK alias package is used (not SkyrimNet's FollowPlayer).
+        If instance.IsInFollowerSlot(akActor)
+            instance.CompanionStartFollowing(akActor)
+        Else
+            instance.StartFollowing(akActor)
+        EndIf
     endif
 EndFunction
 
@@ -587,7 +598,11 @@ EndFunction
 Function StopFollowing_Execute(Actor akActor) Global
     SeverActions_Follow instance = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
     if instance
-        instance.StopFollowing(akActor)
+        If instance.IsInFollowerSlot(akActor)
+            instance.CompanionStopFollowing(akActor)
+        Else
+            instance.StopFollowing(akActor)
+        EndIf
     endif
 EndFunction
 
@@ -598,11 +613,17 @@ Bool Function WaitHere_IsEligible(Actor akActor) Global
         return false
     endif
 
-    ; Must be following and not already waiting
+    ; Must be following (casual or companion) and not already waiting
     Bool hasPackage = SkyrimNetApi.HasPackage(akActor, "FollowPlayer")
+    If !hasPackage
+        SeverActions_Follow instance = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
+        If !instance || !instance.IsInFollowerSlot(akActor)
+            return false
+        EndIf
+    EndIf
     Bool isWaiting = akActor.GetAV("WaitingForPlayer") > 0
 
-    return hasPackage && !isWaiting
+    return !isWaiting
 EndFunction
 
 Function WaitHere_Execute(Actor akActor) Global
@@ -619,8 +640,11 @@ Bool Function Sandbox_IsEligible(Actor akActor) Global
         return false
     endif
 
-    ; Must be a follower
-    if !SkyrimNetApi.HasPackage(akActor, "FollowPlayer")
+    ; Must be a follower — check both casual (SkyrimNet package) and companion (alias slot)
+    SeverActions_Follow instance = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
+    Bool hasFollowPkg = SkyrimNetApi.HasPackage(akActor, "FollowPlayer")
+    Bool isCompanion = instance && instance.IsInFollowerSlot(akActor)
+    if !hasFollowPkg && !isCompanion
         return false
     endif
 

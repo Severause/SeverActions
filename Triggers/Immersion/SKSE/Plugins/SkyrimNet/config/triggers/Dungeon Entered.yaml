@@ -1,0 +1,20 @@
+name: "Dungeon Entered"
+description: "Companions occasionally comment when entering a dungeon or ruin."
+
+eventCriteria:
+  - eventType: "location_change"
+    schemaConditions:
+      - fieldPath: "to_location"
+        operator: "regex"
+        value: "(cave|ruin|barrow|cairn|crypt|tomb|catacomb|mine|dwemer|falmer|keep|fort|tower|den|lair|pit|grotto|sanctum|sepulcher)"
+        caseSensitive: false
+
+response:
+  type: "direct_narration"
+  content: "The party enters {{ event_json.to_location }}. The air grows heavy."
+
+audience: "everyone"
+enabled: true
+probability: 0.20
+cooldownSeconds: 1800
+priority: 2

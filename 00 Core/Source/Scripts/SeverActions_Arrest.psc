@@ -291,6 +291,9 @@ Int Property ResistBountyIncrease = 500 Auto
 Float Property ArrestPlayerCooldown = 60.0 Auto
 {Cooldown in seconds before ArrestPlayer can be used again after a confrontation starts}
 
+Float Property NPCArrestCooldown = 300.0 Auto
+{Cooldown in seconds before ArrestNPC / Dispatch can be used again (default 5 minutes)}
+
 Package Property SeverActions_GuardFollowPlayer Auto
 {Follow package for guard during persuasion - follows linked ref (player).
 Setup: Type=Follow, Follow Target=Linked Ref with SeverActions_FollowTargetKW}
@@ -443,6 +446,11 @@ Function Maintenance()
     endif
     Debug.Trace("[SeverActions_Arrest] Guard factions resolved: " + guardCount + "/8 vanilla")
 
+    ; Reset real-time cooldowns — GetCurrentRealTime() resets to 0 on game launch,
+    ; but these persist in saves, causing massive phantom cooldowns across sessions
+    LastArrestTime = 0.0
+    LastNPCArrestTime = 0.0
+
     ; Register for game load event to verify prisoner positions
     RegisterForModEvent("OnPlayerLoadGame", "OnPlayerLoadGame")
 
@@ -510,10 +518,10 @@ Bool Function ArrestNPC_Internal(Actor akGuard, Actor akTarget)
         Return false
     EndIf
 
-    ; Check cooldown (300 seconds / 5 minutes)
+    ; Check cooldown (configurable, default 300 seconds / 5 minutes)
     Float currentTime = Utility.GetCurrentRealTime()
-    If (currentTime - LastNPCArrestTime) < 300.0
-        DebugMsg("ArrestNPC on cooldown, ignoring (" + (300.0 - (currentTime - LastNPCArrestTime)) + "s remaining)")
+    If (currentTime - LastNPCArrestTime) < NPCArrestCooldown
+        DebugMsg("ArrestNPC on cooldown, ignoring (" + (NPCArrestCooldown - (currentTime - LastNPCArrestTime)) + "s remaining)")
         Return false
     EndIf
 
