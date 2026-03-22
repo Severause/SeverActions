@@ -1,0 +1,23 @@
+name: "Powerful Enemy Slain"
+description: "Companions react to killing a notably powerful enemy."
+
+eventCriteria:
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "regex"
+        value: "(dremora|giant|mammoth|troll|hagraven|dragon priest|centurion|lurker|seeker|gargoyle|vampire lord|ebony warrior|wisp mother|spriggan earth mother|ancient)"
+        caseSensitive: false
+      - fieldPath: "is_summoned"
+        operator: "equals"
+        value: false
+
+response:
+  type: "direct_narration"
+  content: "{{ event_json.victim }} has been defeated."
+
+audience: "everyone"
+enabled: true
+probability: 0.25
+cooldownSeconds: 600
+priority: 5

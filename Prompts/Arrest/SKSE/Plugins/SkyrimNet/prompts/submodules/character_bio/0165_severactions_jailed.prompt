@@ -1,0 +1,43 @@
+{# Jailed Status - Adds imprisonment awareness for jailed NPCs #}
+{% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" or render_mode == "target" %}
+{% set actor = decnpc(actorUUID) %}
+{% if actor and actor.UUID %}
+{# Check if NPC is in the Jailed faction #}
+{% set is_jailed = is_in_faction(actor.UUID, "SeverActions_Jailed") %}
+{% if is_jailed %}
+{# Get jail name from actor's current location #}
+{% set actor_location = get_location(actor.UUID) %}
+{% set jail_name = "a jail cell" %}
+{% if contains(actor_location, "Dragonsreach") or (contains(actor_location, "Whiterun") and contains(actor_location, "Jail")) %}
+{% set jail_name = "Dragonsreach Dungeon" %}
+{% elif contains(actor_location, "Riften") and contains(actor_location, "Jail") %}
+{% set jail_name = "Riften Jail" %}
+{% elif contains(actor_location, "Castle Dour") or (contains(actor_location, "Solitude") and contains(actor_location, "Jail")) %}
+{% set jail_name = "Castle Dour Dungeon" %}
+{% elif contains(actor_location, "Windhelm") and (contains(actor_location, "Jail") or contains(actor_location, "Bloodworks")) %}
+{% set jail_name = "Windhelm Jail" %}
+{% elif contains(actor_location, "Cidhna") or (contains(actor_location, "Markarth") and contains(actor_location, "Jail")) %}
+{% set jail_name = "Cidhna Mine" %}
+{% elif contains(actor_location, "Falkreath") and contains(actor_location, "Jail") %}
+{% set jail_name = "Falkreath Jail" %}
+{% elif contains(actor_location, "Dawnstar") and (contains(actor_location, "Jail") or contains(actor_location, "Barracks")) %}
+{% set jail_name = "Dawnstar Jail" %}
+{% elif contains(actor_location, "Morthal") and (contains(actor_location, "Jail") or contains(actor_location, "Guardhouse")) %}
+{% set jail_name = "Morthal Jail" %}
+{% elif contains(actor_location, "Chill") or (contains(actor_location, "Winterhold") and contains(actor_location, "Jail")) %}
+{% set jail_name = "The Chill" %}
+{% endif %}
+{% set is_dialogue_context = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
+{% if is_dialogue_context %}
+## Imprisoned
+You are currently locked up in {{ jail_name }}. You wear rough prison clothes and have no possessions.
+
+You may have been arrested for any number of reasons - a crime you committed, a crime you were framed for, being in the wrong place at the wrong time, or simply because someone powerful wanted you gone. Perhaps you're guilty, perhaps you're innocent, perhaps it's complicated. Your feelings about your imprisonment - whether you accept it as just, seethe with resentment, plot escape, or simply endure - reflect who you are.
+
+You have limited freedom within your cell. Guards watch the prisoners. Time passes slowly here.
+{% elif render_mode == "target" %}
+**Status:** Imprisoned in {{ jail_name }}, wearing prison clothes
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

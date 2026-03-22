@@ -1,0 +1,53 @@
+customCategory: crafting
+name: CraftItem
+description: "Craft a weapon or armor at the nearest forge and deliver it to the recipient."
+questEditorId: SeverActions
+scriptName: SeverActions_Crafting
+executionFunctionName: CraftItem_Internal
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: itemName
+    description: "Weapon or armor to craft (e.g. 'iron sword', 'steel armor')"
+  - type: dynamic
+    name: akRecipient
+    description: Recipient of the crafted item
+  - type: static
+    value: false
+    name: requireMaterials
+    description: Static bool parameter
+  - type: static
+    value: 1
+    name: itemCount
+    description: Static int parameter
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: is_in_combat
+        arguments:
+          - currentActor
+        comparisonOperator: ==
+        expectedValue: false
+  - conditions:
+      - decoratorName: is_in_faction
+        arguments:
+          - currentActor
+          - JobBlacksmithFaction
+        comparisonOperator: ==
+        expectedValue: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

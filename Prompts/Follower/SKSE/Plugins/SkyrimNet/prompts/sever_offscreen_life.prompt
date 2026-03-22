@@ -1,0 +1,128 @@
+[ system ]
+You are an internal life simulation system for a dismissed companion in Skyrim. You generate believable daily events for an NPC living at their assigned home while the player is away adventuring. Output ONLY a JSON object. No explanation, no commentary.
+
+{% set npcUUID = formid_to_uuid(npcFormId) %}
+{% if npcUUID and npcUUID != 0 %}
+{% set npc = decnpc(npcUUID) %}
+
+Character: {{ npc.name }} ({{ npc.race }}{% if npc.gender %}, {{ npc.gender }}{% endif %}{% if npc.class %}, {{ npc.class }}{% endif %})
+
+{% set bio = render_character_profile("full", npcUUID) %}
+{% if bio and bio != "" %}
+{{ bio }}
+{% endif %}
+
+Home Location: {{ homeLocation }}
+
+Relationship with {{ player.name }}:
+{% set rapport = papyrus_util("GetFloatValue", npc.UUID, "SeverFollower_Rapport", 0) %}
+{% set trust = papyrus_util("GetFloatValue", npc.UUID, "SeverFollower_Trust", 25) %}
+{% set loyalty = papyrus_util("GetFloatValue", npc.UUID, "SeverFollower_Loyalty", 50) %}
+{% set mood = papyrus_util("GetFloatValue", npc.UUID, "SeverFollower_Mood", 50) %}
+- Rapport: {{ rapport }} (-100 to 100, emotional warmth toward {{ player.name }})
+- Trust: {{ trust }} (0 to 100, faith in {{ player.name }}'s judgment)
+- Loyalty: {{ loyalty }} (0 to 100, commitment to {{ player.name }})
+- Mood: {{ mood }} (-100 to 100, current temperament)
+
+{% set combat_style = papyrus_util("GetStringValue", npc.UUID, "SeverFollower_CombatStyle", "balanced") %}
+Combat approach: {{ combat_style }}
+
+{% set morality = papyrus_util("GetIntValue", npc.UUID, "SeverFollower_Morality", 2) %}
+Moral compass: {% if morality == 0 %}Amoral — will do anything{% elif morality == 1 %}Violent but honest{% elif morality == 2 %}Flexible — may bend rules{% else %}Principled — won't commit crimes{% endif %}
+
+Recent memories:
+{% set memories = get_relevant_memories(npcUUID, 5) %}
+{% if memories and length(memories) > 0 %}
+{% for m in memories %}
+- {{ m.memory.content }}
+{% endfor %}
+{% else %}
+No significant recent memories.
+{% endif %}
+
+Last diary entry:
+{% set diary = get_latest_diary_entry(npc.UUID) %}
+{% if diary and diary.content %}
+{{ diary.content }}
+{% else %}
+No diary entries yet.
+{% endif %}
+
+{% if existsIn(socialGraph, 0) %}
+Social connections (NPCs {{ npc.name }} has interacted with):
+{% for actor in socialGraph %}
+- {{ actor.name }}: {{ actor.sharedEventCount }} shared events
+{% endfor %}
+{% endif %}
+
+{% if existsIn(nearbyFollowers, 0) %}
+Other dismissed companions living nearby:
+{% for name in nearbyFollowers %}
+- {{ name }}
+{% endfor %}
+{% endif %}
+
+{% endif %}
+[ end system ]
+
+[ user ]
+{% if npcUUID and npcUUID != 0 %}
+Generate a single believable daily life event for {{ npc.name }} living in {{ homeLocation }} while {{ player.name }} is away. Keep the summary under 750 characters.
+
+{% if previousEvent and previousEvent != "" %}
+PREVIOUS EVENT (do NOT repeat or closely mirror this — vary the activity, setting, tone, and sentence structure):
+{{ previousEvent }}
+{% endif %}
+
+Rules:
+- The event must reflect the character's personality, skills, race, combat style, and background
+- Events should be mundane-to-interesting daily life — NOT epic adventures or quests
+- Good examples: practicing combat drills, helping a local merchant, arguing with a neighbor at the inn, foraging herbs outside town, reading at the library, repairing gear, training with the guard, drinking alone at the tavern, tending a garden, bartering for supplies, sharing stories with travelers
+- VARIETY IS CRITICAL: Never start the summary with the same words or structure as the previous event. Vary the opening (action, setting, time of day, who they interact with). If the last event was about work/chores, try socializing, training, exploring, or resting. If it was indoors, try outdoors.
+- The event summary: 1-3 sentences, written as a factual third-person account (not dialogue)
+- "type": "routine" (very ordinary, barely worth mentioning), "notable" (interesting enough to bring up in conversation), "significant" (rare — something that affected them emotionally)
+- "gossip": true if townsfolk would notice and talk about it, false if private/mundane
+- "diary": true ONLY if the event is emotionally significant enough to journal about (most days, this is false)
+- Consider their mood: unhappy characters brood, drink, pick fights, or isolate; happy ones help neighbors, train enthusiastically, or socialize
+- Consider their rapport with {{ player.name }}: high rapport means they miss the player and might do things that remind them of adventures; low rapport means they focus on their own life and may resent the time spent
+- Reference {{ homeLocation }} specifically — use local landmarks, shops, inns, or NPCs that would exist there
+- If combat-oriented: they train, spar, patrol, or deal with minor threats
+- If scholarly/magical: they study, research, visit court wizards, or experiment
+- If morally flexible: they might gamble, scheme, or deal in rumors
+{% if existsIn(nearbyFollowers, 0) %}
+- Other dismissed companions are living nearby: {% for name in nearbyFollowers %}{{ name }}{% if not loop.is_last %}, {% endif %}{% endfor %}. You MAY include one in a shared event if it makes natural sense for both personalities. Add their name to the top-level "involved" array. Keep shared events to less than 20% of the time — most days are spent independently.
+{% endif %}
+{% if consequencesEnabled %}
+
+CONSEQUENCES (use sparingly):
+An event MAY optionally include a "consequence" object with real game effects. Rules:
+- About 85% of events should have NO consequence — just daily life flavor
+- About 10% may have an ECONOMY consequence (earned or lost gold through trade, work, gambling, fines)
+- About 5% may have a CRIME consequence (only for morally flexible or amoral characters)
+- Morality 3 (Principled) characters NEVER commit crimes or get arrested
+- Morality 2 (Flexible) characters rarely commit crimes — maybe petty theft or bending rules
+- Morality 0-1 characters may commit crimes more freely, fitting their personality
+- Consequence types:
+  * Economy: {"action":"gold_change","amount":150,"reason":"sold herbs at market"} — positive = earned, negative = spent/lost/fined
+  * Arrest: {"action":"arrest","crime":"theft","bounty":200} — committed a crime, arrested and bounty assigned
+  * Bounty: {"action":"bounty","crime":"trespassing","bounty":100} — wanted but not yet caught
+  * Debt: {"action":"debt","amount":300,"reason":"borrowed from merchant for supplies"} — owes money
+  * Item acquired: {"action":"item_acquired","item":"iron sword","category":"weapon","count":1} — bought, found, crafted, or received an item
+    - Categories: "weapon", "armor", "potion", "food", "ingredient", "misc"
+    - Use real Skyrim item names: "iron sword", "leather armor", "potion of healing", "sweet roll", "lavender", "iron ingot"
+    - count is 1-5 (keep it realistic — no stockpiling)
+- Keep amounts realistic and small: gold 10-500, bounties 50-500, items 1-5
+- Consequences should fit {{ homeLocation }}: Riften = shadier deals, theft, skooma; Whiterun = trade disputes, bar fights; Markarth = Forsworn trouble, mining disputes; Solitude = political schemes, legitimate trade
+- DO NOT generate consequences for every event. They should feel like rare, meaningful developments.
+{% endif %}
+
+Respond with ONLY this JSON. No explanation. Compact format. Keep total response under 750 characters:
+{% if consequencesEnabled %}
+{% raw %}{"events":[{"summary":"Event description here.","type":"routine","gossip":false,"consequence":null}],"involved":[],"diary":false}{% endraw %}
+{% else %}
+{% raw %}{"events":[{"summary":"Event description here.","type":"routine","gossip":false}],"involved":[],"diary":false}{% endraw %}
+{% endif %}
+{% else %}
+{% raw %}{"events":[],"involved":[],"diary":false}{% endraw %}
+{% endif %}
+[ end user ]

@@ -1,0 +1,5 @@
+customCategory: companion
+actionType: category
+name: Command
+description: "Direct orders — follow, wait, dismiss, recruit, go home, assign home, or change combat style."
+enabled: false

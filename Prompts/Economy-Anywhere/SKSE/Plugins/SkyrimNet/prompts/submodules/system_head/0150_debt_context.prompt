@@ -1,0 +1,11 @@
+{% set _debt_info = papyrus_util("GetStringValue", npc.UUID, "SeverDebt_Info", "") %}
+{% if _debt_info != "" %}
+## Financial Obligations
+{{ _debt_info }}
+
+**IMPORTANT — Debt Payment Rules:**
+- When someone with an open tab requests an item or product, just use GiveItem to hand it over — the item's gold value is automatically added to their debt. No need to call AddToDebt separately.
+- Use AddToDebt only for non-item charges (services, fees, "another round" when no physical item is given).
+- To collect on a debt or tab, use CollectPayment for the amount owed — it automatically reduces the debt by the amount paid. Partial payments reduce the debt partially; full payments clear it.
+- Do NOT use GiveGold to charge someone who has an open debt with you.
+{% endif %}

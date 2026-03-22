@@ -1,0 +1,20 @@
+name: "Player Near Death"
+description: "Companions react when the player enters bleedout."
+
+eventCriteria:
+  - eventType: "enter_bleedout"
+    schemaConditions:
+      - fieldPath: "actor"
+        operator: "equals"
+        value: "{{ player.name }}"
+        caseSensitive: false
+
+response:
+  type: "direct_narration"
+  content: "{{ player.name }} collapses to one knee, gravely wounded and barely clinging to life."
+
+audience: "everyone"
+enabled: true
+probability: 0.80
+cooldownSeconds: 600
+priority: 15

@@ -1,0 +1,50 @@
+customCategory: companion
+name: AdjustRelationship
+description: "Adjust companion relationship after meaningful interactions. Rapport/Trust/Loyalty: ONLY from direct interactions with {{ player.name }} (-15 to +15). Mood: from ANY source (-20 to +20). Small 1-5 routine, medium 5-10 significant, large 10-15 major. Use 0 if unaffected."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: AdjustRelationship
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The companion being adjusted
+  - type: dynamic
+    name: rapportChange
+    description: "Rapport change (-15 to +15). ONLY from {{ player.name }} interactions. 0 if unaffected."
+  - type: dynamic
+    name: trustChange
+    description: "Trust change (-15 to +15). ONLY from {{ player.name }} interactions. 0 if unaffected."
+  - type: dynamic
+    name: loyaltyChange
+    description: "Loyalty change (-15 to +15). ONLY from {{ player.name }} interactions. 0 if unaffected."
+  - type: dynamic
+    name: moodChange
+    description: "Mood change (-20 to +20). Can change from ANY source. 0 if unaffected."
+# Disabled: relationship assessment is now handled automatically via background
+# LLM calls (sever_relationship_assess.prompt) triggered by the FollowerManager
+# update loop. This frees the action slot for behavioral actions instead.
+# The AdjustRelationship Papyrus function still exists and can be called directly.
+enabled: false
+defaultPriority: 3
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

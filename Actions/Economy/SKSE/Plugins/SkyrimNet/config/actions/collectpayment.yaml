@@ -1,0 +1,39 @@
+customCategory: economy
+name: CollectPayment
+description: "Collect gold owed for goods or services provided."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: CollectPayment_Execute
+parameterMapping:
+  - type: speaker
+    name: akCollector
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: akPayer
+    description: The person who owes payment
+  - type: dynamic
+    name: aiAmount
+    description: Amount owed
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

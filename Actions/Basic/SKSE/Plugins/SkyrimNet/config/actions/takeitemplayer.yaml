@@ -1,0 +1,41 @@
+customCategory: items
+name: TakeItemFromPlayer
+description: "Accept or receive an item the player is offering or giving to you. Use when the player hands over, gives, or transfers an item from their inventory to you. Do NOT use EquipArmor for this — this is about receiving the item, not equipping it."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: TakeItemFromPlayer_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: itemName
+    description: The name of the item to take from the player (e.g. "Iron Sword", "Health Potion")
+  - type: dynamic
+    name: aiCount
+    description: Number of items to take (default 1)
+    optional: true
+    default: 1
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

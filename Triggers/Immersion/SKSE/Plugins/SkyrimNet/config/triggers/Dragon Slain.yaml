@@ -1,0 +1,20 @@
+name: "Dragon Slain"
+description: "Companions react when a dragon is killed nearby."
+
+eventCriteria:
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "contains"
+        value: "Dragon"
+        caseSensitive: false
+
+response:
+  type: "direct_narration"
+  content: "The dragon {{ event_json.victim }} has been slain. Its massive body crashes to the ground as the Dragonborn absorbs its soul."
+
+audience: "everyone"
+enabled: true
+probability: 0.85
+cooldownSeconds: 900
+priority: 10
