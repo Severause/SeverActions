@@ -78,7 +78,7 @@ Do NOT choose silence when:
 {% set cinfo = decnpc(candidate.UUID) %}
 {% if not existsIn(lastSpeaker, "name") or cinfo.name != lastSpeaker.name %}
 {% if cinfo.isVirtual %}
-{{ candidate.id }}. **{{ cinfo.name }}**{% if cinfo.isVirtualPrivate %} (Virtual NPC){% endif %}
+### **{{ cinfo.name }}**{% if cinfo.isVirtualPrivate %} (Virtual NPC){% endif %}
    - {{ render_character_profile("short_inline", candidate.UUID) }}
    - **Interjection**: {{ render_character_profile("interject_inline", candidate.UUID) }}
 {% else %}
