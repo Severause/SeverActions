@@ -1,0 +1,32 @@
+{# Off-Screen Life - What a dismissed follower did while the player was away #}
+{% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" %}
+{% if actorUUID and actorUUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% if actor and actor.UUID %}
+{% set is_fol = is_follower(actorUUID) %}
+{% set was_follower = papyrus_util("GetIntValue", actor.UUID, "SeverFollower_TimesRecruited", 0) %}
+{% if not is_fol and was_follower > 0 %}
+{% set home_loc = papyrus_util("GetStringValue", actor.UUID, "SeverFollower_HomeLocation", "") %}
+{% set event_history = papyrus_util("GetStringValue", actor.UUID, "SeverFollower_LifeEventHistory", "") %}
+{% set life_summary = papyrus_util("GetStringValue", actor.UUID, "SeverFollower_LifeSummary", "") %}
+{% if event_history != "" or life_summary != "" %}
+
+## What You've Been Up To
+{% if home_loc != "" %}
+Since {{ player.name }} left, you've been living in {{ home_loc }}.
+{% else %}
+Since {{ player.name }} went their separate way, you've been on your own.
+{% endif %}
+{% if event_history != "" %}
+Your recent days:
+{{ event_history }}
+{% elif life_summary != "" %}
+Recently: {{ life_summary }}
+{% endif %}
+
+These are YOUR real memories of what you did — you lived through them. When talking to {{ player.name }} or others, you can reference these naturally if the topic comes up. Don't recite the full list — just mention whatever is relevant to the conversation. Significant and notable events left a stronger impression on you.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

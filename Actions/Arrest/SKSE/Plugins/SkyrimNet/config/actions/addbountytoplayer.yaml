@@ -1,0 +1,87 @@
+customCategory: arrest
+name: AddBountyToPlayer
+description: "Add bounty to the player's record in this hold. Use FIRST when witnessing a crime — without bounty, ArrestPlayer will fail. Guards may also add bounty at their discretion for disrespect or suspicious behavior."
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: AddBountyToPlayer_Internal
+parameterMapping:
+  - type: speaker
+    name: akGuard
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: bountyAmount
+    description: "Gold amount. Typical: assault 40-200, theft 75-300, murder 1000-3000, trespass 75-150, pickpocket 25-175"
+  - type: dynamic
+    name: crimeType
+    description: "Crime type: assault, theft, murder, trespass, pickpocket, contempt, or abuse_of_power"
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWhiterun"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionRiften"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionSolitude"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionHaafingar"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWindhelm"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionMarkarth"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionFalkreath"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionDawnstar"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWinterhold"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "JobJarlFaction"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "JobHousecarlFaction"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "OR"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

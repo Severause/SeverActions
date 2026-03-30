@@ -1,0 +1,29 @@
+{% if npc and npc.UUID and npc.UUID != 0 %}
+{% set actor = decnpc(npc.UUID) %}
+{% set is_follower = is_follower(npc.UUID) %}
+{% set first_person = (render_mode == "full" or render_mode == "thoughts" or render_mode == "action") %}
+
+{% if is_follower and first_person %}
+    {% set active_preset = papyrus_util("GetStringValue", npc.UUID, "SeverOutfit_ActivePreset", "none") %}
+    {% set sit_town = papyrus_util("GetStringValue", npc.UUID, "SeverOutfit_Sit_town", "none") %}
+    {% set sit_adventure = papyrus_util("GetStringValue", npc.UUID, "SeverOutfit_Sit_adventure", "none") %}
+    {% set sit_home = papyrus_util("GetStringValue", npc.UUID, "SeverOutfit_Sit_home", "none") %}
+    {% set sit_sleep = papyrus_util("GetStringValue", npc.UUID, "SeverOutfit_Sit_sleep", "none") %}
+    
+    {% set has_any_situation = sit_adventure != "none" or sit_town != "none" or sit_home != "none" or sit_sleep != "none" %}
+    
+    {% if has_any_situation %}
+        You have assigned outfits for different situations:
+        {% if sit_adventure != "none" %}- When adventuring: **{{ sit_adventure }}**
+        {% endif %}
+        {% if sit_town != "none" %}- When in town: **{{ sit_town }}**
+        {% endif %}
+        {% if sit_home != "none" %}- At home: **{{ sit_home }}**
+        {% endif %}
+        {% if sit_sleep != "none" %}- For sleeping: **{{ sit_sleep }}**
+        {% endif %}
+        
+        You can suggest changing outfits when appropriate, or assign new outfit presets to situations.
+    {% endif %}
+{% endif %}
+{% endif %}

@@ -1,0 +1,38 @@
+customCategory: magic
+name: LearnSpell
+description: "Learn a spell from the player. The player must know the spell for you to learn it. Only use this when the player offers to teach you a specific spell, or during roleplay where spell learning would make sense."
+questEditorId: SeverActions
+scriptName: SeverActions_SpellTeach
+executionFunctionName: LearnSpell
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The NPC who is learning the spell
+  - type: dynamic
+    name: spellName
+    description: "The name of the spell to learn (e.g. 'Fireball', 'Close Wounds', 'Oakflesh')"
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} learns {{ spellName }} from {{ player.name }}"

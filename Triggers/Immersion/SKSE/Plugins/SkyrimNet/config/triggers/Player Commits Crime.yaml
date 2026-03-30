@@ -1,0 +1,20 @@
+name: "Player Commits Crime"
+description: "Companions react when the player commits a crime."
+
+eventCriteria:
+  - eventType: "crime"
+    schemaConditions:
+      - fieldPath: "criminal"
+        operator: "equals"
+        value: "{{ player.name }}"
+        caseSensitive: false
+
+response:
+  type: "direct_narration"
+  content: "{{ player.name }} committed {{ event_json.crime_type }}{% if event_json.victim and event_json.victim != \"\" %} against {{ event_json.victim }}{% endif %}."
+
+audience: "everyone"
+enabled: true
+probability: 0.40
+cooldownSeconds: 600
+priority: 5

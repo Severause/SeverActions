@@ -1,0 +1,35 @@
+name: DismissFollower
+description: "Dismiss this companion from the active party. They return to their assigned home and can be recruited again later. DismissFollower = leave party. CompanionWait = stay temporarily. FollowerLeaves = permanent departure."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: DismissCompanion
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The companion being dismissed
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} has parted ways with {{ player.name }}"
+isShortLived: true

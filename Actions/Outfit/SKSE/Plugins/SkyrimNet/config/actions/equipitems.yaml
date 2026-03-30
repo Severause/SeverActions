@@ -1,0 +1,36 @@
+customCategory: outfit
+name: EquipArmor
+description: "Equip one or more items from inventory by name. Comma-separate for multiple."
+questEditorId: SeverActions
+scriptName: SeverActions_Outfit
+executionFunctionName: EquipMultipleItems_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: itemNames
+    description: "Item name(s) to equip, comma-separated for multiple (e.g. 'steel gauntlets, iron helmet')"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

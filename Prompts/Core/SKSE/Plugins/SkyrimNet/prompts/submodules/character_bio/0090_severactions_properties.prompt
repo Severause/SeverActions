@@ -1,0 +1,7 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{% set properties = owned_properties(actorUUID) %}
+{% if properties and properties != "" %}
+Properties owned by {{ player.name }}:
+{{ properties }}
+{% endif %}
+{% endif %}

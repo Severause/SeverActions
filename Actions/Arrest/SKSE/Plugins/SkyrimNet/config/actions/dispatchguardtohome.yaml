@@ -1,0 +1,100 @@
+customCategory: arrest
+name: DispatchGuardToHome
+description: "Guard investigates an NPC's home for evidence of crime. Use this instead of travel actions when a guard wants to search, investigate, or look for evidence at someone's home. The guard travels there, searches containers for contraband/evidence (skooma, stolen goods, dark magic items, forged documents, etc.), and returns with findings. Covers: home search, house investigation, evidence gathering, contraband sweep, crime scene investigation."
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: DispatchGuardToHome_Execute
+parameterMapping:
+  - type: speaker
+    name: akGuard
+    description: The guard being dispatched
+  - type: dynamic
+    name: targetName
+    description: "Full display name of the NPC whose home to search"
+  - type: dynamic
+    name: senderName
+    description: "Who ordered the search — guard returns to them with evidence"
+  - type: dynamic
+    name: reason
+    description: "What to investigate (e.g. 'skooma dealing', 'necromancy', 'talos worship', 'thieving')"
+    optional: true
+    default: "suspicious activity"
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWhiterun"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionRiften"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionSolitude"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionHaafingar"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWindhelm"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionMarkarth"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionFalkreath"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionDawnstar"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWinterhold"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "JobJarlFaction"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "JobHousecarlFaction"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "OR"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SeverActions_DispatchFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} has been dispatched to search {{ targetName }}'s home for evidence related to {{ reason }}"

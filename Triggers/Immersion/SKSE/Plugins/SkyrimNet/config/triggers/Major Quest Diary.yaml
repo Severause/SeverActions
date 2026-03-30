@@ -1,0 +1,19 @@
+name: "Major Quest Diary"
+description: "Followers silently write diary entries after completing a quest."
+
+eventCriteria:
+  - eventType: "quest_start_stop"
+    schemaConditions:
+      - fieldPath: "started"
+        operator: "equals"
+        value: false
+
+response:
+  type: "diary_entry"
+  targetScope: "AllNearbyActors"
+  nearbyRadius: 3000.0
+
+enabled: true
+probability: 0.45
+cooldownSeconds: 1800
+priority: 2

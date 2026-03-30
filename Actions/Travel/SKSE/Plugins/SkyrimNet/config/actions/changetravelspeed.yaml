@@ -1,0 +1,36 @@
+customCategory: travel
+name: ChangeTravelSpeed
+description: "Change travel speed of a currently traveling actor."
+questEditorId: SeverActions
+scriptName: SeverActions_Travel
+executionFunctionName: SetTravelSpeedNatural
+parameterMapping:
+  - type: speaker
+    name: akNPC
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: speedText
+    description: "Speed: run/hurry (fastest), jog/brisk (medium), walk/slow (slowest)"
+enabled: false
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
