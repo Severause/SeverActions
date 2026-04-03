@@ -7,7 +7,7 @@ You are an internal life simulation system for a dismissed companion in Skyrim. 
 
 Character: {{ npc.name }} ({{ npc.race }}{% if npc.gender %}, {{ npc.gender }}{% endif %}{% if npc.class %}, {{ npc.class }}{% endif %})
 
-{% set bio = render_character_profile("full", npcUUID) %}
+{% set bio = render_character_profile("transform", npcUUID) %}
 {% if bio and bio != "" %}
 {{ bio }}
 {% endif %}

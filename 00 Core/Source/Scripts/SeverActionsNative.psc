@@ -1439,6 +1439,13 @@ Int Function Native_Property_GetOwnedCount() Global Native
 String Function Native_Property_GetOwnedNames() Global Native
 {Get a pipe-delimited list of owned property names.}
 
+; ── Knowledge Store ──────────────────────────────────────────────────────────
+; Conditional knowledge entries managed via PrismaUI. Groups of NPCs see
+; different knowledge based on their faction membership.
+
+Int Function Native_Knowledge_GetCount() Global Native
+{Get the number of conditional knowledge entries.}
+
 String Function Native_GetCellOwnerName(ObjectReference akRef) Global Native
 {Get the display name of whoever owns the cell that akRef is in. \
 Returns empty string if unowned.}

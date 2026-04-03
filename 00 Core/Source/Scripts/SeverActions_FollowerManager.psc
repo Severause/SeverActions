@@ -1878,9 +1878,11 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
     ; Clear waiting state if set
     akActor.SetAV("WaitingForPlayer", 0)
 
-    ; NOTE: We intentionally do NOT clear the outfit lock on dismiss.
-    ; If the player told them to wear something, they should keep it
-    ; even after being sent home.
+    ; Restore the NPC's DefaultOutfit so they dress normally at home.
+    ; The outfit lock DATA (presets, locked items) is preserved in the cosave
+    ; so it can be reapplied if they're re-recruited, but the DefaultOutfit
+    ; suppression must be undone or they'll appear naked on cell load.
+    SeverActionsNative.Native_Outfit_ClearLock(akActor)
 
     If ShowNotifications
         Debug.Notification(akActor.GetDisplayName() + " is no longer your companion.")
@@ -3085,13 +3087,9 @@ Function OnOffScreenLifeEvent(String response, Int success)
         SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(actorName + ": " + summary2), akActor, None)
     EndIf
 
-    ; Create memories for the actor so they persist in the semantic memory system
-    SeverActionsNative.Native_AddMemory(akActor, summary1, 0.6, "EXPERIENCE", "", home, \
-        "[\"offscreen\", \"" + type1 + "\"]", "[]")
-    If summary2 != ""
-        SeverActionsNative.Native_AddMemory(akActor, summary2, 0.6, "EXPERIENCE", "", home, \
-            "[\"offscreen\", \"" + type2 + "\"]", "[]")
-    EndIf
+    ; Note: SkyrimNet memories for the primary actor are now created directly in C++
+    ; (inside Native_OffScreen_ParseLLMResponse) to bypass BSFixedString garbling
+    ; that occurred when long summaries were routed through Papyrus pipe parsing.
 
     ; Store gossip for the home location (ring buffer of last 3)
     If gossip1 && home != ""
@@ -3153,11 +3151,8 @@ Function OnOffScreenLifeEvent(String response, Int success)
                     If summary2 != ""
                         SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(involvedName + ": " + summary2), involvedActor, akActor)
                     EndIf
-                    ; Create memories for involved actors too
-                    SeverActionsNative.Native_AddMemory(involvedActor, \
-                        "Spent time with " + actorName + " in " + home + ". " + summary1, \
-                        0.5, "RELATIONSHIP", "", home, \
-                        "[\"offscreen\", \"social\"]", "[]")
+                    ; Note: SkyrimNet memories for involved actors are now created in C++
+                    ; (inside Native_OffScreen_ParseLLMResponse) to bypass BSFixedString issues.
                     If gossip1 && home != ""
                         AppendGossip(home, actorName + " and " + involvedName + " were seen together in " + home)
                     EndIf
