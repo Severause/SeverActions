@@ -2,12 +2,84 @@ name: "Dragon Slain"
 description: "Companions react when a dragon is killed nearby."
 
 eventCriteria:
+  # Generic — any name containing "Dragon"
   - eventType: "death"
     schemaConditions:
       - fieldPath: "victim"
         operator: "contains"
         value: "Dragon"
         caseSensitive: false
+  # Named vanilla dragons
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "equals"
+        value: "Mirmulnir"
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "equals"
+        value: "Sahloknir"
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "equals"
+        value: "Nahagliiv"
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "equals"
+        value: "Vuljotnaak"
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "equals"
+        value: "Viinturuth"
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "equals"
+        value: "Alduin"
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "equals"
+        value: "Odahviing"
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "equals"
+        value: "Paarthurnax"
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "equals"
+        value: "Durnehviir"
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "equals"
+        value: "Krosulhah"
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "equals"
+        value: "Kruziikrel"
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "equals"
+        value: "Relonikiv"
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "equals"
+        value: "Naaslaarum"
+  - eventType: "death"
+    schemaConditions:
+      - fieldPath: "victim"
+        operator: "equals"
+        value: "Voslaarum"
 
 response:
   type: "direct_narration"

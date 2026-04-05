@@ -54,6 +54,11 @@ Bool Property ShowFatigueNotifications = true Auto
 Bool Property ShowColdNotifications = true Auto
 {Show notifications when followers become cold}
 
+Float Property DebuffSeverity = 1.0 Auto
+{Multiplier for all survival debuffs (speed penalty, regen reduction, stamina/magicka drain, cold damage).
+0.0 = debuffs disabled (needs still track but cause no penalties).
+0.5 = half severity. 1.0 = full severity (default).}
+
 Bool Property DebugMode = false Auto
 {Enable debug tracing for troubleshooting}
 
@@ -831,13 +836,10 @@ Function ApplyColdSpeedPenalty(Actor akFollower, Int cold)
     Int level = GetSeverityLevel(cold)
 
     If level >= LEVEL_SEVERE
-        ; Freezing: significant movement slow
-        newSpeedPenalty = 30
+        newSpeedPenalty = (30.0 * DebuffSeverity) as Int
     ElseIf level >= LEVEL_MODERATE
-        ; Cold: slight slow
-        newSpeedPenalty = 15
+        newSpeedPenalty = (15.0 * DebuffSeverity) as Int
     EndIf
-    ; Mild (Chilly) has no speed penalty
 
     ; Only modify if the penalty changed
     If newSpeedPenalty != prevSpeedPenalty
@@ -871,8 +873,8 @@ Function ApplyHungerDrain(Actor akFollower, Int hunger, Float hoursPassed)
         drainPerHour = HUNGER_STAMINA_DRAIN_MILD
     EndIf
 
-    ; Calculate actual drain for this update period
-    Float drain = drainPerHour * hoursPassed * HungerRate
+    ; Calculate actual drain for this update period (scaled by debuff severity)
+    Float drain = drainPerHour * hoursPassed * HungerRate * DebuffSeverity
 
     ; Don't drain below 10% stamina
     Float currentStamina = akFollower.GetActorValue("Stamina")
@@ -915,8 +917,8 @@ Function ApplyFatigueDrain(Actor akFollower, Int fatigue, Float hoursPassed)
         drainPerHour = FATIGUE_MAGICKA_DRAIN_MILD
     EndIf
 
-    ; Calculate actual drain for this update period
-    Float drain = drainPerHour * hoursPassed * FatigueRate
+    ; Calculate actual drain for this update period (scaled by debuff severity)
+    Float drain = drainPerHour * hoursPassed * FatigueRate * DebuffSeverity
 
     ; Don't drain below 10% magicka
     Float currentMagicka = akFollower.GetActorValue("Magicka")
@@ -959,8 +961,8 @@ Function ApplyColdDamage(Actor akFollower, Int cold, Float hoursPassed)
         damagePerHour = COLD_DAMAGE_MILD
     EndIf
 
-    ; Calculate actual damage for this update period
-    Float damage = damagePerHour * hoursPassed * ColdRate
+    ; Calculate actual damage for this update period (scaled by debuff severity)
+    Float damage = damagePerHour * hoursPassed * ColdRate * DebuffSeverity
 
     ; Don't kill them - leave at least 10% health
     Float currentHealth = akFollower.GetActorValue("Health")
@@ -1091,18 +1093,19 @@ Function ClearHealthRegenPenalty(Actor akFollower)
 EndFunction
 
 Int Function GetRegenPenaltyForLevel(Int survivalValue)
-    {Calculate regen penalty based on survival level (hunger/fatigue/cold)}
+    {Calculate regen penalty based on survival level, scaled by DebuffSeverity}
     Int level = GetSeverityLevel(survivalValue)
 
+    Int basePenalty = 0
     If level >= LEVEL_SEVERE
-        Return REGEN_PENALTY_SEVERE   ; 100% reduction - no regen
+        basePenalty = REGEN_PENALTY_SEVERE
     ElseIf level >= LEVEL_MODERATE
-        Return REGEN_PENALTY_MODERATE ; 50% reduction
+        basePenalty = REGEN_PENALTY_MODERATE
     ElseIf level >= LEVEL_MILD
-        Return REGEN_PENALTY_MILD     ; 25% reduction
-    Else
-        Return 0  ; No penalty
+        basePenalty = REGEN_PENALTY_MILD
     EndIf
+
+    Return (basePenalty as Float * DebuffSeverity) as Int
 EndFunction
 
 ; =============================================================================

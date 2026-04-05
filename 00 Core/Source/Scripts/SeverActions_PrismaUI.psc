@@ -1114,6 +1114,42 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
             ArrestScript.DispatchGuardToHome_Execute(target, target2Name, senderName, strParam)
         EndIf
 
+    ; ── Debt Actions ──
+    ElseIf actionId == "createDebt"
+        If DebtScript && target2
+            ; target = creditor, target2 = debtor, intParam = amount, strParam = reason
+            String reason = strParam
+            If reason == ""
+                reason = "debt"
+            EndIf
+            DebtScript.CreateDebt_Execute(target, target, target2, intParam, reason, 0, 0)
+        EndIf
+
+    ElseIf actionId == "addToDebt"
+        If DebtScript && target2
+            ; target = creditor, target2 = debtor, intParam = amount
+            DebtScript.AddToDebt_Execute(target, target2, intParam, "additional charges")
+        EndIf
+
+    ElseIf actionId == "forgiveDebt"
+        If DebtScript && target2
+            ; target = creditor, target2 = debtor
+            DebtScript.ForgiveDebt_Execute(target, target2)
+        EndIf
+
+    ; ── Item Actions ──
+    ElseIf actionId == "giveItem"
+        If LootScript && target2
+            ; target = giver, target2 = receiver, strParam = item name
+            LootScript.GiveItem_Execute(target, target2, strParam, 1)
+        EndIf
+
+    ElseIf actionId == "takeItemFromPlayer"
+        If LootScript
+            ; target = NPC taking, strParam = item name
+            LootScript.TakeItemFromPlayer_Execute(target, strParam, 1)
+        EndIf
+
     Else
         Debug.Trace("[SeverActions_PrismaUI] ExecuteAction: Unknown actionId '" + actionId + "'")
     EndIf
