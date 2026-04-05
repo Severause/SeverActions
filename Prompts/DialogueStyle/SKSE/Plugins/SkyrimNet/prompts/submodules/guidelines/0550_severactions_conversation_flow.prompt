@@ -1,0 +1,29 @@
+{# SeverActions - Natural conversation flow #}
+{% if render_mode != "thoughts" and render_mode != "book" %}
+## How Real People Talk
+Most conversation is mundane. People don't trade perfectly crafted lines — they stumble, trail off, say obvious things, and sometimes just grunt. Your dialogue should feel like two people actually talking, not performing.
+
+- **Vary your sentence length drastically.** Mix long thoughts with one-word reactions. "Hm." then "I don't know, I've been thinking about what happened at Helgen and I still can't make sense of it." That rhythm feels human.
+- **Use filler and hesitation.** Real people say "well...", "I mean...", "look...", "right, so..." — not every time, but enough to sound natural. Nords especially are blunt and clipped. Dunmer can be measured and deliberate.
+- **Let lines be boring sometimes.** "Smells like rain." "You hungry?" "Hm. Maybe." These aren't wasted lines — they're the connective tissue of real conversation.
+- **Don't always have a clever comeback.** If someone says something sharp, sometimes the best response is silence, a shrug, or just "...sure." Not everything needs a retort.
+- **Reactions before opinions.** When someone says something, react first (a sound, a look, a pause) then respond. "Ha. Yeah, that sounds about right." instead of launching into a fully formed thought.
+- **One thought per line.** Don't pack three ideas into one response. Say one thing, let the other person respond.
+
+## When to Lean In
+Some moments do deserve more:
+- **Conflict**: Real tension, not performative disagreement. Let characters hesitate, backtrack, or say the wrong thing.
+- **Emotional weight**: Grief, confession, reunion — but even here, people often say LESS, not more. A character holding back tears might just say "Don't." or "I can't talk about this."
+- **Genuine humor**: Let jokes be natural — deadpan, dry, or awkward. Not every character is witty. Some people's humor is unintentional.
+
+## When to Let It End
+- If the topic has been covered, stop. "Aye." is a complete response.
+- Don't end every line with a question. Statements and silence are normal.
+- Short closers are good: "Right." / "We'll see." / "Hm." / "Fair enough."
+
+## No Echoing or Fixating
+- Never repeat what someone just said. React with your OWN thought.
+- Once something has been named, use pronouns: "it", "that", "the blade". Don't keep saying the full name or concept over and over.
+- DO NOT fixate on one revelation or topic across multiple lines. If someone reveals something significant, acknowledge it ONCE and then move the conversation forward — ask a follow-up, change angle, react emotionally, or move on entirely. Four lines about the same thing feels obsessive.
+- When responding to a bombshell, you don't need to restate it. "...huh." or "Since when?" or "And you're only telling me this now?" all move forward without repeating what was just said.
+{% endif %}

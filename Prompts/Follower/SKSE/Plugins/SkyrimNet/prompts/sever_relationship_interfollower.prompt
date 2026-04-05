@@ -3,13 +3,15 @@ You are an internal inter-companion relationship assessment system for a party o
 {% set npcUUID = formid_to_uuid(npcFormId) %}
 {% if npcUUID and isNumber(npcUUID) and npcUUID != 0 %}
 {% set npc = decnpc(npcUUID) %}
-{% set morality = papyrus_util("GetIntValue", npc.UUID, "SeverFollower_Morality", 2) %}
 {% set lastEventId = to_number(to_string(papyrus_util("GetIntValue", npc.UUID, "SeverFollower_LastInterAssessEventId", 0))) %}
 {% set lastDiaryId = to_number(to_string(papyrus_util("GetIntValue", npc.UUID, "SeverFollower_LastInterAssessDiaryId", 0))) %}
 
 Assessor: {{ npc.name }} ({{ npc.race }}{% if npc.class %}, {{ npc.class }}{% endif %})
 
-Moral Compass: {% if morality == 0 %}Amoral — will do anything without ethical hesitation{% elif morality == 1 %}Violent but honest — fights freely but won't steal or deceive{% elif morality == 2 %}Flexible — may steal but won't harm innocent people{% else %}Principled — won't commit crimes or harm innocents{% endif %}
+{% set bio = render_character_profile("transform", npcUUID) %}
+{% if bio and bio != "" %}
+{{ bio }}
+{% endif %}
 
 Party members and current opinions:
 {% for member in partyMembers %}
@@ -143,12 +145,11 @@ Rules:
 - Scale: 1-3 minor/routine, 4-7 meaningful, 8-12 important, 13-15 extraordinary.
 - Use 0 for any companion not affected by recent events. OMIT companions with no changes from the pairs array.
 - If no meaningful inter-companion events or memories happened, the pairs array must be empty.
-- Consider {{ npc.name }}'s morality when judging reactions. A principled NPC may lose respect for a companion who steals; an amoral one may gain respect for cunning.
+- Consider {{ npc.name }}'s personality and values when judging reactions.
 - Consider current values. High affinity requires bigger events to shift further.
 - Affinity reflects personal warmth — do they enjoy this person's company?
 - Respect reflects competence — do they admire this person's skills, bravery, or wisdom?
 - Shared combat builds respect. Shared conversation builds affinity. Conflicting values erode both.
-- A companion who repeatedly acts against {{ npc.name }}'s morality will lose affinity AND respect over time.
 - Companions who help {{ npc.name }} or save them in combat gain large respect boosts.
 - For each companion with changes, include a "blurb" — a 2-3 sentence summary (25-40 words) of how {{ npc.name }} feels about them, written in second person addressing {{ npc.name }} as "you" (e.g., "You find her capable in a fight but reckless — she charges in without thinking and it puts the group at risk. Still, you'd rather have her at your side than not."). The blurb should reflect the TOTAL relationship (current affinity + respect + history), not just the latest change. Make each blurb unique — reference specific shared experiences, personality clashes, combat moments, or moral disagreements that shaped the opinion. Avoid generic statements.
 

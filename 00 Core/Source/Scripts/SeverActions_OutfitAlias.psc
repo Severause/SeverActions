@@ -9,16 +9,20 @@ Scriptname SeverActions_OutfitAlias extends ReferenceAlias
     firing the instant their 3D loads — the earliest possible moment to
     re-equip the locked outfit.
 
-    OnObjectUnequipped blocks the engine's "equip best armor" behavior by
-    immediately re-equipping the locked outfit whenever armor is removed.
-
-    Uses the same StorageUtil keys as the Outfit system:
-    - SeverOutfit_LockActive (Int, 1 = locked)
-    - SeverOutfit_Locked_<formID> (FormList of locked items)
+    OnObjectUnequipped uses a DEBOUNCE approach: instead of re-equipping
+    instantly (which fights mods that strip actors), it records the unequip
+    in C++ and starts a 0.5s timer. If more unequips arrive during the window,
+    the timer resets. When the timer fires (no new unequips for 0.5s), we check
+    if the actor is in an animation scene or was bulk-stripped. Only then do
+    we re-equip if appropriate.
 }
 
 SeverActions_Outfit Property OutfitScript Auto
 {Optional: direct reference to the Outfit script. Falls back to GetFormFromFile.}
+
+Float Property ReequipDebounceSeconds = 0.5 Auto
+{Delay before re-equipping after an unequip event. Allows burst detection to work.}
+
 
 ; =============================================================================
 ; EVENTS - Trigger re-equip on NPC load/cell/enable
@@ -40,35 +44,34 @@ Event OnEnable()
 EndEvent
 
 Event OnObjectUnequipped(Form akBaseObject, ObjectReference akReference)
-    {Fires when the NPC unequips any item. If the outfit is locked and
-     armor was unequipped (engine swapping to "best"), immediately re-equip
-     the locked outfit to override the engine's choice.
-     Skipped when the outfit system itself is actively changing clothes
-     (SeverOutfit_Suspended flag set by SeverActions_Outfit action functions).}
+    {Fires when the NPC unequips any item. Instead of re-equipping immediately
+     (which fights external mod strips), we debounce: record the unequip in C++
+     for burst detection, bump a generation counter, and start a short timer.
+     When the timer fires and no new unequips arrived, THEN we decide whether
+     to re-equip or yield.}
     If akBaseObject as Armor
         Actor follower = self.GetActorRef()
         If follower && StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0) == 1
-            ; Don't fight our own outfit changes — suspend flag means the Outfit
-            ; system is mid-operation (applying preset, equipping/unequipping items)
+            ; Don't fight our own outfit changes
             If StorageUtil.GetIntValue(follower, "SeverOutfit_Suspended", 0) == 1
                 Return
             EndIf
-            ; Also check native C++ suspend flag — covers the window between
-            ; C++ equip operations and Papyrus ModEvent processing
             If SeverActionsNative.Native_Outfit_IsNativeSuspended(follower)
                 Return
             EndIf
-            ReequipIfLocked()
+
+            ; Record unequip for burst detection (C++ timestamps it)
+            SeverActionsNative.Native_Outfit_RecordExternalUnequip(follower)
+
+            ; Start/reset debounce timer — if more unequips arrive before it fires,
+            ; RegisterForSingleUpdate resets the countdown automatically.
+            RegisterForSingleUpdate(ReequipDebounceSeconds)
         EndIf
     EndIf
 EndEvent
 
-; =============================================================================
-; RE-EQUIP LOGIC
-; =============================================================================
-
-Function ReequipIfLocked()
-    {Check if the outfit lock is active and re-equip if so.}
+Event OnUpdate()
+    {Debounce timer fired — no new unequips for 0.5s. Now decide: re-equip or yield.}
     Actor follower = self.GetActorRef()
     If !follower || follower.IsDead()
         Return
@@ -77,6 +80,50 @@ Function ReequipIfLocked()
     If StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0) != 1
         Return
     EndIf
+
+    ; Skip if our outfit system is mid-operation
+    If StorageUtil.GetIntValue(follower, "SeverOutfit_Suspended", 0) == 1
+        Return
+    EndIf
+
+    ; Check global animation scene flag (set by SexLab/OStim ModEvent hooks in Outfit script)
+    SeverActions_Outfit outfitCheck = GetOutfitScript()
+    If outfitCheck && outfitCheck.AnimationSceneActive
+        Debug.Trace("[SeverActions_OutfitAlias] Animation scene active — yielding for " + follower.GetDisplayName())
+        Return
+    EndIf
+
+    ; Check if burst-suppressed (3+ rapid unequips detected by C++)
+    If SeverActionsNative.Native_Outfit_IsBurstSuppressed(follower)
+        Debug.Trace("[SeverActions_OutfitAlias] Burst suppression active — yielding for " + follower.GetDisplayName())
+        Return
+    EndIf
+
+    ; Not in a scene, not burst-stripped — re-equip the locked outfit
+    SeverActions_Outfit outfitSys = GetOutfitScript()
+    If outfitSys
+        outfitSys.ReapplyLockedOutfit(follower)
+    EndIf
+EndEvent
+
+; =============================================================================
+; RE-EQUIP LOGIC (for cell load / OnLoad — immediate, no debounce)
+; =============================================================================
+
+Function ReequipIfLocked()
+    {Direct re-equip for cell transitions — no debounce needed here since
+     cell loads aren't caused by external mods stripping actors.}
+    Actor follower = self.GetActorRef()
+    If !follower || follower.IsDead()
+        Return
+    EndIf
+
+    If StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0) != 1
+        Return
+    EndIf
+
+    ; Clear burst suppression — cell change means external mod scene is over
+    SeverActionsNative.Native_Outfit_ClearBurstSuppression(follower)
 
     SeverActions_Outfit outfitSys = GetOutfitScript()
     If outfitSys
@@ -94,3 +141,4 @@ SeverActions_Outfit Function GetOutfitScript()
     EndIf
     Return Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_Outfit
 EndFunction
+

@@ -2,7 +2,7 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
 
-    <moduleName>SeverActions - SkyrimNet Action Pack v1.0</moduleName>
+    <moduleName>SeverActions - SkyrimNet Action Pack v1.95</moduleName>
 
     <requiredInstallFiles>
         <folder source="00 Core" destination="" priority="0"/>
@@ -295,6 +295,22 @@ Install with Follower Actions for the full companion system.</description>
 Recommended if you travel with multiple followers. Install with Follower Prompts for full companion awareness.</description>
                             <files>
                                 <folder source="Prompts/GroupMeeting" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Dialogue Style — Natural Speech">
+                            <description>Installs two prompts that shape how NPCs speak in conversation:
+
+• Personality — NPCs speak naturally with varied sentence length, filler words, hesitation, and mundane lines. Less theatrical, more human. Different backgrounds produce different speech patterns (a warrior sounds different from a mage).
+
+• Conversation Flow — Guides natural conversation rhythm. NPCs vary between short and long responses, don't fixate on one topic across multiple lines, use reactions before opinions, and let conversations end naturally.
+
+If you prefer SkyrimNet's default dialogue style or use your own custom prompts, skip this. These prompts are opinionated and change how ALL NPCs talk, not just companions.</description>
+                            <files>
+                                <folder source="Prompts/DialogueStyle" destination="" priority="1"/>
                             </files>
                             <typeDescriptor>
                                 <type name="Recommended"/>

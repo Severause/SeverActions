@@ -85,25 +85,62 @@ ObjectReference Function GetFurnitureByFormID(String formIdStr)
     if formIdStr == ""
         return None
     endif
-    
+
     int formId = formIdStr as int
     if formId == 0 && formIdStr != "0"
         Debug.Trace("[SeverActions_Furniture] Failed to parse formID: " + formIdStr)
         return None
     endif
-    
+
     Form foundForm = Game.GetFormEx(formId)
     if !foundForm
         Debug.Trace("[SeverActions_Furniture] GetFormEx returned None for: " + formIdStr)
         return None
     endif
-    
+
+    ; Try direct cast — works when the LLM passes a RefID
     ObjectReference furnRef = foundForm as ObjectReference
-    if !furnRef
-        Debug.Trace("[SeverActions_Furniture] Form is not an ObjectReference")
+    if furnRef
+        return furnRef
+    endif
+
+    ; Not a ref — likely a BaseID from nearby_references. Find the nearest placed
+    ; instance near the actor (not the player), since the decorator already scoped
+    ; to furniture near this NPC.
+    Debug.Trace("[SeverActions_Furniture] Form is a base form, searching for nearest placed instance of: " + formIdStr)
+    return None
+EndFunction
+
+ObjectReference Function GetFurnitureByFormIDForActor(String formIdStr, Actor akActor)
+    {Resolve a furniture FormID that may be either a RefID or BaseID.
+     If BaseID, searches for the nearest placed instance near the given actor.}
+    if formIdStr == "" || !akActor
         return None
     endif
-    
+
+    ; First try the standard RefID path
+    ObjectReference furnRef = GetFurnitureByFormID(formIdStr)
+    if furnRef
+        return furnRef
+    endif
+
+    ; RefID path returned None — try BaseID lookup near the actor
+    int formId = formIdStr as int
+    if formId == 0 && formIdStr != "0"
+        return None
+    endif
+
+    Form baseForm = Game.GetFormEx(formId)
+    if !baseForm
+        return None
+    endif
+
+    furnRef = Game.FindClosestReferenceOfTypeFromRef(baseForm, akActor as ObjectReference, 500.0)
+    if furnRef
+        Debug.Trace("[SeverActions_Furniture] Resolved BaseID " + formIdStr + " to nearby ref: " + furnRef.GetFormID())
+    else
+        Debug.Trace("[SeverActions_Furniture] No nearby instance of BaseID " + formIdStr + " within 500 units of " + akActor.GetDisplayName())
+    endif
     return furnRef
 EndFunction
 
@@ -129,9 +166,9 @@ Function UseFurniture_Execute(Actor akActor, String furnitureFormId)
         return
     endif
     
-    ObjectReference furnRef = GetFurnitureByFormID(furnitureFormId)
+    ObjectReference furnRef = GetFurnitureByFormIDForActor(furnitureFormId, akActor)
     if !furnRef
-        SkyrimNetApi.RegisterEvent("furniture_not_found", akActor.GetDisplayName() + " couldn't find that furniture", akActor, None)
+        SkyrimNetApi.RegisterEvent("furniture_not_found", akActor.GetDisplayName() + " couldn't find that furniture (ID: " + furnitureFormId + ")", akActor, None)
         return
     endif
     

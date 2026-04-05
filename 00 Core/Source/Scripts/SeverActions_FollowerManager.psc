@@ -37,6 +37,14 @@ Scriptname SeverActions_FollowerManager extends Quest
 Int Property MaxFollowers = 20 Auto
 {Maximum number of followers allowed at once}
 
+Float Property FollowerTeleportDistance = 2000.0 Auto
+{Distance at which actively-following companions are teleported to the player.
+Set to 0 to disable. Only when following — not waiting, sandboxing, or traveling.}
+
+Bool Property ShowFollowerContext = true Auto
+{When true, the follower relationship/behavior prompt (0175) is included in NPC bios.
+When false, the section is skipped — useful for users who prefer vanilla-style companions.}
+
 Float Property RapportDecayRate = 1.0 Auto
 {How fast rapport decays from neglect (points per 6 game hours without conversation)}
 
@@ -77,6 +85,17 @@ Float Property InterFollowerCooldownMinHours = 6.0 Auto
 
 Float Property InterFollowerCooldownMaxHours = 14.0 Auto
 {Maximum game hours between inter-follower relationship assessments per follower.}
+
+Bool Property AutoFollowerBanter = true Auto
+{Enable spontaneous companion-to-companion conversations while traveling.
+When true, a banter director periodically evaluates whether any two followers
+should start talking to each other, then triggers SkyrimNet's dialogue pipeline.}
+
+Float Property BanterCooldownMinHours = 2.0 Auto
+{Minimum game hours between follower banter opportunities.}
+
+Float Property BanterCooldownMaxHours = 5.0 Auto
+{Maximum game hours between follower banter opportunities.}
 
 Bool Property AutoOffScreenLife = true Auto
 {Enable off-screen life event generation for dismissed followers with homes.
@@ -269,6 +288,10 @@ String Property KEY_NEXT_ASSESS_GT = "SeverFollower_NextAssessGT" AutoReadOnly
 String Property KEY_LAST_INTER_ASSESS_GT = "SeverFollower_LastInterAssessGT" AutoReadOnly
 String Property KEY_NEXT_INTER_ASSESS_GT = "SeverFollower_NextInterAssessGT" AutoReadOnly
 
+; Cooldown tracking for follower banter (global, stored on quest form via None)
+String Property KEY_LAST_BANTER_GT = "SeverActions_LastBanterGT" AutoReadOnly
+String Property KEY_NEXT_BANTER_GT = "SeverActions_NextBanterGT" AutoReadOnly
+
 ; Cooldown tracking for off-screen life event generation (game time seconds)
 String Property KEY_LAST_LIFE_EVENT_GT = "SeverFollower_LastLifeEventGT" AutoReadOnly
 String Property KEY_NEXT_LIFE_EVENT_GT = "SeverFollower_NextLifeEventGT" AutoReadOnly
@@ -318,6 +341,9 @@ Bool AssessmentInProgress = false
 Actor PendingInterAssessActor = None
 Bool InterFollowerAssessmentInProgress = false
 
+; Follower banter tracking — lowest priority LLM system
+Bool BanterInProgress = false
+
 ; Off-screen life event tracking — separate from both assessment types
 Actor PendingOffScreenLifeActor = None
 Bool OffScreenLifeInProgress = false
@@ -352,6 +378,7 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_PrismaResetAll", "OnPrismaResetAll")
     RegisterForModEvent("SeverActions_SetCombatStyle", "OnPrismaSetCombatStyle")
     RegisterForModEvent("SeverActions_SetEssential", "OnPrismaSetEssential")
+
 
     ; Initialize the native orphan scanner with our LinkedRef keywords
     Keyword travelKW = None
@@ -442,6 +469,8 @@ Function Maintenance()
         FrameworkMode = 1  ; old "Tracking Only" → new "Tracking"
         Debug.Trace("[SeverActions_FollowerManager] Migrated FrameworkMode 2 → 1 (Tracking)")
     EndIf
+
+    BanterInProgress = false
 
     Debug.Trace("[SeverActions_FollowerManager] Maintenance complete - Mode: " + FrameworkMode)
 EndFunction
@@ -1061,7 +1090,26 @@ Bool Function RecruitViaVanillaDialogue(Actor akActor)
         DebugMsg("RecruitViaVanillaDialogue: Cast to DialogueFollowerScript failed")
         Return false
     EndIf
+    ; Check if actor already has a bow before vanilla recruitment (SetFollower adds one)
+    Bool hadBow = akActor.GetEquippedWeapon(true) != None || \
+        SeverActionsNative.FindItemByName(akActor, "bow") != None
+
     dfScript.SetFollower(akActor as ObjectReference)
+
+    ; Remove the hunting bow + iron arrows that vanilla SetFollower forcefully adds
+    ; — only if they didn't already have a bow (don't strip archers)
+    If !hadBow
+        Form huntingBow = Game.GetFormFromFile(0x00013985, "Skyrim.esm")
+        Form ironArrow = Game.GetFormFromFile(0x0001397D, "Skyrim.esm")
+        If huntingBow && akActor.GetItemCount(huntingBow) > 0
+            akActor.RemoveItem(huntingBow, akActor.GetItemCount(huntingBow), true)
+            DebugMsg("RecruitViaVanillaDialogue: Removed vanilla hunting bow from " + akActor.GetDisplayName())
+        EndIf
+        If ironArrow && akActor.GetItemCount(ironArrow) > 0
+            akActor.RemoveItem(ironArrow, akActor.GetItemCount(ironArrow), true)
+        EndIf
+    EndIf
+
     DebugMsg("RecruitViaVanillaDialogue: Called SetFollower for " + akActor.GetDisplayName())
     Return true
 EndFunction
@@ -1207,6 +1255,11 @@ Event OnUpdate()
     ; Off-screen life events — only fires if no other LLM assessments are in flight
     If AutoOffScreenLife && !AssessmentInProgress && !InterFollowerAssessmentInProgress && !OffScreenLifeInProgress
         CheckOffScreenLifeEvents()
+    EndIf
+
+    ; Follower banter — independent of other LLM systems, only gated by its own cooldown + flag
+    If AutoFollowerBanter && !BanterInProgress
+        CheckFollowerBanter()
     EndIf
 
     IsUpdating = false
@@ -2248,6 +2301,7 @@ Function OnRelationshipAssessment(String response, Int success)
     Int lastEventId = ExtractJsonInt(response, "eid")
     Int lastMemoryId = ExtractJsonInt(response, "mid")
     Int lastDiaryId = ExtractJsonInt(response, "did")
+    String blurb = ExtractJsonString(response, "blurb")
 
     ; Store the highest assessed event/memory/diary IDs so the next assessment only sees new ones
     If lastEventId > 0
@@ -2260,9 +2314,14 @@ Function OnRelationshipAssessment(String response, Int success)
         StorageUtil.SetIntValue(akActor, "SeverFollower_LastAssessDiaryId", lastDiaryId)
     EndIf
 
-    ; Skip if all zeros (no meaningful change)
+    ; Store the LLM-generated relationship blurb (even if changes are 0)
+    If blurb != ""
+        StorageUtil.SetStringValue(akActor, "SeverFollower_PlayerBlurb", blurb)
+    EndIf
+
+    ; Skip stat changes if all zeros (no meaningful change)
     If rapportChange == 0 && trustChange == 0 && loyaltyChange == 0 && moodChange == 0
-        DebugMsg(akActor.GetDisplayName() + " assessment: no change (eid " + lastEventId + ", mid " + lastMemoryId + ", did " + lastDiaryId + ")")
+        DebugMsg(akActor.GetDisplayName() + " assessment: no change (eid " + lastEventId + ", mid " + lastMemoryId + ", did " + lastDiaryId + ")" + ", blurb=" + (blurb != ""))
         Return
     EndIf
 
@@ -2898,6 +2957,182 @@ Function SyncAllPairRelationshipsOnLoad(Actor[] followers)
         i += 1
     EndWhile
     DebugMsg("Synced inter-follower pair relationships to native store")
+EndFunction
+
+; =============================================================================
+; FOLLOWER BANTER
+; =============================================================================
+
+Function CheckFollowerBanter()
+    {Game-time based banter check. Called from OnUpdate every 30s.
+     Only gated by its own BanterInProgress flag and game-time cooldown —
+     NOT blocked by assessment or off-screen life flags.}
+
+    ; Check game-time cooldown
+    Float now = GetGameTimeInSeconds()
+    Float nextEligible = StorageUtil.GetFloatValue(None, KEY_NEXT_BANTER_GT, 0.0)
+    If nextEligible > 0.0 && now < nextEligible
+        Return
+    EndIf
+
+    ; Skip if in combat
+    Actor player = Game.GetPlayer()
+    If player.IsInCombat()
+        Return
+    EndIf
+
+    ; Collect followers in player's cell
+    Actor[] followers = GetAllFollowers()
+    Cell playerCell = player.GetParentCell()
+    Actor[] eligible = new Actor[10]
+    Int eligibleCount = 0
+
+    Int i = 0
+    While i < followers.Length && eligibleCount < 10
+        Actor fol = followers[i]
+        If fol && !fol.IsDead() && !fol.IsInCombat() && fol.GetParentCell() == playerCell
+            eligible[eligibleCount] = fol
+            eligibleCount += 1
+        EndIf
+        i += 1
+    EndWhile
+
+    If eligibleCount < 2
+        Return
+    EndIf
+
+    Debug.Notification("[Banter] Checking " + eligibleCount + " followers...")
+    FireFollowerBanter(eligible, eligibleCount)
+EndFunction
+
+Function FireFollowerBanter(Actor[] eligible, Int count)
+    {Send the banter director prompt to the LLM with all eligible follower pairs.
+     Builds context JSON with follower data and pair relationship data.}
+    BanterInProgress = true
+
+    ; Set cooldown immediately so we don't re-fire
+    Float now = GetGameTimeInSeconds()
+    StorageUtil.SetFloatValue(None, KEY_LAST_BANTER_GT, now)
+    Float nextCooldown = Utility.RandomFloat(BanterCooldownMinHours, BanterCooldownMaxHours) * SECONDS_PER_GAME_HOUR
+    StorageUtil.SetFloatValue(None, KEY_NEXT_BANTER_GT, now + nextCooldown)
+
+    ; Build followers array in context JSON
+    String contextJson = "{\"followers\":["
+    Int i = 0
+    While i < count
+        Actor fol = eligible[i]
+        If i > 0
+            contextJson += ","
+        EndIf
+        Float folMood = StorageUtil.GetFloatValue(fol, "SeverFollower_Mood", 50.0)
+        String folStyle = StorageUtil.GetStringValue(fol, "SeverFollower_CombatStyle", "balanced")
+        contextJson += "{\"formId\":" + fol.GetFormID()
+        contextJson += ",\"name\":\"" + fol.GetDisplayName() + "\""
+        contextJson += ",\"mood\":" + (folMood as Int)
+        contextJson += ",\"combatStyle\":\"" + folStyle + "\"}"
+        i += 1
+    EndWhile
+    contextJson += "]"
+
+    ; Build pairs array — all combinations of eligible followers
+    contextJson += ",\"pairs\":["
+    Bool firstPair = true
+    i = 0
+    While i < count
+        Int j = i + 1
+        While j < count
+            Actor a = eligible[i]
+            Actor b = eligible[j]
+            If a && b
+                Float affinityAB = SeverActionsNative.Native_GetPairAffinity(a, b)
+                Float respectAB = SeverActionsNative.Native_GetPairRespect(a, b)
+                Float affinityBA = SeverActionsNative.Native_GetPairAffinity(b, a)
+                Float respectBA = SeverActionsNative.Native_GetPairRespect(b, a)
+                String blurbAB = StorageUtil.GetStringValue(a, "SeverFollower_Blurb_" + b.GetFormID(), "")
+                String blurbBA = StorageUtil.GetStringValue(b, "SeverFollower_Blurb_" + a.GetFormID(), "")
+
+                If !firstPair
+                    contextJson += ","
+                EndIf
+                contextJson += "{\"nameA\":\"" + a.GetDisplayName() + "\""
+                contextJson += ",\"nameB\":\"" + b.GetDisplayName() + "\""
+                contextJson += ",\"affinityAB\":" + (affinityAB as Int)
+                contextJson += ",\"respectAB\":" + (respectAB as Int)
+                contextJson += ",\"affinityBA\":" + (affinityBA as Int)
+                contextJson += ",\"respectBA\":" + (respectBA as Int)
+                contextJson += ",\"blurbAB\":\"" + blurbAB + "\""
+                contextJson += ",\"blurbBA\":\"" + blurbBA + "\"}"
+                firstPair = false
+            EndIf
+            j += 1
+        EndWhile
+        i += 1
+    EndWhile
+    contextJson += "]}"
+
+    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_follower_banter", "", contextJson, \
+        Self as Quest, "SeverActions_FollowerManager", "OnFollowerBanter")
+
+    If result < 0
+        BanterInProgress = false
+        Debug.Notification("[Banter] LLM call failed (code " + result + ")")
+    EndIf
+EndFunction
+
+Function OnFollowerBanter(String response, Int success)
+    {Callback from SendCustomPromptToLLM for banter director.
+     If the LLM selected a pair, fires a gamemaster_dialogue event to trigger
+     SkyrimNet's dialogue pipeline between the two companions.
+     Always reschedules the banter loop at the end.}
+    BanterInProgress = false
+
+    If success != 1
+        Debug.Notification("[Banter] LLM call failed")
+        Return
+    EndIf
+
+    ; Check if LLM chose no banter (the ~60% case)
+    If StringUtil.Find(response, "\"banter\":null") >= 0 || StringUtil.Find(response, "\"banter\": null") >= 0
+        Debug.Notification("[Banter] LLM chose silence this cycle")
+        Return
+    EndIf
+
+    ; Extract speaker, target, topic from nested banter object
+    String speakerName = ExtractJsonString(response, "speaker")
+    String targetName = ExtractJsonString(response, "target")
+    String banterTopic = ExtractJsonString(response, "topic")
+
+    If speakerName == "" || targetName == ""
+        Debug.Notification("[Banter] Bad LLM response — missing names")
+        Return
+    EndIf
+
+    ; Resolve names to Actors
+    Actor[] followers = GetAllFollowers()
+    Actor speakerActor = ResolveFollowerByName(speakerName, followers)
+    Actor targetActor = ResolveFollowerByName(targetName, followers)
+
+    If !speakerActor || !targetActor
+        Debug.Notification("[Banter] Can't find " + speakerName + " or " + targetName)
+        Return
+    EndIf
+
+    ; Fire as gamemaster_dialogue — SkyrimNet routes this to DialogueManager which
+    ; generates a response from the speaker to the target. The topic is embedded in
+    ; the dialogue field so it appears in the event context the NPC sees.
+    String topicDirection = banterTopic
+    If topicDirection == ""
+        topicDirection = "casual conversation"
+    EndIf
+    ; Use ContinueConversation format with isContinuation + topic fields.
+    ; SkyrimNet's DialogueManager processes these and the topic becomes visible
+    ; in the NPC's event context for dialogue generation.
+    String eventJson = "{\"speaker\":\"" + speakerName + "\",\"target\":\"" + targetName + "\",\"topic\":\"" + topicDirection + "\",\"isContinuation\":true,\"dialogue\":\"" + speakerName + " turns to " + targetName + " — " + topicDirection + "\"}"
+
+    SkyrimNetApi.RegisterEvent("gamemaster_dialogue", eventJson, speakerActor, targetActor)
+
+    Debug.Notification("[Banter] " + speakerName + " -> " + targetName + ": " + banterTopic)
+
 EndFunction
 
 ; =============================================================================

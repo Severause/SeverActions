@@ -24,6 +24,10 @@ Bool Property OutfitLockEnabled = true Auto
 snapshotted or re-applied on cell transitions. Existing locks are preserved
 but inactive until re-enabled.}
 
+Bool Property AnimationSceneActive = false Auto Hidden
+{Global flag — true when a SexLab/OStim scene is active. Blocks all outfit lock
+re-equips system-wide. Set by ModEvent hooks, read by OutfitAlias.}
+
 ; =============================================================================
 ; ANIMATION EVENT NAMES
 ; These match Immersive Equipping Animations by default
@@ -328,7 +332,27 @@ Function Dress_Execute(Actor akActor)
                 return
             EndIf
         EndIf
-        Debug.Trace("[SeverActions_Outfit] No stored clothing to put on")
+        ; No stored clothing and no DefaultOutfit — try re-equipping locked outfit items
+        Form[] lockedItems = SeverActionsNative.Native_Outfit_GetLockedItems(akActor)
+        If lockedItems && lockedItems.Length > 0
+            Debug.Trace("[SeverActions_Outfit] Dress: No stored items, re-equipping " + lockedItems.Length + " locked outfit items")
+            Int li = 0
+            While li < lockedItems.Length
+                If lockedItems[li]
+                    Armor armorItem = lockedItems[li] as Armor
+                    If armorItem
+                        String slotName = GetSlotNameFromMask(armorItem.GetSlotMask())
+                        PlayEquipAnimation(akActor, slotName)
+                    EndIf
+                    akActor.EquipItem(lockedItems[li], false, true)
+                EndIf
+                li += 1
+            EndWhile
+            ResumeOutfitLock(akActor)
+            return
+        EndIf
+
+        Debug.Trace("[SeverActions_Outfit] No stored clothing or locked outfit to put on")
         ResumeOutfitLock(akActor)
         return
     endif
@@ -959,6 +983,8 @@ EndFunction
 Function ResumeOutfitLock(Actor akActor)
     if akActor
         StorageUtil.UnsetIntValue(akActor, "SeverOutfit_Suspended")
+        ; Clear any burst suppression — our outfit system is back in control
+        SeverActionsNative.Native_Outfit_ClearBurstSuppression(akActor)
     endif
 EndFunction
 
@@ -1040,7 +1066,8 @@ Function ReapplyLockedOutfit(Actor akActor)
     {Silently re-equip all items from the locked outfit snapshot.
      Called by FollowerManager on cell transitions — no animations.
      Suspends the lock during reapply so OnObjectUnequipped doesn't
-     trigger recursive calls when equipping displaces other items.}
+     trigger recursive calls when equipping displaces other items.
+     Skips re-equip if actor is in an animation framework scene.}
     if !akActor || akActor.IsDead()
         return
     endif
@@ -1054,6 +1081,11 @@ Function ReapplyLockedOutfit(Actor akActor)
         return
     endif
 
+    ; Global animation scene flag — set by SexLab/OStim ModEvent hooks
+    If AnimationSceneActive
+        return
+    EndIf
+
     ; Already mid-operation — don't re-enter
     if StorageUtil.GetIntValue(akActor, "SeverOutfit_Suspended", 0) == 1
         return
@@ -1065,6 +1097,25 @@ Function ReapplyLockedOutfit(Actor akActor)
     if count == 0
         return
     endif
+
+    ; Bulk strip detection: if NONE of the locked items are currently worn,
+    ; another mod stripped everything at once (native DLL, bathing mod, etc.).
+    ; Don't fight it — yield until the next cell transition re-asserts the lock.
+    ; Single-item unequips (engine "equip best") will have most items still worn.
+    Int wornCount = 0
+    Int checkIdx = 0
+    While checkIdx < count
+        Form checkItem = StorageUtil.FormListGet(None, lockKey, checkIdx)
+        If checkItem && akActor.IsEquipped(checkItem)
+            wornCount += 1
+        EndIf
+        checkIdx += 1
+    EndWhile
+
+    If wornCount == 0 && count >= 2
+        Debug.Trace("[SeverActions_Outfit] Bulk strip detected for " + akActor.GetDisplayName() + " — all " + count + " locked items removed. Yielding.")
+        return
+    EndIf
 
     SuspendOutfitLock(akActor)
 
@@ -1943,6 +1994,14 @@ Function Maintenance()
     ; PrismaUI inventory transfer — sync outfit lock StorageUtil after C++ transfers an equipped item
     RegisterForModEvent("SeverActions_PrismaInventorySync", "OnPrismaInventorySync")
 
+    ; Animation framework hooks — suspend outfit lock during scenes
+    ; SexLab: global hooks fire for ALL scenes (no local hook suffix needed)
+    RegisterForModEvent("HookAnimationStart", "OnSexLabSceneStart")
+    RegisterForModEvent("HookAnimationEnd", "OnSexLabSceneEnd")
+    ; OStim: global scene start/end events
+    RegisterForModEvent("ostim_start", "OnOStimSceneStart")
+    RegisterForModEvent("ostim_end", "OnOStimSceneEnd")
+
     ; Restore global auto-switch from StorageUtil (persists across game loads)
     ; SituationMonitor.m_enabled is RAM-only — resets to true on DLL load.
     ; StorageUtil is our persistence layer: 1 = enabled, 0 = disabled, default = 1
@@ -2249,4 +2308,30 @@ Event OnPrismaInventorySync(String eventName, String strArg, Float numArg, Form 
 
     Int lockCount = StorageUtil.FormListCount(None, lockKey)
     Debug.Trace("[SeverActions_Outfit] PrismaInventorySync: Rebuilt lock for " + akActor.GetDisplayName() + " — " + lockCount + " items")
+EndEvent
+
+; =============================================================================
+; ANIMATION FRAMEWORK HOOKS — suspend/resume outfit locks during scenes
+; =============================================================================
+
+; SexLab global hooks — signature: (int threadID, bool hasPlayer)
+Event OnSexLabSceneStart(Int threadID, Bool hasPlayer)
+    AnimationSceneActive = true
+    Debug.Trace("[SeverActions_Outfit] SexLab scene started (thread " + threadID + ") — outfit locks suspended")
+EndEvent
+
+Event OnSexLabSceneEnd(Int threadID, Bool hasPlayer)
+    AnimationSceneActive = false
+    Debug.Trace("[SeverActions_Outfit] SexLab scene ended (thread " + threadID + ") — outfit locks resumed")
+EndEvent
+
+; OStim hooks — signature: (string eventName, string strArg, float numArg, Form sender)
+Event OnOStimSceneStart(String eventName, String strArg, Float numArg, Form sender)
+    AnimationSceneActive = true
+    Debug.Trace("[SeverActions_Outfit] OStim scene started — outfit locks suspended")
+EndEvent
+
+Event OnOStimSceneEnd(String eventName, String strArg, Float numArg, Form sender)
+    AnimationSceneActive = false
+    Debug.Trace("[SeverActions_Outfit] OStim scene ended — outfit locks resumed")
 EndEvent

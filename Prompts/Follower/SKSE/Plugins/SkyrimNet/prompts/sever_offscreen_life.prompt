@@ -29,9 +29,6 @@ Combat approach: {{ combat_style }}
 
 {% set isAnimal = existsIn(["Dog", "ManagedDog", "Wolf", "Husky", "Fox", "DLC1HuskyCompanion", "DLC1DeathHound"], npc.race) %}
 
-{% set morality = papyrus_util("GetIntValue", npc.UUID, "SeverFollower_Morality", 2) %}
-Moral compass: {% if morality == 0 %}Amoral — will do anything{% elif morality == 1 %}Violent but honest{% elif morality == 2 %}Flexible — may bend rules{% else %}Principled — won't commit crimes{% endif %}
-
 Recent memories:
 {% set memories = get_relevant_memories(npcUUID, 5) %}
 {% if memories and length(memories) > 0 %}
@@ -122,7 +119,6 @@ Skill-based flavor:
 - Combat-oriented: train, spar, patrol, sharpen blades, study battle tactics, arm-wrestle locals
 - Scholarly/magical: study, research, visit court wizards, experiment with reagents, debate theory with other mages
 - Stealthy/roguish: case marks, practice lockpicking, eavesdrop on conversations, play cards for coin, trade in rumors
-- Morally flexible: gamble, scheme, bend the rules, make questionable deals, test boundaries
 {% endif %}
 {% if existsIn(nearbyFollowers, 0) %}
 - Other dismissed companions are living nearby: {% for name in nearbyFollowers %}{{ name }}{% if not loop.is_last %}, {% endif %}{% endfor %}. You MAY include one in a shared event if it makes natural sense. Add their name to the "involved" array. Keep shared events to ~20% of the time. Shared activities: training together, eating at the inn, having a disagreement, confiding about the player, competing at something, helping each other with a task, getting on each other's nerves.
@@ -133,10 +129,7 @@ CONSEQUENCES (use sparingly):
 An event MAY optionally include a "consequence" object with real game effects. Rules:
 - About 85% of events should have NO consequence — just daily life flavor
 - About 10% may have an ECONOMY consequence (earned or lost gold through trade, work, gambling, fines)
-- About 5% may have a CRIME consequence (only for morally flexible or amoral characters)
-- Morality 3 (Principled) characters NEVER commit crimes or get arrested
-- Morality 2 (Flexible) characters rarely commit crimes — maybe petty theft or bending rules
-- Morality 0-1 characters may commit crimes more freely, fitting their personality
+- About 5% may have a CRIME consequence (only if it fits the character's personality and background)
 - Consequence types:
   * Economy: {"action":"gold_change","amount":150,"reason":"sold herbs at market"} — positive = earned, negative = spent/lost/fined
   * Arrest: {"action":"arrest","crime":"theft","bounty":200} — committed a crime, arrested and bounty assigned

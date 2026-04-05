@@ -1240,6 +1240,23 @@ of truth — use this instead of GetWornForm snapshots to avoid async race condi
 Bool Function Native_Outfit_IsNativeSuspended(Actor akActor) Global Native
 {Check if C++ has this actor suspended (mid-equip operation). Used by OutfitAlias.}
 
+; --- Burst strip detection ---
+; Detects when external mods rapidly strip armor (3+ items in 500ms).
+; Auto-suspends outfit lock for 30 seconds to avoid fighting the other mod.
+
+Bool Function Native_Outfit_RecordExternalUnequip(Actor akActor) Global Native
+{Record an external unequip event. Returns true if burst strip detected (lock should yield).}
+
+Function Native_Outfit_ClearBurstSuppression(Actor akActor) Global Native
+{Clear burst suppression for an actor (called when outfit system resumes control).}
+
+Bool Function Native_Outfit_IsBurstSuppressed(Actor akActor) Global Native
+{Check if an actor's outfit lock is currently burst-suppressed.}
+
+Bool Function Native_Outfit_IsInAnimationScene(Actor akActor) Global Native
+{Check if an actor is in a SexLab or OStim scene via EditorID-based faction lookup.
+Works regardless of load order or FormID. Cached after first resolve.}
+
 ; --- Preset operations ---
 
 Function Native_Outfit_BeginPreset(Actor akActor, String presetName) Global Native
