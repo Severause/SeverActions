@@ -1,0 +1,14 @@
+{# Quest Awareness - What this follower knows about the player's quests #}
+{% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" %}
+{% if actorUUID and actorUUID != 0 %}
+{% set is_fol = is_follower(actorUUID) or is_sever_follower(actorUUID) %}
+{% if is_fol %}
+{% set quest_ctx = quest_awareness(actorUUID) %}
+{% if quest_ctx and quest_ctx != "" %}
+{{ quest_ctx }}
+
+Use your quest awareness naturally in conversation. For quests you witnessed firsthand, you can reference specific details and events you personally saw. For quests you only heard about, keep references vague — you know the general idea but not specifics. Do not volunteer quest information unprompted — let it come up naturally when relevant.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

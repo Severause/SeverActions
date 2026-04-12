@@ -13,7 +13,7 @@
     - For actions with actor parameters, use the actor's display name exactly as shown in Nearby Actors.
 
     **Categories vs Actions — CRITICAL distinction:**
-    - Some entries are **categories** (they have NO `PARAMS:` schema in the eligible list). Categories trigger a follow-up prompt to pick the specific action. When selecting a category, you **MUST** include EXACTLY `PARAMS: {"intent": "brief description"}` — the ONLY allowed key is `"intent"`. Do NOT invent parameter names like "item", "action", "target", etc. The intent is a short natural-language summary of what {{ npc.name }} wants to do.
+    - Some entries are **categories** (they have NO `PARAMS:` schema in the eligible list). Categories trigger a follow-up prompt to pick the specific action. When selecting a category, you **MUST** include EXACTLY `PARAMS: {"intent": "brief description"}` — where `"intent"` is the ONLY key. Do NOT add ANY other keys like "target", "item", "action", "name", "location", or anything else. Adding extra keys will cause the action to fail. Example: `PARAMS: {"intent": "attack the wolf"}` — NOT `{"intent": "attack", "target": "wolf"}`.
     - **Exception:** "Gesture" is a direct action, NOT a category — select it with NO PARAMS. Never add intent or any parameters to Gesture.
     - All other entries are **direct actions** (they HAVE a `PARAMS:` schema in the eligible list). When selecting a direct action, use ONLY the parameters shown in its schema. **NEVER add `intent` to a direct action.**
     - Respond with EXACTLY one line. Never output multiple action lines — only the first is processed by the game engine, the rest are discarded.

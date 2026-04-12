@@ -12,7 +12,7 @@ response:
   type: "direct_narration"
   content: "{{ player.name }} has completed the quest: {{ event_json.quest }}."
 
-audience: "everyone"
+audience: "nearby_npcs"
 enabled: true
 probability: 0.55
 cooldownSeconds: 600

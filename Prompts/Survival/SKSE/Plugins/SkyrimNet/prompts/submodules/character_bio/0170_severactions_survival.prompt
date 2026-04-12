@@ -4,7 +4,7 @@
 {% set actor = decnpc(actorUUID) %}
 {% if actor and actor.UUID %}
 {# Check if this actor is a companion (native follower or SeverActions faction) #}
-{% set is_companion = is_follower(actorUUID) or is_in_faction(actorUUID, "SeverActions_FollowerFaction") %}
+{% set is_companion = is_follower(actorUUID) or is_sever_follower(actorUUID) %}
 {% set excluded = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Excluded", 0) %}
 {% if excluded == 0 %}
 {% set hunger = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Hunger", 0) %}

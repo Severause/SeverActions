@@ -305,6 +305,10 @@ String Property KEY_OFFSCREEN_EXCLUDED = "SeverFollower_OffScreenExcluded" AutoR
 ; Game-time stamp of when follower was dismissed (used as grace period for off-screen life)
 String Property KEY_DISMISS_GT = "SeverFollower_DismissGT" AutoReadOnly
 
+; Flag set on explicit dismiss — prevents RecoverCustomAIFollowers from re-registering
+; custom AI followers (Inigo, Lucien, etc.) whose mods keep IsPlayerTeammate() true permanently
+String Property KEY_DISMISSED = "SeverFollower_Dismissed" AutoReadOnly
+
 ; Minimum game hours after dismiss before off-screen life events can fire
 Float Property OffScreenGracePeriodHours = 6.0 Auto
 {Dismissed followers wont generate off-screen events for this many game hours.
@@ -348,6 +352,10 @@ Bool BanterInProgress = false
 Actor PendingOffScreenLifeActor = None
 Bool OffScreenLifeInProgress = false
 
+; Quest awareness tracking — queue-based LLM summary generation
+; C++ stashes all metadata (actor, editorID, tier) — Papyrus only tracks in-flight state
+Bool QuestAwarenessInProgress = false
+
 ; =============================================================================
 ; INITIALIZATION
 ; =============================================================================
@@ -369,6 +377,10 @@ Function Maintenance()
     ; Register for native orphan package cleanup events
     RegisterForModEvent("SeverActions_OrphanCleanup", "OnOrphanCleanup")
 
+    ; Register for cell load events — re-apply PO3 home sandbox overrides
+    ; for track-only followers (PO3 overrides don't persist across cell transitions)
+    RegisterForModEvent("SeverActions_CellLoaded", "OnCellLoadedReapplyHome")
+
     ; Register for PrismaUI actions
     ; Uses ModEvents because DispatchMethodCall silently fails (returns true but never executes)
     RegisterForModEvent("SeverActions_PrismaAssignHome", "OnPrismaAssignHome")
@@ -378,6 +390,14 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_PrismaResetAll", "OnPrismaResetAll")
     RegisterForModEvent("SeverActions_SetCombatStyle", "OnPrismaSetCombatStyle")
     RegisterForModEvent("SeverActions_SetEssential", "OnPrismaSetEssential")
+
+    ; Off-screen life exclusion toggles from PrismaUI
+    RegisterForModEvent("SeverActions_OffScreenExclude", "OnOffScreenExclude")
+    RegisterForModEvent("SeverActions_OffScreenInclude", "OnOffScreenInclude")
+
+    ; Quest awareness — C++ QuestAwarenessStore fires these when summary/completion queues have data
+    RegisterForModEvent("SeverActions_QuestSummaryReady", "OnQuestSummaryReady")
+    RegisterForModEvent("SeverActions_QuestCompleted", "OnQuestCompletedEvent")
 
 
     ; Initialize the native orphan scanner with our LinkedRef keywords
@@ -459,15 +479,19 @@ Function Maintenance()
     ; Register for sleep events — clear sandbox packages when player sleeps
     RegisterForSleep()
 
-    ; Migrate old 3-value FrameworkMode to new 2-value system
+    ; One-time migration: old 3-value FrameworkMode to new 2-value system
     ; Old: 0=Auto, 1=SeverActions Only, 2=Tracking Only
     ; New: 0=SeverActions, 1=Tracking
-    If FrameworkMode == 1
-        FrameworkMode = 0  ; old "SeverActions Only" → new "SeverActions"
-        Debug.Trace("[SeverActions_FollowerManager] Migrated FrameworkMode 1 → 0 (SeverActions)")
-    ElseIf FrameworkMode >= 2
-        FrameworkMode = 1  ; old "Tracking Only" → new "Tracking"
-        Debug.Trace("[SeverActions_FollowerManager] Migrated FrameworkMode 2 → 1 (Tracking)")
+    ; Only runs once — flag prevents re-migrating newly-set values on subsequent loads
+    If StorageUtil.GetIntValue(None, "SeverActions_FrameworkModeMigrated", 0) == 0
+        If FrameworkMode == 1
+            FrameworkMode = 0  ; old "SeverActions Only" → new "SeverActions"
+            Debug.Trace("[SeverActions_FollowerManager] Migrated FrameworkMode 1 → 0 (SeverActions)")
+        ElseIf FrameworkMode >= 2
+            FrameworkMode = 1  ; old "Tracking Only" → new "Tracking"
+            Debug.Trace("[SeverActions_FollowerManager] Migrated FrameworkMode 2 → 1 (Tracking)")
+        EndIf
+        StorageUtil.SetIntValue(None, "SeverActions_FrameworkModeMigrated", 1)
     EndIf
 
     BanterInProgress = false
@@ -501,11 +525,17 @@ Event OnSleepStart(Float afSleepStartTime, Float afDesiredSleepEndTime)
             ; Stop sandbox tracking if active
             ; Note: SkyrimNetApi.HasPackage("Sandbox") always returns false because
             ; Sandbox isn't in SkyrimNet's PackageFormCache. Use StorageUtil flag instead.
-            If StorageUtil.GetIntValue(followers[i], "SeverActions_IsSandboxing") == 1
+            ; Skip followers in a home sandbox alias — their PO3 override must persist
+            Int homeSlot = SeverActionsNative.Native_GetHomeMarkerSlot(followers[i])
+            Bool isHomeSandboxing = homeSlot >= 0 && !IsRegisteredFollower(followers[i])
+
+            If isHomeSandboxing
+                Debug.Trace("[SeverActions_FollowerManager] Skipping home-sandboxing " + followers[i].GetDisplayName() + " on sleep")
+            ElseIf StorageUtil.GetIntValue(followers[i], "SeverActions_IsSandboxing") == 1
                 followSys.StopSandbox(followers[i])
                 Debug.Trace("[SeverActions_FollowerManager] Cleared sandbox for " + followers[i].GetDisplayName() + " on sleep (same cell)")
             Else
-                ; Even non-sandboxing followers: clear any lingering FF orphans
+                ; Non-sandboxing, non-home followers: clear any lingering FF orphans
                 ActorUtil.ClearPackageOverride(followers[i])
                 SkyrimNetApi.ReinforcePackages(followers[i])
                 followers[i].EvaluatePackage()
@@ -574,7 +604,8 @@ Function DetectExistingFollowers()
                     ; Cosave covers most followers, but custom AI followers
                     ; may exist with isFollower=false if they were in the party
                     ; before the SPID keyword was distributed. Check them here.
-                    If HasCustomAIKeyword(actorRef) && actorRef.IsPlayerTeammate() && !IsRegisteredFollower(actorRef)
+                    If HasCustomAIKeyword(actorRef) && actorRef.IsPlayerTeammate() && !IsRegisteredFollower(actorRef) \
+                        && StorageUtil.GetIntValue(actorRef, KEY_DISMISSED, 0) == 0
                         StorageUtil.SetIntValue(actorRef, KEY_IS_FOLLOWER, 1)
                         SeverActionsNative.Native_SetIsFollower(actorRef, true)
                         StorageUtil.SetFloatValue(actorRef, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
@@ -608,8 +639,10 @@ Function DetectExistingFollowers()
                     EndIf
 
                     ; Custom AI followers (SPID keyword) count as game followers
-                    ; even if they're not in vanilla follower factions
-                    If !isGameFollower && HasCustomAIKeyword(actorRef) && actorRef.IsPlayerTeammate()
+                    ; even if they're not in vanilla follower factions — but not if
+                    ; explicitly dismissed (their mods keep IsPlayerTeammate() true)
+                    If !isGameFollower && HasCustomAIKeyword(actorRef) && actorRef.IsPlayerTeammate() \
+                        && StorageUtil.GetIntValue(actorRef, KEY_DISMISSED, 0) == 0
                         isGameFollower = true
                     EndIf
 
@@ -647,9 +680,9 @@ Function DetectExistingFollowers()
                             StorageUtil.SetFloatValue(actorRef, KEY_TRUST, DEFAULT_TRUST)
                             StorageUtil.SetFloatValue(actorRef, KEY_LOYALTY, DEFAULT_LOYALTY)
                             StorageUtil.SetFloatValue(actorRef, KEY_MOOD, DEFAULT_MOOD)
-                            SeverActionsNative.Native_SetCombatStyle(actorRef, "balanced")
+                            SeverActionsNative.Native_SetCombatStyle(actorRef, "no combat style")
                             SeverActionsNative.Native_SetRelationship(actorRef, DEFAULT_RAPPORT, DEFAULT_TRUST, DEFAULT_LOYALTY, DEFAULT_MOOD)
-                            StorageUtil.SetStringValue(actorRef, KEY_COMBAT_STYLE, "balanced")
+                            StorageUtil.SetStringValue(actorRef, KEY_COMBAT_STYLE, "no combat style")
                             Debug.Trace("[SeverActions_FollowerManager] New follower detected — initialized defaults for " + actorRef.GetDisplayName())
                         Else
                             SyncRelationshipToNative(actorRef)
@@ -709,10 +742,15 @@ Function RecoverCustomAIFollowers()
                 ; OR if they have the custom AI keyword and are a teammate
                 Bool shouldRecover = false
 
-                If SeverActions_FollowerFaction && actorRef.IsInFaction(SeverActions_FollowerFaction)
+                If SeverActions_FollowerFaction && actorRef.IsInFaction(SeverActions_FollowerFaction) \
+                    && StorageUtil.GetIntValue(actorRef, KEY_DISMISSED, 0) == 0
                     shouldRecover = true
                 ElseIf HasCustomAIKeyword(actorRef) && actorRef.IsPlayerTeammate()
-                    shouldRecover = true
+                    ; Only recover if not explicitly dismissed — custom follower mods
+                    ; keep IsPlayerTeammate() true permanently (Inigo, Lucien, etc.)
+                    If StorageUtil.GetIntValue(actorRef, KEY_DISMISSED, 0) == 0
+                        shouldRecover = true
+                    EndIf
                 EndIf
 
                 If shouldRecover
@@ -726,9 +764,9 @@ Function RecoverCustomAIFollowers()
                         StorageUtil.SetFloatValue(actorRef, KEY_TRUST, DEFAULT_TRUST)
                         StorageUtil.SetFloatValue(actorRef, KEY_LOYALTY, DEFAULT_LOYALTY)
                         StorageUtil.SetFloatValue(actorRef, KEY_MOOD, DEFAULT_MOOD)
-                        SeverActionsNative.Native_SetCombatStyle(actorRef, "balanced")
+                        SeverActionsNative.Native_SetCombatStyle(actorRef, "no combat style")
                         SeverActionsNative.Native_SetRelationship(actorRef, DEFAULT_RAPPORT, DEFAULT_TRUST, DEFAULT_LOYALTY, DEFAULT_MOOD)
-                        StorageUtil.SetStringValue(actorRef, KEY_COMBAT_STYLE, "balanced")
+                        StorageUtil.SetStringValue(actorRef, KEY_COMBAT_STYLE, "no combat style")
                     EndIf
 
                     StorageUtil.SetIntValue(actorRef, KEY_MORALITY, actorRef.GetAV("Morality") as Int)
@@ -787,6 +825,19 @@ Event OnNativeTeammateDetected(string eventName, string strArg, float numArg, Fo
         return
     EndIf
 
+    ; Explicitly dismissed? Skip — prevents re-registration loop for custom followers
+    ; (Inigo, Lucien, etc.) whose mods keep IsPlayerTeammate() true permanently.
+    ; Exception: if WaitingForPlayer == 0 (follow mode), they've been genuinely
+    ; re-recruited via their own dialogue — clear the dismissed flag and proceed.
+    If StorageUtil.GetIntValue(akActor, KEY_DISMISSED, 0) == 1
+        If akActor.GetAV("WaitingForPlayer") == 0.0
+            StorageUtil.UnsetIntValue(akActor, KEY_DISMISSED)
+            DebugMsg("Dismissed flag cleared — re-recruited via custom dialogue: " + akActor.GetDisplayName())
+        Else
+            return
+        EndIf
+    EndIf
+
     ; Custom AI followers (Inigo, Lucien, Kaidan, etc.) with NFF ignore tokens
     ; are onboarded into Tracking Mode — they get outfit/relationship tracking
     ; but their AI is managed by their own mod.
@@ -835,9 +886,9 @@ Event OnNativeTeammateDetected(string eventName, string strArg, float numArg, Fo
         StorageUtil.SetFloatValue(akActor, KEY_TRUST, DEFAULT_TRUST)
         StorageUtil.SetFloatValue(akActor, KEY_LOYALTY, DEFAULT_LOYALTY)
         StorageUtil.SetFloatValue(akActor, KEY_MOOD, DEFAULT_MOOD)
-        SeverActionsNative.Native_SetCombatStyle(akActor, "balanced")
+        SeverActionsNative.Native_SetCombatStyle(akActor, "no combat style")
         SeverActionsNative.Native_SetRelationship(akActor, DEFAULT_RAPPORT, DEFAULT_TRUST, DEFAULT_LOYALTY, DEFAULT_MOOD)
-        StorageUtil.SetStringValue(akActor, KEY_COMBAT_STYLE, "balanced")
+        StorageUtil.SetStringValue(akActor, KEY_COMBAT_STYLE, "no combat style")
     EndIf
 
     ; Snapshot vanilla Morality AV for prompt context
@@ -858,7 +909,6 @@ Event OnNativeTeammateDetected(string eventName, string strArg, float numArg, Fo
     If isFirstRecruit
         If ShowNotifications
             Debug.Notification(akActor.GetDisplayName() + " is now being tracked.")
-            Debug.Notification("Use 'Set Companion' and vanilla dialogue to recruit for full functionality.")
         EndIf
 
         SkyrimNetApi.RegisterEvent("follower_recruited", \
@@ -929,6 +979,42 @@ Event OnOrphanCleanup(string eventName, string keywordType, float numArg, Form s
 
     npc.EvaluatePackage()
     Debug.Trace("[SeverActions_FollowerManager] OrphanCleanup: cleared " + keywordType + " orphan on " + npc.GetDisplayName())
+EndEvent
+
+Event OnCellLoadedReapplyHome(string eventName, string strArg, float numArg, Form sender)
+    {Fired by native OutfitDataStore on TESCellFullyLoadedEvent.
+     Rescues stranded auto-sandboxing followers, then re-applies PO3 home sandbox
+     overrides for track-only followers in the loaded cell.}
+
+    ; Rescue any followers stranded in auto-sandbox from the previous cell.
+    ; Uses the isFollower + isSandboxing combo to detect auto-sandbox (not manual wait).
+    SeverActionsNative.SituationMonitor_RescueSandboxers()
+
+    If !HomeSlots || !HomeMarkerList
+        Return
+    EndIf
+
+    Actor[] homedNPCs = GetAllHomedNPCs()
+    Int i = 0
+    While i < homedNPCs.Length
+        Actor akActor = homedNPCs[i]
+        If akActor && akActor.Is3DLoaded() && IsTrackOnlyFollower(akActor) \
+            && !IsRegisteredFollower(akActor)
+            ; Only re-apply for dismissed followers — active followers should keep following,
+            ; not get forced into home sandbox when entering their home cell
+            Int slot = SeverActionsNative.Native_GetHomeMarkerSlot(akActor)
+            If slot >= 0 && slot < HomeSlots.Length
+                Package homePkg = GetHomeSandboxPackage(slot)
+                If homePkg
+                    ActorUtil.AddPackageOverride(akActor, homePkg, 100, 1)
+                    akActor.SetAV("WaitingForPlayer", 2)
+                    akActor.EvaluatePackage()
+                    DebugMsg("CellLoad: Re-applied home sandbox override for " + akActor.GetDisplayName())
+                EndIf
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
 EndEvent
 
 Event OnPrismaAssignHome(string eventName, string strArg, float numArg, Form sender)
@@ -1018,6 +1104,24 @@ Event OnPrismaSetEssential(string eventName, string strArg, float numArg, Form s
     Else
         StorageUtil.SetIntValue(akActor, "SeverActions_EssentialOff", 1)
         DebugMsg("PrismaUI Essential OFF: " + akActor.GetDisplayName())
+    EndIf
+EndEvent
+
+Event OnOffScreenExclude(string eventName, string strArg, float numArg, Form sender)
+    {Fired by PrismaUI when user excludes a follower from off-screen life events.}
+    Actor akActor = Game.GetFormEx(numArg as Int) as Actor
+    If akActor
+        StorageUtil.SetIntValue(akActor, KEY_OFFSCREEN_EXCLUDED, 1)
+        DebugMsg("Off-screen excluded: " + akActor.GetDisplayName())
+    EndIf
+EndEvent
+
+Event OnOffScreenInclude(string eventName, string strArg, float numArg, Form sender)
+    {Fired by PrismaUI when user re-includes a follower in off-screen life events.}
+    Actor akActor = Game.GetFormEx(numArg as Int) as Actor
+    If akActor
+        StorageUtil.UnsetIntValue(akActor, KEY_OFFSCREEN_EXCLUDED)
+        DebugMsg("Off-screen included: " + akActor.GetDisplayName())
     EndIf
 EndEvent
 
@@ -1206,11 +1310,38 @@ Event OnUpdate()
     If PendingDismissActor != None
         Actor checkActor = PendingDismissActor
         PendingDismissActor = None
-        If !checkActor.IsPlayerTeammate() && IsRegisteredFollower(checkActor)
-            DebugMsg("Vanilla dismiss confirmed: " + checkActor.GetDisplayName())
-            UnregisterFollower(checkActor)
-        Else
-            DebugMsg("Dismiss cancelled (teammate restored): " + checkActor.GetDisplayName())
+        If IsRegisteredFollower(checkActor)
+            Bool confirmed = false
+            If !checkActor.IsPlayerTeammate()
+                ; Clear-cut: teammate status removed → vanilla dismiss confirmed
+                confirmed = true
+            ElseIf IsTrackOnlyFollower(checkActor)
+                ; Track-only followers (Inigo, Lucien, etc.) may keep IsPlayerTeammate()
+                ; true even after their mod's dismiss. Check WaitingForPlayer == -1 as
+                ; a secondary signal — custom followers set this on dismiss.
+                If checkActor.GetAV("WaitingForPlayer") == -1.0
+                    ; Apply home sandbox before unregistering if they have a home
+                    Int homeSlot = SeverActionsNative.Native_GetHomeMarkerSlot(checkActor)
+                    If homeSlot >= 0 && HomeMarkerList
+                        ObjectReference homeMarker = HomeMarkerList.GetAt(homeSlot) as ObjectReference
+                        If homeMarker
+                            ApplyHomeSandbox(checkActor, homeMarker, homeSlot)
+                            DebugMsg("Track-only dismiss: redirected to home before unregister: " + checkActor.GetDisplayName())
+                        EndIf
+                    EndIf
+                    confirmed = true
+                    DebugMsg("Track-only dismiss confirmed via WFP=-1: " + checkActor.GetDisplayName())
+                Else
+                    DebugMsg("Track-only still teammate + WFP != -1, skipping: " + checkActor.GetDisplayName())
+                EndIf
+            EndIf
+
+            If confirmed
+                DebugMsg("Vanilla dismiss confirmed: " + checkActor.GetDisplayName())
+                UnregisterFollower(checkActor)
+            Else
+                DebugMsg("Dismiss cancelled (teammate restored): " + checkActor.GetDisplayName())
+            EndIf
         EndIf
         ; Re-register for normal update cycle and return — don't fall through this tick
         RegisterForSingleUpdate(30.0)
@@ -1241,6 +1372,12 @@ Event OnUpdate()
     If DeathGracePeriodHours > 0.0
         CheckDeadFollowers()
     EndIf
+
+    ; Auto-untrack custom AI followers who lost teammate status (vanilla dismiss).
+    ; TeammateMonitor handles real-time detection, but this catches edge cases
+    ; where the actor unloaded before the monitor could scan, or the removal
+    ; event was missed. Runs every 30s, lightweight — only checks loaded actors.
+    CheckTrackOnlyFollowerStatus()
 
     ; Automatic relationship assessments — at most one type per tick to avoid LLM flooding
     If AutoRelAssessment && !InterFollowerAssessmentInProgress
@@ -1523,6 +1660,51 @@ Function CheckDeadFollowers()
     EndWhile
 EndFunction
 
+Function CheckTrackOnlyFollowerStatus()
+    {Periodic sweep (every 30s from OnUpdate) for track-only followers who lost
+     teammate status via vanilla dismiss. TeammateMonitor handles real-time detection,
+     but this catches cases where the actor unloaded before the monitor could scan,
+     or the event was missed. Only checks loaded actors — unloaded ones are checked
+     when they next load via DetectExistingFollowers/RecoverCustomAIFollowers guards.}
+    Actor[] followers = GetAllFollowers()
+    Int i = 0
+    While i < followers.Length
+        Actor follower = followers[i]
+        If follower && IsTrackOnlyFollower(follower)
+            ; Only check loaded actors — can't read state on unloaded ones reliably
+            If follower.Is3DLoaded()
+                Bool shouldUntrack = false
+
+                If !follower.IsPlayerTeammate()
+                    ; Teammate status cleared — standard vanilla dismiss signal
+                    shouldUntrack = true
+                    DebugMsg("Track-only auto-untrack: " + follower.GetDisplayName() + " lost teammate status")
+                ElseIf follower.GetAV("WaitingForPlayer") == -1.0
+                    ; WaitingForPlayer = -1 means "dismissed" for custom followers
+                    ; (Inigo, etc.) that never clear IsPlayerTeammate on dismiss.
+                    ; If they have a SeverActions home, redirect them there instead
+                    ; of letting them return to their default cell (e.g. Inigo's jail).
+                    Int homeSlot = SeverActionsNative.Native_GetHomeMarkerSlot(follower)
+                    If homeSlot >= 0 && HomeMarkerList
+                        ObjectReference homeMarker = HomeMarkerList.GetAt(homeSlot) as ObjectReference
+                        If homeMarker
+                            ApplyHomeSandbox(follower, homeMarker, homeSlot)
+                            DebugMsg("Track-only auto-untrack: " + follower.GetDisplayName() + " — redirected to home (WFP=-1 → sandbox)")
+                        EndIf
+                    EndIf
+                    shouldUntrack = true
+                    DebugMsg("Track-only auto-untrack: " + follower.GetDisplayName() + " has WaitingForPlayer=-1 (custom dismiss)")
+                EndIf
+
+                If shouldUntrack
+                    UnregisterFollower(follower)
+                EndIf
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+EndFunction
+
 Function PurgeFollower(Actor akActor)
     {Unconditionally remove ALL data for a follower — StorageUtil, factions, aliases, roster.
      Works for force-remove (PrismaUI) and death cleanup. None-safe where possible.}
@@ -1551,6 +1733,7 @@ Function PurgeFollower(Actor akActor)
     StorageUtil.UnsetFloatValue(akActor, KEY_ORIG_AGGRESSION)
     StorageUtil.UnsetFloatValue(akActor, KEY_ORIG_CONFIDENCE)
     StorageUtil.UnsetIntValue(akActor, KEY_ORIG_RELRANK)
+    StorageUtil.UnsetFormValue(akActor, "SeverFollower_OrigCombatStyleForm")
     StorageUtil.UnsetFloatValue(akActor, KEY_LAST_REL_ADJUST)
     StorageUtil.UnsetFloatValue(akActor, KEY_LAST_ASSESS_GT)
     StorageUtil.UnsetFloatValue(akActor, KEY_LAST_INTER_ASSESS_GT)
@@ -1587,6 +1770,9 @@ Function PurgeFollower(Actor akActor)
     EndIf
 
     akActor.SetPlayerTeammate(false)
+
+    ; --- Restore DefaultOutfit before clearing outfit slot ---
+    SeverActionsNative.Native_Outfit_ClearLock(akActor)
 
     ; --- Clear outfit slot ---
     ClearOutfitSlot(akActor)
@@ -1678,6 +1864,7 @@ Function RegisterFollower(Actor akActor)
 
     ; --- Our own tracking (always, regardless of framework) ---
     StorageUtil.SetIntValue(akActor, KEY_IS_FOLLOWER, 1)
+    StorageUtil.UnsetIntValue(akActor, KEY_DISMISSED)
     SeverActionsNative.Native_SetIsFollower(akActor, true)
     StorageUtil.SetFloatValue(akActor, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
 
@@ -1693,9 +1880,9 @@ Function RegisterFollower(Actor akActor)
         StorageUtil.SetFloatValue(akActor, KEY_TRUST, DEFAULT_TRUST)
         StorageUtil.SetFloatValue(akActor, KEY_LOYALTY, DEFAULT_LOYALTY)
         StorageUtil.SetFloatValue(akActor, KEY_MOOD, DEFAULT_MOOD)
-        SeverActionsNative.Native_SetCombatStyle(akActor, "balanced")
+        SeverActionsNative.Native_SetCombatStyle(akActor, "no combat style")
         SeverActionsNative.Native_SetRelationship(akActor, DEFAULT_RAPPORT, DEFAULT_TRUST, DEFAULT_LOYALTY, DEFAULT_MOOD)
-        StorageUtil.SetStringValue(akActor, KEY_COMBAT_STYLE, "balanced")
+        StorageUtil.SetStringValue(akActor, KEY_COMBAT_STYLE, "no combat style")
     EndIf
 
     ; Snapshot vanilla Morality AV for prompt context (0=Any Crime, 1=Violence, 2=Property, 3=None)
@@ -1729,6 +1916,8 @@ Function RegisterFollower(Actor akActor)
     ; =========================================================================
     ElseIf IsTrackOnlyFollower(akActor) || FrameworkMode == 1
         DebugMsg("Tracking mode: " + akActor.GetDisplayName())
+        ; Still remove our home sandbox if active — don't leave stale packages
+        RemoveHomeSandbox(akActor)
 
     ; =========================================================================
     ; SEVERACTIONS MODE — full control
@@ -1740,6 +1929,20 @@ Function RegisterFollower(Actor akActor)
         StorageUtil.SetFloatValue(akActor, KEY_ORIG_AGGRESSION, akActor.GetAV("Aggression"))
         StorageUtil.SetFloatValue(akActor, KEY_ORIG_CONFIDENCE, akActor.GetAV("Confidence"))
         StorageUtil.SetIntValue(akActor, KEY_ORIG_RELRANK, akActor.GetRelationshipRank(Game.GetPlayer()))
+
+        ; Boost AI so cowardly/passive NPCs will fight as companions.
+        ; Only sets actor values — does NOT override combat style form.
+        ; Users can pick a specific combat style in PrismaUI if they want.
+        If akActor.GetAV("Confidence") < 3
+            akActor.SetAV("Confidence", 3)  ; Brave
+        EndIf
+        If akActor.GetAV("Aggression") < 1
+            akActor.SetAV("Aggression", 1)  ; Aggressive
+        EndIf
+        If akActor.GetAV("Assistance") < 2
+            akActor.SetAV("Assistance", 2)  ; Helps Allies
+        EndIf
+
 
         ; Set teammate status and factions
         akActor.SetPlayerTeammate(true)
@@ -1782,7 +1985,7 @@ Function RegisterFollower(Actor akActor)
     ; The dismiss path restores original AI values, so we need to re-set them
     If !isFirstRecruit
         String style = GetCombatStyle(akActor)
-        If style != "balanced"
+        If style != "no combat style" && style != "balanced"
             ApplyCombatStyleValues(akActor, style)
             DebugMsg("Reapplied combat style '" + style + "' on re-recruit for " + akActor.GetDisplayName())
         EndIf
@@ -1793,7 +1996,7 @@ Function RegisterFollower(Actor akActor)
     If isFirstRecruit
         If ShowNotifications
             If isTrackOnly
-                Debug.Notification(akActor.GetDisplayName() + " is now being tracked. Recruit via vanilla dialogue for full functionality.")
+                Debug.Notification(akActor.GetDisplayName() + " is now being tracked.")
             Else
                 Debug.Notification(akActor.GetDisplayName() + " has joined you as a companion.")
             EndIf
@@ -1807,7 +2010,7 @@ Function RegisterFollower(Actor akActor)
     Else
         If ShowNotifications
             If isTrackOnly
-                Debug.Notification(akActor.GetDisplayName() + " is being tracked again. Recruit via vanilla dialogue for full functionality.")
+                Debug.Notification(akActor.GetDisplayName() + " is now being tracked.")
             Else
                 Debug.Notification(akActor.GetDisplayName() + " has returned.")
             EndIf
@@ -1825,6 +2028,9 @@ Function RegisterFollower(Actor akActor)
     ElseIf SeverActionsNative.Native_IsEssential(akActor)
         StorageUtil.SetIntValue(akActor, "SeverActions_WasEssential", 1)
     EndIf
+
+    ; Notify quest awareness store — seeds SECONDHAND awareness of active quests
+    SeverActionsNative.Native_OnFollowerRecruited(akActor)
 
     ; Update the roster string for prompt template access
     SyncFollowerRoster()
@@ -1844,6 +2050,7 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
 
     ; --- Our own tracking cleanup (always, regardless of framework) ---
     StorageUtil.SetIntValue(akActor, KEY_IS_FOLLOWER, 0)
+    StorageUtil.SetIntValue(akActor, KEY_DISMISSED, 1)
     StorageUtil.SetFloatValue(akActor, KEY_DISMISS_GT, GetGameTimeInSeconds())
     SeverActionsNative.Native_ClearFollowerData(akActor)
 
@@ -1874,15 +2081,34 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
         StorageUtil.UnsetIntValue(akActor, "SeverActions_RecruitedViaSerana")
 
     ; =========================================================================
-    ; TRACKING MODE — just remove from our faction (already done above).
-    ; Don't touch teammate status, factions, or packages — whoever recruited
-    ; them handles that. Apply home sandbox if they have an assigned home.
+    ; TRACKING MODE — ONLY remove our bookkeeping, touch NOTHING on the actor.
+    ; Custom followers (Inigo, Lucien, etc.) manage their own AI, factions,
+    ; packages, outfit, and essential status. Touching any actor state here
+    ; (WaitingForPlayer, outfit lock, essential, home sandbox) can reactivate
+    ; their follow packages or interfere with their mod's dismiss flow.
     ; =========================================================================
     ElseIf IsTrackOnlyFollower(akActor) || FrameworkMode == 1
-        DebugMsg("Tracking mode dismiss: " + akActor.GetDisplayName())
+        DebugMsg("Tracking mode dismiss (bookkeeping only): " + akActor.GetDisplayName())
+        ; Keep outfit alias slot active so outfit lock persists after dismiss —
+        ; same as SeverActions-mode. The alias stays linked so OnCellLoad can
+        ; re-apply the locked outfit when the NPC loads at their home location.
+        ; ClearOutfitSlot and ClearLock are NOT called here.
         If sendHome
             ApplyHomeSandboxIfHomed(akActor)
         EndIf
+
+        If ShowNotifications
+            Debug.Notification(akActor.GetDisplayName() + " is no longer being tracked.")
+        EndIf
+
+        SkyrimNetApi.RegisterShortLivedEvent("follower_dismissed_" + akActor.GetFormID(), \
+            "follower_dismissed", \
+            akActor.GetDisplayName() + " is no longer being tracked by " + Game.GetPlayer().GetDisplayName() + ".", \
+            "", 120000, akActor, Game.GetPlayer())
+
+        SyncFollowerRoster()
+        DebugMsg("Unregistered track-only follower: " + akActor.GetDisplayName())
+        Return
 
     ; =========================================================================
     ; SEVERACTIONS MODE — full cleanup
@@ -1916,6 +2142,17 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
         EndIf
         If origConfidence >= 0.0
             akActor.SetAV("Confidence", origConfidence)
+        EndIf
+
+        ; Restore original combat style form if we overrode it
+        Form origCSForm = StorageUtil.GetFormValue(akActor, "SeverFollower_OrigCombatStyleForm")
+        If origCSForm
+            CombatStyle origCS = origCSForm as CombatStyle
+            ActorBase dismissBase = akActor.GetActorBase()
+            If origCS && dismissBase
+                dismissBase.SetCombatStyle(origCS)
+            EndIf
+            StorageUtil.UnsetFormValue(akActor, "SeverFollower_OrigCombatStyleForm")
         EndIf
 
         ; Stop our follow package and send home
@@ -2917,6 +3154,9 @@ Function SyncFollowerRoster(Actor[] followers = None)
     If !followers
         followers = GetAllFollowers()
     EndIf
+    If !followers
+        Return
+    EndIf
     String roster = ""
     Int i = 0
     While i < followers.Length
@@ -3025,7 +3265,7 @@ Function FireFollowerBanter(Actor[] eligible, Int count)
             contextJson += ","
         EndIf
         Float folMood = StorageUtil.GetFloatValue(fol, "SeverFollower_Mood", 50.0)
-        String folStyle = StorageUtil.GetStringValue(fol, "SeverFollower_CombatStyle", "balanced")
+        String folStyle = StorageUtil.GetStringValue(fol, "SeverFollower_CombatStyle", "no combat style")
         contextJson += "{\"formId\":" + fol.GetFormID()
         contextJson += ",\"name\":\"" + fol.GetDisplayName() + "\""
         contextJson += ",\"mood\":" + (folMood as Int)
@@ -3898,6 +4138,18 @@ Function AssignHome(Actor akActor, String locationName)
             If homeMarker
                 ; Markers are always enabled (MHiYH pattern) — just move to player position
                 homeMarker.MoveTo(PlayerRef)
+
+                ; Re-assign alias immediately — but only apply sandbox if not actively following.
+                ; Active followers keep following; the sandbox activates on dismiss via
+                ; SendHome/ApplyHomeSandboxIfHomed. For already-dismissed NPCs, apply now
+                ; to prevent FF package gap.
+                If !IsRegisteredFollower(akActor)
+                    ApplyHomeSandbox(akActor, homeMarker, slot)
+                Else
+                    ; Just assign the alias (for OnCellLoad events) without activating sandbox
+                    HomeSlots[slot].ForceRefTo(akActor)
+                EndIf
+
                 DebugMsg("Home marker slot " + slot + " moved to player position at " + locationName + " for " + akActor.GetDisplayName())
             EndIf
         Else
@@ -3917,12 +4169,6 @@ Function AssignHome(Actor akActor, String locationName)
     SkyrimNetApi.RegisterPersistentEvent( \
         akActor.GetDisplayName() + " now considers " + locationName + " their home.", \
         akActor, Game.GetPlayer())
-
-    ; For non-followers, immediately send them home so the sandbox package activates.
-    ; For active followers, the sandbox gets applied on dismiss via SendHome().
-    If !IsRegisteredFollower(akActor)
-        SendHome(akActor)
-    EndIf
 
     DebugMsg("Home assigned for " + akActor.GetDisplayName() + ": " + locationName)
 EndFunction
@@ -4092,6 +4338,21 @@ Function ApplyHomeSandbox(Actor akActor, ObjectReference homeMarker, Int slot)
     ; No LinkedRef needed — each package directly references its XMarker.
     HomeSlots[slot].ForceRefTo(akActor)
 
+    ; For track-only followers (Inigo, Lucien, etc.), the alias package alone
+    ; can't beat their own NPC-record packages. Add a high-priority PO3 override
+    ; to force our sandbox above their entire package stack.
+    If IsTrackOnlyFollower(akActor)
+        Package homePkg = GetHomeSandboxPackage(slot)
+        If homePkg
+            ActorUtil.AddPackageOverride(akActor, homePkg, 100, 1)
+            DebugMsg("ApplyHomeSandbox: Added PO3 override (priority 100) for track-only " + akActor.GetDisplayName())
+        EndIf
+    EndIf
+
+    ; Set WaitingForPlayer=2 (relax/sandbox) so custom follower package systems
+    ; don't fight our sandbox with their "return to home cell" packages.
+    akActor.SetAV("WaitingForPlayer", 2)
+
     akActor.EvaluatePackage()
     DebugMsg("ApplyHomeSandbox: " + akActor.GetDisplayName() + " -> HomeSlot_" + slot)
 EndFunction
@@ -4122,9 +4383,18 @@ Function RemoveHomeSandbox(Actor akActor)
     ; Find and clear the alias slot — NPC loses the per-slot sandbox package automatically
     Int slot = SeverActionsNative.Native_GetHomeMarkerSlot(akActor)
     If slot >= 0 && HomeSlots && slot < HomeSlots.Length
+        ; Remove PO3 override if one was added for track-only followers
+        Package homePkg = GetHomeSandboxPackage(slot)
+        If homePkg
+            ActorUtil.RemovePackageOverride(akActor, homePkg)
+        EndIf
         HomeSlots[slot].Clear()
         DebugMsg("Cleared " + akActor.GetDisplayName() + " from HomeSlot_" + slot)
     EndIf
+
+    ; Reset WaitingForPlayer to 0 (follow) so custom follower packages resume
+    ; their normal follow behavior after home sandbox is removed
+    akActor.SetAV("WaitingForPlayer", 0)
 
     akActor.EvaluatePackage()
 EndFunction
@@ -4210,49 +4480,112 @@ EndFunction
 ; =============================================================================
 
 Function SetCombatStyle(Actor akActor, String style)
-    {Set follower's preferred combat approach}
+    {Set follower's combat style. Maps style names to actual CombatStyle forms.
+     "no combat style" restores the original. All others override the ActorBase record.}
     If !akActor
         Return
     EndIf
 
-    ; Normalize the style string
     String normalized = SeverActionsNative.StringToLower(style)
+    SeverActionsNative.Native_SetCombatStyle(akActor, normalized)
+    StorageUtil.SetStringValue(akActor, KEY_COMBAT_STYLE, normalized)
 
-    If normalized == "aggressive" || normalized == "defensive" || normalized == "ranged" || normalized == "healer" || normalized == "balanced"
-        SeverActionsNative.Native_SetCombatStyle(akActor, normalized)
-        StorageUtil.SetStringValue(akActor, KEY_COMBAT_STYLE, normalized)
+    ApplyCombatStyleValues(akActor, normalized)
 
-        ; Apply actor value adjustments
-        ApplyCombatStyleValues(akActor, normalized)
-
-        If ShowNotifications
-            Debug.Notification(akActor.GetDisplayName() + " will now fight " + normalized + "ly.")
+    If ShowNotifications
+        If normalized == "no combat style"
+            Debug.Notification(akActor.GetDisplayName() + " reverted to their natural combat style.")
+        Else
+            Debug.Notification(akActor.GetDisplayName() + " will now fight as a " + style + ".")
         EndIf
-
-        SkyrimNetApi.RegisterPersistentEvent( \
-            akActor.GetDisplayName() + " will now approach combat in a " + normalized + " style.", \
-            akActor, Game.GetPlayer())
-
-        DebugMsg("Combat style set for " + akActor.GetDisplayName() + ": " + normalized)
-    Else
-        Debug.Notification("Unknown combat style: " + style)
     EndIf
+
+    DebugMsg("Combat style set for " + akActor.GetDisplayName() + ": " + normalized)
 EndFunction
 
 Function ApplyCombatStyleValues(Actor akActor, String style)
-    {Apply Confidence/Aggression actor values for a combat style.
-     Extracted so it can be called from SetCombatStyle and ReapplyCombatStyles.}
+    {Override the ActorBase CombatStyle form and set appropriate actor values.
+     Maps our named styles to vanilla CombatStyle FormIDs from Skyrim.esm.}
     If !akActor
         Return
     EndIf
 
-    If style == "aggressive"
+    ActorBase npcBase = akActor.GetActorBase()
+    If !npcBase
+        Return
+    EndIf
+
+    ; Save original combat style form on first call (for restoration on dismiss)
+    If !StorageUtil.HasFormValue(akActor, "SeverFollower_OrigCombatStyleForm")
+        CombatStyle origCS = npcBase.GetCombatStyle()
+        If origCS
+            StorageUtil.SetFormValue(akActor, "SeverFollower_OrigCombatStyleForm", origCS)
+        EndIf
+    EndIf
+
+    ; "no combat style" = restore original, don't override
+    If style == "no combat style" || style == ""
+        Form origForm = StorageUtil.GetFormValue(akActor, "SeverFollower_OrigCombatStyleForm")
+        If origForm
+            CombatStyle origCS = origForm as CombatStyle
+            If origCS
+                npcBase.SetCombatStyle(origCS)
+            EndIf
+        EndIf
+        Return
+    EndIf
+
+    ; Map style name to vanilla CombatStyle FormID
+    Int csFormID = 0
+    If style == "melee"
+        csFormID = 0x000F1EB5       ; csHumanMelee1H
+    ElseIf style == "berserker"
+        csFormID = 0x00016E25       ; csAlikrBerserker (dual-wield capable)
+    ElseIf style == "tank"
+        csFormID = 0x0003CF5A       ; csHumanTankLvl1
+    ElseIf style == "archer"
+        csFormID = 0x0003BE1D       ; csHumanMissile
+    ElseIf style == "mage"
+        csFormID = 0x0003BE1C       ; csHumanMagic
+    ElseIf style == "spellsword"
+        csFormID = 0x00107812       ; csSpellsword
+    ElseIf style == "battlemage"
+        csFormID = 0x001034F0       ; csWEBattlemage
+    ElseIf style == "champion"
+        csFormID = 0x0003DECE       ; csHumanBoss1H
+    ElseIf style == "brawler"
+        csFormID = 0x0010555D       ; csWEBrawler
+    ElseIf style == "companion"
+        csFormID = 0x00103508       ; csWECompanion
+    ; Legacy support for old style names
+    ElseIf style == "aggressive"
+        csFormID = 0x00016E25       ; csAlikrBerserker (dual-wield capable)
+    ElseIf style == "defensive" || style == "healer"
+        csFormID = 0x0003CF5A       ; csHumanTankLvl1
+    ElseIf style == "balanced"
+        csFormID = 0x00103508       ; csWECompanion
+    ElseIf style == "ranged"
+        csFormID = 0x0003BE1D       ; csHumanMissile
+    EndIf
+
+    If csFormID > 0
+        CombatStyle newCS = Game.GetFormFromFile(csFormID, "Skyrim.esm") as CombatStyle
+        If newCS
+            npcBase.SetCombatStyle(newCS)
+        EndIf
+    EndIf
+
+    ; Set actor values based on style archetype
+    If style == "berserker" || style == "champion" || style == "aggressive"
         akActor.SetAV("Confidence", 4) ; Foolhardy
         akActor.SetAV("Aggression", 1) ; Aggressive
-    ElseIf style == "defensive" || style == "healer"
-        akActor.SetAV("Confidence", 2) ; Average
-        akActor.SetAV("Aggression", 0) ; Unaggressive
-    Else ; balanced or ranged
+    ElseIf style == "tank" || style == "defensive" || style == "healer"
+        akActor.SetAV("Confidence", 3) ; Brave
+        akActor.SetAV("Aggression", 1) ; Aggressive
+    ElseIf style == "mage" || style == "battlemage"
+        akActor.SetAV("Confidence", 3) ; Brave
+        akActor.SetAV("Aggression", 1) ; Aggressive
+    Else ; melee, archer, spellsword, brawler, companion, balanced, ranged
         akActor.SetAV("Confidence", 3) ; Brave
         akActor.SetAV("Aggression", 1) ; Aggressive
     EndIf
@@ -4268,7 +4601,7 @@ Function ReapplyCombatStyles(Actor[] followers)
     While i < followers.Length
         If followers[i]
             String style = GetCombatStyle(followers[i])
-            If style != "balanced"
+            If style != "no combat style" && style != "balanced"
                 ApplyCombatStyleValues(followers[i], style)
                 DebugMsg("Reapplied combat style '" + style + "' for " + followers[i].GetDisplayName())
             EndIf
@@ -4324,6 +4657,21 @@ Function ReapplyHomeSandboxing()
                         ApplyHomeSandbox(akActor, homeMarker, slot)
                         migrated += 1
                         DebugMsg("Migrated " + akActor.GetDisplayName() + " into HomeSlot_" + slot)
+                    Else
+                        ; Already in alias — re-set WaitingForPlayer=2 in case the
+                        ; follower's own OnInit reset it (Inigo forces -1 on load
+                        ; if !IsPlayerTeammate, overriding our sandbox state)
+                        akActor.SetAV("WaitingForPlayer", 2)
+
+                        ; Re-apply PO3 override for track-only followers — PO3
+                        ; overrides don't persist across save/load
+                        If IsTrackOnlyFollower(akActor)
+                            Package homePkg = GetHomeSandboxPackage(slot)
+                            If homePkg
+                                ActorUtil.AddPackageOverride(akActor, homePkg, 100, 1)
+                                akActor.EvaluatePackage()
+                            EndIf
+                        EndIf
                     EndIf
                 EndIf
             EndIf
@@ -4352,12 +4700,16 @@ Function PatchUpVanillaFollowerStatus(Actor[] followers)
     While i < followers.Length
         Actor follower = followers[i]
         If follower
-            ; Ensure CurrentFollowerFaction for ALL followers (including track-only/DLC)
-            ; This is critical for is_follower() decorator in SkyrimNet prompts
-            If !follower.IsInFaction(currentFollowerFaction) || follower.GetFactionRank(currentFollowerFaction) < 0
-                follower.AddToFaction(currentFollowerFaction)
-                follower.SetFactionRank(currentFollowerFaction, 0)
-                DebugMsg("Patched CurrentFollowerFaction for " + follower.GetDisplayName())
+            ; Only force CurrentFollowerFaction for SeverActions-managed followers.
+            ; Track-only followers (Inigo, Lucien, etc.) have their own CFF management
+            ; — some mods keep CFF rank -1 at all times. Don't touch it.
+            ; The is_sever_follower() decorator handles prompt template detection.
+            If !IsTrackOnlyFollower(follower)
+                If !follower.IsInFaction(currentFollowerFaction) || follower.GetFactionRank(currentFollowerFaction) < 0
+                    follower.AddToFaction(currentFollowerFaction)
+                    follower.SetFactionRank(currentFollowerFaction, 0)
+                    DebugMsg("Patched CurrentFollowerFaction for " + follower.GetDisplayName())
+                EndIf
             EndIf
 
             ; Only patch relationship rank for SeverActions Mode followers
@@ -4379,14 +4731,22 @@ EndFunction
 
 String Function GetCombatStyle(Actor akActor)
     If !akActor
-        Return "balanced"
+        Return "no combat style"
     EndIf
     ; Prefer native cosave (reliable), fallback to StorageUtil (legacy)
     String nativeStyle = SeverActionsNative.Native_GetCombatStyle(akActor)
     If nativeStyle != ""
+        ; Migrate old "balanced" to new default
+        If nativeStyle == "balanced"
+            Return "no combat style"
+        EndIf
         Return nativeStyle
     EndIf
-    Return StorageUtil.GetStringValue(akActor, KEY_COMBAT_STYLE, "balanced")
+    String stored = StorageUtil.GetStringValue(akActor, KEY_COMBAT_STYLE, "no combat style")
+    If stored == "balanced"
+        Return "no combat style"
+    EndIf
+    Return stored
 EndFunction
 
 ; =============================================================================
@@ -4664,6 +5024,115 @@ SeverActions_Outfit Function GetOutfitScript()
     ; Fallback: try to find on the quest
     Return Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_Outfit
 EndFunction
+
+; =============================================================================
+; QUEST AWARENESS — LLM Summary Generation (Queue-Based)
+; C++ QuestAwarenessStore detects quest stage changes via TESQuestStageEvent,
+; builds JSON context with proper escaping, and queues requests.
+; Papyrus pops one item at a time — no busy-wait, no JSON building.
+; =============================================================================
+
+Event OnQuestSummaryReady(String eventName, String strArg, Float numArg, Form sender)
+    {Fired by C++ when the summary request queue has new items.
+     Drains the queue one at a time via callback chaining.}
+    If QuestAwarenessInProgress
+        Return  ; Already processing — callback will drain the queue
+    EndIf
+    ProcessNextSummaryRequest()
+EndEvent
+
+Function ProcessNextSummaryRequest()
+    {Pop the next request from C++ queue and send to LLM.
+     C++ stashes the actor/quest/tier metadata — no JSON parsing needed here.}
+    String contextJson = SeverActionsNative.Native_PopSummaryRequest()
+    If contextJson == ""
+        DebugMsg("Quest awareness: summary queue drained")
+        Return  ; Queue empty
+    EndIf
+
+    QuestAwarenessInProgress = true
+
+    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_quest_awareness", "", contextJson, \
+        Self as Quest, "SeverActions_FollowerManager", "OnQuestSummaryGenerated")
+
+    If result < 0
+        QuestAwarenessInProgress = false
+        DebugMsg("Quest awareness: LLM call failed, continuing queue")
+        ProcessNextSummaryRequest()
+    EndIf
+EndFunction
+
+Function OnQuestSummaryGenerated(String response, Int success)
+    {Callback from SendCustomPromptToLLM. C++ handles all storage via stashed metadata.}
+    QuestAwarenessInProgress = false
+
+    If success == 1
+        ; Pass response to C++ for storage in QuestAwarenessStore
+        SeverActionsNative.Native_StorePendingSummary(response)
+        DebugMsg("Quest awareness: summary stored (" + response + ")")
+    Else
+        DebugMsg("Quest awareness: LLM summary failed: " + response)
+    EndIf
+
+    ; Process next item in queue (callback chaining)
+    ProcessNextSummaryRequest()
+EndFunction
+
+Event OnQuestCompletedEvent(String eventName, String strArg, Float numArg, Form sender)
+    {Fired by C++ when a tracked quest is completed. strArg = quest editorID.
+     C++ already collected completion entries before marking completed.
+     We drain the completion queue and create memories for each follower.}
+
+    DebugMsg("Quest awareness: quest completed — " + strArg)
+
+    ; Drain the completion queue
+    String entryJson = SeverActionsNative.Native_PopCompletionEntry()
+    While entryJson != ""
+        ; Parse the JSON: {"actorFormID":N,"editorID":"...","summary":"...","isFirsthand":bool}
+        Int fidStart = StringUtil.Find(entryJson, "\"actorFormID\":")
+        Int fidVal = 0
+        If fidStart >= 0
+            String sub = StringUtil.Substring(entryJson, fidStart + 14)
+            Int commaPos = StringUtil.Find(sub, ",")
+            If commaPos > 0
+                fidVal = StringUtil.Substring(sub, 0, commaPos) as Int
+            EndIf
+        EndIf
+
+        Int sumStart = StringUtil.Find(entryJson, "\"summary\":\"")
+        String summary = ""
+        If sumStart >= 0
+            String sub = StringUtil.Substring(entryJson, sumStart + 11)
+            Int quotePos = StringUtil.Find(sub, "\"")
+            If quotePos > 0
+                summary = StringUtil.Substring(sub, 0, quotePos)
+            EndIf
+        EndIf
+
+        Bool isFirsthand = StringUtil.Find(entryJson, "\"isFirsthand\":true") >= 0
+
+        Actor akFollower = Game.GetForm(fidVal) as Actor
+        If akFollower && summary != ""
+            Float importance = 0.4
+            String memType = "KNOWLEDGE"
+            If isFirsthand
+                importance = 0.7
+                memType = "EXPERIENCE"
+            EndIf
+
+            SeverActionsNative.Native_AddMemory(akFollower, summary, importance, \
+                memType, "", "", "[\"quest\"]", "[]")
+
+            DebugMsg("Quest awareness: created " + memType + " memory for " + akFollower.GetDisplayName())
+        EndIf
+
+        entryJson = SeverActionsNative.Native_PopCompletionEntry()
+    EndWhile
+EndEvent
+
+; =============================================================================
+; UTILITY FUNCTIONS
+; =============================================================================
 
 Float Function ClampFloat(Float value, Float minVal, Float maxVal)
     If value < minVal

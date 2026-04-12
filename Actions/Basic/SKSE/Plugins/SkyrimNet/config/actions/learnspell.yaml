@@ -3,7 +3,7 @@ name: LearnSpell
 description: "Learn a spell from the player. The player must know the spell for you to learn it. Only use this when the player offers to teach you a specific spell, or during roleplay where spell learning would make sense."
 questEditorId: SeverActions
 scriptName: SeverActions_SpellTeach
-executionFunctionName: LearnSpell
+executionFunctionName: learnspell
 parameterMapping:
   - type: speaker
     name: akActor

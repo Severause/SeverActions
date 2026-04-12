@@ -87,8 +87,8 @@ Event OnUpdate()
     EndIf
 
     ; Check global animation scene flag (set by SexLab/OStim ModEvent hooks in Outfit script)
-    SeverActions_Outfit outfitCheck = GetOutfitScript()
-    If outfitCheck && outfitCheck.AnimationSceneActive
+    SeverActions_Outfit outfitSys = GetOutfitScript()
+    If outfitSys && outfitSys.AnimationSceneActive
         Debug.Trace("[SeverActions_OutfitAlias] Animation scene active — yielding for " + follower.GetDisplayName())
         Return
     EndIf
@@ -100,7 +100,6 @@ Event OnUpdate()
     EndIf
 
     ; Not in a scene, not burst-stripped — re-equip the locked outfit
-    SeverActions_Outfit outfitSys = GetOutfitScript()
     If outfitSys
         outfitSys.ReapplyLockedOutfit(follower)
     EndIf
@@ -119,6 +118,14 @@ Function ReequipIfLocked()
     EndIf
 
     If StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0) != 1
+        Return
+    EndIf
+
+    ; Don't fight in-progress outfit operations (builder, preset apply, etc.)
+    If StorageUtil.GetIntValue(follower, "SeverOutfit_Suspended", 0) == 1
+        Return
+    EndIf
+    If SeverActionsNative.Native_Outfit_IsNativeSuspended(follower)
         Return
     EndIf
 

@@ -5,7 +5,7 @@
 {% if actor and actor.UUID %}
 {% set show_ctx = get_script_property("SeverActions", "SeverActions_FollowerManager", "ShowFollowerContext") %}
 {% if show_ctx == true or show_ctx == "True" or show_ctx == 1 %}
-{% set is_fol = is_follower(actorUUID) %}
+{% set is_fol = is_follower(actorUUID) or is_sever_follower(actorUUID) %}
 {% set rapport = papyrus_util("GetFloatValue", actor.UUID, "SeverFollower_Rapport", 0) %}
 {% set trust = papyrus_util("GetFloatValue", actor.UUID, "SeverFollower_Trust", 25) %}
 {% set loyalty = papyrus_util("GetFloatValue", actor.UUID, "SeverFollower_Loyalty", 50) %}
@@ -24,53 +24,7 @@ You are currently traveling with {{ player.name }} as their companion.
 {% if player_blurb != "" %}
 {{ player_blurb }}
 {% else %}
-{% if rapport >= 75 %}
-You deeply care about {{ player.name }}. They've earned your devotion through shared experiences.
-{% elif rapport >= 40 %}
-You genuinely like {{ player.name }}. You're glad to be traveling together.
-{% elif rapport >= 10 %}
-You're warming up to {{ player.name }}. The relationship is promising.
-{% elif rapport >= -10 %}
-You feel neutral about {{ player.name }}. You're still figuring each other out.
-{% elif rapport >= -40 %}
-You're growing irritated with {{ player.name }}. Things need to change.
-{% elif rapport >= -75 %}
-You actively dislike how {{ player.name }} treats you. You're considering leaving.
-{% else %}
-You despise traveling with {{ player.name }}. One more bad decision and you're gone.
-{% endif %}
-{% endif %}
-
-{% if trust >= 75 %}
-You trust {{ player.name }} deeply and would follow them into nearly any danger.
-{% elif trust >= 45 %}
-You trust {{ player.name }} reasonably well, though you'll question risky orders.
-{% elif trust >= 15 %}
-You have serious doubts about {{ player.name }}'s judgment. You'll push back on dangerous requests.
-{% else %}
-You don't trust {{ player.name }}'s judgment at all. You'll refuse dangerous orders outright.
-{% endif %}
-
-{% if mood < -50 %}
-You're in a terrible mood and not hiding it.
-{% elif mood < -10 %}
-You're feeling a bit down — quieter and less enthusiastic than usual.
-{% elif mood > 50 %}
-You're in great spirits — upbeat and enjoying yourself.
-{% elif mood > 10 %}
-You're in a decent mood. Things are fine.
-{% else %}
-Your mood is neutral — calm and even-tempered.
-{% endif %}
-
-{% if loyalty >= 75 %}
-Your loyalty to {{ player.name }} is strong. It would take something terrible to make you consider leaving.
-{% elif loyalty >= 45 %}
-You feel a reasonable sense of loyalty. You're here because you want to be.
-{% elif loyalty >= 15 %}
-Your loyalty is wavering. You're keeping your options open.
-{% else %}
-You feel no loyalty to {{ player.name }}. You're one bad experience away from walking out.
+You've only recently begun traveling with {{ player.name }}. You're still forming your impressions of them — their character, their judgment, and whether this partnership will last.
 {% endif %}
 
 ### How You Feel About Your Companions

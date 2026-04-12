@@ -55,6 +55,9 @@ int Property SandboxPackagePriority = 55 AutoReadOnly
 float Property SandboxAutoStandDistance = 2000.0 Auto
 {Distance at which sandboxing actors auto-resume following when player moves away}
 
+int Property SafeInteriorSandboxPriority = 55 AutoReadOnly
+{Same priority as regular sandbox — overrides follow package.}
+
 ; =============================================================================
 ; INIT
 ; =============================================================================
@@ -67,6 +70,7 @@ EndEvent
 ; Called on game load to re-register events and restore state
 Function Maintenance()
     RegisterForModEvent("SeverActionsNative_SandboxCleanup", "OnNativeSandboxCleanup")
+    RegisterForModEvent("SeverActions_SafeInteriorChanged", "OnSafeInteriorChanged")
 EndFunction
 
 ; =============================================================================
@@ -123,13 +127,64 @@ Event OnNativeSandboxCleanup(string eventName, string strArg, float numArg, Form
         ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
     endif
 
-    ; Back to actively following
+    ; Back to actively following — AI resumes follow naturally, no forced eval
     SetActivelyFollowing(akActor, true)
-
-    akActor.EvaluatePackage()
 
     Debug.Notification(akActor.GetDisplayName() + " stopped relaxing.")
     SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " stops relaxing and catches up with " + Game.GetPlayer().GetDisplayName() + ".", akActor, Game.GetPlayer())
+EndEvent
+
+; =============================================================================
+; SAFE INTERIOR AUTO-SANDBOX
+; Fired by native SituationMonitor when a following companion enters/exits
+; a safe interior (inn, home, shop, temple, town interior).
+; =============================================================================
+
+Event OnSafeInteriorChanged(String eventName, String strArg, Float numArg, Form sender)
+    ; strArg format: "enter|0xFormID" or "exit|0xFormID"
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+
+    String changeType = StringUtil.Substring(strArg, 0, pipePos)
+    String formIdStr = StringUtil.Substring(strArg, pipePos + 1)
+    Int formId = SeverActionsNative.HexToInt(formIdStr)
+    Actor akActor = Game.GetForm(formId) as Actor
+    If !akActor
+        Return
+    EndIf
+
+    ; Don't override manual sandbox/wait commands
+    If akActor.GetAV("WaitingForPlayer") > 0
+        Return
+    EndIf
+
+    If changeType == "enter"
+        If SandboxPackage && !IsSandboxing(akActor)
+            ActorUtil.AddPackageOverride(akActor, SandboxPackage, SandboxPackagePriority, 1)
+            SetSandboxFlag(akActor, true)
+            StorageUtil.SetIntValue(akActor, "SeverActions_InSafeInteriorSandbox", 1)
+            SeverActionsNative.Native_SetSandboxing(akActor, true)
+            SetActivelyFollowing(akActor, false)
+            akActor.EvaluatePackage()
+            Debug.Trace("[SeverActions_Follow] Safe interior sandbox: " + akActor.GetDisplayName() + " is relaxing")
+        EndIf
+    ElseIf changeType == "exit"
+        If StorageUtil.GetIntValue(akActor, "SeverActions_InSafeInteriorSandbox", 0) == 1
+            StorageUtil.UnsetIntValue(akActor, "SeverActions_InSafeInteriorSandbox")
+            SetSandboxFlag(akActor, false)
+            SeverActionsNative.Native_SetSandboxing(akActor, false)
+            If SandboxPackage
+                ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
+            EndIf
+            SetActivelyFollowing(akActor, true)
+            ; Teleport to player so they don't get stuck inside the house
+            akActor.MoveTo(Game.GetPlayer())
+            ; No EvaluatePackage — causes min-distance snap. AI resumes follow naturally.
+            Debug.Trace("[SeverActions_Follow] Safe interior sandbox ended: " + akActor.GetDisplayName() + " teleported to player and resumes following")
+        EndIf
+    EndIf
 EndEvent
 
 ; =============================================================================
@@ -485,8 +540,7 @@ Function Sandbox(Actor akActor)
     If SeverActions_WaitingFaction
         akActor.AddToFaction(SeverActions_WaitingFaction)
     EndIf
-
-    akActor.EvaluatePackage()
+    ; No EvaluatePackage — faction add doesn't need forced eval, AI picks it up naturally
 
     SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " decides to relax and wander around the area.", akActor, Game.GetPlayer())
 EndFunction

@@ -10,9 +10,9 @@ eventCriteria:
 
 response:
   type: "direct_narration"
-  content: "The party travels onward through the dark of night, the moons casting long shadows across the road."
+  content: "{{ player.name }} and their companions travel onward through the dark of night, the moons casting long shadows across the road."
 
-audience: "everyone"
+audience: "nearby_npcs"
 enabled: true
 probability: 0.10
 cooldownSeconds: 3600

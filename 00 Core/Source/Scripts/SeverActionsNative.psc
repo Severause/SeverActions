@@ -238,6 +238,11 @@ Function SetDefaultAutoStandDistance(Float distance) Global Native
 {Set the default auto-stand distance for new registrations.
 Default is 500 units.}
 
+ObjectReference Function FindFurnitureByFormID(String formIdStr, Actor nearActor) Global Native
+{Resolve a furniture FormID string to an ObjectReference. Handles unsigned 32-bit FormIDs
+(no Papyrus int overflow), both decimal and hex formats, and BaseID-to-RefID fallback
+by searching for the nearest placed instance within 500 units of the actor.}
+
 Int Function GetFurnitureUserCount() Global Native
 {Get the number of actors currently registered with the furniture manager.}
 
@@ -1132,6 +1137,12 @@ Function Native_SetPackageState(Actor akActor, Bool hasFollow, Bool hasTalkPlaye
 Bool Function Native_GetHasFollowPkg(Actor akActor) Global Native
 {Check if actor had a follow package before save/load. Used to re-register casual follow packages on game load.}
 
+Function Native_SetOffscreenExcluded(Actor akActor, Bool excluded) Global Native
+{Set whether a follower is excluded from off-screen life events.}
+
+Bool Function Native_GetOffscreenExcluded(Actor akActor) Global Native
+{Check if a follower is excluded from off-screen life events.}
+
 ; --- Roster flag ---
 
 Function Native_SetIsFollower(Actor akActor, Bool val) Global Native
@@ -1256,6 +1267,17 @@ Bool Function Native_Outfit_IsBurstSuppressed(Actor akActor) Global Native
 Bool Function Native_Outfit_IsInAnimationScene(Actor akActor) Global Native
 {Check if an actor is in a SexLab or OStim scene via EditorID-based faction lookup.
 Works regardless of load order or FormID. Cached after first resolve.}
+
+Function Native_Outfit_RestoreStashedItems(Actor akActor) Global Native
+{Restore items stashed during buildOutfitEquip back to actor inventory.
+Call AFTER lock sync so the alias can fight any engine auto-equip.}
+
+Form[] Function Native_Outfit_GetPresetItems(Actor akActor, String presetName) Global Native
+{Get items from a named preset in the native OutfitDataStore.}
+
+Form[] Function Native_Outfit_GetWornArmor(Actor akActor) Global Native
+{Get all currently worn armor on an actor as a Form array. Single native call
+replaces the 18-slot GetWornForm Papyrus loop. Avoids async race conditions.}
 
 ; --- Preset operations ---
 
@@ -1490,3 +1512,43 @@ Returns 0 if not found. Useful for checking if an item exists.}
 String Function Native_ResolveItemName(String itemName, String category) Global Native
 {Resolve a fuzzy item name to the actual in-game item name.
 Returns "" if not found. Useful for normalizing LLM-generated item names.}
+
+; =============================================================================
+; QUEST AWARENESS
+; Presence-based quest tracking for followers. C++ monitors quest stage changes
+; via TESQuestStageEvent and tracks presence (firsthand vs secondhand).
+; C++ builds all JSON context — Papyrus just forwards to SendCustomPromptToLLM.
+; =============================================================================
+
+String Function Native_PopSummaryRequest() Global Native
+{Pop the next queued LLM summary request. Returns pre-built JSON context string \
+for passing directly to SendCustomPromptToLLM. Returns "" when queue is empty. \
+Papyrus should call this in a loop until it returns "".}
+
+String Function Native_PopCompletionEntry() Global Native
+{Pop the next quest completion entry for memory creation. \
+Returns a JSON string with actorFormID, editorID, summary, and isFirsthand fields. \
+Returns "" when queue is empty.}
+
+Function Native_StorePendingSummary(String response) Global Native
+{Store the LLM response for the most recently popped summary request. \
+Uses metadata from the FIFO pending queue set by Native_PopSummaryRequest.}
+
+Function Native_SetQuestSummary(Actor akActor, String editorID, String summary, Bool isFirsthand) Global Native
+{Store an LLM-generated personalized quest summary for a follower. \
+Called from Papyrus after SendCustomPromptToLLM returns the summary text.}
+
+Function Native_OnFollowerRecruited(Actor akActor) Global Native
+{Notify the quest awareness store that a follower was recruited. \
+Seeds SECONDHAND awareness of all active tracked quests and queues catch-up summaries. \
+Call from RegisterFollower() in FollowerManager.}
+
+Int Function Native_GetFollowerAwarenessTier(Actor akActor, String editorID) Global Native
+
+; =============================================================================
+; SITUATION MONITOR
+; =============================================================================
+
+Function SituationMonitor_RescueSandboxers() Global Native
+{Rescue any auto-sandboxing followers stranded in a previous cell. \
+Call on cell load to bring them to the player.}

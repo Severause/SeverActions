@@ -11,9 +11,9 @@ eventCriteria:
 
 response:
   type: "direct_narration"
-  content: "The party arrives at {{ event_json.to_location }}."
+  content: "{{ player.name }} and their companions arrive at {{ event_json.to_location }}."
 
-audience: "everyone"
+audience: "nearby_npcs"
 enabled: true
 probability: 0.65
 cooldownSeconds: 1800

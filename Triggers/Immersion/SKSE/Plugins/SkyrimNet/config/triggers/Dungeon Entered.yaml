@@ -11,9 +11,9 @@ eventCriteria:
 
 response:
   type: "direct_narration"
-  content: "The party enters {{ event_json.to_location }}. The air grows heavy."
+  content: "{{ player.name }} and their companions enter {{ event_json.to_location }}. The air grows heavy."
 
-audience: "everyone"
+audience: "nearby_npcs"
 enabled: true
 probability: 0.20
 cooldownSeconds: 1800

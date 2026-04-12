@@ -3,7 +3,7 @@
 {% if actorUUID and actorUUID != 0 %}
 {% set actor = decnpc(actorUUID) %}
 {% if actor and actor.UUID %}
-{% set is_fol = is_follower(actorUUID) %}
+{% set is_fol = is_follower(actorUUID) or is_sever_follower(actorUUID) %}
 {% set was_follower = papyrus_util("GetIntValue", actor.UUID, "SeverFollower_TimesRecruited", 0) %}
 {% if not is_fol and was_follower > 0 %}
 {% set home_loc = papyrus_util("GetStringValue", actor.UUID, "SeverFollower_HomeLocation", "") %}

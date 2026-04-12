@@ -297,6 +297,14 @@ Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
         StorageUtil.SetFloatValue(akStoredTarget, "SeverCombat_CeasefireTime", ceasefireTime)
     EndIf
 
+    ; Clear forced combat flag — combat is over
+    SeverActionsNative.Native_SetInForcedCombat(akActor1, false)
+    StorageUtil.UnsetIntValue(akActor1, "SeverCombat_InForcedCombat")
+    If akStoredTarget
+        SeverActionsNative.Native_SetInForcedCombat(akStoredTarget, false)
+        StorageUtil.UnsetIntValue(akStoredTarget, "SeverCombat_InForcedCombat")
+    EndIf
+
     ; Apply cooldown (prevents immediate re-attack action)
     ApplyCooldown(akActor1, akStoredTarget)
 
@@ -1060,6 +1068,10 @@ Event OnCeasefireBroken(String eventName, String strArg, Float numArg, Form send
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_CeasefirePartner")
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalAggression")
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_CeasefireTime")
+
+    ; Clear forced combat flag — combat is resuming naturally
+    SeverActionsNative.Native_SetInForcedCombat(akActor, false)
+    StorageUtil.UnsetIntValue(akActor, "SeverCombat_InForcedCombat")
 
     ; Force AI re-evaluation — now hostile again
     akActor.EvaluatePackage()

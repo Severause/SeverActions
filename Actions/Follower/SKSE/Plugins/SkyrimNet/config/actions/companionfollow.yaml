@@ -2,7 +2,7 @@ name: CompanionFollow
 description: "Resume following {{ player.name }} after waiting. Use when returning to a waiting companion and asking them to come along."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
-executionFunctionName: CompanionFollow
+executionFunctionName: companionfollow
 parameterMapping:
   - type: speaker
     name: akActor
