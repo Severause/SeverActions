@@ -33,6 +33,8 @@ The cold has seeped into your bones. Your hands are stiff, your breathing is sha
 You're properly cold now. Shivering, arms crossed tight, wishing for a fire or at least some shelter.
 {% elif cold >= 25 %}
 There's a chill in the air. Nothing you can't handle, but you notice it.
+{% if hunger >= 25 %}
+When hungry, eat food you already have in your inventory first. Only look for food elsewhere if you have nothing to eat on you.
 {% endif %}
 {% else %}
 ## Physical State

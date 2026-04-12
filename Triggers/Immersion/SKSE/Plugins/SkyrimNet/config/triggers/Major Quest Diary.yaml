@@ -13,7 +13,7 @@ response:
   targetScope: "AllNearbyActors"
   nearbyRadius: 3000.0
 
-enabled: true
+enabled: false
 probability: 0.45
 cooldownSeconds: 1800
 priority: 2

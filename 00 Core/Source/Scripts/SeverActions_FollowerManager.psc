@@ -386,6 +386,7 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_PrismaAssignHome", "OnPrismaAssignHome")
     RegisterForModEvent("SeverActions_PrismaClearHome", "OnPrismaClearHome")
     RegisterForModEvent("SeverActions_PrismaForceRemove", "OnPrismaForceRemove")
+    RegisterForModEvent("SeverActions_PrismaSoftReset", "OnPrismaSoftReset")
     RegisterForModEvent("SeverActions_PrismaDismiss", "OnPrismaDismiss")
     RegisterForModEvent("SeverActions_PrismaResetAll", "OnPrismaResetAll")
     RegisterForModEvent("SeverActions_SetCombatStyle", "OnPrismaSetCombatStyle")
@@ -1791,6 +1792,76 @@ Function PurgeFollower(Actor akActor)
 
     DebugMsg("PurgeFollower complete: " + actorName)
 EndFunction
+
+Function SoftResetFollower(Actor akActor)
+    {Clear factions, packages, aliases, and teammate status — but KEEP all relationship
+     data (rapport, trust, loyalty, mood, home, combat style, assessment history).
+     Used to unstick followers without losing their history.}
+    If !akActor
+        Return
+    EndIf
+
+    String actorName = akActor.GetDisplayName()
+    DebugMsg("SoftResetFollower: " + actorName)
+
+    ; Mark as not currently following (but keep SeverFollower_IsFollower for re-recruit detection)
+    StorageUtil.SetIntValue(akActor, KEY_IS_FOLLOWER, 0)
+    StorageUtil.UnsetIntValue(akActor, KEY_DISMISSED)
+
+    ; Remove from factions
+    If SeverActions_FollowerFaction
+        akActor.RemoveFromFaction(SeverActions_FollowerFaction)
+    EndIf
+
+    Faction currentFollowerFaction = Game.GetFormFromFile(0x0005C84E, "Skyrim.esm") as Faction
+    If currentFollowerFaction
+        akActor.RemoveFromFaction(currentFollowerFaction)
+    EndIf
+
+    Faction playerFollowerFaction = Game.GetFormFromFile(0x084D1B, "Skyrim.esm") as Faction
+    If playerFollowerFaction
+        akActor.RemoveFromFaction(playerFollowerFaction)
+    EndIf
+
+    akActor.SetPlayerTeammate(false)
+
+    ; Clear outfit alias slot (but don't purge outfit data — presets survive)
+    ClearOutfitSlot(akActor)
+
+    ; Stop following if active + remove waiting faction
+    SeverActions_Follow followSys = GetFollowScript()
+    If followSys
+        followSys.CompanionStopFollowing(akActor)
+        If followSys.SeverActions_WaitingFaction
+            akActor.RemoveFromFaction(followSys.SeverActions_WaitingFaction)
+        EndIf
+    EndIf
+
+    ; Sync roster
+    SyncFollowerRoster()
+
+    If ShowNotifications
+        Debug.Notification(actorName + " has been soft-reset. Recruit again to continue.")
+    EndIf
+
+    DebugMsg("SoftResetFollower complete: " + actorName)
+EndFunction
+
+Event OnPrismaSoftReset(string eventName, string strArg, float numArg, Form sender)
+    {Handle soft-reset from PrismaUI. strArg = "actorName|". Clears factions/packages but keeps relationship data.}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    String actorName = StringUtil.Substring(strArg, 0, pipePos)
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    If akActor
+        DebugMsg("PrismaUI soft-reset: " + akActor.GetDisplayName())
+        SoftResetFollower(akActor)
+    Else
+        DebugMsg("PrismaUI soft-reset: actor '" + actorName + "' not found")
+    EndIf
+EndEvent
 
 Event OnPrismaForceRemove(string eventName, string strArg, float numArg, Form sender)
     {Handle force-remove from PrismaUI. The C++ side already clears native stores;
@@ -3548,6 +3619,17 @@ Function OnOffScreenLifeEvent(String response, Int success)
         lifeSummary += " " + summary2
     EndIf
     StorageUtil.SetStringValue(akActor, KEY_LIFE_SUMMARY, lifeSummary)
+
+    ; Randomize survival needs for dismissed followers after each off-screen event.
+    ; Simulates eating, resting, and exposure while the player was away.
+    ; Values drift randomly — sometimes they ate well, sometimes they didn't.
+    If !SeverActionsNative.Native_Survival_IsExcluded(akActor)
+        Int newHunger = Utility.RandomInt(5, 45)
+        Int newFatigue = Utility.RandomInt(5, 50)
+        Int newCold = Utility.RandomInt(0, 20)
+        SeverActionsNative.Native_Survival_SetNeeds(akActor, newHunger as Float, newFatigue as Float, newCold as Float)
+        DebugMsg("Off-screen life: randomized survival for " + actorName + " H=" + newHunger + " F=" + newFatigue + " C=" + newCold)
+    EndIf
 
     ; Build full event history from native cosave store for prompt injection
     ; This gives dismissed followers a rich memory of what they've been doing

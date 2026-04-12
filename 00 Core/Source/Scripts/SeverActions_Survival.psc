@@ -211,12 +211,14 @@ EndEvent
 
 Event OnPrismaIncludeFollower(String eventName, String strArg, Float numArg, Form sender)
     {Called by native SKSE when PrismaUI includes a follower in survival tracking.
-     strArg = "actorName|".}
+     strArg = "formID|" (signed int string).}
     Int pipePos = StringUtil.Find(strArg, "|")
-    If pipePos < 0
-        Return
+    String formIdStr = strArg
+    If pipePos >= 0
+        formIdStr = StringUtil.Substring(strArg, 0, pipePos)
     EndIf
-    Actor follower = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
+    Int formId = formIdStr as Int
+    Actor follower = Game.GetForm(formId) as Actor
     If follower
         Debug.Trace("[SeverActions_Survival] PrismaUI including " + follower.GetDisplayName())
         SetFollowerExcluded(follower, false)
@@ -225,12 +227,14 @@ EndEvent
 
 Event OnPrismaExcludeFollower(String eventName, String strArg, Float numArg, Form sender)
     {Called by native SKSE when PrismaUI excludes a follower from survival tracking.
-     strArg = "actorName|".}
+     strArg = "formID|" (signed int string).}
     Int pipePos = StringUtil.Find(strArg, "|")
-    If pipePos < 0
-        Return
+    String formIdStr = strArg
+    If pipePos >= 0
+        formIdStr = StringUtil.Substring(strArg, 0, pipePos)
     EndIf
-    Actor follower = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
+    Int formId = formIdStr as Int
+    Actor follower = Game.GetForm(formId) as Actor
     If follower
         Debug.Trace("[SeverActions_Survival] PrismaUI excluding " + follower.GetDisplayName())
         SetFollowerExcluded(follower, true)
@@ -238,15 +242,14 @@ Event OnPrismaExcludeFollower(String eventName, String strArg, Float numArg, For
 EndEvent
 
 Event OnPrismaToggleSurvivalExclude(String eventName, String strArg, Float numArg, Form sender)
-    {PrismaUI: Toggle a follower's survival tracking exclusion. strArg = "actorName|".}
-    Int pipePos = StringUtil.Find(strArg, "|")
-    If pipePos < 0
-        Return
-    EndIf
-    Actor follower = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
+    {PrismaUI: Toggle a follower's survival tracking exclusion. numArg = actor FormID.}
+    Int actorFormId = numArg as Int
+    Actor follower = Game.GetForm(actorFormId) as Actor
     If follower
         Debug.Trace("[SeverActions_Survival] PrismaUI toggling exclusion for " + follower.GetDisplayName())
         ToggleFollowerExcluded(follower)
+    Else
+        Debug.Trace("[SeverActions_Survival] PrismaUI toggle: actor not found for FormID " + actorFormId)
     EndIf
 EndEvent
 
@@ -315,6 +318,19 @@ Function UpdateAllFollowers(Float hoursPassed)
     While i < followers.Length
         Actor follower = followers[i]
         If follower && !follower.IsDead() && !IsFollowerExcluded(follower) && follower.GetDistance(player) < 10000.0
+            ; Auto-initialize followers who have never been tracked (all zeros)
+            Int h = GetFollowerHunger(follower)
+            Int f = GetFollowerFatigue(follower)
+            Int c = GetFollowerCold(follower)
+            If h == 0 && f == 0 && c == 0
+                h = Utility.RandomInt(10, 35)
+                f = Utility.RandomInt(10, 40)
+                c = Utility.RandomInt(0, 15)
+                SetFollowerHunger(follower, h)
+                SetFollowerFatigue(follower, f)
+                SetFollowerCold(follower, c)
+                Debug.Trace("[SeverActions_Survival] Auto-initialized " + follower.GetDisplayName() + " H=" + h + " F=" + f + " C=" + c)
+            EndIf
             UpdateFollowerSurvival(follower, hoursPassed)
         EndIf
         i += 1

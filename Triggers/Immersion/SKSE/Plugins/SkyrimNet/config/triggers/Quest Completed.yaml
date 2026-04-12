@@ -13,7 +13,7 @@ response:
   content: "{{ player.name }} has completed the quest: {{ event_json.quest }}."
 
 audience: "nearby_npcs"
-enabled: true
+enabled: false
 probability: 0.55
 cooldownSeconds: 600
 priority: 5
