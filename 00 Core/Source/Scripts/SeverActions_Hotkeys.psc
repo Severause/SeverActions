@@ -52,7 +52,10 @@ int Property AssignHomeKey = -1 Auto Hidden
 {Key code for assigning NPC's home to current location. -1 = unset/disabled}
 
 int Property ConfigMenuKey = -1 Auto Hidden
-{Key code for opening the PrismaUI config menu. -1 = unset/disabled}
+{Key code for opening the PrismaUI config menu. Set by MCM on init. -1 = disabled}
+
+bool Property ConfigMenuRequireShift = true Auto Hidden
+{If true, Shift must be held when pressing ConfigMenuKey to open PrismaUI. Default: true (Shift+8)}
 
 ; =============================================================================
 ; TARGET MODE SETTINGS
@@ -330,8 +333,12 @@ Event OnKeyDown(int keyCode)
 
     ; Config menu key — handled separately since it can open during normal gameplay
     if keyCode == ConfigMenuKey && ConfigMenuKey > 0
-        SeverActionsNative.PrismaUI_ToggleMenu()
-        return
+        if ConfigMenuRequireShift && !Input.IsKeyPressed(42)
+            ; Shift not held — skip
+        else
+            SeverActionsNative.PrismaUI_ToggleMenu()
+            return
+        endif
     endif
 
     ; All other hotkeys: ignore if in menu mode

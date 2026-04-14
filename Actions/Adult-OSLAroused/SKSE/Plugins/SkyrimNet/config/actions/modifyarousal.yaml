@@ -1,4 +1,3 @@
-customCategory: adult
 name: ModifyArousal
 description: "Adjust arousal level. Negative to decrease (-2 to -20), positive to increase (+2 to +15)."
 questEditorId: SeverActions

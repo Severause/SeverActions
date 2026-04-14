@@ -52,6 +52,10 @@ Event OnObjectUnequipped(Form akBaseObject, ObjectReference akReference)
     If akBaseObject as Armor
         Actor follower = self.GetActorRef()
         If follower && StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0) == 1
+            ; Skip outfit-excluded actors entirely
+            If SeverActionsNative.Native_GetOutfitExcluded(follower)
+                Return
+            EndIf
             ; Don't fight our own outfit changes
             If StorageUtil.GetIntValue(follower, "SeverOutfit_Suspended", 0) == 1
                 Return
@@ -78,6 +82,11 @@ Event OnUpdate()
     EndIf
 
     If StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0) != 1
+        Return
+    EndIf
+
+    ; Skip outfit-excluded actors
+    If SeverActionsNative.Native_GetOutfitExcluded(follower)
         Return
     EndIf
 
@@ -118,6 +127,11 @@ Function ReequipIfLocked()
     EndIf
 
     If StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0) != 1
+        Return
+    EndIf
+
+    ; Skip outfit-excluded actors
+    If SeverActionsNative.Native_GetOutfitExcluded(follower)
         Return
     EndIf
 

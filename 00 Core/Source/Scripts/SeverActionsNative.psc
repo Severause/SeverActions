@@ -1143,6 +1143,14 @@ Function Native_SetOffscreenExcluded(Actor akActor, Bool excluded) Global Native
 Bool Function Native_GetOffscreenExcluded(Actor akActor) Global Native
 {Check if a follower is excluded from off-screen life events.}
 
+; --- Outfit exclusion ---
+
+Function Native_SetOutfitExcluded(Actor akActor, Bool excluded) Global Native
+{Set whether a follower is excluded from the entire outfit system. When true, no outfit lock, no DefaultOutfit suppression, no situation auto-switch, no alias re-equip. Allows other outfit mods to manage them freely.}
+
+Bool Function Native_GetOutfitExcluded(Actor akActor) Global Native
+{Check if a follower is excluded from the outfit system.}
+
 ; --- Roster flag ---
 
 Function Native_SetIsFollower(Actor akActor, Bool val) Global Native

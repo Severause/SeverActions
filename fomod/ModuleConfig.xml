@@ -240,19 +240,6 @@ Helps NPCs respond appropriately during fights.</description>
                             </typeDescriptor>
                         </plugin>
 
-                        <plugin name="Faction/Guild Reputation Prompt">
-                            <description>Faction awareness:
-• Guild Reputation - NPCs know your faction standings
-
-Large prompt with detailed guild information.</description>
-                            <files>
-                                <folder source="Prompts/Faction" destination="" priority="1"/>
-                            </files>
-                            <typeDescriptor>
-                                <type name="Optional"/>
-                            </typeDescriptor>
-                        </plugin>
-
                         <plugin name="Arrest/Crime Prompts">
                             <description>Crime, imprisonment, and debt enforcement awareness:
 • Guard Bounty Awareness - Guards know player's bounty per hold
@@ -410,7 +397,41 @@ All triggers use probability and cooldowns to feel natural — companions won't 
             </optionalFileGroups>
         </installStep>
 
-        <!-- Page 4: Adult Content -->
+        <!-- Page 4: Compatibility Patches -->
+        <installStep name="Compatibility Patches">
+            <optionalFileGroups order="Explicit">
+
+                <group name="Select compatibility patches to install:" type="SelectAny">
+                    <plugins order="Explicit">
+
+                        <plugin name="AI Overhaul Flee Patch">
+                            <description>Patches AI Overhaul's flee packages so SeverActions followers and NPCs in forced combat don't run away.
+
+Without this patch, AI Overhaul gives most civilian NPCs flee packages that trigger during any nearby combat. This causes:
+• Recruited civilian followers to flee instead of fighting
+• NPCs targeted by AttackTarget to run instead of fighting back
+
+The patch adds conditions to all 7 AIO flee packages:
+• SeverActions followers are fully exempt (never flee)
+• NPCs in forced combat (AttackTarget) are exempt while fighting
+• All other NPCs keep their normal flee behavior
+
+Requires: AI Overhaul SSE (any version)</description>
+                            <files>
+                                <folder source="Patches/AI Overhaul" destination="" priority="2"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                    </plugins>
+                </group>
+
+            </optionalFileGroups>
+        </installStep>
+
+        <!-- Page 5: Adult Content -->
         <installStep name="Adult Content (Optional)">
             <optionalFileGroups order="Explicit">
 

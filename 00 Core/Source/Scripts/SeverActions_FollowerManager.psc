@@ -1499,6 +1499,12 @@ Function AssignOutfitSlot(Actor akActor)
         Return
     EndIf
 
+    ; Skip outfit-excluded actors — don't assign alias slot at all
+    If SeverActionsNative.Native_GetOutfitExcluded(akActor)
+        DebugMsg("Outfit excluded: " + akActor.GetDisplayName() + " — skipping outfit slot assignment")
+        Return
+    EndIf
+
     ; Guard against duplicate assignment — if already in a slot, skip
     Int check = 0
     While check < OutfitSlots.Length

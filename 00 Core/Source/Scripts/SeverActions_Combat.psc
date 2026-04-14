@@ -23,6 +23,15 @@ Faction Property CurrentFollowerFaction Auto
 Faction Property SkyrimNetFollowerFaction Auto
 {Set to SkyrimNet_FollowingPlayerFaction from SkyrimNet.esp if using SkyrimNet followers}
 
+; Attack/Target factions — added to actors during AttackTarget so the AIO flee
+; patch can suppress flee packages for NPCs actively engaged in forced combat.
+; Removed when combat ends via RestoreOriginalValues.
+Faction Property SeverActions_AttackFaction Auto
+{Added to the attacker during AttackTarget. Suppresses AIO flee.}
+
+Faction Property SeverActions_TargetFaction Auto
+{Added to the target during AttackTarget. Suppresses AIO flee.}
+
 ; Cooldown duration in seconds
 Float Property CombatCooldownDuration = 30.0 Auto
 {How long before actors can be forced into combat again}
@@ -177,15 +186,16 @@ Function AttackTarget_Execute(Actor akAttacker, Actor akTarget)
     StorageUtil.UnsetIntValue(akAttacker, "SeverCombat_RecentCeasefire")
     StorageUtil.UnsetIntValue(akTarget, "SeverCombat_RecentCeasefire")
     
-    ; Store original values for attacker (confidence only)
+    ; Store original values for both actors
     StoreOriginalValues(akAttacker)
-    
+    StoreOriginalValues(akTarget)
+
     ; Store original relationship ranks (both directions)
     Int origRankAtoT = akAttacker.GetRelationshipRank(akTarget)
     Int origRankTtoA = akTarget.GetRelationshipRank(akAttacker)
     StorageUtil.SetIntValue(akAttacker, "SeverCombat_OriginalRelationship", origRankAtoT)
     StorageUtil.SetIntValue(akTarget, "SeverCombat_OriginalRelationship", origRankTtoA)
-    
+
     ; Store combat target references
     StorageUtil.SetFormValue(akAttacker, "SeverCombat_CombatTarget", akTarget)
     StorageUtil.SetFormValue(akTarget, "SeverCombat_CombatTarget", akAttacker)
@@ -194,8 +204,17 @@ Function AttackTarget_Execute(Actor akAttacker, Actor akTarget)
     SeverActionsNative.Native_SetInForcedCombat(akAttacker, true)
     SeverActionsNative.Native_SetInForcedCombat(akTarget, true)
 
-    ; Prepare attacker for combat (confidence boost only)
+    ; Add to attack/target factions so AIO flee patch can suppress flee packages
+    If SeverActions_AttackFaction
+        akAttacker.AddToFaction(SeverActions_AttackFaction)
+    EndIf
+    If SeverActions_TargetFaction
+        akTarget.AddToFaction(SeverActions_TargetFaction)
+    EndIf
+
+    ; Prepare both actors for combat (confidence + aggression boost)
     PrepareForCombat(akAttacker)
+    PrepareForCombat(akTarget)
     
     ; Make them personal enemies - this is sufficient for combat
     ; NOTE: We no longer manipulate factions here. Faction changes caused issues
@@ -811,15 +830,16 @@ Function ClearAllCombatState(Actor akActor)
 EndFunction
 
 Function PrepareForCombat(Actor akActor)
-{Set actor values for combat - only boost confidence so they don't flee}
-    ; NOTE: We intentionally do NOT modify Aggression here.
-    ; Setting high aggression can cause NPCs to attack unintended targets
-    ; if combat ends abnormally and values aren't restored.
-    ; StartCombat() + relationship rank changes are sufficient.
-    
+{Set actor values for combat - boost confidence and aggression so they fight}
     ; Confidence: 0=Cowardly, 1=Cautious, 2=Average, 3=Brave, 4=Foolhardy
     akActor.SetActorValue("Confidence", 3)
-    
+
+    ; Aggression: 0=Unaggressive, 1=Aggressive, 2=Very Aggressive, 3=Frenzied
+    ; Bump to 2 so civilians actually fight back when attacked via AttackTarget.
+    ; Without this, Aggression 0 NPCs may not engage even with StartCombat().
+    ; Original value is stored and restored when combat ends.
+    akActor.SetActorValue("Aggression", 2)
+
     akActor.EvaluatePackage()
 EndFunction
 
@@ -827,8 +847,8 @@ Function StoreOriginalValues(Actor akActor)
 {Store actor's original combat values in StorageUtil}
     ; Only store if not already stored (don't overwrite during ongoing combat)
     If StorageUtil.GetIntValue(akActor, "SeverCombat_InForcedCombat", 0) == 0
-        ; Store confidence
         StorageUtil.SetFloatValue(akActor, "SeverCombat_OriginalConfidence", akActor.GetActorValue("Confidence"))
+        StorageUtil.SetFloatValue(akActor, "SeverCombat_OriginalAggression", akActor.GetActorValue("Aggression"))
     EndIf
 EndFunction
 
@@ -836,10 +856,24 @@ Function RestoreOriginalValues(Actor akActor)
 {Restore actor's original combat values from StorageUtil}
     ; Restore confidence
     Float origConfidence = StorageUtil.GetFloatValue(akActor, "SeverCombat_OriginalConfidence", -1.0)
-    
     If origConfidence >= 0.0
         akActor.SetActorValue("Confidence", origConfidence)
         StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalConfidence")
+    EndIf
+
+    ; Restore aggression
+    Float origAggression = StorageUtil.GetFloatValue(akActor, "SeverCombat_OriginalAggression", -1.0)
+    If origAggression >= 0.0
+        akActor.SetActorValue("Aggression", origAggression)
+        StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalAggression")
+    EndIf
+
+    ; Remove from attack/target factions
+    If SeverActions_AttackFaction && akActor.IsInFaction(SeverActions_AttackFaction)
+        akActor.RemoveFromFaction(SeverActions_AttackFaction)
+    EndIf
+    If SeverActions_TargetFaction && akActor.IsInFaction(SeverActions_TargetFaction)
+        akActor.RemoveFromFaction(SeverActions_TargetFaction)
     EndIf
 EndFunction
 

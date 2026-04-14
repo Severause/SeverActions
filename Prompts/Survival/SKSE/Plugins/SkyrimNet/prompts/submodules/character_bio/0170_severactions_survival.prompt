@@ -3,7 +3,6 @@
 {% if actorUUID and actorUUID != 0 %}
 {% set actor = decnpc(actorUUID) %}
 {% if actor and actor.UUID %}
-{# Check if this actor is a companion (native follower or SeverActions faction) #}
 {% set is_companion = is_follower(actorUUID) or is_sever_follower(actorUUID) %}
 {% set excluded = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Excluded", 0) %}
 {% if excluded == 0 %}
@@ -33,9 +32,8 @@ The cold has seeped into your bones. Your hands are stiff, your breathing is sha
 You're properly cold now. Shivering, arms crossed tight, wishing for a fire or at least some shelter.
 {% elif cold >= 25 %}
 There's a chill in the air. Nothing you can't handle, but you notice it.
-{% if hunger >= 25 %}
-When hungry, eat food you already have in your inventory first. Only look for food elsewhere if you have nothing to eat on you.
 {% endif %}
+When hungry, eat food you already have in your inventory first. Only look for food elsewhere if you have nothing to eat on you.
 {% else %}
 ## Physical State
 {% if hunger >= 75 %}

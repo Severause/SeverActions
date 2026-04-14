@@ -61,7 +61,8 @@ float Property NearestNPCRadius = 500.0 Auto Hidden
 int Property WheelMenuKey = -1 Auto Hidden
 
 ; Config Menu Key (opens PrismaUI config — stored here, applied to HotkeyScript)
-int Property ConfigMenuKey = -1 Auto Hidden
+int Property ConfigMenuKey = 9 Auto Hidden
+bool Property ConfigMenuRequireShift = true Auto Hidden
 
 ; =============================================================================
 ; MCM STATE - Option IDs
@@ -99,6 +100,7 @@ int OID_TargetMode
 int OID_NearestNPCRadius
 int OID_WheelMenuKey
 int OID_ConfigMenuKey
+int OID_ConfigMenuShift
 
 ; Bounty page
 int OID_BountyWhiterun
@@ -555,7 +557,7 @@ Function DrawHotkeysPage()
     ; --- Config Menu (PrismaUI) ---
     AddHeaderOption("Config Menu (Requires PrismaUI)")
     OID_ConfigMenuKey = AddKeyMapOption("Open Config Menu", ConfigMenuKey)
-    AddTextOption("", "Opens the PrismaUI settings overlay")
+    OID_ConfigMenuShift = AddToggleOption("Require Shift", ConfigMenuRequireShift)
 
     AddEmptyOption()
 
@@ -1035,6 +1037,11 @@ Event OnOptionSelect(int option)
         DialogueAnimEnabled = !DialogueAnimEnabled
         SetToggleOptionValue(OID_DialogueAnimEnabled, DialogueAnimEnabled)
         SeverActionsNative.SetDialogueAnimEnabled(DialogueAnimEnabled)
+
+    elseif option == OID_ConfigMenuShift
+        ConfigMenuRequireShift = !ConfigMenuRequireShift
+        SetToggleOptionValue(OID_ConfigMenuShift, ConfigMenuRequireShift)
+        ApplyConfigMenuKeySettings()
 
     elseif option == OID_TagCompanion
         TagCompanionEnabled = !TagCompanionEnabled
@@ -2250,7 +2257,9 @@ Event OnOptionHighlight(int option)
         SetInfoText("Hotkey to open the wheel menu with all actions. Requires UIExtensions mod. The wheel always targets the NPC under your crosshair. Great for VR users or those who prefer a single hotkey.")
 
     elseif option == OID_ConfigMenuKey
-        SetInfoText("Hotkey to open the PrismaUI config menu. Requires PrismaUI mod. If PrismaUI is not installed, the key will do nothing. This provides a modern visual alternative to the MCM.")
+        SetInfoText("Hotkey to open the PrismaUI config menu. Requires PrismaUI mod. Default: 8 key (with Shift).")
+    elseif option == OID_ConfigMenuShift
+        SetInfoText("When enabled, you must hold Shift while pressing the config menu key. Frees up the key for other uses when Shift is not held.")
 
     ; Bounty page tooltips
     elseif option == OID_BountyWhiterun || option == OID_BountyRift || option == OID_BountyHaafingar || option == OID_BountyEastmarch || option == OID_BountyReach || option == OID_BountyFalkreath || option == OID_BountyPale || option == OID_BountyHjaalmarch || option == OID_BountyWinterhold
@@ -2569,8 +2578,12 @@ Event OnOptionDefault(int option)
         ApplyWheelMenuSettings()
 
     elseif option == OID_ConfigMenuKey
-        ConfigMenuKey = -1
+        ConfigMenuKey = 9
         SetKeyMapOptionValue(OID_ConfigMenuKey, ConfigMenuKey)
+        ApplyConfigMenuKeySettings()
+    elseif option == OID_ConfigMenuShift
+        ConfigMenuRequireShift = true
+        SetToggleOptionValue(OID_ConfigMenuShift, ConfigMenuRequireShift)
         ApplyConfigMenuKeySettings()
 
     elseif option == OID_ArrestCooldown
@@ -2877,7 +2890,8 @@ EndFunction
 Function ApplyConfigMenuKeySettings()
     if HotkeyScript
         HotkeyScript.UpdateConfigMenuKey(ConfigMenuKey)
-        Debug.Trace("[SeverActions_MCM] Applied config menu key: " + ConfigMenuKey)
+        HotkeyScript.ConfigMenuRequireShift = ConfigMenuRequireShift
+        Debug.Trace("[SeverActions_MCM] Applied config menu key: " + ConfigMenuKey + " shift=" + ConfigMenuRequireShift)
     else
         Debug.Trace("[SeverActions_MCM] WARNING: HotkeyScript not set!")
     endif
