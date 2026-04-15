@@ -1,5 +1,23 @@
 # SeverActions Changelog
 
+## v2.1.9
+
+### NPC Familiarity System — Rewrite
+- **Fixed familiarity always showing "stranger"** — replaced `PublicGetPlayerContext` (bulk name-based SQL lookup that lost FormID resolution) with `PublicGetRecentDialogue` (direct per-NPC FormID query). Interaction counts now resolve correctly
+- **New "passing" tier** — NPCs you've spoken to but who haven't heard your name yet. They recognize your face but address you by observation (gear, bearing, role) rather than name
+- **Player name tracking** — decorator now scans actual dialogue text for the player's name. If your name has never come up in conversation with an NPC, they won't know it
+- **Guild faction awareness** — NPCs who share a guild faction with the player (Companions, College of Winterhold, Thieves Guild, Dark Brotherhood) get guild-aware familiarity text at every tier. Fellow guild strangers are warmer than random strangers; guild acquaintances reference shared membership
+- **Followers skip familiarity** — the familiarity prompt is now gated with `is_follower()`. Followers already have the relationship system (rapport/trust/loyalty/mood) which covers this
+- **Per-NPC caching** — replaced the bulk PlayerContext cache (5s TTL, all NPCs) with per-NPC dialogue data cache (30s TTL). Only queries the NPC you're actually talking to
+- **Retuned thresholds** — tiers now based on dialogue line counts (each line = one player or NPC utterance):
+  - Stranger: 0 lines
+  - Passing: 1–200 lines, name not mentioned
+  - Recent Acquaintance: 1–200 lines, name mentioned
+  - Known Acquaintance: 201–1000 lines
+  - Familiar: 1001+ lines (no prompt restrictions)
+
+---
+
 ## v2.0.7
 
 ### Outfit System

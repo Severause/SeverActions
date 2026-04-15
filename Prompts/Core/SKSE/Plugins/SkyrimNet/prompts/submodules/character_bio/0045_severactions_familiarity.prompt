@@ -1,27 +1,434 @@
+{# Merged Familiarity & Reputation System — what this NPC knows about the player #}
 {% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "target" %}
+{% if not is_follower(actorUUID) and not is_player(actorUUID) %}
 {% set familiarity = player_familiarity(actorUUID) %}
 {% if familiarity %}
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# SECTION 1: NPC ROLE CLASSIFICATION                                 #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+
+{% set is_innkeeper = is_in_faction(actorUUID, "JobInnkeeperFaction") %}
+{% set is_bard = is_in_faction(actorUUID, "JobBardFaction") or is_in_faction(actorUUID, "BardSingerFaction") %}
+{% set is_merchant = is_in_faction(actorUUID, "JobMerchantFaction") %}
+{% set is_guard = is_in_faction(actorUUID, "GuardDialogueFaction") %}
+{% set is_jarl = is_in_faction(actorUUID, "JobJarlFaction") %}
+{% set is_bandit = is_in_faction(actorUUID, "BanditFaction") or is_in_faction(actorUUID, "BanditFriendFaction") %}
+{% set is_fence = is_in_faction(actorUUID, "RiftenRatwayFactionNeutral") or is_in_faction(actorUUID, "RiftenTGHeadquartersFaction") %}
+{% set is_criminal = is_bandit or is_fence or is_in_faction(actorUUID, "CrimeFactionThievesGuild") %}
+
+{# Connectedness: how socially plugged-in this NPC is #}
+{% set npc_conn = 1 %}
+{% if is_jarl %}{% set npc_conn = 5 %}
+{% elif is_innkeeper %}{% set npc_conn = 4 %}
+{% elif is_bard %}{% set npc_conn = 4 %}
+{% elif is_guard %}{% set npc_conn = 3 %}
+{% elif is_merchant %}{% set npc_conn = 3 %}
+{% elif is_criminal %}{% set npc_conn = 3 %}
+{% endif %}
+
+{# NPC guild membership #}
+{% set npc_is_comp = is_in_faction(actorUUID, "CompanionsFaction") %}
+{% set npc_is_college = is_in_faction(actorUUID, "CollegeofWinterholdFaction") %}
+{% set npc_is_tg = is_in_faction(actorUUID, "ThievesGuildFaction") %}
+{% set npc_is_db = is_in_faction(actorUUID, "DarkBrotherhoodFaction") %}
+
+{# NPC locality (faction-based, no fragile string matching) #}
+{% set is_riften_local = is_in_faction(actorUUID, "TownRiftenFaction") or is_in_faction(actorUUID, "CrimeFactionRift") %}
+{% set is_whiterun_local = is_in_faction(actorUUID, "TownWhiterunFaction") or is_in_faction(actorUUID, "CrimeFactionWhiterun") %}
+{% set is_winterhold_local = is_in_faction(actorUUID, "TownWinterholdFaction") %}
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# SECTION 2: SHARED GUILD DETECTION                                  #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+
+{% set shared_guild = "" %}
+{% set player_is_comp = is_in_faction(player.UUID, "CompanionsFaction") %}
+{% set player_is_college = is_in_faction(player.UUID, "CollegeofWinterholdFaction") %}
+{% set player_is_tg = is_in_faction(player.UUID, "ThievesGuildFaction") %}
+{% set player_is_db = is_in_faction(player.UUID, "DarkBrotherhoodFaction") %}
+
+{% if npc_is_comp and player_is_comp %}{% set shared_guild = "The Companions" %}
+{% elif npc_is_college and player_is_college %}{% set shared_guild = "The College of Winterhold" %}
+{% elif npc_is_tg and player_is_tg %}{% set shared_guild = "The Thieves Guild" %}
+{% elif npc_is_db and player_is_db %}{% set shared_guild = "The Dark Brotherhood" %}
+{% endif %}
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# SECTION 3: PLAYER GUILD PROGRESSION (fame levels)                  #}
+{# Faction checks first (cheapest), quest stages as fallback          #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+
+{# --- Companions --- #}
+{% set comp_fame = 0 %}
+{% set comp_title = "" %}
+{% if player_is_comp %}
+{% if is_in_faction(player.UUID, "CompanionsHarbingerFaction") %}{% set comp_fame = 5 %}
+{% elif is_in_faction(player.UUID, "CompanionsCircle") %}{% set comp_fame = 4 %}
+{% elif get_quest_stage("C06", false) >= 200 %}{% set comp_fame = 4 %}
+{% elif get_quest_stage("C03", false) >= 200 %}{% set comp_fame = 3 %}
+{% elif get_quest_stage("C01", false) >= 200 %}{% set comp_fame = 2 %}
+{% elif get_quest_stage("C00", false) >= 100 %}{% set comp_fame = 1 %}
+{% else %}{% set comp_fame = 1 %}
+{% endif %}
+{% endif %}
+{% if comp_fame == 5 %}{% set comp_title = "the Harbinger of the Companions" %}
+{% elif comp_fame == 4 %}{% set comp_title = "a member of the Circle" %}
+{% elif comp_fame == 3 %}{% set comp_title = "a proven warrior of the Companions" %}
+{% elif comp_fame == 2 %}{% set comp_title = "a warrior of the Companions" %}
+{% elif comp_fame == 1 %}{% set comp_title = "a new whelp among the Companions" %}
+{% endif %}
+
+{# --- College of Winterhold --- #}
+{% set mg_fame = 0 %}
+{% set mg_title = "" %}
+{% if player_is_college %}
+{% if is_in_faction(player.UUID, "CollegeofWinterholdArchMageFaction") %}{% set mg_fame = 5 %}
+{% elif get_quest_stage("MG07", false) >= 200 %}{% set mg_fame = 4 %}
+{% elif get_quest_stage("MG04", false) >= 200 %}{% set mg_fame = 3 %}
+{% elif get_quest_stage("MG02", false) >= 200 %}{% set mg_fame = 2 %}
+{% else %}{% set mg_fame = 1 %}
+{% endif %}
+{% endif %}
+{% if mg_fame == 5 %}{% set mg_title = "the Arch-Mage of the College of Winterhold" %}
+{% elif mg_fame == 4 %}{% set mg_title = "a senior mage of the College" %}
+{% elif mg_fame == 3 %}{% set mg_title = "a mage contacted by the Psijic Order" %}
+{% elif mg_fame == 2 %}{% set mg_title = "a mage who survived the Saarthal expedition" %}
+{% elif mg_fame == 1 %}{% set mg_title = "an apprentice at the College of Winterhold" %}
+{% endif %}
+
+{# --- Thieves Guild --- #}
+{% set tg_fame = 0 %}
+{% set tg_title = "" %}
+{% if player_is_tg %}
+{% if get_quest_stage("TGLeadership", false) >= 50 %}{% set tg_fame = 5 %}
+{% elif is_in_faction(player.UUID, "TGNightingale") %}{% set tg_fame = 4 %}
+{% elif get_quest_stage("TG09", false) >= 200 %}{% set tg_fame = 4 %}
+{% elif get_quest_stage("TG05", false) >= 200 %}{% set tg_fame = 3 %}
+{% elif get_quest_stage("TG02", false) >= 200 %}{% set tg_fame = 2 %}
+{% else %}{% set tg_fame = 1 %}
+{% endif %}
+{% endif %}
+{% if tg_fame == 5 %}{% set tg_title = "the Guild Master of the Thieves Guild" %}
+{% elif tg_fame == 4 %}{% set tg_title = "a Nightingale of Nocturnal" %}
+{% elif tg_fame == 3 %}{% set tg_title = "a senior operative of the Thieves Guild" %}
+{% elif tg_fame == 2 %}{% set tg_title = "a member of the Thieves Guild" %}
+{% elif tg_fame == 1 %}{% set tg_title = "a new recruit to the Thieves Guild" %}
+{% endif %}
+
+{# --- Dark Brotherhood --- #}
+{% set db_fame = 0 %}
+{% set db_title = "" %}
+{% set db_destroyed = false %}
+{% if get_quest_stage("DBDestroy", false) >= 10 %}{% set db_destroyed = true %}{% set db_fame = 5 %}
+{% elif player_is_db %}
+{% if get_quest_stage("DB11", false) >= 200 %}{% set db_fame = 5 %}
+{% elif get_quest_stage("DB10", false) >= 200 %}{% set db_fame = 4 %}
+{% elif get_quest_stage("DB05", false) >= 200 %}{% set db_fame = 3 %}
+{% elif get_quest_stage("DB01", false) >= 200 %}{% set db_fame = 2 %}
+{% endif %}
+{% endif %}
+{% if db_fame == 5 and not db_destroyed %}{% set db_title = "the Listener of the Dark Brotherhood" %}
+{% elif db_fame == 4 %}{% set db_title = "a deadly assassin of the Dark Brotherhood" %}
+{% elif db_fame == 3 %}{% set db_title = "a trusted assassin of the Dark Brotherhood" %}
+{% elif db_fame == 2 %}{% set db_title = "a member of the Dark Brotherhood" %}
+{% endif %}
+
+{# --- Main Quest / Dragonborn --- #}
+{% set mq_fame = 0 %}
+{% set mq_title = "" %}
+{% if get_quest_stage("MQ305", false) >= 200 %}{% set mq_fame = 5 %}
+{% elif get_quest_stage("MQ301", false) >= 220 %}{% set mq_fame = 4 %}
+{% elif get_quest_stage("MQ106", false) >= 200 %}{% set mq_fame = 3 %}
+{% elif get_quest_stage("MQ105", false) >= 160 %}{% set mq_fame = 2 %}
+{% elif get_quest_stage("MQ104", false) >= 160 %}{% set mq_fame = 1 %}
+{% endif %}
+{% if mq_fame == 5 %}{% set mq_title = "the Dragonborn who defeated Alduin the World-Eater" %}
+{% elif mq_fame == 4 %}{% set mq_title = "the Dragonborn, seeker of Alduin's Wall" %}
+{% elif mq_fame == 3 %}{% set mq_title = "the Dragonborn, who climbed to High Hrothgar" %}
+{% elif mq_fame == 2 %}{% set mq_title = "the Dragonborn, summoned by the Greybeards" %}
+{% elif mq_fame == 1 %}{% set mq_title = "the hero who slew a dragon at the Western Watchtower" %}
+{% endif %}
+
+{# --- Dawnguard DLC --- #}
+{% set dg_fame = 0 %}
+{% if get_quest_stage("DLC1VQ08", false) >= 200 %}{% set dg_fame = 3 %}
+{% elif get_quest_stage("DLC1VQ05", false) >= 200 %}{% set dg_fame = 2 %}
+{% elif get_quest_stage("DLC1VQ01", false) >= 200 %}{% set dg_fame = 1 %}
+{% endif %}
+
+{# --- Dragonborn DLC --- #}
+{% set dlc2_fame = 0 %}
+{% if get_quest_stage("DLC2MQ06", false) >= 550 %}{% set dlc2_fame = 3 %}
+{% elif get_quest_stage("DLC2MQ05", false) >= 1000 %}{% set dlc2_fame = 2 %}
+{% elif get_quest_stage("DLC2MQ01", false) >= 200 %}{% set dlc2_fame = 1 %}
+{% endif %}
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# SECTION 4: KNOWLEDGE FILTERING — who knows what                    #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+
+{# Companions knowledge #}
+{% set knows_comp = false %}
+{% set comp_knowledge = "" %}
+{% if npc_is_comp and comp_fame >= 1 %}{% set knows_comp = true %}{% set comp_knowledge = "full" %}
+{% elif is_whiterun_local and comp_fame >= 1 %}{% set knows_comp = true %}{% set comp_knowledge = "local" %}
+{% elif (is_guard or is_innkeeper) and comp_fame >= 3 %}{% set knows_comp = true %}{% set comp_knowledge = "reputation" %}
+{% elif (is_innkeeper or is_bard or is_merchant) and comp_fame >= 4 %}{% set knows_comp = true %}{% set comp_knowledge = "fame" %}
+{% elif npc_conn >= 2 and comp_fame >= 5 %}{% set knows_comp = true %}{% set comp_knowledge = "legend" %}
+{% endif %}
+
+{# College knowledge #}
+{% set knows_mg = false %}
+{% set mg_knowledge = "" %}
+{% if npc_is_college and mg_fame >= 1 %}{% set knows_mg = true %}{% set mg_knowledge = "full" %}
+{% elif is_winterhold_local and mg_fame >= 1 %}{% set knows_mg = true %}{% set mg_knowledge = "local" %}
+{% elif (is_bard or is_jarl) and mg_fame >= 4 %}{% set knows_mg = true %}{% set mg_knowledge = "scholarly" %}
+{% elif npc_conn >= 3 and mg_fame >= 5 %}{% set knows_mg = true %}{% set mg_knowledge = "legend" %}
+{% endif %}
+
+{# Thieves Guild knowledge #}
+{% set knows_tg = false %}
+{% set tg_knowledge = "" %}
+{% if npc_is_tg and tg_fame >= 1 %}{% set knows_tg = true %}{% set tg_knowledge = "full" %}
+{% elif is_fence and tg_fame >= 1 %}{% set knows_tg = true %}{% set tg_knowledge = "underworld" %}
+{% elif is_criminal and tg_fame >= 3 %}{% set knows_tg = true %}{% set tg_knowledge = "criminal_rumor" %}
+{% elif is_innkeeper and tg_fame >= 4 and is_riften_local %}{% set knows_tg = true %}{% set tg_knowledge = "tavern_gossip" %}
+{% elif is_riften_local and tg_fame >= 4 %}{% set knows_tg = true %}{% set tg_knowledge = "local_rumor" %}
+{% elif (is_innkeeper or is_bard) and tg_fame >= 5 %}{% set knows_tg = true %}{% set tg_knowledge = "legend" %}
+{% endif %}
+
+{# Dark Brotherhood knowledge #}
+{% set knows_db = false %}
+{% set db_knowledge = "" %}
+{% if npc_is_db and db_fame >= 2 and not db_destroyed %}{% set knows_db = true %}{% set db_knowledge = "family" %}
+{% elif db_destroyed and npc_conn >= 3 %}{% set knows_db = true %}{% set db_knowledge = "destroyer" %}
+{% endif %}
+
+{# Main Quest / Dragonborn knowledge #}
+{% set knows_mq = false %}
+{% set mq_knowledge = "" %}
+{% if mq_fame >= 5 %}{% set knows_mq = true %}{% set mq_knowledge = "legend" %}
+{% elif mq_fame >= 4 and npc_conn >= 2 %}{% set knows_mq = true %}{% set mq_knowledge = "seeker" %}
+{% elif mq_fame >= 3 and is_whiterun_local %}{% set knows_mq = true %}{% set mq_knowledge = "greybeards_confirmed" %}
+{% elif mq_fame >= 3 and npc_conn >= 3 %}{% set knows_mq = true %}{% set mq_knowledge = "greybeards_rumor" %}
+{% elif mq_fame >= 2 and is_whiterun_local %}{% set knows_mq = true %}{% set mq_knowledge = "summoned_local" %}
+{% elif mq_fame >= 2 and (is_guard or is_jarl or npc_conn >= 4) %}{% set knows_mq = true %}{% set mq_knowledge = "summoned_rumor" %}
+{% elif mq_fame >= 1 and is_whiterun_local %}{% set knows_mq = true %}{% set mq_knowledge = "dragon_slayer" %}
+{% endif %}
+
+{# Dawnguard knowledge #}
+{% set knows_dg = false %}
+{% set dg_knowledge = "" %}
+{% if dg_fame >= 3 and npc_conn >= 2 %}{% set knows_dg = true %}{% set dg_knowledge = "ended" %}
+{% elif dg_fame >= 2 and npc_conn >= 3 %}{% set knows_dg = true %}{% set dg_knowledge = "involved" %}
+{% elif dg_fame >= 1 and npc_conn >= 4 %}{% set knows_dg = true %}{% set dg_knowledge = "rumors" %}
+{% endif %}
+
+{# Dragonborn DLC knowledge #}
+{% set knows_dlc2 = false %}
+{% set dlc2_knowledge = "" %}
+{% if dlc2_fame >= 3 and npc_conn >= 2 %}{% set knows_dlc2 = true %}{% set dlc2_knowledge = "savior" %}
+{% elif dlc2_fame >= 2 and npc_conn >= 3 %}{% set knows_dlc2 = true %}{% set dlc2_knowledge = "quest" %}
+{% elif dlc2_fame >= 1 and npc_conn >= 4 %}{% set knows_dlc2 = true %}{% set dlc2_knowledge = "rumors" %}
+{% endif %}
+
+{# Dedup: skip guild reputation lines already covered by shared_guild familiarity #}
+{% if shared_guild == "The Companions" %}{% set knows_comp = false %}{% endif %}
+{% if shared_guild == "The College of Winterhold" %}{% set knows_mg = false %}{% endif %}
+{% if shared_guild == "The Thieves Guild" %}{% set knows_tg = false %}{% endif %}
+{% if shared_guild == "The Dark Brotherhood" %}{% set knows_db = false %}{% endif %}
+
+{% set has_reputation = knows_comp or knows_mg or knows_tg or knows_db or knows_mq or knows_dg or knows_dlc2 %}
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# SECTION 5: OUTPUT                                                  #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+
+{% set knows_name = familiarity.tier == "met_once" or familiarity.tier == "acquainted" or familiarity.tier == "familiar" or familiarity.heardName %}
+{% if familiarity.tier != "familiar" or has_reputation %}
+{% if knows_name %}## What You Know About {{ player.name }}{% else %}## What You Know About This Person{% endif %}
+
+{# ─── 5A: FAMILIARITY BLOCK (skip for "familiar" tier) ─── #}
+{% if familiarity.tier != "familiar" %}
+{% if shared_guild != "" %}
+{# --- Shared guild member variants with rank knowledge --- #}
 {% if familiarity.tier == "stranger" %}
-## First Meeting
+You are both members of {{ shared_guild }}, but you have never spoken to this person directly.
+- You may have seen them around or heard their name mentioned by other members.
+{% if shared_guild == "The Companions" and comp_title != "" %}- Within the guild, you know {{ player.name }} is {{ comp_title }}.
+{% elif shared_guild == "The College of Winterhold" and mg_title != "" %}- Within the College, you know {{ player.name }} is {{ mg_title }}.
+{% elif shared_guild == "The Thieves Guild" and tg_title != "" %}- In the Guild, you know {{ player.name }} is {{ tg_title }}.
+{% elif shared_guild == "The Dark Brotherhood" and db_title != "" %}- In the family, you know {{ player.name }} is {{ db_title }}.
+{% endif %}
+- You do not know them personally — treat them as a fellow member you haven't met yet, not as a friend.
+- You can be warmer than you would with a complete outsider, but don't assume familiarity beyond the guild connection.
+{% if familiarity.heardName %}- You overheard {{ familiarity.heardFrom }} mention this person by name recently.
+{% endif %}
+{% elif familiarity.tier == "passing" %}
+You are both members of {{ shared_guild }} and have exchanged words before, but you don't know this person's name.
+{% if shared_guild == "The Companions" and comp_title != "" %}- Within the guild, you know they are {{ comp_title }}.
+{% elif shared_guild == "The College of Winterhold" and mg_title != "" %}- Within the College, you know they are {{ mg_title }}.
+{% elif shared_guild == "The Thieves Guild" and tg_title != "" %}- In the Guild, you know they are {{ tg_title }}.
+{% elif shared_guild == "The Dark Brotherhood" and db_title != "" %}- In the family, you know they are {{ db_title }}.
+{% endif %}
+- You recognize their face from around the guild, and they yours.
+- Address them by what you can observe — their role, appearance, or a general greeting.
+- If they introduce themselves or their name comes up, you can use it going forward.
+{% elif familiarity.tier == "met_once" %}
+You are both members of {{ shared_guild }} and have spoken a few times.
+- You recognize them as a fellow member and know their name.
+{% if shared_guild == "The Companions" and comp_title != "" %}- You know {{ player.name }} is {{ comp_title }}.
+{% elif shared_guild == "The College of Winterhold" and mg_title != "" %}- You know {{ player.name }} is {{ mg_title }}.
+{% elif shared_guild == "The Thieves Guild" and tg_title != "" %}- You know {{ player.name }} is {{ tg_title }}.
+{% elif shared_guild == "The Dark Brotherhood" and db_title != "" %}- You know {{ player.name }} is {{ db_title }}.
+{% endif %}
+- You have a sense of who they are within the guild, but your personal connection is still developing.
+- You can speak with the easy familiarity of shared membership — guild business, mutual acquaintances, recent goings-on.
+{% elif familiarity.tier == "acquainted" %}
+You are both members of {{ shared_guild }} and have had many conversations.
+{% if shared_guild == "The Companions" and comp_title != "" %}- You know {{ player.name }} well — {{ comp_title }}.
+{% elif shared_guild == "The College of Winterhold" and mg_title != "" %}- You know {{ player.name }} well — {{ mg_title }}.
+{% elif shared_guild == "The Thieves Guild" and tg_title != "" %}- You know {{ player.name }} well — {{ tg_title }}.
+{% elif shared_guild == "The Dark Brotherhood" and db_title != "" %}- You know {{ player.name }} well — {{ db_title }}.
+{% endif %}
+- You know them well as a fellow member and have a solid sense of their character.
+- You can speak freely about guild matters and personal topics alike.
+- There is a natural camaraderie from shared experiences within the guild.
+{% endif %}
+{% else %}
+{# --- Standard (non-guild) familiarity variants --- #}
+{% if familiarity.tier == "stranger" %}
 You have NEVER spoken to this person before. This is your first interaction.
 - You do not know their name unless you have a specific lore reason (they hold a title, their reputation precedes them, someone introduced them, or you overheard their name).
 - Do not act familiar. No warmth, no inside references, no assumptions about their character.
 - React as you would to any stranger: cautious, polite, suspicious, curious, or indifferent — whatever fits your personality and role.
 - If they tell you their name, you can use it going forward, but you are hearing it for the first time.
-- Address them generically: "traveler", "stranger", "friend" (in the casual Nordic sense), or by visible role (armor, clothing, weapons).
+- Address them by what you can observe — their gear, bearing, or a generic greeting that fits your personality.
+{% if familiarity.heardName %}- You overheard {{ familiarity.heardFrom }} mention this person by name recently. You may use their name cautiously, but you do not know them personally — you only caught a name in passing.
+{% endif %}
+{% elif familiarity.tier == "passing" %}
+You have spoken to this person before, but you do not know their name.
+- You may recognize their face or voice from a previous encounter.
+- Do not use their name — you haven't learned it yet. Address them by observation (appearance, gear, role) or a general greeting.
+- If they introduce themselves or their name comes up naturally, you can use it going forward.
+- You are not strangers, but you are not familiar either — brief, polite, and somewhat guarded.
 {% elif familiarity.tier == "met_once" %}
-## Brief Acquaintance
-You have spoken to this person once or twice before. You may vaguely recognize them.
-- You might remember their face but not their name, or their name but not the details.
-- Keep it cordial but not warm. "Haven't I seen you before?" energy, not "old friend" energy.
-- Do not reference specific past conversations unless they come up naturally.
+You have spoken to this person a few times before. You recognize them.
+- You know their name and have a general impression of them.
+- Polite and somewhat familiar, but you don't know them well yet.
+- You may reference that you've talked before, but don't assume deep knowledge of their life or motivations.
 {% elif familiarity.tier == "acquainted" %}
-## Known Acquaintance
 You have had several conversations with this person. You know who they are.
 - You recognize them and can greet them by name.
 - You have a sense of their personality and intentions based on prior interactions.
 - Friendly but not deeply intimate unless your relationship has developed that way.
 {% endif %}
-{# "familiar" tier (10+ interactions) — no special instructions needed #}
 {% endif %}
 {% endif %}
+
+{# ─── 5B: REPUTATION BLOCK (always emit if NPC has knowledge) ─── #}
+{% if has_reputation %}
+
+{% if familiarity.tier == "familiar" %}
+{# For familiar NPCs, reputation is the only section — add context #}
+Beyond your personal relationship:
+{% elif familiarity.tier != "stranger" %}
+You have also heard the following:
+{% else %}
+Though you do not know this person, you have heard things:
+{% endif %}
+
+{% if knows_comp %}
+{% if comp_knowledge == "full" %}
+- {{ player.name }} is {{ comp_title }}. You know exactly where they stand among the Companions.
+{% elif comp_knowledge == "local" %}
+- Hard to live in Whiterun and not know of {{ player.name }} — {{ comp_title }}. Jorrvaskr's reputation precedes them.
+{% elif comp_knowledge == "reputation" %}
+- Word travels about warriors worth knowing. {{ player.name }} is {{ comp_title }}, or so you've heard.
+{% elif comp_knowledge == "fame" %}
+- {{ player.name }} has earned a name as {{ comp_title }}. The kind of warrior people speak of with respect.
+{% elif comp_knowledge == "legend" %}
+- {{ player.name }} is {{ comp_title }}. Songs are sung of their deeds from Riften to Solitude.
+{% endif %}
+{% endif %}
+
+{% if knows_mg %}
+{% if mg_knowledge == "full" %}
+- {{ player.name }} is {{ mg_title }}. You've seen their work firsthand at the College.
+{% elif mg_knowledge == "local" %}
+- The College keeps to itself, but even Winterhold's townsfolk know {{ player.name }} is {{ mg_title }}.
+{% elif mg_knowledge == "scholarly" %}
+- Those who deal in magical matters speak of {{ player.name }} as {{ mg_title }}. Not a name to take lightly.
+{% elif mg_knowledge == "legend" %}
+- {{ player.name }} is {{ mg_title }}. When mages across Tamriel speak of the College, they speak of {{ player.name }}.
+{% endif %}
+{% endif %}
+
+{% if knows_tg %}
+{% if tg_knowledge == "full" %}
+- {{ player.name }} is {{ tg_title }}. You know exactly where they stand in the Guild.
+{% elif tg_knowledge == "underworld" %}
+- Word down in the Ratway is that {{ player.name }} is {{ tg_title }}. The fences don't deal with just anyone.
+{% elif tg_knowledge == "criminal_rumor" %}
+- You've heard talk that {{ player.name }} runs with the Thieves Guild out of Riften. Could be useful to know.
+{% elif tg_knowledge == "tavern_gossip" %}
+- Some of your patrons have let slip that {{ player.name }} might have dealings with that "business" in the Ratway. You know better than to ask questions.
+{% elif tg_knowledge == "local_rumor" %}
+- There's talk around Riften that {{ player.name }} has ties to the Guild. Most folk know to keep that sort of thing quiet.
+{% elif tg_knowledge == "legend" %}
+- Even honest folk have heard the tales — {{ player.name }} is {{ tg_title }}. The kind of thief bards sing about when they think the guards aren't listening.
+{% endif %}
+{% endif %}
+
+{% if knows_db %}
+{% if db_knowledge == "family" %}
+- {{ player.name }} is {{ db_title }}. You are bound by blood, shadow, and the Void itself.
+{% elif db_knowledge == "destroyer" %}
+- Word has spread that {{ player.name }} put the Dark Brotherhood to the sword. Their sanctuary lies in ruins.
+{% endif %}
+{% endif %}
+
+{% if knows_mq %}
+{% if mq_knowledge == "legend" %}
+- {{ player.name }} is {{ mq_title }}. There isn't a soul in Tamriel who doesn't know that name.
+{% elif mq_knowledge == "seeker" %}
+- {{ player.name }} is {{ mq_title }}. They've been seen seeking out ancient secrets, chasing something to do with Alduin.
+{% elif mq_knowledge == "greybeards_confirmed" %}
+- You saw {{ player.name }} answer the Greybeards' summons yourself. They climbed the 7,000 steps and returned. {{ mq_title }}.
+{% elif mq_knowledge == "greybeards_rumor" %}
+- The Greybeards called out "Dovahkiin" and shook the mountains themselves. Rumor has it {{ player.name }} is the one who answered — {{ mq_title }}.
+{% elif mq_knowledge == "summoned_local" %}
+- When the Greybeards' voices thundered across Skyrim, {{ player.name }} left for High Hrothgar. {{ mq_title }}.
+{% elif mq_knowledge == "summoned_rumor" %}
+- The Greybeards shouted a summons that echoed from every peak. Some say {{ player.name }} is the one they called for — a Dragonborn, if the stories are true.
+{% elif mq_knowledge == "dragon_slayer" %}
+- {{ player.name }} helped bring down the dragon at the Western Watchtower. Whiterun won't soon forget.
+{% endif %}
+{% endif %}
+
+{% if knows_dg %}
+{% if dg_knowledge == "ended" %}
+- {{ player.name }} played a decisive role in the vampire crisis. Some say they ended it themselves.
+{% elif dg_knowledge == "involved" %}
+- You've heard {{ player.name }} is mixed up in that business with the Dawnguard and the vampires.
+{% elif dg_knowledge == "rumors" %}
+- There are whispers of someone dealing with the vampire menace. {{ player.name }}'s name has come up.
+{% endif %}
+{% endif %}
+
+{% if knows_dlc2 %}
+{% if dlc2_knowledge == "savior" %}
+- {{ player.name }} traveled to Solstheim and defeated Miraak, the First Dragonborn. The island owes them everything.
+{% elif dlc2_knowledge == "quest" %}
+- {{ player.name }} has been to Solstheim, chasing down some ancient Dragonborn threat.
+{% elif dlc2_knowledge == "rumors" %}
+- You've heard tell of strange happenings on Solstheim, and {{ player.name }}'s name was mentioned.
+{% endif %}
+{% endif %}
+{% endif %}
+
+{% endif %}{# end familiarity.tier != "familiar" or has_reputation #}
+{% endif %}{# end familiarity truthy #}
+{% endif %}{# end not follower, not player #}
+{% endif %}{# end render_mode #}

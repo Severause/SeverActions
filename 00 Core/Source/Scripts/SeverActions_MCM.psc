@@ -61,7 +61,7 @@ float Property NearestNPCRadius = 500.0 Auto Hidden
 int Property WheelMenuKey = -1 Auto Hidden
 
 ; Config Menu Key (opens PrismaUI config — stored here, applied to HotkeyScript)
-int Property ConfigMenuKey = 9 Auto Hidden
+int Property ConfigMenuKey = -1 Auto Hidden
 bool Property ConfigMenuRequireShift = true Auto Hidden
 
 ; =============================================================================

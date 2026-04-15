@@ -51,8 +51,8 @@ int Property CompanionWaitKey = -1 Auto Hidden
 int Property AssignHomeKey = -1 Auto Hidden
 {Key code for assigning NPC's home to current location. -1 = unset/disabled}
 
-int Property ConfigMenuKey = -1 Auto Hidden
-{Key code for opening the PrismaUI config menu. Set by MCM on init. -1 = disabled}
+int Property ConfigMenuKey = 9 Auto Hidden
+{Key code for opening the PrismaUI config menu. Default: 9 (the 8 key). -1 = disabled}
 
 bool Property ConfigMenuRequireShift = true Auto Hidden
 {If true, Shift must be held when pressing ConfigMenuKey to open PrismaUI. Default: true (Shift+8)}

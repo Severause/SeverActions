@@ -5,7 +5,7 @@
 {% if actor and actor.UUID %}
 {% set show_ctx = get_script_property("SeverActions", "SeverActions_FollowerManager", "ShowFollowerContext") %}
 {% if show_ctx == true or show_ctx == "True" or show_ctx == 1 %}
-{% set is_fol = is_follower(actorUUID) or is_sever_follower(actorUUID) %}
+{% set is_fol = is_sever_follower(actorUUID) == "true" %}
 {% set rapport = papyrus_util("GetFloatValue", actor.UUID, "SeverFollower_Rapport", 0) %}
 {% set trust = papyrus_util("GetFloatValue", actor.UUID, "SeverFollower_Trust", 25) %}
 {% set loyalty = papyrus_util("GetFloatValue", actor.UUID, "SeverFollower_Loyalty", 50) %}
