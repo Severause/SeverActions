@@ -246,6 +246,12 @@ Function RecoverExistingTravelers()
                         npc.EvaluatePackage()
                         DebugMsg("Re-applied travel package for slot " + i + " (speed=" + speed + ")")
                     EndIf
+                    ; Re-register with native OrphanCleanup. m_trackedTravelers is
+                    ; cleared on every kPostLoadGame (plugin.cpp), so without this
+                    ; the orphan scanner flags mid-travel NPCs as orphans ~5s after
+                    ; load and OnOrphanCleanup clears the TravelTargetKeyword
+                    ; LinkedRef — breaking in-progress travel every reload.
+                    SeverActionsNative.OrphanCleanup_RegisterTraveler(npc)
                     DebugMsg("Recovered traveling NPC in slot " + i + ": " + npc.GetDisplayName())
                 ElseIf npcState == "waiting"
                     SlotStates[i] = 2
@@ -392,26 +398,31 @@ Bool Function TravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0
     ReferenceAlias theAlias = GetAliasForSlot(slot)
     If theAlias == None
         DebugMsg("ERROR: Could not get alias for slot " + slot)
+        ClearAbandonedTravelState(akNPC)  ; undo state writes above (stale otherwise)
         Return false
     EndIf
 
     theAlias.ForceRefTo(akNPC)
     DebugMsg("Forced alias slot " + slot + " to " + akNPC.GetDisplayName())
 
-    ; Set up linked ref for travel package AFTER alias is assigned
-    ; Points to interior marker (if resolved) or exterior ref — NPC AI pathfinds through doors
+    ; Resolve travel package BEFORE writing LinkedRef — otherwise a failed lookup
+    ; leaves an orphan LinkedRef on the actor with no package using it (the orphan
+    ; scanner cleans these up, but we should not rely on GC for predictable flows).
+    Package travelPkg = GetTravelPackageForSpeed(speed)
+    If travelPkg == None
+        DebugMsg("ERROR: Could not get travel package for speed " + speed)
+        theAlias.Clear()  ; release the alias slot we just filled
+        ClearAbandonedTravelState(akNPC)
+        Return false
+    EndIf
+
+    ; Set up linked ref for travel package AFTER alias is assigned and package resolved.
+    ; Points to interior marker (if resolved) or exterior ref — NPC AI pathfinds through doors.
     If TravelTargetKeyword
         SeverActionsNative.LinkedRef_Set(akNPC, finalDest, TravelTargetKeyword)
         DebugMsg("Set linked ref to destination")
     Else
         DebugMsg("WARNING: TravelTargetKeyword not set!")
-    EndIf
-
-    ; Apply travel package based on speed
-    Package travelPkg = GetTravelPackageForSpeed(speed)
-    If travelPkg == None
-        DebugMsg("ERROR: Could not get travel package for speed " + speed)
-        Return false
     EndIf
 
     DebugMsg("Applying travel package with priority " + TravelPackagePriority)
@@ -565,6 +576,7 @@ Bool Function TravelToReference(Actor akNPC, ObjectReference akDestination, Floa
     theAlias = GetAliasForSlot(slot)
     If theAlias == None
         DebugMsg("ERROR: Could not get alias for slot " + slot)
+        ClearAbandonedTravelState(akNPC)  ; undo state writes above (stale otherwise)
         Return false
     EndIf
 
@@ -588,19 +600,22 @@ Bool Function TravelToReference(Actor akNPC, ObjectReference akDestination, Floa
         EndIf
     EndIf
 
+    ; Resolve travel package BEFORE writing LinkedRef — prevents orphan LinkedRef
+    ; if the package lookup fails.
+    travelPkg = GetTravelPackageForSpeed(speed)
+    If travelPkg == None
+        DebugMsg("ERROR: Could not get travel package for speed " + speed)
+        theAlias.Clear()  ; release the alias slot we just filled (mirrors TravelToPlace fix)
+        ClearAbandonedTravelState(akNPC)
+        Return false
+    EndIf
+
     ; Set up linked ref — NPC AI pathfinds through doors to reach interior markers
     If TravelTargetKeyword
         SeverActionsNative.LinkedRef_Set(akNPC, finalDest, TravelTargetKeyword)
         DebugMsg("TravelToReference: Set linked ref to destination")
     Else
         DebugMsg("WARNING: TravelTargetKeyword not set!")
-    EndIf
-
-    ; Apply travel package based on speed
-    travelPkg = GetTravelPackageForSpeed(speed)
-    If travelPkg == None
-        DebugMsg("ERROR: Could not get travel package for speed " + speed)
-        Return false
     EndIf
 
     DebugMsg("TravelToReference: Applying travel package with priority " + TravelPackagePriority)
@@ -1134,6 +1149,24 @@ Int Function FindSlotByActor(Actor akNPC)
     EndWhile
     
     Return -1
+EndFunction
+
+Function ClearAbandonedTravelState(Actor akNPC)
+    {Undo the StorageUtil + native travel-state writes that TravelToPlace and
+     TravelToReference perform up-front, used on early-return paths (alias
+     acquisition failed or package resolution failed) so RecoverExistingTravelers
+     on next load doesn't try to resume a travel the caller abandoned.
+     Lightweight counterpart to ClearSlot — no alias/package/LinkedRef work since
+     those either weren't set yet or are handled at the call site.}
+    If !akNPC
+        Return
+    EndIf
+    StorageUtil.UnsetStringValue(akNPC, "SeverTravel_State")
+    StorageUtil.UnsetStringValue(akNPC, "SeverTravel_Destination")
+    SeverActionsNative.Native_SetTravelState(akNPC, "", "")
+    StorageUtil.UnsetFloatValue(akNPC, "SeverTravel_WaitUntil")
+    StorageUtil.UnsetIntValue(akNPC, "SeverTravel_Slot")
+    StorageUtil.UnsetIntValue(akNPC, "SeverTravel_Speed")
 EndFunction
 
 Function ClearSlot(Int slot, Bool restoreFollower = false)

@@ -1,0 +1,42 @@
+{# SeverActions override of SkyrimNet's system_head/0010_instructions.prompt.   #}
+{# Purpose: unify the listener-framing gates across render modes and add a      #}
+{# directional verb ("speaking directly to") so the LLM treats the listener as  #}
+{# an addressee, not just contextual info. Covers transform mode too (was       #}
+{# missing listener framing in the original, which could bleed into dialogue    #}
+{# output during speech-style rewrites).                                        #}
+## Task
+{% if render_mode == "transform" %}
+{% if length(promptForDialogue) > 0 %}
+Rewrite this line in your own voice: "{{ promptForDialogue }}"
+Express the same meaning using your character's vocabulary, mannerisms, and emotional state.
+{% else %}
+Speak naturally as {{ decnpc(npc.UUID).name }} in this moment. React to what's happening around you.
+{% endif %}
+{% if responseTarget and responseTarget.UUID != 0 %}
+{% set targetName = "" %}
+{% if responseTarget.type == "player" %}{% set targetName = player.name %}
+{% else if responseTarget.type == "npc" %}{% set targetName = decnpc(responseTarget.UUID).name %}
+{% endif %}
+{% if targetName != "" %}
+You are speaking directly to {{ targetName }}. Address them in your output — do not describe them.
+{% endif %}
+{% endif %}
+{% elif render_mode == "thoughts" %}
+Think internally as {{ decnpc(npc.UUID).name }}. React to what just happened and what it means to you.
+{% elif render_mode == "book" %}
+Reflect on what you just read. Summarize key points and consider what they mean for you personally.
+{% else %}
+{% if responseTarget and responseTarget.UUID != 0 %}
+{% set targetName = "" %}
+{% if responseTarget.type == "player" %}{% set targetName = player.name %}
+{% else if responseTarget.type == "npc" %}{% set targetName = decnpc(responseTarget.UUID).name %}
+{% endif %}
+{% if targetName != "" %}
+Respond as {{ decnpc(npc.UUID).name }}, speaking directly to {{ targetName }}. Your output is addressed to {{ targetName }} and heard by them. Speak TO them; do not describe them.
+{% else %}
+Respond as {{ decnpc(npc.UUID).name }} in conversation.
+{% endif %}
+{% else %}
+Respond as {{ decnpc(npc.UUID).name }} in conversation.
+{% endif %}
+{% endif %}

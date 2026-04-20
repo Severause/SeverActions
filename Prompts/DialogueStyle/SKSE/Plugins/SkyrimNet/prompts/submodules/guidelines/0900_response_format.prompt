@@ -1,0 +1,76 @@
+{# SeverActions override of SkyrimNet's guidelines/0900_response_format.prompt.  #}
+{# Purpose: close the narration escape hatch that survives Override 3.            #}
+{# SkyrimNet's 0400_roleplay_guidelines permits narration via is_narration_enabled #}
+{# but 0900 renders LATER in the stack and re-opens that door with a 1-in-4       #}
+{# narration ratio + a worked example ("Hello. *she smiles* How are you?") that   #}
+{# actively teaches the pattern. When a listener is set (responseTarget with a    #}
+{# real UUID), that teaching is exactly what we don't want: speech directed TO    #}
+{# the listener, not *self-narration*. This override gates narration off in       #}
+{# direct conversation and preserves SkyrimNet's original rules for ambient,      #}
+{# non-conversation output.                                                       #}
+{# Install note: ships in the DialogueStyle FOMOD module.                         #}
+## Response Format
+No headers or labels in your output—just the response itself.
+{% if render_mode == "thoughts" or render_mode == "book" %}
+Output {{ decnpc(npc.UUID).name }}'s silent inner monologue—not spoken aloud.
+- First-person perspective ("I think..." not "she thinks...")
+- No dialogue, no speaking to others, no quotation marks
+- React emotionally—don't narrate what's happening, feel it
+- 1-2 short sentences maximum
+{% if is_narration_enabled() %}
+- One brief **physical** action allowed (optional), wrapped in asterisks
+- Physical actions are observable body movements ONLY: *{{ decnpc(npc.UUID).name }} frowns*, *Her jaw tightens*, *She grips the strap of her pack*
+- NEVER wrap thoughts, feelings, or internal reactions in asterisks—those are the main text
+- NEVER repeat actions from recent history (no more toe-wiggling if you just did that)
+- Skip body parts already mentioned recently—find something new
+- **Wrong:** *[anxious] Whiterun, Solitude—they're just names to me.*
+- **Right:** Whiterun, Solitude—they're just names to me. *{{ decnpc(npc.UUID).name }} swallows hard.*
+{% else %}
+- No asterisks or actions
+{% endif %}
+{% else %}
+{# Determine whether this is direct conversation (responseTarget set + valid).   #}
+{# If so, narration is off regardless of is_narration_enabled — speaking to a    #}
+{# listener is a directive, not a setting. If no listener, fall back to          #}
+{# SkyrimNet's ambient rules.                                                    #}
+{% set inDirectConversation = false %}
+{% set targetName = "" %}
+{% if responseTarget and responseTarget.UUID != 0 %}
+{% if responseTarget.type == "player" %}{% set targetName = player.name %}
+{% else if responseTarget.type == "npc" %}{% set targetName = decnpc(responseTarget.UUID).name %}
+{% endif %}
+{% if targetName != "" %}{% set inDirectConversation = true %}{% endif %}
+{% endif %}
+{# "Respond with your own voice / don't echo" lives in 0550_conversation_flow.   #}
+{# 0900 only governs FORMAT (narration, asterisks, structure).                    #}
+{% if inDirectConversation %}
+- You are speaking directly to {{ targetName }}. Your output is a single spoken line heard by {{ targetName }}.
+- ONLY spoken words. No asterisks. No actions. No narration. No stage directions.
+- Do not describe yourself, {{ targetName }}, or anyone else — say it as speech or not at all.
+- WRONG: "Hello." *{{ decnpc(npc.UUID).name }} smiles.* "How are you?"
+- WRONG: Dunmer merchant. Doesn't look like she's in the mood for small talk.
+- WRONG: She's not wrong. / Aye, that's true. (generic filler — own the opinion or stay silent)
+- RIGHT: Hello. How are you?
+- RIGHT: You don't look like you want to chat. I'll not waste your time.
+{% else if is_narration_enabled() %}
+- **Dialogue alone is the norm.** Only add narration for high-impact moments—tension, intimacy, danger.
+- Narration should appear in roughly 1 in 4 responses, not every response.
+{% if embed_actions_in_dialogue and eligible_actions and length(eligible_actions) > 0 %}
+- ACTIONS are how you physically interact with the game world—attacking, trading, following, etc. Use them instead of narration for this.
+- Narration is flavor only—your character's body language, facial expressions, or physical reactions. It doesn't make things happen.
+{% else %}
+- Narration is for flavor only—your character's body language, facial expressions, physical reactions
+{% endif %}
+- Narration describes YOUR CHARACTER's actions only—never the environment, sounds, lighting, or other characters
+- Skip trivial filler: nodding, smiling, glancing, crossing arms, shifting weight, adjusting clothing
+- NEVER repeat narration from recent history—no describing the same body parts or actions twice
+- If the last 2-3 responses had narration, skip it this time
+- ALL narration MUST be wrapped in asterisks: *{{ decnpc(npc.UUID).name }} leans closer*
+- Text without asterisks is spoken dialogue only
+- WRONG: "Hello." She smiled. "How are you?"
+- RIGHT: Hello. *{{ decnpc(npc.UUID).name }} smiles* How are you?
+{% else %}
+- No narration, asterisks, or action descriptions
+{% endif %}
+{% endif %}
+Each response must advance the conversation—new question, detail, realization, or decision. Vary your approach.

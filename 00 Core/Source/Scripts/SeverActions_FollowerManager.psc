@@ -170,6 +170,19 @@ FormList Property HomeMarkerList Auto
  Markers start disabled in SeverActions_HoldingCell. When a home is assigned,
  the marker is moved to the destination and enabled.}
 
+FormList Property TrueHomeAnchorList Auto
+{FormList of 40 TrueHomeAnchor XMarkers. Moved to player position on AssignHome.
+ Acts as the "return home" anchor during sleep/home hours. HomeMarker_NN moves
+ between this anchor and Work/PlayMarker_NN based on the current game hour.}
+
+FormList Property WorkMarkerList Auto
+{FormList of 40 WorkMarker XMarkers. Moved to player position via SetRoutineLocHere(actor, "work").
+ During work hours (8-17) HomeMarker_NN is moved to this position so the existing
+ HomeSandbox_NN package drives sandbox behavior at the work location.}
+
+FormList Property PlayMarkerList Auto
+{FormList of 40 PlayMarker XMarkers. Same pattern as WorkMarkerList for play hours (17-22).}
+
 ; Per-slot home sandbox packages — fill these in CK, one per HomeSlot alias
 Package Property HomeSandboxPackage_00 Auto
 Package Property HomeSandboxPackage_01 Auto
@@ -326,6 +339,27 @@ String Property KEY_OFFSCREEN_DEBT = "SeverFollower_OffScreenDebt" AutoReadOnly
 ; Global tracking key for all NPCs with custom home assignments (stored on None form)
 String Property KEY_HOMED_NPCS = "SeverActions_HomedNPCs" AutoReadOnly
 
+; Schedule system — tracks the last-applied schedule type per NPC so ProcessScheduleSwaps
+; only moves HomeMarker when the hour crosses a schedule boundary.
+; Values: 0=home, 1=work, 2=play, -99=never evaluated.
+String Property KEY_LAST_SCHEDULED_TYPE = "SeverFollower_LastScheduledType" AutoReadOnly
+
+; One-shot migration flag per NPC: ensures TrueHomeAnchor_NN is synced to HomeMarker_NN's
+; position before any schedule logic runs. Critical for existing saves where HomeMarker
+; was placed at the real home, but the new TrueHomeAnchor marker loaded at its default
+; position in aaaMarkers holding cell. Without migration, the first schedule tick would
+; teleport the follower to the holding cell. Set to 1 on AssignHome or first tick.
+String Property KEY_TRUEHOME_MIGRATED = "SeverFollower_TrueHomeMigrated" AutoReadOnly
+
+Int Property SCHEDULE_HOME = 0 AutoReadOnly
+Int Property SCHEDULE_WORK = 1 AutoReadOnly
+Int Property SCHEDULE_PLAY = 2 AutoReadOnly
+
+Float Property SCHEDULE_WORK_START = 8.0 Auto
+Float Property SCHEDULE_WORK_END = 17.0 Auto
+Float Property SCHEDULE_PLAY_START = 17.0 Auto
+Float Property SCHEDULE_PLAY_END = 22.0 Auto
+
 ; =============================================================================
 ; INTERNAL STATE
 ; =============================================================================
@@ -355,6 +389,11 @@ Bool OffScreenLifeInProgress = false
 ; Quest awareness tracking — queue-based LLM summary generation
 ; C++ stashes all metadata (actor, editorID, tier) — Papyrus only tracks in-flight state
 Bool QuestAwarenessInProgress = false
+
+; Reputation assessment tracking — fires on familiarity tier milestones for non-followers
+; C++ player_familiarity decorator detects tier changes and fires SeverActions_ReputationAssess
+Actor PendingReputationActor = None
+Bool ReputationAssessInProgress = false
 
 ; =============================================================================
 ; INITIALIZATION
@@ -392,6 +431,12 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_SetCombatStyle", "OnPrismaSetCombatStyle")
     RegisterForModEvent("SeverActions_SetEssential", "OnPrismaSetEssential")
 
+    ; Schedule system — PrismaUI work/play location assignment
+    RegisterForModEvent("SeverActions_PrismaSetWorkLoc", "OnPrismaSetWorkLoc")
+    RegisterForModEvent("SeverActions_PrismaClearWorkLoc", "OnPrismaClearWorkLoc")
+    RegisterForModEvent("SeverActions_PrismaSetPlayLoc", "OnPrismaSetPlayLoc")
+    RegisterForModEvent("SeverActions_PrismaClearPlayLoc", "OnPrismaClearPlayLoc")
+
     ; Off-screen life exclusion toggles from PrismaUI
     RegisterForModEvent("SeverActions_OffScreenExclude", "OnOffScreenExclude")
     RegisterForModEvent("SeverActions_OffScreenInclude", "OnOffScreenInclude")
@@ -399,6 +444,11 @@ Function Maintenance()
     ; Quest awareness — C++ QuestAwarenessStore fires these when summary/completion queues have data
     RegisterForModEvent("SeverActions_QuestSummaryReady", "OnQuestSummaryReady")
     RegisterForModEvent("SeverActions_QuestCompleted", "OnQuestCompletedEvent")
+
+    ; Reputation assessment — C++ player_familiarity decorator fires on tier milestones or fame changes
+    RegisterForModEvent("SeverActions_ReputationAssess", "OnReputationAssessRequest")
+    ; Familiarity timestamp persistence — C++ fires when new dialogue detected for non-followers
+    RegisterForModEvent("SeverActions_FamiliarityTimestamp", "OnFamiliarityTimestamp")
 
 
     ; Initialize the native orphan scanner with our LinkedRef keywords
@@ -420,6 +470,7 @@ Function Maintenance()
     AssessmentInProgress = false
     InterFollowerAssessmentInProgress = false
     OffScreenLifeInProgress = false
+    ReputationAssessInProgress = false
 
     ; Auto-detect followers recruited outside our system (vanilla dialogue, NFF, other mods)
     DetectExistingFollowers()
@@ -473,8 +524,12 @@ Function Maintenance()
         EndIf
     EndIf
 
-    ; Re-apply home sandbox packages for dismissed NPCs with home markers
-    ; Package overrides don't persist across save/load, so reapply on every load
+    ; Re-apply home sandbox packages for dismissed NPCs with home markers.
+    ; PO3 AddPackageOverride DOES persist across save/load via PO3's own cosave —
+    ; the real loss mechanism is cell transition / actor 3D unload, where the engine
+    ; may drop the override from the actor's active stack even though PO3's record
+    ; survives. PO3 reapplies on cell attach but timing is not guaranteed, so we
+    ; defensively reapply on every load.
     ReapplyHomeSandboxing()
 
     ; Register for sleep events — clear sandbox packages when player sleeps
@@ -999,19 +1054,32 @@ Event OnCellLoadedReapplyHome(string eventName, string strArg, float numArg, For
     Int i = 0
     While i < homedNPCs.Length
         Actor akActor = homedNPCs[i]
-        If akActor && akActor.Is3DLoaded() && IsTrackOnlyFollower(akActor) \
-            && !IsRegisteredFollower(akActor)
-            ; Only re-apply for dismissed followers — active followers should keep following,
-            ; not get forced into home sandbox when entering their home cell
+        ; Only re-apply for dismissed followers — active followers should keep
+        ; following, not get forced into home sandbox when entering their home cell.
+        If akActor && akActor.Is3DLoaded() && !IsRegisteredFollower(akActor)
             Int slot = SeverActionsNative.Native_GetHomeMarkerSlot(akActor)
             If slot >= 0 && slot < HomeSlots.Length
-                Package homePkg = GetHomeSandboxPackage(slot)
-                If homePkg
-                    ActorUtil.AddPackageOverride(akActor, homePkg, 100, 1)
-                    akActor.SetAV("WaitingForPlayer", 2)
-                    akActor.EvaluatePackage()
-                    DebugMsg("CellLoad: Re-applied home sandbox override for " + akActor.GetDisplayName())
+                ; Phase 5 Fix B — previously only track-only followers (Inigo, Lucien)
+                ; got the cell-load EvaluatePackage kick. Regular dismissed followers
+                ; rely on the CK alias package alone, but Skyrim doesn't guarantee an
+                ; AI tick on 3D-load, so some stragglers stayed on a runtime FF package
+                ; until the next sleep/time-skip. Always kick the engine to re-evaluate,
+                ; regardless of whether we also need to (re)apply a PO3 override.
+                If IsTrackOnlyFollower(akActor)
+                    Package homePkg = GetHomeSandboxPackage(slot)
+                    If homePkg
+                        ActorUtil.AddPackageOverride(akActor, homePkg, 100, 1)
+                    EndIf
                 EndIf
+                akActor.SetAV("WaitingForPlayer", 2)
+
+                ; Phase 7 — escalating chain (immediate + 500ms + 1500ms resetAI).
+                ; Dismissed homed followers are not in combat, so resetAI's
+                ; state-clearing side effects are safe here. Longer resetAI
+                ; delay than safe-interior (1500 vs 1000) gives the AI scheduler
+                ; time to settle the actor's state after cell-load.
+                SeverActionsNative.EscalatedReEvaluate(akActor, 1500)
+                DebugMsg("CellLoad: Re-evaluated home sandbox for " + akActor.GetDisplayName())
             EndIf
         EndIf
         i += 1
@@ -1060,6 +1128,63 @@ Event OnPrismaClearHome(string eventName, string strArg, float numArg, Form send
 
     DebugMsg("PrismaUI ClearHome: " + akActor.GetDisplayName())
     ClearHome(akActor)
+EndEvent
+
+Event OnPrismaSetWorkLoc(string eventName, string strArg, float numArg, Form sender)
+    {Fired by PrismaUI when user clicks "Set Work Here". Moves the follower's
+     WorkMarker_NN to the player's current position so schedule ticks can route them there.}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    String actorName = StringUtil.Substring(strArg, 0, pipePos)
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    If !akActor
+        Debug.Trace("[SeverActions_FollowerManager] PrismaSetWorkLoc: could not resolve actor '" + actorName + "'")
+        Return
+    EndIf
+    SetRoutineLocHere(akActor, "work")
+EndEvent
+
+Event OnPrismaClearWorkLoc(string eventName, string strArg, float numArg, Form sender)
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    String actorName = StringUtil.Substring(strArg, 0, pipePos)
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    If !akActor
+        Return
+    EndIf
+    ClearRoutineLoc(akActor, "work")
+EndEvent
+
+Event OnPrismaSetPlayLoc(string eventName, string strArg, float numArg, Form sender)
+    {Fired by PrismaUI when user clicks "Set Play Here".}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    String actorName = StringUtil.Substring(strArg, 0, pipePos)
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    If !akActor
+        Debug.Trace("[SeverActions_FollowerManager] PrismaSetPlayLoc: could not resolve actor '" + actorName + "'")
+        Return
+    EndIf
+    SetRoutineLocHere(akActor, "play")
+EndEvent
+
+Event OnPrismaClearPlayLoc(string eventName, string strArg, float numArg, Form sender)
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    String actorName = StringUtil.Substring(strArg, 0, pipePos)
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    If !akActor
+        Return
+    EndIf
+    ClearRoutineLoc(akActor, "play")
 EndEvent
 
 Event OnPrismaSetCombatStyle(string eventName, string strArg, float numArg, Form sender)
@@ -1380,6 +1505,15 @@ Event OnUpdate()
     ; event was missed. Runs every 30s, lightweight — only checks loaded actors.
     CheckTrackOnlyFollowerStatus()
 
+    ; Schedule system — move HomeMarker to correct anchor (home/work/play) on hour transitions
+    ProcessScheduleSwaps()
+
+    ; Refresh IgnoreFriendlyHits on registered followers if the FF-prevention
+    ; toggle is on. The flag can get dropped by AI state transitions (sandbox
+    ; <-> combat <-> dismiss/recruit); re-stamping every 30s is cheap and
+    ; guarantees the protection holds even if something else resets it.
+    RefreshFriendlyFireFlags()
+
     ; Automatic relationship assessments — at most one type per tick to avoid LLM flooding
     If AutoRelAssessment && !InterFollowerAssessmentInProgress
         CheckRelationshipAssessments()
@@ -1403,6 +1537,29 @@ Event OnUpdate()
     IsUpdating = false
     RegisterForSingleUpdate(30.0)
 EndEvent
+
+Function RefreshFriendlyFireFlags()
+    {Re-stamp IgnoreFriendlyHits(true) on all registered followers if the
+     "Prevent Follower Friendly Fire" toggle is on. No-op if off. The flag
+     can drop silently during AI state transitions so we pay a few Actor
+     function calls every 30s to keep it anchored.}
+    Quest SeverActionsQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
+    If !SeverActionsQuest
+        Return
+    EndIf
+    If StorageUtil.GetIntValue(SeverActionsQuest, "SeverActions_PreventFollowerFF", 0) != 1
+        Return
+    EndIf
+    Actor[] followers = GetAllFollowers()
+    Int i = 0
+    While i < followers.Length
+        Actor f = followers[i]
+        If f && !f.IsDead()
+            f.IgnoreFriendlyHits(true)
+        EndIf
+        i += 1
+    EndWhile
+EndFunction
 
 Function TickRelationships(Float hoursPassed)
     {Update mood decay and rapport neglect for all followers}
@@ -2232,18 +2389,26 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true)
             StorageUtil.UnsetFormValue(akActor, "SeverFollower_OrigCombatStyleForm")
         EndIf
 
-        ; Stop our follow package and send home
+        ; Stop our follow package and send home.
+        ; Pass evaluateAfter=false to avoid a zero-package EvaluatePackage gap —
+        ; SendHome will apply the home sandbox and eval there.
         SeverActions_Follow followSys = GetFollowScript()
         If followSys
-            followSys.CompanionStopFollowing(akActor)
+            followSys.CompanionStopFollowing(akActor, false)
         EndIf
         If sendHome
             SendHome(akActor)
         EndIf
     EndIf
 
-    ; Clear waiting state if set
-    akActor.SetAV("WaitingForPlayer", 0)
+    ; Clear waiting state — BUT NOT if we just applied home sandbox.
+    ; ApplyHomeSandbox sets WaitingForPlayer=2 so the CK sandbox package stays active.
+    ; Clobbering it to 0 here was causing the engine to drop the sandbox on re-eval,
+    ; producing the FF-prefix fallback "stand in place" package.
+    Int homeSlot = SeverActionsNative.Native_GetHomeMarkerSlot(akActor)
+    If homeSlot < 0
+        akActor.SetAV("WaitingForPlayer", 0)
+    EndIf
 
     ; Restore the NPC's DefaultOutfit so they dress normally at home.
     ; The outfit lock DATA (presets, locked items) is preserved in the cosave
@@ -2659,7 +2824,10 @@ Function OnRelationshipAssessment(String response, Int success)
     ; Refresh the last interaction timestamp so neglect decay resets
     StorageUtil.SetFloatValue(akActor, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
 
-    ; Build summary for the event system
+    ; Build summary for debug log only — do NOT register as a SkyrimNet event.
+    ; Mechanics text (e.g. "rapport +3") leaks into get_recent_events and causes
+    ; the LLM to write gameplay-meta diary entries like "Feris's rapport went up."
+    ; The blurb at SeverFollower_PlayerBlurb is the narrative-facing output.
     String summary = akActor.GetDisplayName() + " relationship assessed:"
     If rapportChange != 0
         summary += " rapport " + rapportChange
@@ -2674,9 +2842,141 @@ Function OnRelationshipAssessment(String response, Int success)
         summary += " mood " + moodChange
     EndIf
 
-    SkyrimNetApi.RegisterEvent("relationship_assessed", summary, akActor, Game.GetPlayer())
     DebugMsg(summary)
 EndFunction
+
+; =============================================================================
+; NPC REPUTATION ASSESSMENT (LLM-based, milestone-triggered)
+; =============================================================================
+; Fires when a non-follower NPC's familiarity tier changes (C++ sends ModEvent).
+; Generates an in-character impression blurb via SendCustomPromptToLLM.
+; The blurb is stored per-NPC and read by the character_bio template.
+
+Event OnReputationAssessRequest(String eventName, String strArg, Float numArg, Form sender)
+    {C++ player_familiarity decorator fires this when tier changes or fame changes for an NPC.
+     Assessment queue is managed in C++ — Papyrus pops one at a time via callback chain.}
+    If ReputationAssessInProgress
+        Return  ; Current assessment will chain to next when done
+    EndIf
+    ProcessNextReputationAssessment()
+EndEvent
+
+Function ProcessNextReputationAssessment()
+    {Pop the next NPC from the C++ reputation assessment queue and fire LLM call.
+     Chains: OnReputationAssessResult calls this again after each completion.}
+    Int formId = SeverActionsNative.Native_PopReputationAssessRequest()
+    If formId == 0
+        Return  ; Queue empty
+    EndIf
+
+    Actor npcActor = Game.GetForm(formId) as Actor
+    If !npcActor || npcActor.IsDead()
+        Debug.Trace("[SeverActions] Reputation assessment: skipping dead/invalid FormID " + formId)
+        ProcessNextReputationAssessment()  ; Skip invalid, try next
+        Return
+    EndIf
+
+    ; Skip followers — they use the relationship assessment system instead
+    If IsRegisteredFollower(npcActor)
+        Debug.Trace("[SeverActions] Reputation assessment: skipping follower " + npcActor.GetDisplayName())
+        ProcessNextReputationAssessment()  ; Skip follower, try next
+        Return
+    EndIf
+
+    ReputationAssessInProgress = true
+    PendingReputationActor = npcActor
+
+    String contextJson = "{\"npcFormId\":" + formId + "}"
+
+    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_reputation_assess", "", contextJson, \
+        Self as Quest, "SeverActions_FollowerManager", "OnReputationAssessResult")
+
+    If result < 0
+        ReputationAssessInProgress = false
+        Debug.Trace("[SeverActions] Reputation assessment failed for " + npcActor.GetDisplayName() + ", code " + result)
+        ProcessNextReputationAssessment()  ; Try next in queue
+    Else
+        Debug.Trace("[SeverActions] Reputation assessment queued for " + npcActor.GetDisplayName())
+    EndIf
+EndFunction
+
+Function OnReputationAssessResult(String response, Int success)
+    {Callback from SendCustomPromptToLLM for reputation assessment.
+     Stores the LLM-generated impression blurb per NPC for character_bio injection.
+     Chains to ProcessNextReputationAssessment to drain the queue.}
+    ReputationAssessInProgress = false
+
+    If success != 1
+        Debug.Trace("[SeverActions] Reputation assessment LLM failed: " + response)
+        ProcessNextReputationAssessment()
+        Return
+    EndIf
+
+    Actor npcActor = PendingReputationActor
+    If !npcActor
+        Debug.Trace("[SeverActions] Reputation assessment: pending actor is None")
+        ProcessNextReputationAssessment()
+        Return
+    EndIf
+
+    ; Trim whitespace — LLM may add leading/trailing spaces or newlines
+    String blurb = StringUtil.Substring(response, 0)
+
+    ; Skip "NONE" responses (NPC has no reputation data to warrant an impression)
+    If blurb == "NONE" || blurb == "" || blurb == "none" || blurb == "None"
+        Debug.Trace("[SeverActions] Reputation assessment: no reputation data for " + npcActor.GetDisplayName())
+        ProcessNextReputationAssessment()
+        Return
+    EndIf
+
+    ; Store the blurb keyed to the NPC actor
+    ; The character_bio template reads this via papyrus_util("GetStringValue", actorUUID, "SeverFamiliarity_Blurb", "")
+    StorageUtil.SetStringValue(npcActor, "SeverFamiliarity_Blurb", blurb)
+    Debug.Trace("[SeverActions] Reputation blurb stored for " + npcActor.GetDisplayName())
+
+    ; Process next in queue (callback chain)
+    ProcessNextReputationAssessment()
+EndFunction
+
+Event OnFamiliarityTimestamp(String eventName, String strArg, Float numArg, Form sender)
+    {C++ fires this when new dialogue is detected for a non-follower NPC.
+     Two responsibilities:
+       1. Persist the last-seen timestamp (save/load survival).
+       2. Decide whether a blurb regen is due (first dialogue OR every 100 lines
+          since last blurb). If so, enqueue via Native_QueueReputationAssessment.
+     Moved from C++ to Papyrus in v2.5 so StorageUtil (authoritative for "has
+     this NPC ever had a blurb, and at what count") drives the decision.}
+    Int formId = numArg as Int
+    Actor npcActor = Game.GetForm(formId) as Actor
+    If !npcActor
+        Return
+    EndIf
+
+    StorageUtil.SetFloatValue(npcActor, "SeverFamiliarity_LastSeenGT", GetGameTimeInSeconds())
+
+    ; Skip followers — they use the relationship assessment system instead
+    If IsRegisteredFollower(npcActor)
+        Return
+    EndIf
+
+    ; Milestone check: first dialogue or every 100 lines since last blurb
+    Int currentCount = SeverActionsNative.Native_GetFamiliarityInteractions(npcActor)
+    If currentCount < 1
+        Return  ; No dialogue yet, nothing to do
+    EndIf
+
+    ; lastBlurbAtCount: -1 means no blurb ever generated for this NPC
+    Int lastBlurbAt = StorageUtil.GetIntValue(npcActor, "SeverFamiliarity_BlurbAtCount", -1)
+
+    Bool firstBlurbDue = (lastBlurbAt < 0 && currentCount >= 1)
+    Bool milestoneDue  = (lastBlurbAt >= 0 && currentCount >= lastBlurbAt + 100)
+
+    If firstBlurbDue || milestoneDue
+        SeverActionsNative.Native_QueueReputationAssessment(npcActor)
+        StorageUtil.SetIntValue(npcActor, "SeverFamiliarity_BlurbAtCount", currentCount)
+        DebugMsg("Familiarity blurb queued for " + npcActor.GetDisplayName() + " at count " + currentCount)
+    EndIf
+EndEvent
 
 Int Function ExtractJsonInt(String json, String jsonKey)
     {Extract an integer value from a flat JSON object.
@@ -2942,7 +3242,9 @@ Function OnInterFollowerAssessment(String response, Int success)
         ; Rebuild the pre-formatted opinions string for the bio prompt
         RebuildCompanionOpinionsString(akActor)
 
-        SkyrimNetApi.RegisterEvent("interfollower_assessed", summary, akActor, None)
+        ; No SkyrimNet event — mechanics text ("aff+2 res-1") would leak into
+        ; get_recent_events and pollute diary/memory generation with gameplay meta.
+        ; Blurbs are stored per-pair for narrative use; opinions string is bio-facing.
         DebugMsg(summary)
     Else
         DebugMsg(akActor.GetDisplayName() + " inter-follower assessment: no changes")
@@ -4189,6 +4491,182 @@ Function ProcessOffScreenItemAcquired(Actor akActor, String itemName, String cat
 EndFunction
 
 ; =============================================================================
+; SCHEDULE SYSTEM (home/work/play marker routing)
+; =============================================================================
+
+Float Function GetCurrentGameHour()
+    {Return the current in-game hour as a float 0.0-23.999.}
+    Float days = Utility.GetCurrentGameTime()
+    Int daysInt = days as Int
+    Return (days - daysInt) * 24.0
+EndFunction
+
+Int Function DetermineScheduleTypeForNow()
+    {Return which schedule type (home/work/play) applies to the current game hour.}
+    Float hour = GetCurrentGameHour()
+    If hour >= SCHEDULE_WORK_START && hour < SCHEDULE_WORK_END
+        Return SCHEDULE_WORK
+    ElseIf hour >= SCHEDULE_PLAY_START && hour < SCHEDULE_PLAY_END
+        Return SCHEDULE_PLAY
+    Else
+        Return SCHEDULE_HOME
+    EndIf
+EndFunction
+
+ObjectReference Function GetScheduleAnchorForNPC(Actor akActor, Int slot, Int scheduleType)
+    {Resolve the anchor marker that HomeMarker_NN should sit on right now.
+     Returns WorkMarker_NN if work hours + work is set, PlayMarker_NN if play + set,
+     else TrueHomeAnchor_NN (fallback for home hours or when work/play unset).}
+    If scheduleType == SCHEDULE_WORK
+        ObjectReference workMarker = SeverActionsNative.Native_GetWorkLoc(akActor)
+        If workMarker
+            Return workMarker
+        EndIf
+    ElseIf scheduleType == SCHEDULE_PLAY
+        ObjectReference playMarker = SeverActionsNative.Native_GetPlayLoc(akActor)
+        If playMarker
+            Return playMarker
+        EndIf
+    EndIf
+    ; Home fallback — use TrueHomeAnchor_NN
+    If TrueHomeAnchorList && slot >= 0 && slot < 40
+        Return TrueHomeAnchorList.GetAt(slot) as ObjectReference
+    EndIf
+    Return None
+EndFunction
+
+Function SetRoutineLocHere(Actor akActor, String kind)
+    {Move the follower's Work or Play marker to the player's current position.
+     kind = "work" or "play". Requires a home to have been assigned first (needs a slot).}
+    If !akActor
+        Return
+    EndIf
+    Int slot = SeverActionsNative.Native_GetHomeMarkerSlot(akActor)
+    If slot < 0
+        DebugMsg("SetRoutineLocHere: " + akActor.GetDisplayName() + " has no home slot — assign home first")
+        Return
+    EndIf
+
+    FormList markerList = None
+    If kind == "work"
+        markerList = WorkMarkerList
+    ElseIf kind == "play"
+        markerList = PlayMarkerList
+    EndIf
+    If !markerList
+        DebugMsg("SetRoutineLocHere: " + kind + "MarkerList not configured")
+        Return
+    EndIf
+
+    ObjectReference marker = markerList.GetAt(slot) as ObjectReference
+    If !marker
+        DebugMsg("SetRoutineLocHere: no " + kind + " marker at slot " + slot)
+        Return
+    EndIf
+
+    Actor PlayerRef = Game.GetPlayer()
+    marker.MoveTo(PlayerRef)
+    If kind == "work"
+        SeverActionsNative.Native_SetWorkLoc(akActor, marker)
+    Else
+        SeverActionsNative.Native_SetPlayLoc(akActor, marker)
+    EndIf
+
+    ; Force next tick to re-evaluate — if current hour matches this schedule type,
+    ; the follower should teleport to the new position within ~30s.
+    StorageUtil.SetIntValue(akActor, KEY_LAST_SCHEDULED_TYPE, -99)
+
+    DebugMsg("Set " + kind + " location for " + akActor.GetDisplayName() + " at slot " + slot)
+    If ShowNotifications
+        ; Display-only alias — internal `kind` stays "play" (matches native store keys,
+        ; action names, ESP record names). UI calls it "Relax" which is clearer to users.
+        String displayKind = kind
+        If kind == "play"
+            displayKind = "relax"
+        EndIf
+        Debug.Notification(akActor.GetDisplayName() + " will spend their " + displayKind + " hours here.")
+    EndIf
+EndFunction
+
+Function ClearRoutineLoc(Actor akActor, String kind)
+    {Clear the follower's Work or Play location.
+     The marker stays where it is (harmless — schedule will route to TrueHomeAnchor instead).
+     kind = "work" or "play".}
+    If !akActor
+        Return
+    EndIf
+    If kind == "work"
+        SeverActionsNative.Native_ClearWorkLoc(akActor)
+    ElseIf kind == "play"
+        SeverActionsNative.Native_ClearPlayLoc(akActor)
+    EndIf
+    StorageUtil.SetIntValue(akActor, KEY_LAST_SCHEDULED_TYPE, -99)
+    DebugMsg("Cleared " + kind + " location for " + akActor.GetDisplayName())
+EndFunction
+
+Function EnsureTrueHomeAnchorMigrated(Actor npc, Int slot)
+    {Sync TrueHomeAnchor_NN to HomeMarker_NN's current position if not already done.
+     One-shot per NPC. Critical for existing saves: HomeMarker_NN persisted at the real
+     home across save/load, but TrueHomeAnchor_NN is a new ESP record and loaded at its
+     default position in aaaMarkers holding cell. Without this, the first schedule tick
+     would teleport the follower to the holding cell. Idempotent — safe to call any time.}
+    If StorageUtil.GetIntValue(npc, KEY_TRUEHOME_MIGRATED, 0) != 0
+        Return
+    EndIf
+    If !TrueHomeAnchorList || !HomeMarkerList || slot < 0 || slot >= 40
+        Return
+    EndIf
+    ObjectReference homeMarker = HomeMarkerList.GetAt(slot) as ObjectReference
+    ObjectReference trueHome = TrueHomeAnchorList.GetAt(slot) as ObjectReference
+    If homeMarker && trueHome
+        trueHome.MoveTo(homeMarker)
+        StorageUtil.SetIntValue(npc, KEY_TRUEHOME_MIGRATED, 1)
+        DebugMsg("TrueHomeAnchor migrated for " + npc.GetDisplayName() + " (slot " + slot + ")")
+    EndIf
+EndFunction
+
+Function ProcessScheduleSwaps()
+    {Iterate all homed NPCs that are currently dismissed. On hour transition
+     (schedule type changed since last tick), MoveTo their HomeMarker_NN to the
+     correct anchor (TrueHomeAnchor / WorkMarker / PlayMarker). The existing
+     HomeSandbox_NN alias package keeps targeting HomeMarker — follower naturally
+     re-paths when the marker teleports.
+     Also runs one-shot TrueHomeAnchor migration for NPCs from pre-schedule saves.}
+    If !HomeMarkerList
+        Return
+    EndIf
+    Int targetType = DetermineScheduleTypeForNow()
+    Int count = StorageUtil.FormListCount(None, KEY_HOMED_NPCS)
+
+    Int i = 0
+    While i < count
+        Form entry = StorageUtil.FormListGet(None, KEY_HOMED_NPCS, i)
+        Actor npc = entry as Actor
+        If npc && !npc.IsDeleted() && !npc.IsPlayerTeammate()
+            Int slot = SeverActionsNative.Native_GetHomeMarkerSlot(npc)
+            If slot >= 0
+                ; One-shot migration — MUST run before any swap logic so HomeMarker
+                ; doesn't get moved to an unmigrated TrueHomeAnchor (still in holding cell).
+                EnsureTrueHomeAnchorMigrated(npc, slot)
+
+                Int lastType = StorageUtil.GetIntValue(npc, KEY_LAST_SCHEDULED_TYPE, -99)
+                If lastType != targetType
+                    ObjectReference homeMarker = HomeMarkerList.GetAt(slot) as ObjectReference
+                    ObjectReference targetAnchor = GetScheduleAnchorForNPC(npc, slot, targetType)
+                    If homeMarker && targetAnchor
+                        homeMarker.MoveTo(targetAnchor)
+                        StorageUtil.SetIntValue(npc, KEY_LAST_SCHEDULED_TYPE, targetType)
+                        npc.EvaluatePackage()
+                        DebugMsg("ScheduleSwap: " + npc.GetDisplayName() + " -> type " + targetType + " (slot " + slot + ")")
+                    EndIf
+                EndIf
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+EndFunction
+
+; =============================================================================
 ; HOME ASSIGNMENT
 ; =============================================================================
 
@@ -4226,6 +4704,21 @@ Function AssignHome(Actor akActor, String locationName)
             If homeMarker
                 ; Markers are always enabled (MHiYH pattern) — just move to player position
                 homeMarker.MoveTo(PlayerRef)
+
+                ; Also move TrueHomeAnchor_NN — this is the "return home" anchor the
+                ; schedule tick uses during sleep/home hours. HomeMarker_NN may subsequently
+                ; get moved to Work/Play positions based on schedule; TrueHomeAnchor stays put.
+                If TrueHomeAnchorList && slot < 40
+                    ObjectReference trueHomeAnchor = TrueHomeAnchorList.GetAt(slot) as ObjectReference
+                    If trueHomeAnchor
+                        trueHomeAnchor.MoveTo(PlayerRef)
+                        StorageUtil.SetIntValue(akActor, KEY_TRUEHOME_MIGRATED, 1)
+                    EndIf
+                EndIf
+
+                ; Force the next ProcessScheduleSwaps tick to re-evaluate — marker positions
+                ; changed so any currently-dismissed follower in this slot may need re-pathing.
+                StorageUtil.SetIntValue(akActor, KEY_LAST_SCHEDULED_TYPE, -99)
 
                 ; Re-assign alias immediately — but only apply sandbox if not actively following.
                 ; Active followers keep following; the sandbox activates on dismiss via
@@ -4422,6 +4915,10 @@ Function ApplyHomeSandbox(Actor akActor, ObjectReference homeMarker, Int slot)
         Return
     EndIf
 
+    ; One-shot migration for existing saves — sync TrueHomeAnchor to HomeMarker
+    ; position before schedule system ever runs. See EnsureTrueHomeAnchorMigrated docs.
+    EnsureTrueHomeAnchorMigrated(akActor, slot)
+
     ; Force the NPC into the alias — this applies the per-slot sandbox package.
     ; No LinkedRef needed — each package directly references its XMarker.
     HomeSlots[slot].ForceRefTo(akActor)
@@ -4441,7 +4938,10 @@ Function ApplyHomeSandbox(Actor akActor, ObjectReference homeMarker, Int slot)
     ; don't fight our sandbox with their "return to home cell" packages.
     akActor.SetAV("WaitingForPlayer", 2)
 
-    akActor.EvaluatePackage()
+    ; Phase 7 — escalating re-eval chain (immediate + 500ms + 1500ms resetAI).
+    ; User testing of Phase 6 showed force-eval alone left stragglers that
+    ; needed `resetai` from console to recover.
+    SeverActionsNative.EscalatedReEvaluate(akActor, 1500)
     DebugMsg("ApplyHomeSandbox: " + akActor.GetDisplayName() + " -> HomeSlot_" + slot)
 EndFunction
 
@@ -4752,14 +5252,23 @@ Function ReapplyHomeSandboxing()
                         akActor.SetAV("WaitingForPlayer", 2)
 
                         ; Re-apply PO3 override for track-only followers — PO3
-                        ; overrides don't persist across save/load
+                        ; overrides don't persist reliably across cell transitions
+                        ; (see corrected comment above ReapplyHomeSandboxing call).
                         If IsTrackOnlyFollower(akActor)
                             Package homePkg = GetHomeSandboxPackage(slot)
                             If homePkg
                                 ActorUtil.AddPackageOverride(akActor, homePkg, 100, 1)
-                                akActor.EvaluatePackage()
                             EndIf
                         EndIf
+
+                        ; Phase 5 Fix B — always re-evaluate to kick the engine
+                        ; into re-selecting the correct package. Stragglers landing
+                        ; on an FF runtime package after load-time weren't getting
+                        ; this kick unless they were track-only.
+                        ;
+                        ; Phase 7 — escalating re-eval chain (immediate + 500ms + 1500ms resetAI).
+                        ; Phase 6 force-eval alone wasn't enough for all stragglers.
+                        SeverActionsNative.EscalatedReEvaluate(akActor, 1500)
                     EndIf
                 EndIf
             EndIf
@@ -4882,7 +5391,9 @@ Function AdjustRelationship(Actor akActor, Int rapportChange, Int trustChange, I
     ; Also refresh the last interaction timestamp so neglect decay resets
     StorageUtil.SetFloatValue(akActor, KEY_LAST_INTERACTION, GetGameTimeInSeconds())
 
-    ; Build a summary for the event system
+    ; Build a summary for debug log only — do NOT register as a SkyrimNet event.
+    ; Same reason as OnRelationshipAssessment: mechanics text leaks into
+    ; get_recent_events and produces gameplay-meta diary/memory entries.
     String summary = akActor.GetDisplayName() + " relationship shift:"
     If rapportChange != 0
         summary += " rapport " + rapportChange
@@ -4896,8 +5407,6 @@ Function AdjustRelationship(Actor akActor, Int rapportChange, Int trustChange, I
     If moodChange != 0
         summary += " mood " + moodChange
     EndIf
-
-    SkyrimNetApi.RegisterEvent("relationship_adjusted", summary, akActor, Game.GetPlayer())
 
     DebugMsg(summary)
 EndFunction

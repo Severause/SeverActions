@@ -42,7 +42,13 @@ to blacklist waiting NPCs from seeking out the player.
 Create in CK — just a new faction, no special setup needed.}
 
 Package Property SandboxPackage Auto
-{Sandbox package for relaxing in place - NPC wanders and interacts with nearby furniture}
+{Manual sandbox package (wait/sandbox action) for relaxing in place — NPC wanders
+and interacts with nearby furniture.}
+
+Package Property SafeInteriorSandboxPackage Auto
+{Distinct sandbox package for AUTO safe-interior sandbox (entering inns, player
+homes, etc.). Lets users visually tell the two flows apart when debugging which
+package is active. Falls back to SandboxPackage if not assigned in CK.}
 
 int Property SandboxPackagePriority = 55 AutoReadOnly
 {Above follow (50) so sandbox overrides the FollowPlayer package immediately.
@@ -65,12 +71,63 @@ int Property SafeInteriorSandboxPriority = 55 AutoReadOnly
 Event OnInit()
     Debug.Trace("[SeverActions_Follow] Initialized")
     RegisterForModEvent("SeverActionsNative_SandboxCleanup", "OnNativeSandboxCleanup")
+    RegisterForModEvent("SeverActions_SafeInteriorReEval", "OnSafeInteriorReEval")
 EndEvent
+
+; Resolve which sandbox package to use for auto safe-interior. Prefers the distinct
+; SafeInteriorSandboxPackage (Phase 5 Fix D) so users can visually tell the manual
+; wait sandbox and the auto safe-interior sandbox apart. Falls back to the shared
+; SandboxPackage when SafeInteriorSandboxPackage isn't assigned in CK.
+Package Function GetSafeInteriorPackage()
+    If SafeInteriorSandboxPackage
+        Return SafeInteriorSandboxPackage
+    EndIf
+    Return SandboxPackage
+EndFunction
 
 ; Called on game load to re-register events and restore state
 Function Maintenance()
     RegisterForModEvent("SeverActionsNative_SandboxCleanup", "OnNativeSandboxCleanup")
     RegisterForModEvent("SeverActions_SafeInteriorChanged", "OnSafeInteriorChanged")
+    RegisterForModEvent("SeverActions_SafeInteriorToggle", "OnSafeInteriorToggle")
+    RegisterForModEvent("SeverActions_PauseOnOpenToggle",  "OnPauseOnOpenToggle")
+    RegisterForModEvent("SeverActions_FriendlyFireToggle", "OnFriendlyFireToggle")
+    ; Phase 5 Fix C — deferred safe-interior re-evaluation: C++ fires this ~500ms
+    ; after the initial enter event so the engine picks up our override even if the
+    ; first EvaluatePackage raced with a cell transition / AI busy state.
+    RegisterForModEvent("SeverActions_SafeInteriorReEval", "OnSafeInteriorReEval")
+
+    ; Restore safe interior sandbox setting from StorageUtil → push to C++
+    Quest SeverActionsQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
+    If SeverActionsQuest
+        ; Phase 10 — default to DISABLED (0) if key never written. The feature
+        ; races with Skyrim's door-transition timing in ways that cause
+        ; FF runtime fallback packages and exit stickiness. Users who want it
+        ; can enable via PrismaUI. Existing users who had it on keep their
+        ; setting — the StorageUtil key persists across game loads.
+        Bool savedEnabled = StorageUtil.GetIntValue(SeverActionsQuest, "SeverActions_SafeInteriorEnabled", 0) == 1
+        SeverActionsNative.SituationMonitor_SetSafeInteriorEnabled(savedEnabled)
+        Debug.Trace("[SeverActions_Follow] Restored safe interior sandbox: " + savedEnabled)
+
+        ; Restore PrismaUI pause-on-open setting. Default 1 (paused) preserves legacy
+        ; behavior — only users who have explicitly disabled it see the unpaused path.
+        Bool savedPauseOnOpen = StorageUtil.GetIntValue(SeverActionsQuest, "SeverActions_PauseOnOpen", 1) == 1
+        SeverActionsNative.PrismaUI_SetPauseOnOpen(savedPauseOnOpen)
+        Debug.Trace("[SeverActions_Follow] Restored PrismaUI pause on open: " + savedPauseOnOpen)
+
+        ; Restore follower friendly-fire prevention. Default 1 (enabled) —
+        ; users who have explicitly disabled it keep their 0 in StorageUtil;
+        ; everyone else gets protection on by default. When on, also re-apply
+        ; the raised ally-hit thresholds since game settings reset to ESP/INI
+        ; defaults on load and we can't cosave them.
+        Bool savedFriendlyFire = StorageUtil.GetIntValue(SeverActionsQuest, "SeverActions_PreventFollowerFF", 1) == 1
+        SeverActionsNative.FriendlyFireMonitor_SetEnabled(savedFriendlyFire)
+        If savedFriendlyFire
+            Game.SetGameSettingInt("iAllyHitCombatAllowed", 100)
+            Game.SetGameSettingInt("iAllyHitNonCombatAllowed", 50)
+        EndIf
+        Debug.Trace("[SeverActions_Follow] Restored follower friendly-fire prevention: " + savedFriendlyFire)
+    EndIf
 EndFunction
 
 ; =============================================================================
@@ -155,18 +212,56 @@ Event OnSafeInteriorChanged(String eventName, String strArg, Float numArg, Form 
         Return
     EndIf
 
-    ; Don't override manual sandbox/wait commands
+    ; Don't override manual sandbox/wait commands or home-sandboxing NPCs
     If akActor.GetAV("WaitingForPlayer") > 0
         Return
     EndIf
+    ; Skip dismissed NPCs sandboxing at home — they're not active followers,
+    ; the safe interior system shouldn't touch their home sandbox package.
+    ; Active followers with homes assigned should still get safe interior sandbox.
+    If SeverActionsNative.Native_GetHomeMarkerSlot(akActor) >= 0
+        SeverActions_FollowerManager fm = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+        If fm && !fm.IsRegisteredFollower(akActor)
+            Return
+        EndIf
+    EndIf
 
     If changeType == "enter"
-        If SandboxPackage && !IsSandboxing(akActor)
-            ActorUtil.AddPackageOverride(akActor, SandboxPackage, SandboxPackagePriority, 1)
+        Package interiorPkg = GetSafeInteriorPackage()
+        If interiorPkg && !IsSandboxing(akActor)
+            ; Phase 5 Fix A — match manual Sandbox() ordering so casual followers'
+            ; SkyrimNet package doesn't race with our override (SkyrimNet's hook
+            ; returns its own FollowPlayer regardless of PO3 priority, causing
+            ; the FE/FF fallback when the follower is in a door transition).
+            ;
+            ; Apply override FIRST so there's always a valid high-priority package.
+            ActorUtil.AddPackageOverride(akActor, interiorPkg, SafeInteriorSandboxPriority, 1)
+
+            ; Kill the SkyrimNet FollowPlayer registration for casual followers.
+            ; Safe no-op for companions (they use CK alias package, not SkyrimNet).
+            SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
+
+            ; Kill the CK alias follow package's eligibility condition
+            ; (SeverActions_FollowPlayerPackage gates on WaitingForPlayer == 0).
+            akActor.SetAV("WaitingForPlayer", 1)
+
             SetSandboxFlag(akActor, true)
             StorageUtil.SetIntValue(akActor, "SeverActions_InSafeInteriorSandbox", 1)
             SeverActionsNative.Native_SetSandboxing(akActor, true)
             SetActivelyFollowing(akActor, false)
+
+            ; (Phase 7 note: we used to write SeverActions_SafeInteriorPkgMode
+            ; here to remember which package variant was applied, but the exit
+            ; path always removes BOTH variants in a multi-remove loop so the
+            ; stored mode was never read. Dropped — the round-trip was dead.)
+
+            ; Add the waiting faction so other mods (IntelEngine, etc.) treat
+            ; a safe-interior-sandboxing follower the same way they treat a
+            ; manually waiting one — consistent external signal.
+            If SeverActions_WaitingFaction
+                akActor.AddToFaction(SeverActions_WaitingFaction)
+            EndIf
+
             akActor.EvaluatePackage()
             Debug.Trace("[SeverActions_Follow] Safe interior sandbox: " + akActor.GetDisplayName() + " is relaxing")
         EndIf
@@ -175,15 +270,162 @@ Event OnSafeInteriorChanged(String eventName, String strArg, Float numArg, Form 
             StorageUtil.UnsetIntValue(akActor, "SeverActions_InSafeInteriorSandbox")
             SetSandboxFlag(akActor, false)
             SeverActionsNative.Native_SetSandboxing(akActor, false)
-            If SandboxPackage
-                ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
+
+            ; Phase 7 — aggressive multi-remove.
+            ; User testing of Phase 6 found that `resetai` on a stuck companion
+            ; returns them to the sandbox package and they walk back inside.
+            ; That means the sandbox override is STILL on the actor after a
+            ; single RemovePackageOverride — either because the enter path
+            ; fired multiple times (SituationMonitor flap across door threshold),
+            ; or the engine's ExtraPackage state held on to the reference past
+            ; the first removal, or some other cause we haven't yet isolated.
+            ;
+            ; Calling RemovePackageOverride multiple times is cheap, safe (no-op
+            ; when already removed), and covers all the failure modes: we do
+            ; both package variants, multiple iterations, so any lingering stack
+            ; is gone by the time we hand control back to the AI.
+            Int removeIter = 0
+            While removeIter < 5
+                If SafeInteriorSandboxPackage
+                    ActorUtil.RemovePackageOverride(akActor, SafeInteriorSandboxPackage)
+                EndIf
+                If SandboxPackage
+                    ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
+                EndIf
+                removeIter += 1
+            EndWhile
+
+            ; Clear WaitingForPlayer FIRST so the CK alias follow package's
+            ; condition becomes valid before we re-register SkyrimNet follow,
+            ; preventing an engine fallback in the gap.
+            akActor.SetAV("WaitingForPlayer", 0)
+
+            ; Remove waiting faction
+            If SeverActions_WaitingFaction
+                akActor.RemoveFromFaction(SeverActions_WaitingFaction)
             EndIf
+
+            ; Re-register SkyrimNet follow for casual followers only.
+            ; Companions use CK alias and don't need re-registration.
+            If !IsInFollowerSlot(akActor)
+                SkyrimNetApi.RegisterPackage(akActor, "FollowPlayer", FollowPackagePriority, 0, true)
+            Else
+                ; Phase 8 Fix B — companion-specific re-assertion.
+                ; User reported that even after Phase 7's multi-remove + resetAI,
+                ; the companion could still walk back to the home because the
+                ; SandboxPackage was STILL on them — and `SetCompanion` action
+                ; was the only thing that reliably recovered them.
+                ;
+                ; SetCompanion does two things our exit path wasn't doing:
+                ; re-setting the FollowerFollowKW LinkedRef to player, and
+                ; re-registering OrphanCleanup_RegisterFollower. Both are
+                ; defensive — but both matter because safe-interior enter/exit
+                ; cycles can leave the CK alias follow package without a valid
+                ; LinkedRef target, making it non-eligible. Re-setting forces
+                ; the alias package into eligibility just like SetCompanion does.
+                If SeverActions_FollowerFollowKW
+                    SeverActionsNative.LinkedRef_Set(akActor, Game.GetPlayer(), SeverActions_FollowerFollowKW)
+                EndIf
+                SeverActionsNative.OrphanCleanup_RegisterFollower(akActor)
+            EndIf
+
             SetActivelyFollowing(akActor, true)
             ; Teleport to player so they don't get stuck inside the house
             akActor.MoveTo(Game.GetPlayer())
-            ; No EvaluatePackage — causes min-distance snap. AI resumes follow naturally.
+
+            ; Phase 7 — escalating re-eval chain (immediate + 500ms + 1000ms resetAI).
+            ; The follower is teleported-adjacent to the player at this point
+            ; and not in combat (they were safe-interior sandboxing), so the
+            ; AI-clearing side effects of resetAI are harmless here. Shorter
+            ; resetAI delay than the home-sandbox paths (1000 vs 1500) because
+            ; the companion is still local and user expects quick resume.
+            SeverActionsNative.EscalatedReEvaluate(akActor, 1000)
+
             Debug.Trace("[SeverActions_Follow] Safe interior sandbox ended: " + akActor.GetDisplayName() + " teleported to player and resumes following")
         EndIf
+    EndIf
+EndEvent
+
+; Phase 5 Fix C — deferred re-evaluation handler.
+; C++ SituationMonitor fires SeverActions_SafeInteriorReEval ~500ms after
+; ApplySafeInteriorSandboxNative so the engine picks up our override even if
+; the first EvaluatePackage raced with a cell transition or AI busy state.
+Event OnSafeInteriorReEval(String eventName, String strArg, Float numArg, Form sender)
+    Actor akActor = sender as Actor
+    If !akActor
+        akActor = Game.GetFormEx(numArg as Int) as Actor
+    EndIf
+    If !akActor
+        Return
+    EndIf
+    ; Only re-eval if this actor is still flagged as safe-interior sandboxing.
+    ; Covers the case where the player exits during the 500ms delay — we don't
+    ; want to force a re-eval on someone who is now mid-exit-teleport.
+    If StorageUtil.GetIntValue(akActor, "SeverActions_InSafeInteriorSandbox", 0) != 1
+        Return
+    EndIf
+    akActor.EvaluatePackage()
+    Debug.Trace("[SeverActions_Follow] Safe interior deferred re-eval: " + akActor.GetDisplayName())
+EndEvent
+
+; =============================================================================
+; SAFE INTERIOR TOGGLE PERSISTENCE
+; Fired by PrismaUI (via C++) when user toggles the safe interior setting.
+; Persists to StorageUtil so it survives save/load.
+; =============================================================================
+
+Event OnSafeInteriorToggle(String eventName, String strArg, Float numArg, Form sender)
+    Quest SeverActionsQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
+    If SeverActionsQuest
+        Int val = 0
+        If numArg >= 1.0
+            val = 1
+        EndIf
+        StorageUtil.SetIntValue(SeverActionsQuest, "SeverActions_SafeInteriorEnabled", val)
+        Debug.Trace("[SeverActions_Follow] Safe interior sandbox toggle persisted: " + val)
+    EndIf
+EndEvent
+
+Event OnPauseOnOpenToggle(String eventName, String strArg, Float numArg, Form sender)
+    {Fired by PrismaUIBridge when user toggles the "pause on open" setting.
+     Persists to StorageUtil so the value survives save/load. On next load,
+     Maintenance reads it back and pushes to the C++ atomic via Native_SetPauseOnOpen.}
+    Quest SeverActionsQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
+    If SeverActionsQuest
+        Int val = 0
+        If numArg >= 1.0
+            val = 1
+        EndIf
+        StorageUtil.SetIntValue(SeverActionsQuest, "SeverActions_PauseOnOpen", val)
+        Debug.Trace("[SeverActions_Follow] PrismaUI pause-on-open toggle persisted: " + val)
+    EndIf
+EndEvent
+
+Event OnFriendlyFireToggle(String eventName, String strArg, Float numArg, Form sender)
+    {Fired by PrismaUISettingsHandler when user toggles "Prevent Follower Friendly Fire".
+     C++ side is already updated synchronously by the handler. Here we:
+       1. Persist the value to StorageUtil so it survives save/load.
+       2. Adjust the engine's ally-hit aggro thresholds. Skyrim fires aggro
+          on allies after iAllyHitCombatAllowed=3 / iAllyHitNonCombatAllowed=0
+          hits by default. Raising them stops AoE spam / stray arrows from
+          flipping follower aggression even when IgnoreFriendlyHits drops.
+          Note: these are GLOBAL game settings — raising them also makes
+          bandit-on-bandit aggro slower, which is generally invisible.}
+    Quest SeverActionsQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
+    If SeverActionsQuest
+        Int val = 0
+        If numArg >= 1.0
+            val = 1
+        EndIf
+        StorageUtil.SetIntValue(SeverActionsQuest, "SeverActions_PreventFollowerFF", val)
+        If val == 1
+            Game.SetGameSettingInt("iAllyHitCombatAllowed", 100)
+            Game.SetGameSettingInt("iAllyHitNonCombatAllowed", 50)
+        Else
+            Game.SetGameSettingInt("iAllyHitCombatAllowed", 3)
+            Game.SetGameSettingInt("iAllyHitNonCombatAllowed", 0)
+        EndIf
+        Debug.Trace("[SeverActions_Follow] Follower friendly-fire prevention persisted: " + val + " (ally hit thresholds adjusted)")
     EndIf
 EndEvent
 
@@ -303,9 +545,22 @@ Function ReapplyFollowTracking(Actor[] followers)
                 Debug.Trace("[SeverActions_Follow] Cleaned stale SkyrimNet FollowPlayer from companion: " + akActor.GetDisplayName())
             EndIf
 
-            ; Re-set linked ref (runtime-only, doesn't survive save/load)
+            ; Defensive LinkedRef re-assertion — not just redundant.
+            ; The native cosave restores LinkedRefs on kPostLoadGame, but Papyrus
+            ; scripts on quest OnInit / alias OnLoad run BEFORE kPostLoadGame and
+            ; can cache null GetLinkedRef results if they query during that window.
+            ; Re-setting here guarantees the ref is live by the time Maintenance()
+            ; completes, even if the cosave was stale, corrupted, or lost.
+            ; Also handles cell-transition scenarios where the engine may drop
+            ; ExtraLinkedRef from the actor's active extra data.
             If SeverActions_FollowerFollowKW
                 SeverActionsNative.LinkedRef_Set(akActor, player, SeverActions_FollowerFollowKW)
+                ; Re-register with the native OrphanCleanup scanner. Its in-memory
+                ; m_trackedFollowers map is cleared on every kPostLoadGame (see
+                ; plugin.cpp), so without this call the scanner flags the companion
+                ; as an orphan ~5s after load and OnOrphanCleanup (in FollowerManager)
+                ; clears the LinkedRef — breaking follow on every reload.
+                SeverActionsNative.OrphanCleanup_RegisterFollower(akActor)
             EndIf
 
             Bool isWaiting = akActor.GetAV("WaitingForPlayer") > 0
@@ -447,8 +702,11 @@ Function CompanionStartFollowing(Actor akActor)
     akActor.EvaluatePackage()
 EndFunction
 
-Function CompanionStopFollowing(Actor akActor)
-    {Stop companion following — clears alias slot (auto-removes CK package) and LinkedRef.}
+Function CompanionStopFollowing(Actor akActor, Bool evaluateAfter = true)
+    {Stop companion following — clears alias slot (auto-removes CK package) and LinkedRef.
+     Pass evaluateAfter=false when the caller will apply a new package immediately after
+     (e.g., dismiss→SendHome), to avoid a zero-package EvaluatePackage gap that creates
+     an FF-prefix fallback package.}
     if !akActor
         return
     endif
@@ -466,10 +724,13 @@ Function CompanionStopFollowing(Actor akActor)
     ; Unregister from orphan cleanup tracking
     SeverActionsNative.OrphanCleanup_UnregisterFollower(akActor)
 
-    ; Clear linked ref
-    If SeverActions_FollowerFollowKW
-        SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_FollowerFollowKW)
-    EndIf
+    ; Clear ALL tracked LinkedRefs — not just our follow keyword.
+    ; If the actor had active travel, furniture, or arrest LinkedRefs when dismissed,
+    ; per-keyword Clear only removes the follow entry. ClearAll catches everything,
+    ; preventing stale LinkedRefs from persisting in the cosave and restoring on load.
+    ; Each subsystem still clears its own keyword on normal completion — this is the
+    ; belt-and-suspenders final sweep for crash/interrupt scenarios.
+    SeverActionsNative.LinkedRef_ClearAll(akActor)
 
     ; Also unregister from SkyrimNet in case they had a casual follow registered too
     SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
@@ -480,7 +741,9 @@ Function CompanionStopFollowing(Actor akActor)
     ; Update native follow state for PrismaUI status badge
     SeverActionsNative.Native_SetPackageState(akActor, false, false, false)
 
-    akActor.EvaluatePackage()
+    If evaluateAfter
+        akActor.EvaluatePackage()
+    EndIf
 EndFunction
 
 ; =============================================================================

@@ -91,7 +91,13 @@ Do NOT choose silence when:
 {% endif %}{% if tagInScene %}- `[IN SCENE]` — This NPC is currently in an intimate/sexual scene. **Strongly deprioritize** — they are physically occupied and should almost never be selected as speaker. Only select them if directly addressed by name or asked a direct question. Their companion/engaged status is overridden while in a scene.
 {% endif %}{% endif %}
 
-**Targeting rule:** When selecting a target, consider who was just speaking to whom.{% if existsIn(lastSpeaker, "name") and existsIn(lastDialogueTarget, "name") %} {{ lastSpeaker.name }} was just speaking to {{ lastDialogueTarget.name }} — if {{ lastDialogueTarget.name }} is a candidate, they should typically respond back to {{ lastSpeaker.name }}, not redirect to the player.{% endif %} Only use `player` as target when the NPC is genuinely addressing the player. If two NPCs are mid-conversation, keep the target between them.
+**Targeting rules:**
+- Consider who was just speaking to whom.{% if existsIn(lastSpeaker, "name") and existsIn(lastDialogueTarget, "name") %} {{ lastSpeaker.name }} was just speaking to {{ lastDialogueTarget.name }} — if {{ lastDialogueTarget.name }} is a candidate, they should typically respond back to {{ lastSpeaker.name }}, not redirect to the player.{% endif %}
+- Only use `player` as target when the NPC is genuinely addressing the player.
+- NPC-to-NPC exchanges should wind down. After 2-3 back-and-forths between the same two NPCs, the topic is usually resolved — the next turn can pivot back to the player (target = `player`) or end in silence.
+- A chosen speaker CAN pivot their target back to `player` even if the immediately prior line was NPC-to-NPC — if the speaker's reason to speak is genuinely directed at the player (reacting to something the player did, answering the player's earlier question, sharing a decision with the player, pulling the player's attention to something), target = `player`. The prior NPC-to-NPC line does not lock in future targeting.
+- When in doubt between continuing NPC-to-NPC vs pivoting to player: if the player was the scene's original initiator and the NPC-to-NPC exchange was a brief side-comment, pivot back to player.
+- **Always specify a target** — every output must be exactly `0` or `[speaker]>[target]`. Never output `[speaker]>` with an empty target. Never leave the target ambiguous or unnamed. If unsure, prefer `player` over an NPC name you're not confident about.
 
 {{ "### Examples" }}
 - CORRECT: "Aela the Huntress>Lydia"

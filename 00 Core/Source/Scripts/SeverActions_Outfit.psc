@@ -207,47 +207,65 @@ Function Undress_Execute(Actor akActor)
         EndIf
     EndIf
 
-    ; All slots to check - vanilla and modded (excluding slot 31/Hair and 38/Calves to preserve wigs)
-    int[] slots = new int[18]
-    slots[0] = 0x00000001   ; Head (30)
-    slots[1] = 0x00000004   ; Body (32)
-    slots[2] = 0x00000008   ; Hands (33)
-    slots[3] = 0x00000010   ; Forearms (34)
-    slots[4] = 0x00000020   ; Amulet (35)
-    slots[5] = 0x00000040   ; Ring (36)
-    slots[6] = 0x00000080   ; Feet (37)
-    slots[7] = 0x00000200   ; Shield (39)
-    slots[8] = 0x00000400   ; Tail/Cloak (40)
-    slots[9] = 0x00001000   ; Circlet (42)
-    slots[10] = 0x00002000  ; Ears (43)
-    slots[11] = 0x00008000  ; Neck/Scarf (45)
-    slots[12] = 0x00010000  ; Cloak (46)
-    slots[13] = 0x00020000  ; Back/Cloak (47)
-    slots[14] = 0x00080000  ; Pelvis outer (49)
-    slots[15] = 0x00400000  ; Underwear (52)
-    slots[16] = 0x02000000  ; Face (55)
-    slots[17] = 0x08000000  ; Cloak (57)
-    
-    ; Slot names for animations
-    String[] slotNames = new String[18]
-    slotNames[0] = "helmet"
-    slotNames[1] = "body"
-    slotNames[2] = "hands"
-    slotNames[3] = "hands"
-    slotNames[4] = "neck"
-    slotNames[5] = "ring"
-    slotNames[6] = "feet"
-    slotNames[7] = "body"
-    slotNames[8] = "cloak"
-    slotNames[9] = "helmet"
+    ; All slots to check — vanilla + modded biped slots 30-60.
+    ; Intentionally excluded: slot 31/Hair, 38/Calves, 41/LongHair (protect wigs),
+    ; plus 50/DecapitateHead and 51/Decapitate (gore FX, not real gear).
+    int[] slots = new int[26]
+    slots[0]  = 0x00000001   ; Head (30)
+    slots[1]  = 0x00000004   ; Body (32)
+    slots[2]  = 0x00000008   ; Hands (33)
+    slots[3]  = 0x00000010   ; Forearms (34)
+    slots[4]  = 0x00000020   ; Amulet (35)
+    slots[5]  = 0x00000040   ; Ring (36)
+    slots[6]  = 0x00000080   ; Feet (37)
+    slots[7]  = 0x00000200   ; Shield (39)
+    slots[8]  = 0x00000400   ; Tail (40)
+    slots[9]  = 0x00001000   ; Circlet (42)
+    slots[10] = 0x00002000   ; Ears (43)
+    slots[11] = 0x00004000   ; Mouth (44)
+    slots[12] = 0x00008000   ; Neck (45)
+    slots[13] = 0x00010000   ; Cloak (46)
+    slots[14] = 0x00020000   ; Back (47)
+    slots[15] = 0x00040000   ; Misc (48)
+    slots[16] = 0x00080000   ; Pelvis (49)
+    slots[17] = 0x00400000   ; Pelvis 2 / Underwear (52)
+    slots[18] = 0x00800000   ; Leg (53)
+    slots[19] = 0x01000000   ; Leg 2 (54)
+    slots[20] = 0x02000000   ; Face (55)
+    slots[21] = 0x04000000   ; Chest 2 (56)
+    slots[22] = 0x08000000   ; Shoulder (57)
+    slots[23] = 0x10000000   ; Arm (58)
+    slots[24] = 0x20000000   ; Arm 2 (59)
+    slots[25] = 0x40000000   ; FX01 (60)
+
+    ; Slot names for animations (pick the closest unequip-anim category)
+    String[] slotNames = new String[26]
+    slotNames[0]  = "helmet"
+    slotNames[1]  = "body"
+    slotNames[2]  = "hands"
+    slotNames[3]  = "hands"
+    slotNames[4]  = "neck"
+    slotNames[5]  = "ring"
+    slotNames[6]  = "feet"
+    slotNames[7]  = "body"
+    slotNames[8]  = "cloak"
+    slotNames[9]  = "helmet"
     slotNames[10] = "helmet"
-    slotNames[11] = "neck"
-    slotNames[12] = "cloak"
-    slotNames[13] = "cloak"
-    slotNames[14] = "body"
-    slotNames[15] = "body"
-    slotNames[16] = "helmet"
-    slotNames[17] = "cloak"
+    slotNames[11] = "helmet"   ; Mouth — face-level
+    slotNames[12] = "neck"     ; Neck
+    slotNames[13] = "cloak"    ; Cloak
+    slotNames[14] = "cloak"    ; Back
+    slotNames[15] = "body"     ; Misc
+    slotNames[16] = "body"     ; Pelvis
+    slotNames[17] = "body"     ; Pelvis 2
+    slotNames[18] = "feet"     ; Leg
+    slotNames[19] = "feet"     ; Leg 2
+    slotNames[20] = "helmet"   ; Face
+    slotNames[21] = "body"     ; Chest 2
+    slotNames[22] = "cloak"    ; Shoulder
+    slotNames[23] = "hands"    ; Arm
+    slotNames[24] = "hands"    ; Arm 2
+    slotNames[25] = "cloak"    ; FX01
     
     int i = 0
     int removedCount = 0

@@ -875,6 +875,13 @@ Function PrismaUI_CloseMenu() Global Native
 String Function PrismaUI_ExtractJsonValue(String json, String key) Global Native
 {Extract a value from a flat JSON object by key. Returns the value as a string.}
 
+Function PrismaUI_SetPauseOnOpen(Bool enabled) Global Native
+{Set whether PrismaUI freezes the game world when the menu opens. \
+Called by Papyrus on load to push the StorageUtil-persisted value to C++.}
+
+Bool Function PrismaUI_IsPauseOnOpen() Global Native
+{Return the current pause-on-open setting from C++.}
+
 ; ── PrismaUI Data Builder ───────────────────────────────────────────
 ; C++ JSON builder — call these instead of Papyrus string concatenation.
 ; nlohmann_json produces correct booleans (true/false), escaped strings, etc.
@@ -977,7 +984,73 @@ Bool Function LinkedRef_HasAny(Actor akActor) Global Native
 {Check if an actor has any active linked references.}
 
 Function NativeEvaluatePackage(Actor akActor) Global Native
-{Force native package re-evaluation on an actor.}
+{Force native package re-evaluation on an actor.
+ Phase 6: now passes immediate=true to the engine call (was default false),
+ so the re-evaluation actually takes effect instead of deferring to the next
+ AI scheduler tick. Matches SkyrimNet's robust EvaluatePackage pattern.}
+
+Function NativeResetAI(Actor akActor) Global Native
+{Full AI reset + package re-evaluation. Same behavior as `resetai` console.
+ Use for stragglers where NativeEvaluatePackage isn't enough — the actor's
+ AI is still holding onto its previous package state. Disruptive: clears
+ combat/alert state too, so don't use routinely.}
+
+Function EnqueueDeferredForceEval(Actor akActor, Int delayMs) Global Native
+{Enqueue a force-eval (immediate=true, resetAI=false) for akActor after
+ delayMs elapses. Papers over races between our override change and the
+ engine's AI scheduler tick. Drained every frame from the PackageManager
+ InputEvent heartbeat — the delay is real, not rounded to a scan interval.}
+
+Function EnqueueDeferredResetAI(Actor akActor, Int delayMs) Global Native
+{Enqueue a full AI reset (immediate=true, resetAI=true) — same as `resetai`
+ console command. Use for the stubborn-straggler case where even a force-eval
+ doesn't dislodge the current package. Disruptive: clears combat/alert state
+ too. Shares the same delayed-dispatch queue as EnqueueDeferredForceEval.}
+
+Function EscalatedReEvaluate(Actor akActor, Int resetDelayMs = 1500) Global
+{The 3-tier escalating package re-evaluation chain used after package swaps or
+ marker moves that need to dislodge stuck AI state. Phase 6/7 testing showed no
+ single tier was reliable by itself:
+   Tier 1 (immediate): NativeEvaluatePackage — handles ~95% of cases.
+   Tier 2 (500ms):     EnqueueDeferredForceEval — catches races (cell transitions,
+                       ExtraPackage lag).
+   Tier 3 (delayed):   EnqueueDeferredResetAI — nuclear hammer for stragglers
+                       whose AI state hadn't settled at tier 2. Disruptive
+                       (clears combat/alert state) — only use when the actor is
+                       NOT expected to be in combat (home, safe-interior, etc).
+
+ Default resetDelayMs=1500 matches the home-sandbox paths. Pass 1000 for the
+ safe-interior exit path (shorter reaction window, companion is still local).}
+    If !akActor
+        Return
+    EndIf
+    NativeEvaluatePackage(akActor)
+    EnqueueDeferredForceEval(akActor, 500)
+    EnqueueDeferredResetAI(akActor, resetDelayMs)
+EndFunction
+
+; =============================================================================
+; HOME SANDBOX VERIFIER (Phase 8 Fix C)
+; Periodic native scanner that detects dismissed homed followers running an
+; engine FE/FF fallback package and force-resets their AI so the CK alias
+; home-sandbox package re-picks. Runs automatically on a 10-second heartbeat
+; once the plugin initializes; Papyrus wrappers below are for debugging /
+; manual forcing.
+; =============================================================================
+
+Function HomeVerifier_ForceScan() Global Native
+{Run an immediate scan + reset pass. Useful for testing or after bulk
+ cell-load operations that bypass the 10s heartbeat.}
+
+Function HomeVerifier_SetEnabled(Bool enabled) Global Native
+{Pause/resume the periodic scanner. Enabled by default on plugin init.}
+
+Bool Function HomeVerifier_IsEnabled() Global Native
+{Check if the periodic scanner is currently running.}
+
+Function HomeVerifier_SetScanIntervalSeconds(Int seconds) Global Native
+{Change the scan interval (1-600 seconds). Default 10s. Shorter intervals
+ catch stragglers faster but add scan overhead; longer intervals save work.}
 
 ; =============================================================================
 ; ORPHAN CLEANUP
@@ -1185,6 +1258,26 @@ Int Function Native_GetHomeMarkerSlot(Actor akActor) Global Native
 
 Function Native_ReleaseHomeMarkerSlot(Actor akActor) Global Native
 {Release this actor's home marker slot back to the pool.}
+
+; --- Routine Loc (Work / Play) ---
+
+Function Native_SetWorkLoc(Actor akActor, ObjectReference marker) Global Native
+{Store the Work marker FormID for this follower. Cosave-persisted.}
+
+ObjectReference Function Native_GetWorkLoc(Actor akActor) Global Native
+{Get the Work marker for this follower, or None if unset.}
+
+Function Native_ClearWorkLoc(Actor akActor) Global Native
+{Clear the stored Work marker for this follower.}
+
+Function Native_SetPlayLoc(Actor akActor, ObjectReference marker) Global Native
+{Store the Play marker FormID for this follower. Cosave-persisted.}
+
+ObjectReference Function Native_GetPlayLoc(Actor akActor) Global Native
+{Get the Play marker for this follower, or None if unset.}
+
+Function Native_ClearPlayLoc(Actor akActor) Global Native
+{Clear the stored Play marker for this follower.}
 
 ; --- Essential Status ---
 
@@ -1551,6 +1644,21 @@ Function Native_OnFollowerRecruited(Actor akActor) Global Native
 Seeds SECONDHAND awareness of all active tracked quests and queues catch-up summaries. \
 Call from RegisterFollower() in FollowerManager.}
 
+Int Function Native_PopReputationAssessRequest() Global Native
+{Pop the next NPC FormID queued for reputation assessment. \
+Returns the FormID (as int) of the next NPC to assess, or 0 when queue is empty. \
+Papyrus enqueues via Native_QueueReputationAssessment on the blurb-milestone check, \
+then processes one at a time via LLM callback chain.}
+
+Int Function Native_GetFamiliarityInteractions(Actor akActor) Global Native
+{Return the current dialogue line count tracked by the player_familiarity decorator \
+for this NPC, or -1 if the actor hasn't been evaluated yet this session. \
+Used by the blurb-milestone check (first dialogue, every 100 lines after).}
+
+Function Native_QueueReputationAssessment(Actor akActor) Global Native
+{Enqueue this NPC for blurb generation and fire the SeverActions_ReputationAssess event. \
+Papyrus calls this after deciding a blurb milestone (1st or every 100th line) is due.}
+
 Int Function Native_GetFollowerAwarenessTier(Actor akActor, String editorID) Global Native
 
 ; =============================================================================
@@ -1560,3 +1668,17 @@ Int Function Native_GetFollowerAwarenessTier(Actor akActor, String editorID) Glo
 Function SituationMonitor_RescueSandboxers() Global Native
 {Rescue any auto-sandboxing followers stranded in a previous cell. \
 Call on cell load to bring them to the player.}
+
+Function SituationMonitor_SetSafeInteriorEnabled(Bool enabled) Global Native
+{Enable or disable safe interior auto-sandbox globally. \
+Call from Papyrus to push persisted StorageUtil value to C++ on load.}
+
+Bool Function SituationMonitor_IsSafeInteriorEnabled() Global Native
+{Check if safe interior auto-sandbox is currently enabled in C++.}
+
+Function FriendlyFireMonitor_SetEnabled(Bool enabled) Global Native
+{Enable or disable follower-vs-follower damage prevention. \
+Call from Papyrus to push persisted StorageUtil value to C++ on load.}
+
+Bool Function FriendlyFireMonitor_IsEnabled() Global Native
+{Check if follower-friendly-fire prevention is currently enabled in C++.}

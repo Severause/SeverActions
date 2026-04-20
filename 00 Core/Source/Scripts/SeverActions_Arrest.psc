@@ -481,6 +481,13 @@ Function Maintenance()
 
     ; Register for player cell change to verify prisoners after fast travel
     RegisterForTrackedStatsEvent()
+
+    ; Register for native SandboxManager cell-change cleanup. Arrest's DispatchGuard
+    ; is the only actor registered with SandboxManager (via RegisterSandboxUser in
+    ; FallbackSandboxSearch). Follow.psc also listens for this event but gates on
+    ; its own IsSandboxing flag and returns early for non-follower actors, so
+    ; dual-listener doesn't conflict.
+    RegisterForModEvent("SeverActionsNative_SandboxCleanup", "OnNativeSandboxCleanup")
 EndFunction
 
 Event OnPlayerLoadGame()
@@ -510,6 +517,41 @@ Event OnTrackedStatsEvent(String asStat, Int aiValue)
     If asStat == "Locations Discovered" || asStat == "Days Passed"
         ; Verify prisoner positions after fast travel/time passage
         VerifyJailedNPCs()
+    EndIf
+EndEvent
+
+Event OnNativeSandboxCleanup(string eventName, string strArg, float numArg, Form sender)
+    {Fired by native SandboxManager on player cell change. Arrest's DispatchGuard is
+     the only actor registered with SandboxManager (via FallbackSandboxSearch), so
+     this handler unwinds the prisoner-sandbox state for that guard only.
+
+     Follow.psc also listens for this event; its handler gates on IsSandboxing (a
+     StorageUtil flag set only by Follow's own sandbox paths) and returns early for
+     the DispatchGuard, so dual-listener is safe.}
+
+    Actor akActor = sender as Actor
+    If !akActor
+        akActor = Game.GetFormEx(numArg as Int) as Actor
+    EndIf
+
+    ; Only handle the active DispatchGuard — if the cleanup event isn't for our
+    ; guard, ignore it (it's either for Follow's sandbox flows or a stale event).
+    If !akActor || akActor != DispatchGuard
+        Return
+    EndIf
+
+    DebugMsg("Native cell-change cleanup for DispatchGuard: " + akActor.GetDisplayName())
+
+    ; Abort the prisoner sandbox — the FSM will detect the missing state and
+    ; transition forward on its next UpdateInterval tick. Clear the package +
+    ; linked ref here directly so the guard doesn't stand around with a stale
+    ; override waiting for the next phase check.
+    SeverActionsNative.UnregisterSandboxUser(akActor)
+    If SeverActions_PrisonerSandBox != None
+        ActorUtil.RemovePackageOverride(akActor, SeverActions_PrisonerSandBox)
+    EndIf
+    If SeverActions_SandboxAnchorKW != None
+        SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_SandboxAnchorKW)
     EndIf
 EndEvent
 
@@ -5254,6 +5296,15 @@ Function RecoverActiveDispatch()
             If SeverActions_DispatchJog
                 ActorUtil.AddPackageOverride(guard, SeverActions_DispatchJog, PackagePriority, 1)
                 guard.EvaluatePackage()
+            EndIf
+            ; Defensive LinkedRef re-assertion. The native cosave SHOULD have restored
+            ; the sandbox anchor LinkedRef on kPostLoadGame, but Papyrus can run before
+            ; that (quest OnInit / alias OnLoad between SKSE's kLoad and kPostLoadGame)
+            ; and cache a null GetLinkedRef result. Re-setting here guarantees the
+            ; anchor is present by the time we re-enter Phase 3/4 logic.
+            If SeverActions_SandboxAnchorKW != None
+                ObjectReference anchor = DispatchHomeMarker
+                SeverActionsNative.LinkedRef_Set(guard, anchor, SeverActions_SandboxAnchorKW)
             EndIf
             DispatchPhase = 1
             StorageUtil.SetIntValue(guard, "SeverActions_DispatchPhase", 1)

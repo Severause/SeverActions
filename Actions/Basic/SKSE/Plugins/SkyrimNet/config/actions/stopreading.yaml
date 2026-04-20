@@ -11,16 +11,16 @@ parameterMapping:
 enabled: true
 eligibilityRules:
   - conditions:
-      - decoratorName: "is_in_faction"
+      - decoratorName: "get_faction_rank"
         arguments: ["currentActor", "SexLabAnimatingFaction"]
-        comparisonOperator: "=="
-        expectedValue: false
+        comparisonOperator: "<"
+        expectedValue: 0
     logicalOperator: "AND"
     required: true
   - conditions:
-      - decoratorName: "is_in_faction"
+      - decoratorName: "get_faction_rank"
         arguments: ["currentActor", "OStimExcitementFaction"]
-        comparisonOperator: "=="
-        expectedValue: false
+        comparisonOperator: "<"
+        expectedValue: 0
     logicalOperator: "AND"
     required: true

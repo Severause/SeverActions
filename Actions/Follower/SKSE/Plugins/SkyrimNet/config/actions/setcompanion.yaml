@@ -25,17 +25,17 @@ eligibilityRules:
     logicalOperator: "AND"
     required: true
   - conditions:
-      - decoratorName: "is_in_faction"
+      - decoratorName: "get_faction_rank"
         arguments: ["currentActor", "SexLabAnimatingFaction"]
-        comparisonOperator: "=="
-        expectedValue: false
+        comparisonOperator: "<"
+        expectedValue: 0
     logicalOperator: "AND"
     required: true
   - conditions:
-      - decoratorName: "is_in_faction"
+      - decoratorName: "get_faction_rank"
         arguments: ["currentActor", "OStimExcitementFaction"]
-        comparisonOperator: "=="
-        expectedValue: false
+        comparisonOperator: "<"
+        expectedValue: 0
     logicalOperator: "AND"
     required: true
 eventString: "{{ actor.name }} has joined {{ player.name }} as a companion"

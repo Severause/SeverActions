@@ -2,7 +2,7 @@ name: CompanionFollow
 description: "Resume following {{ player.name }} after waiting. Use when returning to a waiting companion and asking them to come along."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
-executionFunctionName: companionfollow
+executionFunctionName: CompanionFollow
 parameterMapping:
   - type: speaker
     name: akActor
@@ -18,17 +18,17 @@ eligibilityRules:
     logicalOperator: "AND"
     required: true
   - conditions:
-      - decoratorName: "is_in_faction"
+      - decoratorName: "get_faction_rank"
         arguments: ["currentActor", "SexLabAnimatingFaction"]
-        comparisonOperator: "=="
-        expectedValue: false
+        comparisonOperator: "<"
+        expectedValue: 0
     logicalOperator: "AND"
     required: true
   - conditions:
-      - decoratorName: "is_in_faction"
+      - decoratorName: "get_faction_rank"
         arguments: ["currentActor", "OStimExcitementFaction"]
-        comparisonOperator: "=="
-        expectedValue: false
+        comparisonOperator: "<"
+        expectedValue: 0
     logicalOperator: "AND"
     required: true
 eventString: "{{ actor.name }} stopped waiting and is following {{ player.name }} again"

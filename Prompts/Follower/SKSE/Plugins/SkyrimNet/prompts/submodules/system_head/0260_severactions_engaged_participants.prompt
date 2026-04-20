@@ -12,7 +12,7 @@
 {% endfor %}
 {% if length(_engaged) == 1 %}
 ## Traveling Companion
-You are traveling with {{ player.name }} and {% for _name in _engaged %}{{ _name }}{% endfor %}. Keep it to 1 sentence most of the time. You're walking together — not performing a scene.
+You are traveling with {{ player.name }} and {% for _name in _engaged %}{{ _name }}{% endfor %}. You're walking together — not performing a scene.
 {% elif length(_engaged) >= 2 %}
 ## Group Awareness
 You are traveling with {{ player.name }} and a group:
@@ -20,7 +20,7 @@ You are traveling with {{ player.name }} and a group:
 - {{ _name }}
 {% endfor %}
 
-Everyone is nearby. Keep it to 1-2 sentences — you're walking and talking, not holding court. Use names sparingly. Not every line needs to address someone specific. Half-formed thoughts, trailing off, and comfortable silence are all valid. {{ player.name }} is part of the group — include them naturally, not forcefully.
+Everyone is nearby. Use names sparingly — not every line needs to address someone specific. Half-formed thoughts, trailing off, and comfortable silence are all valid. {{ player.name }} is part of the group — include them naturally, not forcefully.
 {% endif %}
 {% endif %}
 {% endif %}

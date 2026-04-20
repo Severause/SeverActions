@@ -21,6 +21,7 @@ SeverActions_Outfit Property OutfitScript Auto
 SeverActions_Follow Property FollowScript Auto
 SeverActions_Combat Property CombatScript Auto
 SeverActions_Crafting Property CraftingScript Auto
+SeverActions_Property Property PropertyScript Auto
 
 ; =============================================================================
 ; LIFECYCLE
@@ -81,6 +82,9 @@ Function EnsureScriptReferences()
     EndIf
     If !CraftingScript
         CraftingScript = q as SeverActions_Crafting
+    EndIf
+    If !PropertyScript
+        PropertyScript = q as SeverActions_Property
     EndIf
 
     Debug.Trace("[SeverActions_PrismaUI] Script references resolved — " \
@@ -1148,6 +1152,14 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
         If LootScript
             ; target = NPC taking, strParam = item name
             LootScript.TakeItemFromPlayer_Execute(target, strParam, 1)
+        EndIf
+
+    ; ── Property Actions ──
+    ElseIf actionId == "transferOwnership"
+        ; target = NPC giving away ownership (speaker)
+        ; strParam = property name (blank = use actor's current location)
+        If PropertyScript
+            PropertyScript.TransferOwnership(target, strParam)
         EndIf
 
     Else
