@@ -1,0 +1,13 @@
+{# Outfit Context — what the follower is wearing and their situation presets #}
+{% if render_mode == "full" or render_mode == "transform" or render_mode == "thoughts" or render_mode == "action" %}
+{% if actorUUID and actorUUID != 0 %}
+{% set is_fol = is_follower(actorUUID) or is_sever_follower(actorUUID) %}
+{% if is_fol %}
+{% set outfit_ctx = outfit_context(actorUUID) %}
+{% if outfit_ctx and outfit_ctx != "" %}
+### Your Outfit
+{{ outfit_ctx }}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

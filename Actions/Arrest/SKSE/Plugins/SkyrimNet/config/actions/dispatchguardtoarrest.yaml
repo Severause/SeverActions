@@ -1,0 +1,104 @@
+customCategory: arrest
+name: DispatchGuardToArrest
+description: "Self-dispatch to find and arrest an NPC anywhere in the game world. The guard walks to the target and arrests them. If a sender is specified, the prisoner is brought back for judgment instead of jail."
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: DispatchGuardToArrest_Execute
+parameterMapping:
+  - type: speaker
+    name: akGuard
+    description: The guard being dispatched
+  - type: dynamic
+    name: targetName
+    description: "Full display name of the NPC to arrest"
+  - type: dynamic
+    name: senderName
+    description: "Optional. Who ordered the arrest — prisoner is brought to them for judgment. Omit to take prisoner directly to jail."
+    optional: true
+    default: ""
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWhiterun"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionRiften"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionSolitude"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionHaafingar"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWindhelm"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionMarkarth"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionFalkreath"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionDawnstar"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "GuardFactionWinterhold"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "JobJarlFaction"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "JobHousecarlFaction"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "OR"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SeverActions_DispatchFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} has been dispatched to arrest {{ targetName }}"

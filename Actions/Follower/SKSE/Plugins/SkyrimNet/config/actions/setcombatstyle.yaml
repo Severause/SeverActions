@@ -1,0 +1,41 @@
+name: SetCombatStyle
+description: "Set how this companion fights when given clear tactical instructions."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: SetCombatStyle
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The companion whose combat style is being set
+  - type: dynamic
+    name: style
+    description: "Must be one of: aggressive, defensive, ranged, healer, balanced"
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SeverActions_ActivelyFollowing"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "OR"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} will now fight in a {{ style }} style"

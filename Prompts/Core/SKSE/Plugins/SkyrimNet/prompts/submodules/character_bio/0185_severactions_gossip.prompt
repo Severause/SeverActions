@@ -1,0 +1,20 @@
+{# Local Gossip - What's been happening around town #}
+{% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" %}
+{% if actorUUID and actorUUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% if actor and actor.UUID %}
+{% set loc = get_location(actorUUID) %}
+{% if loc and loc != "" %}
+{% set gossip = papyrus_util("GetStringValue", 0, "SeverGossip_" + loc, "") %}
+{% if gossip and gossip != "" %}
+
+## Local Gossip
+You've heard talk around {{ loc }} recently:
+{{ replace(gossip, "|", "\n") }}
+
+You may casually reference local happenings in conversation if relevant — like sharing gossip with an acquaintance. Only bring it up if it fits naturally. Don't mention everyone or everything, just whatever feels relevant to the current conversation.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

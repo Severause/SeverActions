@@ -1,0 +1,56 @@
+customCategory: economy
+name: CreateRecurringDebt
+description: "Record a recurring payment arrangement that accumulates on a schedule (rent, wages, tribute)."
+questEditorId: SeverActions
+scriptName: SeverActions_Debt
+executionFunctionName: CreateRecurringDebt_Execute
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: The speaking actor
+  - type: dynamic
+    name: akCreditor
+    description: Who receives payments
+  - type: dynamic
+    name: akDebtor
+    description: Who makes payments
+  - type: dynamic
+    name: aiAmount
+    description: Gold per payment cycle
+  - type: dynamic
+    name: asReason
+    description: "Brief reason (e.g. 'room rental', 'protection money', 'weekly wages')"
+    optional: true
+    default: "unspecified"
+  - type: dynamic
+    name: aiIntervalDays
+    description: Days between payments (1=daily, 7=weekly, 30=monthly)
+    optional: true
+    default: 7
+  - type: static
+    value: 0
+    name: aiCreditLimit
+    description: Static int parameter
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

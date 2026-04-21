@@ -1,0 +1,41 @@
+{% if render_mode == "interject_inline" %}
+{# SeverActions per-candidate interject hints. Renders only in                  #}
+{# `interject_inline` mode — called once per candidate in the dialogue          #}
+{# speaker selector and gamemaster action selector. Surfaces SeverActions       #}
+{# tag context (COMPANION / ENGAGED / IN SCENE) so the selector can make        #}
+{# better pivot and silence decisions. Tag toggles are read live from           #}
+{# PrismaUI/MCM settings via papyrus_util — users who disabled a tag there      #}
+{# see it disabled here too. Keep concise: fires per candidate.                 #}
+{% if not is_player(actorUUID) %}
+
+{# Read MCM/PrismaUI tag toggles (StorageUtil globals, same keys the old
+   speaker_selector override used). Default-on (1) preserves prior UX. #}
+{% set tagCompanion = papyrus_util("GetIntValue", 0, "SeverActions_TagCompanion", 1) %}
+{% set tagEngaged = papyrus_util("GetIntValue", 0, "SeverActions_TagEngaged", 1) %}
+{% set tagInScene = papyrus_util("GetIntValue", 0, "SeverActions_TagInScene", 1) %}
+
+{# [COMPANION] — player's active follower. More invested in the player's
+   affairs, naturally reacts to things around the player, tends to pivot
+   dialogue back to the player after brief NPC-to-NPC side-exchanges. #}
+{% if tagCompanion and (is_sever_follower(actorUUID) == "true" or is_follower(actorUUID)) %}
+— **[COMPANION]** Player's active follower; naturally pivots dialogue back to the player after brief NPC-to-NPC side-exchanges rather than continuing side-chatter.
+{% endif %}
+
+{# [ENGAGED] — heightened conversational engagement (actively on-task with
+   the player: escort, travel, dispatched errand). Lower threshold to
+   speak up, answers readily when the conversational beat returns to them.
+   If multiple ENGAGED NPCs are present, don't let them dominate. #}
+{% if tagEngaged and is_in_faction(actorUUID, "SeverActions_ActivelyFollowing") %}
+— **[ENGAGED]** Actively on-task with the player; heightened conversational engagement and a lower threshold to speak.
+{% endif %}
+
+{# [IN SCENE] — physically occupied in an intimate/sexual scene. Strongly
+   deprioritise — should almost never be selected as speaker. Only select
+   if directly addressed by name or asked a direct question. COMPANION /
+   ENGAGED status is overridden while in a scene. #}
+{% if tagInScene and (is_in_faction(actorUUID, "SexLabAnimatingFaction") or is_in_faction(actorUUID, "OStimExcitementFaction")) %}
+— **[IN SCENE]** Currently mid-scene; strongly deprioritise as speaker. Only select if directly addressed by name or asked a direct question.
+{% endif %}
+
+{% endif %}
+{% endif %}

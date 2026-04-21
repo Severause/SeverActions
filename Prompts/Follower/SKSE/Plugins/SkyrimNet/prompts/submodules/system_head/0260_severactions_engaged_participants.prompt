@@ -1,0 +1,26 @@
+{# Group Meeting Awareness - Shows this NPC which other nearby NPCs are ENGAGED #}
+{% if npc and npc.UUID %}
+{% set _myUUID = to_number(to_string(npc.UUID)) %}
+{% if _myUUID != 0 and is_in_faction(_myUUID, "SeverActions_ActivelyFollowing") %}
+{% set _nearby = get_nearby_npc_list(_myUUID) %}
+{% set _engaged = [] %}
+{% for _n in _nearby %}
+{% set _nUUID = to_number(to_string(_n.UUID)) %}
+{% if _nUUID != 0 and _nUUID != _myUUID and is_in_faction(_nUUID, "SeverActions_ActivelyFollowing") %}
+{% set _engaged = append(_engaged, _n.name) %}
+{% endif %}
+{% endfor %}
+{% if length(_engaged) == 1 %}
+## Traveling Companion
+You are traveling with {{ player.name }} and {% for _name in _engaged %}{{ _name }}{% endfor %}. You're walking together — not performing a scene.
+{% elif length(_engaged) >= 2 %}
+## Group Awareness
+You are traveling with {{ player.name }} and a group:
+{% for _name in _engaged %}
+- {{ _name }}
+{% endfor %}
+
+Everyone is nearby. Use names sparingly — not every line needs to address someone specific. Half-formed thoughts, trailing off, and comfortable silence are all valid. {{ player.name }} is part of the group — include them naturally, not forcefully.
+{% endif %}
+{% endif %}
+{% endif %}

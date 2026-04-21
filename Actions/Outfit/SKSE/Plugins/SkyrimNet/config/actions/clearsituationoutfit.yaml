@@ -1,0 +1,37 @@
+customCategory: outfit
+name: ClearSituationOutfit
+description: "Clear the outfit preset assignment for a specific situation, stopping automatic outfit changes for that context."
+questEditorId: SeverActions
+scriptName: SeverActions_Outfit
+executionFunctionName: ClearSituationPreset_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: situation
+    description: "Situation name to clear: 'town', 'adventure', 'home', or 'sleep'"
+enabled: true
+eventString: "{{ actor.name }} clears their outfit assignment for {{ situation }} situations"
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

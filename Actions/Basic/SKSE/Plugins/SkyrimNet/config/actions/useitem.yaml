@@ -1,0 +1,36 @@
+customCategory: items
+name: UseItem
+description: "Consume a potion, food, or ingredient from inventory."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: UseItem_Execute
+parameterMapping:
+  - type: dynamic
+    name: akActor
+    description: The person using the item
+  - type: dynamic
+    name: itemName
+    description: The name of the consumable item to use
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

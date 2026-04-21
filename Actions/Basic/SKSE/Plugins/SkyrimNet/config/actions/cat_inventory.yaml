@@ -1,0 +1,4 @@
+customCategory: items
+name: Items
+description: "Pick up, give, take, loot, or consume loose items, potions, food, and read books, notes and diaries. NOT for equipping or changing clothes — use Outfit for that."
+enabled: true

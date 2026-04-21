@@ -1,0 +1,44 @@
+customCategory: items
+name: GiveItem
+description: "Give a physical item from inventory to another person."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: GiveItem_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: akTarget
+    description: The person receiving the item
+  - type: dynamic
+    name: itemName
+    description: The name of the item to give (e.g. "Iron Sword", "Health Potion")
+  - type: dynamic
+    name: aiCount
+    description: Number of items to give (default 1)
+    optional: true
+    default: 1
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

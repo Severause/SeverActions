@@ -1,0 +1,37 @@
+customCategory: combat
+name: AttackTarget
+description: "Attack someone and initiate combat."
+questEditorId: SeverActions
+scriptName: SeverActions_Combat
+executionFunctionName: AttackTarget_Execute
+parameterMapping:
+  - type: speaker
+    name: akAttacker
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: akTarget
+    description: The person being attacked
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

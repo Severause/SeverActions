@@ -1,0 +1,47 @@
+{% set first_person = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
+{% set third_person = (render_mode == "target") %}
+{% set arousal_data = get_arousal_state(actorUUID) %}
+
+{% if arousal_data.available %}
+{% if first_person %}
+{% if arousal_data.arousal < 10 %}
+{# 0-9: Completely neutral — no arousal context injected. Clean headspace. #}
+{% elif arousal_data.arousal < 25 %}
+## Physical State
+There is a faint warmth in your body that you barely notice. It is not distracting and does not affect your behavior. You are focused on whatever is in front of you. This is background noise — do not mention it or act on it unless something specifically draws your attention to it.
+{% elif arousal_data.arousal < 50 %}
+## Physical State
+You are aware of a low warmth settling into your body. It is not urgent and you can easily ignore it, but it is there — a subtle pull at the edge of your attention. You might find yourself glancing a moment longer than usual, or noticing details about people you would normally overlook. This does not change how you act or speak unless the conversation turns intimate on its own.
+{% elif arousal_data.arousal < 75 %}
+## Physical State
+Your body is making itself hard to ignore. There is a persistent heat that keeps pulling your focus, a restlessness in your limbs that has nothing to do with boredom. You catch yourself thinking about touch, closeness, skin. You can still function normally and hold a conversation, but your thoughts wander when they are not held down. You might be more receptive to flirtation, more aware of physical proximity, more easily flustered by suggestive comments. You do not bring this up unprompted — but if someone pushes in that direction, your guard is lower than usual.
+{% elif arousal_data.arousal < 90 %}
+## Physical State
+It is getting difficult to concentrate. Your body wants something your mind keeps trying to set aside, and it is winning. There is a flush you cannot entirely hide, a tension in the way you hold yourself, a shortness to your breathing that has nothing to do with exertion. Intimate thoughts intrude without invitation. You are more easily distracted, more responsive to touch or suggestion, more likely to let something slip that you would normally keep to yourself. You are not out of control — but you are aware that control is costing you effort.
+{% if arousal_data.is_naked %}
+Being exposed makes every sensation sharper and harder to push aside.
+{% endif %}
+{% else %}
+## Physical State
+Your body has taken over the conversation your mind was trying to have. Everything feels heightened — warmth, contact, the sound of someone's voice, the weight of their attention. You are aching and distracted and it shows in ways you cannot fully mask: the way you shift your weight, the catch in your voice, the way your eyes linger. Rational thought is still there but it is competing with something louder. You are not mindless — but you are deeply, physically compromised. If someone offers what your body is asking for, saying no takes real effort.
+{% if arousal_data.is_naked %}
+Being exposed makes this almost unbearable.
+{% endif %}
+{% endif %}
+
+Arousal is a physical state, not a personality. It does not make you a different person — it makes you a distracted version of who you already are. A reserved person stays reserved but fidgets more. A bold person gets bolder. A nervous person gets more nervous. Let it color your responses without replacing your character.
+{% endif %}
+
+{% if third_person %}
+{% if arousal_data.arousal >= 75 %}
+{% set actor = decnpc(actorUUID) %}
+{{ actor.name }} seems distracted and physically restless — flushed, shifting weight, not quite making eye contact.
+{% if arousal_data.is_naked %}
+{{ actor.name }}'s nakedness makes their state difficult to miss.
+{% endif %}
+{% elif arousal_data.arousal >= 50 %}
+{% set actor = decnpc(actorUUID) %}
+{{ actor.name }} seems slightly preoccupied — a lingering glance here, a moment of distraction there. Nothing obvious unless you are paying attention.
+{% endif %}
+{% endif %}
+{% endif %}

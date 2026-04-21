@@ -1,0 +1,15 @@
+name: TransferOwnership
+description: "Transfer ownership of a property or building to the player via shared faction. The original owner retains access (can still use beds, containers, etc.) while the player gains full ownership rights."
+questEditorId: SeverActions
+scriptName: SeverActions_Property
+executionFunctionName: TransferOwnership
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: "The NPC who is giving away their property"
+  - type: dynamic
+    name: propertyName
+    description: "Name of the property (e.g. 'Bannered Mare', 'Breezehome', 'Honeyside'). Leave empty to transfer the current location."
+eventString: "{{ actor.name }} has transferred ownership of {{ propertyName }} to {{ player.name }}"
+enabled: true
+priority: 5

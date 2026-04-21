@@ -1,0 +1,30 @@
+name: AssignHome
+description: "Assign the current location as this follower's home. When dismissed, they return here."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: AssignHome
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The follower getting a home assignment
+  - type: dynamic
+    name: locationName
+    description: "Specific location name (e.g. 'Breezehome', 'Lakeview Manor', 'Bannered Mare')"
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} now considers {{ locationName }} their home"

@@ -1,0 +1,53 @@
+customCategory: economy
+name: AddToDebt
+description: "Add charges to an existing debt. Speaker must be creditor or debtor. Respects credit limits."
+questEditorId: SeverActions
+scriptName: SeverActions_Debt
+executionFunctionName: AddToDebt_Execute
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: The speaking actor (must be creditor or debtor)
+  - type: dynamic
+    name: akTarget
+    description: The other party in the debt
+  - type: dynamic
+    name: aiAmount
+    description: Gold to add to the existing debt
+  - type: dynamic
+    name: asReason
+    description: "Reason to match specific debt (empty for first debt found)"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SeverActions_DebtorFaction"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SeverActions_CreditorFaction"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "OR"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

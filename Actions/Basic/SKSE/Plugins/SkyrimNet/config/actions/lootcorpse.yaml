@@ -1,0 +1,41 @@
+customCategory: items
+name: LootCorpse
+description: "Loot items from a dead body nearby."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: LootCorpse_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: corpseName
+    description: The name of the dead person to loot (e.g. "Bandit", "Stormcloak Soldier")
+  - type: dynamic
+    name: itemsToTake
+    description: "'all', 'valuables', 'gold', or comma-separated item names"
+    optional: true
+    default: "all"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

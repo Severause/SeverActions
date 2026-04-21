@@ -1,0 +1,39 @@
+customCategory: items
+name: BringItem
+description: "Fetch a nearby item and bring it to someone. Use only when explicitly asked to retrieve something."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: BringItem_Execute
+parameterMapping:
+  - type: dynamic
+    name: akActor
+    description: The person fetching the item
+  - type: dynamic
+    name: akTarget
+    description: The person being given the item
+  - type: dynamic
+    name: itemType
+    description: "The name or type of item to fetch (e.g. 'sword', 'potion', 'book')"
+enabled: false
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

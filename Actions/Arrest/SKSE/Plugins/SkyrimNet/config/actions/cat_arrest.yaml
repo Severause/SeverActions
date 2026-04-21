@@ -1,0 +1,4 @@
+customCategory: arrest
+name: Arrest
+description: "Law enforcement and criminal investigation. Use for: arresting NPCs or the player, jailing, releasing from jail, adding bounty, AND dispatching guards to search/investigate homes for evidence of crimes (skooma, theft, necromancy, smuggling, etc.). When a guard decides to investigate, search a home, or look for evidence — use DispatchGuardToHome, NOT travel actions."
+enabled: true

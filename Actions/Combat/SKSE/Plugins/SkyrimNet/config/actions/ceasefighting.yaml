@@ -1,0 +1,37 @@
+customCategory: combat
+name: CeaseFighting
+description: "Stop fighting and call for a truce."
+questEditorId: SeverActions
+scriptName: SeverActions_Combat
+executionFunctionName: CeaseFire_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor1
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: akActor2
+    description: The other combatant
+enabled: true
+defaultPriority: 8
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

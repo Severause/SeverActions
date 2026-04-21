@@ -1,0 +1,34 @@
+customCategory: travel
+name: CancelTravel
+description: "Cancel any pending travel and stay at the current location."
+questEditorId: SeverActions
+scriptName: SeverActions_Travel
+executionFunctionName: CancelTravel
+parameterMapping:
+  - type: speaker
+    name: akNPC
+    description: Speaker Actor parameter (triggering entity)
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

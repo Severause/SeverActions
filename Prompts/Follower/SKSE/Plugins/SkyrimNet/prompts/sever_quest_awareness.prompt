@@ -1,0 +1,70 @@
+[ system ]
+You are writing a brief quest awareness note for a companion character in Skyrim. You are describing what this character experienced or perceived during a recent quest moment. The note should reflect this character's personality, voice, and feelings.
+
+IMPORTANT: The "New Objective" field below is a game-mechanic description — do NOT quote it or reference it as text anyone said or read. Translate it into what actually happened from the character's perspective.
+
+{% set npcUUID = formid_to_uuid(npcFormId) %}
+{% if npcUUID and npcUUID != 0 %}
+{% set npc = decnpc(npcUUID) %}
+
+Character: {{ npc.name }} ({{ npc.race }}{% if npc.class %}, {{ npc.class }}{% endif %})
+
+{# Character bio for personality context — no inventory/spells/gold/nearby #}
+{% set bio = render_character_profile("thoughts", npcUUID) %}
+{% if bio and bio != "" %}
+{{ bio }}
+{% endif %}
+
+{# Recent vanilla dialogue from SkyrimNet's event system — properly tagged with speaker/listener #}
+{% set events = get_recent_events(20) %}
+{% set dialogueLines = [] %}
+{% for ev in events %}
+{% if existsIn(ev.data, "dialogue") %}
+{% if ev.type == "dialogue_npc" and existsIn(ev.data, "speaker") %}
+{% set dialogueLines = append(dialogueLines, ev) %}
+{% elif ev.type == "dialogue_player" and existsIn(ev.data, "player_name") %}
+{% set dialogueLines = append(dialogueLines, ev) %}
+{% elif ev.type == "dialogue" and existsIn(ev.data, "speaker") %}
+{% set dialogueLines = append(dialogueLines, ev) %}
+{% elif ev.type == "dialogue_player_text" and existsIn(ev.data, "player_name") %}
+{% set dialogueLines = append(dialogueLines, ev) %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if length(dialogueLines) > 0 %}
+Recent dialogue that was spoken (for context on what just happened):
+{% for ev in dialogueLines %}
+{% if existsIn(ev.data, "speaker") %}
+[{{ ev.data.speaker }}]: {{ ev.data.dialogue }}
+{% elif existsIn(ev.data, "player_name") %}
+[{{ ev.data.player_name }}]: {{ ev.data.dialogue }}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% set player_blurb = papyrus_util("GetStringValue", npc.UUID, "SeverFollower_PlayerBlurb", "") %}
+{% if player_blurb != "" %}
+How {{ npc.name }} currently feels about {{ player.name }}:
+{{ player_blurb }}
+{% endif %}
+
+{% endif %}
+
+Quest: {{ questName }} ({{ questType }})
+New Objective (game mechanic — do not quote): {{ newObjective }}
+Awareness Level: {{ awarenessTier }}
+
+{% if previousSummary and previousSummary != "" %}
+What this character already knows about this quest:
+{{ previousSummary }}
+Do NOT repeat what is already known. Write ONLY about this new moment.
+{% endif %}
+
+[ user ]
+{% if awarenessTier == "firsthand" %}
+Write 1-2 sentences from a narrator's perspective about what this character just witnessed. The objective has ALREADY been completed or progressed — write about it as something that just happened, not something about to happen. Let their personality color the description — how they felt, what they noticed, what it meant to them. Do not quote or paraphrase the objective text directly.
+{% else %}
+Write 1 sentence about a vague rumor or whisper this character picked up about something that recently happened. Keep it non-specific — they only caught fragments. Let their personality shape how they react. Do not reference the objective text.
+{% endif %}
+
+Output ONLY the narrative text. No labels, no quotation marks, no explanation.

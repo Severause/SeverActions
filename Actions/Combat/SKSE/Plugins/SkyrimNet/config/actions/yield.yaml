@@ -1,0 +1,34 @@
+customCategory: combat
+name: Yield
+description: "Surrender and stop fighting."
+questEditorId: SeverActions
+scriptName: SeverActions_Combat
+executionFunctionName: Yield_Execute
+parameterMapping:
+  - type: speaker
+    name: akYielder
+    description: Speaker Actor parameter (triggering entity)
+enabled: true
+defaultPriority: 8
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
