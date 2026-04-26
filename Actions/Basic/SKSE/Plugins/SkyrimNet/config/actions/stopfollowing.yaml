@@ -2,7 +2,7 @@ name: StopFollowing
 description: "Stop following {{ player.name }}."
 questEditorId: SeverActions
 scriptName: SeverActions_Follow
-executionFunctionName: stopfollowing
+executionFunctionName: stopFollowing
 parameterMapping:
   - type: speaker
     name: akActor

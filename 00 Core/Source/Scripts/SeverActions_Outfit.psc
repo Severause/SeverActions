@@ -60,6 +60,12 @@ SeverActions_Outfit Function GetInstance() Global
     return Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_Outfit
 EndFunction
 
+SeverActions_OutfitSlot Function GetSlotScript() Global
+    {Get the slot-system orchestration script (NFF-style preset system).
+     Returns None if not yet loaded.}
+    return Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_OutfitSlot
+EndFunction
+
 ; =============================================================================
 ; ANIMATION FUNCTIONS
 ; =============================================================================
@@ -186,6 +192,14 @@ EndFunction
 Function Undress_Execute(Actor akActor)
     if !akActor
         return
+    endif
+
+    ; Ad-hoc action takes priority over any active slot preset. Without this,
+    ; the alias's slot-preset enforcement would re-equip the preset after this
+    ; undress completes, silently undoing the change.
+    SeverActions_OutfitSlot slotSys = GetSlotScript()
+    if slotSys
+        slotSys.ClearActivePresetForAdHoc(akActor)
     endif
 
     SuspendOutfitLock(akActor)
@@ -323,6 +337,12 @@ Function Dress_Execute(Actor akActor)
         return
     endif
 
+    ; Ad-hoc dress takes priority over any active slot preset.
+    SeverActions_OutfitSlot slotSysDress = GetSlotScript()
+    if slotSysDress
+        slotSysDress.ClearActivePresetForAdHoc(akActor)
+    endif
+
     SuspendOutfitLock(akActor)
 
     Debug.Trace("[SeverActions_Outfit] Dress: " + akActor.GetDisplayName())
@@ -454,6 +474,12 @@ Function EquipItemByName_Execute(Actor akActor, String itemName)
         return
     endif
 
+    ; Ad-hoc equip takes priority over any active slot preset.
+    SeverActions_OutfitSlot slotSysEq = GetSlotScript()
+    if slotSysEq
+        slotSysEq.ClearActivePresetForAdHoc(akActor)
+    endif
+
     SuspendOutfitLock(akActor)
 
     Debug.Trace("[SeverActions_Outfit] EquipItemByName: " + akActor.GetDisplayName() + " equipping '" + itemName + "'")
@@ -516,6 +542,12 @@ Function UnequipItemByName_Execute(Actor akActor, String itemName)
         return
     endif
 
+    ; Ad-hoc unequip takes priority over any active slot preset.
+    SeverActions_OutfitSlot slotSysUneq = GetSlotScript()
+    if slotSysUneq
+        slotSysUneq.ClearActivePresetForAdHoc(akActor)
+    endif
+
     SuspendOutfitLock(akActor)
 
     Debug.Trace("[SeverActions_Outfit] UnequipItemByName: " + akActor.GetDisplayName() + " removing '" + itemName + "'")
@@ -569,6 +601,12 @@ EndFunction
 Function EquipMultipleItems_Execute(Actor akActor, String itemNames)
     if !akActor || itemNames == ""
         return
+    endif
+
+    ; Ad-hoc multi-equip takes priority over any active slot preset.
+    SeverActions_OutfitSlot slotSysMulti = GetSlotScript()
+    if slotSysMulti
+        slotSysMulti.ClearActivePresetForAdHoc(akActor)
     endif
 
     SuspendOutfitLock(akActor)
@@ -628,6 +666,12 @@ Function UnequipMultipleItems_Execute(Actor akActor, String itemNames)
         return
     endif
 
+    ; Ad-hoc multi-unequip takes priority over any active slot preset.
+    SeverActions_OutfitSlot slotSysMultiUneq = GetSlotScript()
+    if slotSysMultiUneq
+        slotSysMultiUneq.ClearActivePresetForAdHoc(akActor)
+    endif
+
     SuspendOutfitLock(akActor)
 
     Debug.Trace("[SeverActions_Outfit] UnequipMultipleItems: " + akActor.GetDisplayName() + " removing '" + itemNames + "'")
@@ -684,6 +728,32 @@ Function SaveOutfitPreset_Execute(Actor akActor, String presetName)
     endif
 
     presetName = NormalizePresetName(presetName)
+
+    ; ── NFF-style slot system path (preferred for eligible actors) ──
+    ; New presets go into a dedicated BGSOutfit+LeveledItem+Container triple.
+    ; Falls through to legacy on ineligible actors or when all 8 slots full.
+    SeverActions_OutfitSlot slotSys = GetSlotScript()
+    If slotSys && slotSys.IsSlotEligible(akActor)
+        Int slotIdx = slotSys.AssignSlotToActor(akActor)
+        If slotIdx >= 0
+            Int presetIdx = slotSys.FindFreeOrReusableIndex(akActor, presetName)
+            If presetIdx >= 0
+                Form[] slotWorn = SeverActionsNative.Native_Outfit_GetWornArmor(akActor)
+                If slotWorn && slotWorn.Length > 0
+                    slotSys.BuildPreset(akActor, presetIdx, slotWorn, presetName)
+                    Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset(slot): '" + presetName + "' idx=" + presetIdx + " for " + akActor.GetDisplayName())
+                Else
+                    Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset(slot): Actor not wearing armor, refusing empty preset")
+                    return
+                EndIf
+                ; Continue below to ALSO dual-write to StorageUtil/OutfitDataStore
+                ; for backward-compat during transition. Remove legacy block in v1.1.
+            Else
+                Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset(slot): All 8 slots full for " + akActor.GetDisplayName() + " — legacy path only")
+            EndIf
+        EndIf
+    EndIf
+
     String presetKey = "SeverOutfit_" + presetName + "_" + (akActor.GetFormID() as String)
 
     Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset: Saving '" + presetName + "' for " + akActor.GetDisplayName())
@@ -748,6 +818,25 @@ Function ApplyOutfitPreset_Execute(Actor akActor, String presetName)
     endif
 
     presetName = NormalizePresetName(presetName)
+
+    ; ── NFF-style slot system path (preferred when preset exists in slot) ──
+    SeverActions_OutfitSlot slotSys = GetSlotScript()
+    If slotSys
+        SeverActionsNative.Native_OutfitSlot_Log("ApplyOutfitPreset_Execute: Trying slot path for " + akActor.GetDisplayName() + " preset='" + presetName + "'")
+        Int presetIdx = slotSys.FindPresetIndexByName(akActor, presetName)
+        SeverActionsNative.Native_OutfitSlot_Log("ApplyOutfitPreset_Execute: FindPresetIndexByName returned " + presetIdx)
+        If presetIdx >= 0
+            slotSys.ApplyPresetBySlot(akActor, presetIdx)
+            Debug.Trace("[SeverActions_Outfit] ApplyOutfitPreset(slot): '" + presetName + "' idx=" + presetIdx + " on " + akActor.GetDisplayName())
+            Return
+        EndIf
+    Else
+        SeverActionsNative.Native_OutfitSlot_Log("ApplyOutfitPreset_Execute: WARNING slotSys is None - script not attached?")
+    EndIf
+
+    SeverActionsNative.Native_OutfitSlot_Log("ApplyOutfitPreset_Execute: Falling back to legacy path for " + akActor.GetDisplayName() + " preset='" + presetName + "'")
+
+    ; ── Legacy StorageUtil path (fallback for unmigrated presets) ──
     String presetKey = "SeverOutfit_" + presetName + "_" + (akActor.GetFormID() as String)
 
     Int count = StorageUtil.FormListCount(None, presetKey)
@@ -1354,22 +1443,42 @@ Int Function GetPresetItemCount(Actor akActor, String presetName)
 EndFunction
 
 Function DeletePreset(Actor akActor, String presetName)
-    {Deletes a saved outfit preset by name. If no presets remain, removes
-     actor from the global preset tracking list.}
+    {Deletes a saved outfit preset by name across ALL stores: legacy StorageUtil,
+     native OutfitDataStore, AND the slot system. If no presets remain, removes
+     actor from the global preset tracking list.
+
+     Normalizes the preset name first so the user-facing name from any source
+     (LLM, MCM, PrismaUI) reaches the same key the save path used.}
     if !akActor || presetName == ""
         return
     endif
+
+    ; Normalize identically to the save path so we hit the same key
+    presetName = NormalizePresetName(presetName)
+    if presetName == ""
+        return
+    endif
+
     String formID = akActor.GetFormID() as String
     String presetKey = "SeverOutfit_" + presetName + "_" + formID
     String presetsListKey = "SeverOutfit_Presets_" + formID
 
-    ; Clear the item FormList
+    ; 1. Clear the item FormList (StorageUtil)
     StorageUtil.FormListClear(None, presetKey)
 
-    ; Remove from the names list
+    ; 2. Remove from the names list (StorageUtil)
     StorageUtil.StringListRemove(None, presetsListKey, presetName, true)
 
-    ; If no presets remain, remove from global tracking list
+    ; 3. Native OutfitDataStore (now case-insensitive on its side)
+    SeverActionsNative.Native_Outfit_DeletePreset(akActor, presetName)
+
+    ; 4. Slot system — clear container + LvlItem + name + situation mappings
+    SeverActions_OutfitSlot slotSys = GetSlotScript()
+    if slotSys
+        slotSys.DeletePresetFromSlot(akActor, presetName)
+    endif
+
+    ; 5. If no presets remain, remove from global tracking list
     if StorageUtil.StringListCount(None, presetsListKey) <= 0
         StorageUtil.FormListRemove(None, "SeverOutfit_PresetActors", akActor as Form, true)
         ; Also clear non-follower lock if they have one and no presets remain
@@ -1378,10 +1487,31 @@ Function DeletePreset(Actor akActor, String presetName)
         endif
     endif
 
-    ; Dual-write to native OutfitDataStore
-    SeverActionsNative.Native_Outfit_DeletePreset(akActor, presetName)
-
     Debug.Trace("[SeverActions_Outfit] DeletePreset: Deleted '" + presetName + "' for " + akActor.GetDisplayName())
+EndFunction
+
+; =============================================================================
+; SavePresetToNativeStore — resilience mirror for slot-system BuildPreset
+; Called by SeverActions_OutfitSlot.BuildPreset to dual-write into OutfitDataStore
+; so that slot-built presets survive slot-cosave drops (e.g. version bumps).
+; =============================================================================
+
+Function SavePresetToNativeStore(Actor akActor, String presetName, Form[] items, Int itemCount)
+    {Mirror a slot-built preset into the native OutfitDataStore (record 'OTFT').
+     Uses the BeginPreset/AddPresetItem/CommitPreset pattern. Silent on errors.}
+    if !akActor || presetName == ""
+        return
+    endif
+
+    SeverActionsNative.Native_Outfit_BeginPreset(akActor, presetName)
+    Int i = 0
+    While i < itemCount
+        if items[i]
+            SeverActionsNative.Native_Outfit_AddPresetItem(akActor, items[i])
+        endif
+        i += 1
+    EndWhile
+    SeverActionsNative.Native_Outfit_CommitPreset(akActor)
 EndFunction
 
 ; =============================================================================
@@ -1937,10 +2067,22 @@ Function SetSituationPreset_Execute(Actor akActor, String situation, String pres
     situation = NormalizeSituation(situation)
     presetName = NormalizePresetName(presetName)
 
-    ; Verify the preset exists
+    ; ── Slot system dual-write ──
+    SeverActions_OutfitSlot slotSys = GetSlotScript()
+    If slotSys
+        Int sitPresetIdx = slotSys.FindPresetIndexByName(akActor, presetName)
+        If sitPresetIdx >= 0
+            SeverActionsNative.Native_OutfitSlot_SetSituationPreset(akActor, situation, sitPresetIdx)
+            Debug.Trace("[SeverActions_Outfit] SetSituationPreset(slot): " + situation + " -> idx " + sitPresetIdx + " ('" + presetName + "')")
+        EndIf
+    EndIf
+
+    ; ── Legacy path (still validate + dual-write for backwards compat) ──
+    ; Verify the preset exists in legacy storage too
     String presetKey = "SeverOutfit_" + presetName + "_" + (akActor.GetFormID() as String)
     if StorageUtil.FormListCount(None, presetKey) == 0
-        Debug.Trace("[SeverActions_Outfit] SetSituationPreset: Preset '" + presetName + "' not found for " + akActor.GetDisplayName())
+        ; Slot system handled it; legacy doesn't have it. That's fine.
+        Debug.Trace("[SeverActions_Outfit] SetSituationPreset: '" + presetName + "' only in slot system (legacy entry absent)")
         return
     endif
 
@@ -1958,6 +2100,10 @@ Function ClearSituationPreset_Execute(Actor akActor, String situation)
     endif
     situation = NormalizeSituation(situation)
 
+    ; ── Slot system ──
+    SeverActionsNative.Native_OutfitSlot_SetSituationPreset(akActor, situation, -1)
+
+    ; ── Legacy ──
     SeverActionsNative.Native_Outfit_ClearSituationPreset(akActor, situation)
     StorageUtil.UnsetStringValue(akActor, "SeverOutfit_Sit_" + situation)
 
@@ -1975,7 +2121,10 @@ Function Maintenance()
     ; PrismaUI outfit ModEvents — replaces DispatchMethodCall which silently fails
     RegisterForModEvent("SeverActions_PrismaSnapshot", "OnPrismaSnapshot")
     RegisterForModEvent("SeverActions_PrismaClearLock", "OnPrismaClearLock")
+    RegisterForModEvent("SeverActions_PrismaClearAllPresets", "OnPrismaClearAllPresets")
     RegisterForModEvent("SeverActions_PrismaApplyPreset", "OnPrismaApplyPreset")
+    ; V2 event bypasses stale cached handler in older saves
+    RegisterForModEvent("SeverActions_PrismaApplyPresetV2", "OnPrismaApplyPresetV2")
     RegisterForModEvent("SeverActions_PrismaDeletePreset", "OnPrismaDeletePreset")
     RegisterForModEvent("SeverActions_PrismaSavePreset", "OnPrismaSavePreset")
     RegisterForModEvent("SeverActions_PrismaSetSitPreset", "OnPrismaSetSitPreset")
@@ -1993,6 +2142,10 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_PrismaClearLockForBuilder", "OnPrismaClearLockForBuilder")
     ; PrismaUI resume lock — clears Papyrus suspend when builder closes
     RegisterForModEvent("SeverActions_PrismaResumeLock", "OnPrismaResumeLock")
+    ; PrismaUI ad-hoc clear slot preset — fired by C++ catalog Equip & Lock /
+    ; Unequip paths so the alias's slot-preset enforcement doesn't fight an
+    ; ad-hoc change. Mirrors Papyrus ClearActivePresetForAdHoc.
+    RegisterForModEvent("SeverActions_PrismaAdHocClearSlotPreset", "OnPrismaAdHocClearSlotPreset")
 
     ; Animation framework hooks — suspend outfit lock during scenes
     ; SexLab: global hooks fire for ALL scenes (no local hook suffix needed)
@@ -2036,6 +2189,23 @@ Event OnSituationChanged(String eventName, String strArg, Float numArg, Form sen
     If StorageUtil.GetIntValue(akActor, "SeverOutfit_Suspended", 0) == 1
         Return
     EndIf
+
+    ; ── Slot system path first (if actor has a slot, it owns the situation routing) ──
+    SeverActions_OutfitSlot slotSys = GetSlotScript()
+    If slotSys && SeverActionsNative.Native_OutfitSlot_GetSlot(akActor) >= 0
+        Int sitPresetIdx = SeverActionsNative.Native_OutfitSlot_GetSituationPreset(akActor, situation)
+        If sitPresetIdx >= 0 && SeverActionsNative.Native_OutfitSlot_GetAutoSwitch(akActor)
+            Int currentActive = SeverActionsNative.Native_OutfitSlot_GetActivePreset(akActor)
+            If currentActive != sitPresetIdx
+                slotSys.OnSituationChangedForActor(akActor, situation)
+            EndIf
+            Return
+        EndIf
+        ; Slot exists but no mapping for this situation — fall through to legacy
+        ; in case a legacy preset is mapped there.
+    EndIf
+
+    ; ── Legacy path ──
 
     ; Skip if auto-switch disabled for this actor
     if SeverActionsNative.Native_Outfit_GetAutoSwitchEnabled(akActor) == false
@@ -2230,33 +2400,57 @@ EndEvent
 
 Event OnPrismaBuilderSavePreset(String eventName, String strArg, Float numArg, Form sender)
     {Fired by buildOutfitSavePreset C++ action. Syncs the preset from native
-     OutfitDataStore to StorageUtil so MCM and Papyrus actions can see it.
+     OutfitDataStore to StorageUtil AND registers it in the slot system so
+     FindPresetIndexByName can resolve it for ApplyPreset.
      strArg format: "actorName|presetName" (standard SendModEvent encoding)}
+    SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: ENTRY strArg='" + strArg + "' numArg=" + numArg)
     Int pipePos = StringUtil.Find(strArg, "|")
     If pipePos < 0
+        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: no pipe in strArg, aborting")
         Return
     EndIf
-    Actor akActor = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
+    String actorName = StringUtil.Substring(strArg, 0, pipePos)
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
     String presetName = StringUtil.Substring(strArg, pipePos + 1)
+    SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: parsed actorName='" + actorName + "' presetName='" + presetName + "'")
     If !akActor || presetName == ""
+        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: actor=" + akActor + " presetName='" + presetName + "' — aborting")
         Return
     EndIf
 
     presetName = NormalizePresetName(presetName)
+    SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: after normalize presetName='" + presetName + "'")
+
+    ; FETCH FIRST — don't mutate any store until we know the source has data.
+    ; Native lookup is now case-insensitive (OutfitDataStore.h), so the
+    ; BSFixedString pool case-flip can no longer cause an empty result on its own.
+    ; If we still get empty here, the C++ save genuinely failed and we should
+    ; abort cleanly rather than create ghost StorageUtil entries that nuke the
+    ; previous backup for this key.
+    Form[] presetItems = SeverActionsNative.Native_Outfit_GetPresetItems(akActor, presetName)
+    Int itemsLen = 0
+    If presetItems
+        itemsLen = presetItems.Length
+    EndIf
+    SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: native fetch returned " + itemsLen + " items for '" + presetName + "'")
+
+    If itemsLen == 0
+        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: ABORT — empty native fetch, refusing to register ghost legacy entry for '" + presetName + "'")
+        Return
+    EndIf
+
+    ; Native fetch succeeded — now we can safely mutate the legacy stores.
     String presetKey = "SeverOutfit_" + presetName + "_" + (akActor.GetFormID() as String)
 
-    ; Clear any existing preset data and rebuild from native store
+    ; Clear stale item FormList and repopulate from the verified native data
     StorageUtil.FormListClear(None, presetKey)
-    Form[] presetItems = SeverActionsNative.Native_Outfit_GetPresetItems(akActor, presetName)
-    If presetItems
-        Int pi = 0
-        While pi < presetItems.Length
-            If presetItems[pi]
-                StorageUtil.FormListAdd(None, presetKey, presetItems[pi])
-            EndIf
-            pi += 1
-        EndWhile
-    EndIf
+    Int pi = 0
+    While pi < itemsLen
+        If presetItems[pi]
+            StorageUtil.FormListAdd(None, presetKey, presetItems[pi])
+        EndIf
+        pi += 1
+    EndWhile
 
     ; Register the preset name in StorageUtil
     String presetsListKey = "SeverOutfit_Presets_" + (akActor.GetFormID() as String)
@@ -2269,6 +2463,25 @@ Event OnPrismaBuilderSavePreset(String eventName, String strArg, Float numArg, F
     if StorageUtil.FormListFind(None, presetActorsKey, akActor as Form) < 0
         StorageUtil.FormListAdd(None, presetActorsKey, akActor as Form)
     endif
+
+    ; === SLOT SYSTEM REGISTRATION ===
+    ; Call BuildPreset so the new preset shows up in the slot system's cosave.
+    ; Without this, FindPresetIndexByName returns -1 and ApplyPreset falls back
+    ; to the legacy path (which doesn't use the NFF-style outfit swap).
+    SeverActions_OutfitSlot slotSys = GetSlotScript()
+    SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: pre-slot-gate slotSys=" + slotSys + " presetItems.Length=" + itemsLen)
+    If slotSys
+        ; Find or allocate a preset index for this name
+        Int targetIdx = slotSys.FindFreeOrReusableIndex(akActor, presetName)
+        If targetIdx >= 0
+            Int committed = slotSys.BuildPreset(akActor, targetIdx, presetItems, presetName)
+            SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: BuildPreset for " + akActor.GetDisplayName() + " '" + presetName + "' targetIdx=" + targetIdx + " committed=" + committed)
+        Else
+            SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: No free slot index for " + akActor.GetDisplayName() + " '" + presetName + "' (all 8 full)")
+        EndIf
+    Else
+        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: SKIPPED slot registration — slotSys is None")
+    EndIf
 
     Debug.Trace("[SeverActions_Outfit] PrismaBuilderSavePreset: Synced preset '" + presetName + "' for " + akActor.GetDisplayName())
 EndEvent
@@ -2311,6 +2524,23 @@ Event OnPrismaResumeLock(String eventName, String strArg, Float numArg, Form sen
     Debug.Trace("[SeverActions_Outfit] PrismaResumeLock: Resumed for " + akActor.GetDisplayName())
 EndEvent
 
+Event OnPrismaAdHocClearSlotPreset(String eventName, String strArg, Float numArg, Form sender)
+    {Fired by C++ catalog Equip & Lock / Unequip paths to mirror the
+     ClearSlotPresetForAdHoc behavior into Papyrus. C++ has already cleared
+     the native activePresetIdx; this handler clears the matching StorageUtil
+     flag so the alias short-circuit (which reads SeverOutfit_PresetActive)
+     stops treating the actor as preset-active.
+
+     numArg = actor FormID (uint cast to Float by the SendModEvent helper).}
+    Actor akActor = Game.GetFormEx(numArg as Int) as Actor
+    if !akActor
+        Debug.Trace("[SeverActions_Outfit] OnPrismaAdHocClearSlotPreset: actor lookup failed for FormID " + numArg)
+        return
+    endif
+    StorageUtil.UnsetIntValue(akActor, "SeverOutfit_PresetActive")
+    Debug.Trace("[SeverActions_Outfit] OnPrismaAdHocClearSlotPreset: cleared StorageUtil flag for " + akActor.GetDisplayName())
+EndEvent
+
 Event OnPrismaClearLock(String eventName, String strArg, Float numArg, Form sender)
     Int pipePos = StringUtil.Find(strArg, "|")
     If pipePos < 0
@@ -2322,6 +2552,32 @@ Event OnPrismaClearLock(String eventName, String strArg, Float numArg, Form send
     EndIf
     ClearLockedOutfit(akActor)
     Debug.Trace("[SeverActions_Outfit] PrismaClearLock: Cleared lock for " + akActor.GetDisplayName())
+EndEvent
+
+Event OnPrismaClearAllPresets(String eventName, String strArg, Float numArg, Form sender)
+    {Fired by "Clear All Presets" button in PrismaUI. Fully releases the actor's
+     slot — restores original DefaultOutfit, empties all 8 preset containers,
+     returns satchel items to the actor, disables the satchel.
+     After this, the actor is back to their untouched baseline.}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    Actor akActor = SeverActionsNative.FindActorByName(StringUtil.Substring(strArg, 0, pipePos))
+    If !akActor
+        Return
+    EndIf
+
+    ; Release the slot via the slot-system orchestrator
+    SeverActions_OutfitSlot slotSys = GetSlotScript()
+    If slotSys
+        slotSys.ReleaseSlotFromActor(akActor)
+    EndIf
+
+    ; Also clear any legacy lock + presets for thorough cleanup
+    ClearLockedOutfit(akActor)
+
+    Debug.Trace("[SeverActions_Outfit] PrismaClearAllPresets: Fully released " + akActor.GetDisplayName())
 EndEvent
 
 Event OnPrismaApplyPreset(String eventName, String strArg, Float numArg, Form sender)
@@ -2336,6 +2592,27 @@ Event OnPrismaApplyPreset(String eventName, String strArg, Float numArg, Form se
     EndIf
     ApplyOutfitPreset_Execute(akActor, presetName)
     Debug.Trace("[SeverActions_Outfit] PrismaApplyPreset: Applied '" + presetName + "' to " + akActor.GetDisplayName())
+EndEvent
+
+Event OnPrismaApplyPresetV2(String eventName, String strArg, Float numArg, Form sender)
+    {Versioned handler that bypasses stale-cached old OnPrismaApplyPreset bytecode.
+     New saves get the parse-pipe behavior; existing saves with cached old handlers
+     simply ignore this event because they never registered for V2.}
+    SeverActionsNative.Native_OutfitSlot_Log("OnPrismaApplyPresetV2: strArg='" + strArg + "' numArg=" + numArg)
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaApplyPresetV2: No pipe in strArg, aborting")
+        Return
+    EndIf
+    String actorName = StringUtil.Substring(strArg, 0, pipePos)
+    String presetName = StringUtil.Substring(strArg, pipePos + 1)
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    If !akActor
+        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaApplyPresetV2: Actor lookup failed for '" + actorName + "'")
+        Return
+    EndIf
+    SeverActionsNative.Native_OutfitSlot_Log("OnPrismaApplyPresetV2: Calling ApplyOutfitPreset_Execute('" + akActor.GetDisplayName() + "', '" + presetName + "')")
+    ApplyOutfitPreset_Execute(akActor, presetName)
 EndEvent
 
 Event OnPrismaDeletePreset(String eventName, String strArg, Float numArg, Form sender)

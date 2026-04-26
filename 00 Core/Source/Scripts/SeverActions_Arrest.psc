@@ -871,7 +871,15 @@ Function PerformArrest()
         TravelSystem.CancelTravel(prisoner)
     EndIf
 
-    ; Pacify the prisoner
+    ; Pacify the prisoner. Store originals BEFORE zeroing so ReleaseFromJailCore /
+    ; ReleasePrisoner can put them back. Without the store/restore pair, prisoners
+    ; would walk out of jail permanently pacified (Aggression=0, Confidence=0)
+    ; — bandits become docile, hostile NPCs become friendly. Don't overwrite if
+    ; already stored (handles double-arrest / re-pacify mid-flow).
+    If StorageUtil.GetFloatValue(prisoner, "SeverArrest_OrigAggression", -1.0) < 0.0
+        StorageUtil.SetFloatValue(prisoner, "SeverArrest_OrigAggression", prisoner.GetAV("Aggression"))
+        StorageUtil.SetFloatValue(prisoner, "SeverArrest_OrigConfidence", prisoner.GetAV("Confidence"))
+    EndIf
     prisoner.SetAV("Aggression", 0)
     prisoner.SetAV("Confidence", 0)
 
@@ -1323,7 +1331,10 @@ Function ReleasePrisoner(Actor akPrisoner)
     SeverActionsNative.LinkedRef_Clear(akPrisoner, SeverActions_FollowTargetKW)
     SeverActionsNative.LinkedRef_Clear(akPrisoner, SeverActions_SandboxAnchorKW)
 
-    ; Restore normal behavior (they may become hostile again)
+    ; Restore normal behavior (they may become hostile again). Use the
+    ; helper for Aggression/Confidence — see RestorePrisonerStats note.
+    ; HealRate is properly depletable so RestoreAV is correct here.
+    RestorePrisonerStats(akPrisoner)
     akPrisoner.RestoreAV("HealRate", 100)
     akPrisoner.EvaluatePackage()
 EndFunction
@@ -1355,13 +1366,51 @@ Function ReleaseFromJailCore(Actor akTarget)
         akTarget.RemoveItem(SeverActions_PrisonerRags, 1, true)
     EndIf
 
-    ; Restore normal stats
-    akTarget.RestoreAV("Aggression", 100)
-    akTarget.RestoreAV("Confidence", 100)
+    ; Restore normal stats. Aggression/Confidence are base attributes (not
+    ; depletable resources), so RestoreAV doesn't work — we have to read the
+    ; pre-arrest originals back from StorageUtil and SetAV. HealRate IS
+    ; depletable, so RestoreAV is correct for it.
+    RestorePrisonerStats(akTarget)
     akTarget.RestoreAV("HealRate", 100)
 
     ; Clear stored jail marker
     StorageUtil.UnsetFormValue(akTarget, "SeverActions_JailMarker")
+EndFunction
+
+Function RestorePrisonerStats(Actor akActor)
+    {Restore Aggression and Confidence from the pre-arrest originals stored
+     in StorageUtil during PerformArrest / ApplyDispatchArrestEffects.
+
+     Aggression and Confidence are base actor attributes (0=Unaggressive
+     ... 3=Frenzied / 0=Cowardly ... 4=Foolhardy) — they don't get
+     "damaged" the way HealRate or stamina do, so RestoreAV does nothing
+     useful for them. Only SetAV with the captured original value puts
+     them back correctly. This bug used to leave released prisoners with
+     Aggression=0 / Confidence=0 forever — bandits walked out docile,
+     hostile NPCs walked out friendly to everyone.
+
+     If no original was stored (legacy save before the fix, or NPC was
+     never properly arrested via our flow), we fall back to sane vanilla
+     defaults: Aggression=1 (Aggressive) and Confidence=2 (Average).}
+    If !akActor
+        Return
+    EndIf
+
+    Float origAggression = StorageUtil.GetFloatValue(akActor, "SeverArrest_OrigAggression", -1.0)
+    If origAggression >= 0.0
+        akActor.SetAV("Aggression", origAggression)
+        StorageUtil.UnsetFloatValue(akActor, "SeverArrest_OrigAggression")
+    Else
+        akActor.SetAV("Aggression", 1)
+    EndIf
+
+    Float origConfidence = StorageUtil.GetFloatValue(akActor, "SeverArrest_OrigConfidence", -1.0)
+    If origConfidence >= 0.0
+        akActor.SetAV("Confidence", origConfidence)
+        StorageUtil.UnsetFloatValue(akActor, "SeverArrest_OrigConfidence")
+    Else
+        akActor.SetAV("Confidence", 2)
+    EndIf
 EndFunction
 
 Function ClearArrestState()
@@ -1616,6 +1665,13 @@ Function ApplyDispatchArrestEffects()
         TravelSystem.CancelTravel(DispatchTarget)
     EndIf
 
+    ; Store originals before pacifying — same store/restore pattern as PerformArrest.
+    ; Without this, dispatch-arrested NPCs would never recover their Aggression /
+    ; Confidence on release.
+    If StorageUtil.GetFloatValue(DispatchTarget, "SeverArrest_OrigAggression", -1.0) < 0.0
+        StorageUtil.SetFloatValue(DispatchTarget, "SeverArrest_OrigAggression", DispatchTarget.GetAV("Aggression"))
+        StorageUtil.SetFloatValue(DispatchTarget, "SeverArrest_OrigConfidence", DispatchTarget.GetAV("Confidence"))
+    EndIf
     DispatchTarget.SetAV("Aggression", 0)
     DispatchTarget.SetAV("Confidence", 0)
     DispatchTarget.SetAV("HealRate", 0.1)
@@ -2292,8 +2348,11 @@ Function HandleResistArrest()
     ; We'll re-absorb it back into tracked bounty once combat settles
     ResistArrestFaction = ConfrontingFaction
 
-    ; Make guard hostile
-    ConfrontingGuard.SetAV("Aggression", 2) ; Aggressive
+    ; Make guard hostile. We deliberately do NOT bump Aggression — guards
+    ; baseline at 1 (Aggressive) which is enough; ApplyTrackedBountyToVanilla
+    ; above + StartCombat is what actually triggers the engagement.
+    ; Setting Aggression=2 used to risk persistence if combat ended abnormally
+    ; (no auto-restore on this path), so we just removed it.
     ConfrontingGuard.StartCombat(Game.GetPlayer())
 
     Debug.Notification("Bounty increased by " + ResistBountyIncrease + " gold!")

@@ -139,6 +139,29 @@ EndFunction
 Event OnInit()
     RegisterForModEvent("SeverActionsNative_YieldBroken", "OnYieldBroken")
     RegisterForModEvent("SeverActionsNative_CeasefireBroken", "OnCeasefireBroken")
+    RegisterForModEvent("SeverActions_ForcedCombatEnded", "OnForcedCombatEnded")
+EndEvent
+
+; ============================================================================
+; FORCED COMBAT END HOOK
+; ============================================================================
+; Native ForcedCombatMonitor (Native/src/ForcedCombatMonitor.h) sinks
+; TESCombatEvent and fires this ModEvent when an actor flagged as
+; InForcedCombat exits combat (target killed, escaped, scripted disengage,
+; etc.). Without this hook, AttackTarget left stale state on the actor:
+; Confidence=3, AttackFaction membership, InForcedCombat flag, stored
+; relationship rank — and dismissed followers would walk off and re-engage
+; other NPCs because the AIO patch and combat AI both still saw them as
+; "in attack mode". FullCleanup is the existing nuclear-option restore that
+; Yield and Ceasefire flows already call.
+
+Event OnForcedCombatEnded(String eventName, String strArg, Float numArg, Form sender)
+    Actor a = sender as Actor
+    If !a
+        Return
+    EndIf
+    Debug.Trace("[SeverCombat] ForcedCombatEnded for " + a.GetDisplayName() + " — running FullCleanup")
+    FullCleanup(a)
 EndEvent
 
 ; ============================================================================
@@ -1028,6 +1051,7 @@ Event OnPlayerLoadGame()
     ; Re-register for native mod events
     RegisterForModEvent("SeverActionsNative_YieldBroken", "OnYieldBroken")
     RegisterForModEvent("SeverActionsNative_CeasefireBroken", "OnCeasefireBroken")
+    RegisterForModEvent("SeverActions_ForcedCombatEnded", "OnForcedCombatEnded")
 
     ; Re-assign yield persistence aliases (ForceRefTo doesn't survive save/load)
     ReassignYieldSlots()

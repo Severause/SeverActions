@@ -499,6 +499,15 @@ Function Maintenance()
     ; The StorageUtil string persists, but the actor value effects may not.
     ReapplyCombatStyles(cachedFollowers)
 
+    ; Re-apply IgnoreFriendlyHits to all followers — the actor flag doesn't
+    ; reliably survive save/load on every mod-added follower (especially custom-
+    ; AI ones managed outside CurrentFollowerFaction). Idempotent — calling
+    ; with the same value twice is a no-op. Pairs with the
+    ; SeverActions_FollowerFaction self-friendly reaction declared in the ESP
+    ; to keep stray AoE / arrow / fireball hits from flipping followers
+    ; hostile to each other.
+    ApplyIgnoreFriendlyHits(cachedFollowers)
+
     ; Patch-up: ensure all vanilla-path followers have CurrentFollowerFaction + Ally rank
     ; (retroactively applies to followers recruited before this code existed)
     PatchUpVanillaFollowerStatus(cachedFollowers)
@@ -2107,6 +2116,15 @@ Function RegisterFollower(Actor akActor)
         akActor.AddToFaction(SeverActions_FollowerFaction)
     EndIf
 
+    ; Tell the engine to ignore hits from anyone this actor considers friendly.
+    ; Combined with the SeverActions_FollowerFaction self-reaction (declared
+    ; Friendly to itself in SeverActions.esp), this prevents stray AoE / cloak /
+    ; arrow / fireball hits between followers from flipping them hostile to
+    ; each other. Without this flag, engine combat AI processes "I was hit by
+    ; X for damage" even when X is faction-friendly, and one accidental
+    ; Firebolt makes Daegon and Jenassa swing at each other.
+    akActor.IgnoreFriendlyHits(true)
+
     ; Set default relationship values and recruit time only on first recruit
     If isFirstRecruit
         StorageUtil.SetFloatValue(akActor, KEY_RECRUIT_TIME, GetGameTimeInSeconds())
@@ -2743,7 +2761,7 @@ Function FireRelationshipAssessment(Actor akActor)
 
     contextJson += "}"
 
-    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_relationship_assess", "", contextJson, \
+    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_relationship_assess", "sever_background", contextJson, \
         Self as Quest, "SeverActions_FollowerManager", "OnRelationshipAssessment")
 
     If result < 0
@@ -2888,7 +2906,7 @@ Function ProcessNextReputationAssessment()
 
     String contextJson = "{\"npcFormId\":" + formId + "}"
 
-    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_reputation_assess", "", contextJson, \
+    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_reputation_assess", "sever_background", contextJson, \
         Self as Quest, "SeverActions_FollowerManager", "OnReputationAssessResult")
 
     If result < 0
@@ -3118,7 +3136,7 @@ Function FireInterFollowerAssessment(Actor akActor)
 
     contextJson += membersJson + "}"
 
-    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_relationship_interfollower", "", contextJson, \
+    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_relationship_interfollower", "sever_background", contextJson, \
         Self as Quest, "SeverActions_FollowerManager", "OnInterFollowerAssessment")
 
     If result < 0
@@ -3689,7 +3707,7 @@ Function FireFollowerBanter(Actor[] eligible, Int count)
     EndWhile
     contextJson += "]}"
 
-    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_follower_banter", "", contextJson, \
+    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_follower_banter", "sever_background", contextJson, \
         Self as Quest, "SeverActions_FollowerManager", "OnFollowerBanter")
 
     If result < 0
@@ -3857,7 +3875,7 @@ Function FireOffScreenLifeEvent(Actor akActor)
         Return
     EndIf
 
-    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_offscreen_life", "", contextJson, \
+    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_offscreen_life", "sever_background", contextJson, \
         Self as Quest, "SeverActions_FollowerManager", "OnOffScreenLifeEvent")
 
     If result < 0
@@ -5224,6 +5242,29 @@ Function ReapplyCombatStyles(Actor[] followers)
     EndWhile
 EndFunction
 
+Function ApplyIgnoreFriendlyHits(Actor[] followers)
+    {Re-apply IgnoreFriendlyHits to all SeverActions followers on game load.
+     The actor-level flag doesn't reliably survive save/load on every mod-added
+     follower (especially custom-AI ones managed outside CurrentFollowerFaction).
+     Idempotent — calling with the same value is a no-op at the engine level.
+
+     Pairs with the SeverActions_FollowerFaction self-friendly reaction declared
+     in the ESP. Together they prevent stray AoE / arrow / fireball / cloak
+     hits between followers from flipping them hostile to each other —
+     without this, Daegon casting Firebolt could splash Jenassa, the engine's
+     combat AI processes "I was attacked by Daegon", and they'd start fighting.
+
+     Called from Maintenance() on every game load.}
+    Int i = 0
+    While i < followers.Length
+        If followers[i]
+            followers[i].IgnoreFriendlyHits(true)
+        EndIf
+        i += 1
+    EndWhile
+    DebugMsg("Re-applied IgnoreFriendlyHits to " + followers.Length + " followers")
+EndFunction
+
 Function ReapplyHomeSandboxing()
     {Migration function for saves upgrading from AddPackageOverride to alias system.
      If a homed NPC has a marker slot but isn't in an alias, force them in.
@@ -5675,7 +5716,7 @@ Function ProcessNextSummaryRequest()
 
     QuestAwarenessInProgress = true
 
-    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_quest_awareness", "", contextJson, \
+    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_quest_awareness", "sever_background", contextJson, \
         Self as Quest, "SeverActions_FollowerManager", "OnQuestSummaryGenerated")
 
     If result < 0

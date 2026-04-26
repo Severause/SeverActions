@@ -80,6 +80,14 @@ Function Initialize(Bool isFirstInit)
         outfitScript.Maintenance()
     endif
 
+    ; NFF-style outfit slot system — one-shot migration from legacy presets,
+    ; then rebuild all LvlItem contents from their containers.
+    SeverActions_OutfitSlot slotScript = q as SeverActions_OutfitSlot
+    if slotScript
+        slotScript.MigrateToOutfitSlotSystem()
+        slotScript.Maintenance()
+    endif
+
     ; WebUI real-time config sync disabled — see SyncPluginConfig() note above.
     ; RegisterForModEvent("SkyrimNet_OnPluginConfigSaved", "OnPluginConfigSaved")
 

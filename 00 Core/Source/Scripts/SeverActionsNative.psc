@@ -1146,6 +1146,57 @@ String Function GetSpellDBStats() Global Native
 {Get spell database statistics string (indexed count, etc.).}
 
 ; =============================================================================
+; SPELL CAST MANAGER
+; Supports the CastSpell action - inject a runtime-chosen Spell into a
+; pre-built usemagic AI package, classify spells, and recover stuck casts.
+; =============================================================================
+
+Bool Function Native_InjectSpellIntoPackage(Package akPackage, Spell akSpell) Global Native
+{Swap the Spell form inside akPackage's custom data to akSpell.
+Lets a single castmagic package scaffold cast any spell the LLM names.}
+
+Bool Function Native_IsSelfDeliveredSpell(Spell akSpell) Global Native
+{True if the spell's delivery type is Self (costliest effect targets the caster).}
+
+Bool Function Native_IsHealingSpell(Spell akSpell) Global Native
+{True if the spell is non-hostile Restoration. Used to gate the heal-to-full loop.}
+
+Int Function Native_GetEffectiveMagickaCost(Actor akCaster, Spell akSpell, Bool bDualCasting) Global Native
+{Magicka cost the caster will actually pay, post skill/perk modifiers. Doubled for dual cast.}
+
+Bool Function Native_IsCasterStillCasting(Actor akCaster) Global Native
+{Poll the caster's animation graph for IsCastingLeft/IsCastingRight. Used by the stuck-charge watchdog.}
+
+Function Native_ForceReleaseCast(Actor akCaster) Global Native
+{Interrupt + fire animation release events on both hands. Recovers a caster stuck in ChargeLoop.}
+
+Function Native_EvaluateActorPackage(Actor akActor) Global Native
+{Force re-evaluation of the actor's AI package. Use after removing a package override.}
+
+Function Native_DiagnoseCastSetup(Actor akActor, Spell akSpell) Global Native
+{Logs spell properties (castingType, equipSlot, magickaCost), actor's current package,
+combat state, and equipped slots. Diagnostic for figuring out why a cast won't fire.}
+
+Function Native_EquipSpellOnActor(Actor akActor, Spell akSpell, Int aiSlot) Global Native
+{Equip a spell in a hand slot. aiSlot: 0=left, 1=right, 2=voice. Mimics what bosn's
+clonePackageSpell does — without an explicit equip the engine's UseMagic procedure
+sometimes loses the spell-equip race against CombatStyle weapon preferences.}
+
+Spell Function Native_CloneSpellForCast(Actor akActor, Spell akSource, Bool abDualCasting) Global Native
+{Clone a spell into a fresh runtime SpellItem (mirrors bosn's clonePackageSpell).
+The clone has its casting perk dropped and its equipSlot set to EitherHand. Use the
+returned spell as the target of Native_InjectSpellIntoPackage so the UseMagic
+procedure has a clean form to drive — the original Requiem spell carries enough
+state that the procedure runs silently and never dispatches to MagicCaster.}
+
+Bool Function Native_ForceFireSpell(Actor akActor, Spell akSpell, ObjectReference akTarget) Global Native
+{Force-fire a spell from the actor's MagicCaster at the target. Bypasses the AI
+package procedure entirely — projectile spawns, effects apply, animation may or
+may not play. Used as a fallback when the UseMagic procedure refuses to dispatch
+(diagnostic shows MagicCaster state=0 across all polls). At minimum the cast
+actually happens, which is better than the alternative.}
+
+; =============================================================================
 ; FOLLOWER DATA STORE (SKSE Cosave Persistence)
 ; Native cosave persistence for per-actor home location and combat style.
 ; Replaces unreliable StorageUtil string persistence with SKSE serialization.
@@ -1682,3 +1733,168 @@ Call from Papyrus to push persisted StorageUtil value to C++ on load.}
 
 Bool Function FriendlyFireMonitor_IsEnabled() Global Native
 {Check if follower-friendly-fire prevention is currently enabled in C++.}
+
+; =============================================================================
+; OUTFIT SLOT SYSTEM (NFF-style)
+; Pre-built Outfit+LeveledItem+Container triples per (slot, preset). Papyrus
+; populates LeveledItem from container, then SetOutfit(outfitRecord) — engine
+; auto-equips on every cell load. Up to 50 slots × 8 presets = 400 triples.
+; =============================================================================
+
+Int Function Native_OutfitSlot_AssignSlot(Actor akActor) Global Native
+{Assign first free outfit slot to actor. Idempotent — returns existing index if already assigned. Returns -1 if all 50 slots occupied.}
+
+Function Native_OutfitSlot_ReleaseSlot(Actor akActor) Global Native
+{Release actor's outfit slot. Does NOT restore DefaultOutfit — call SetOutfit separately.}
+
+Int Function Native_OutfitSlot_GetSlot(Actor akActor) Global Native
+{Return actor's slot index (0-49) or -1 if no slot assigned.}
+
+Outfit Function Native_OutfitSlot_GetOutfitForm(Int slotIdx, Int presetIdx) Global Native
+{Resolve the pre-built BGSOutfit record for (slot, preset). Returns None if out of range or ESP not scaffolded.}
+
+LeveledItem Function Native_OutfitSlot_GetLvlItem(Int slotIdx, Int presetIdx) Global Native
+{Resolve the pre-built LeveledItem placeholder for (slot, preset). Used for Revert()/AddForm() population.}
+
+ObjectReference Function Native_OutfitSlot_GetContainer(Int slotIdx, Int presetIdx) Global Native
+{Resolve the dynamically-spawned storage container for (slot, preset). Returns None if not yet spawned — call PlaceAtMe + SetContainerRef.}
+
+ObjectReference Function Native_OutfitSlot_GetSatchel(Int slotIdx) Global Native
+{Resolve the dynamically-spawned satchel container for this slot. Returns None if not yet spawned.}
+
+Container Function Native_OutfitSlot_GetChestBase() Global Native
+{Resolve the ESP-defined CONT record used as base for all PlaceAtMe spawns.}
+
+Function Native_OutfitSlot_SetContainerRef(Actor akActor, Int presetIdx, ObjectReference chest) Global Native
+{Register a freshly spawned container ref to this actor's slot+preset. Pass None to clear.}
+
+Function Native_OutfitSlot_SetSatchelRef(Actor akActor, ObjectReference satchel) Global Native
+{Register a freshly spawned satchel ref to this actor's slot. Pass None to clear.}
+
+Outfit Function Native_OutfitSlot_GetBlankOutfit() Global Native
+{Sentinel empty Outfit record, used to strip engine enforcement before switching.}
+
+Outfit Function Native_OutfitSlot_GetNakedOutfit() Global Native
+{Sentinel empty Outfit record used as sleepOutfit override.}
+
+Function Native_OutfitSlot_SaveOriginalOutfit(Actor akActor) Global Native
+{Snapshot the actor's current DefaultOutfit and sleepOutfit FormIDs. Idempotent per slot — no-ops if already saved.}
+
+Outfit Function Native_OutfitSlot_GetOriginalOutfit(Actor akActor) Global Native
+{Return the saved original DefaultOutfit, or None if unsaved.}
+
+Outfit Function Native_OutfitSlot_GetOriginalSleepOutfit(Actor akActor) Global Native
+{Return the saved original sleepOutfit, or None if unsaved.}
+
+Function Native_OutfitSlot_SetPresetName(Actor akActor, Int presetIdx, String name) Global Native
+{Store the user-visible preset name for UI display.}
+
+String Function Native_OutfitSlot_GetPresetName(Actor akActor, Int presetIdx) Global Native
+{Retrieve the user-visible preset name. Empty string = unused preset slot.}
+
+Function Native_OutfitSlot_SetPresetItemCount(Actor akActor, Int presetIdx, Int count) Global Native
+{Cache the item count for a preset (for UI display without reading container).}
+
+Int Function Native_OutfitSlot_GetPresetItemCount(Actor akActor, Int presetIdx) Global Native
+{Cached item count. Zero = empty/unused preset.}
+
+Function Native_OutfitSlot_ClearPreset(Actor akActor, Int presetIdx) Global Native
+{Clear preset name, item count, and situation mappings pointing to this index. Does NOT empty the container or LvlItem — caller must.}
+
+Function Native_OutfitSlot_SetActivePreset(Actor akActor, Int presetIdx) Global Native
+{Mark which preset is currently active (-1 = none/cleared).}
+
+Int Function Native_OutfitSlot_GetActivePreset(Actor akActor) Global Native
+{Return currently-active preset index, or -1 if none.}
+
+Bool Function Native_OutfitSlot_IsPresetActive(Actor akActor) Global Native
+{Fast check: does this actor have a preset currently active? Used by OutfitAlias short-circuit.}
+
+Int Function Native_OutfitSlot_DirectEquipPreset(Actor akActor, Int presetIdx) Global Native
+{Atomic C++ direct-equip path. Bypasses SetOutfit/LeveledItem auto-equip
+ (which sometimes only equips one item even when LvlItem has multiple entries
+ with kUseAll). Snapshots the preset chest, suspends outfit lock, strips worn
+ armor, adds-if-missing + equips each preset item via ActorEquipManager,
+ resumes lock, sets activePresetIdx.
+ Returns count of armor items equipped, or -1 on hard error.}
+
+; ── Catalog-Supplied Item Tracking ──
+; Marks specific FormIDs as "catalog-supplied" (added by C++ from the UI catalog
+; vs. items that were already in the actor's inventory at build time).
+; Used by DirectEquipPreset and RemovePresetItemsFromActor for ownership-aware
+; add/delete. User-owned items (not in the catalog list) are NEVER auto-deleted.
+
+Function Native_OutfitSlot_AddCatalogSupplied(Actor akActor, Int presetIdx, Form item) Global Native
+{Mark a FormID as catalog-supplied for the given preset.}
+
+Bool Function Native_OutfitSlot_IsCatalogSupplied(Actor akActor, Int presetIdx, Form item) Global Native
+{Check if a FormID is marked catalog-supplied for the given preset.}
+
+Function Native_OutfitSlot_ClearCatalogSupplied(Actor akActor, Int presetIdx) Global Native
+{Clear all catalog-supplied entries for a preset (used on preset overwrite/delete).}
+
+Form[] Function Native_OutfitSlot_PopPendingCatalog(Actor akActor, String presetName) Global Native
+{Pop the transient catalog-supplied list recorded by C++ buildOutfitSavePreset.
+ Returns the FormIDs that were spawned by C++ (not in actor inventory at build time).
+ Consume-once: the list is cleared after this call. Used by Papyrus BuildPreset
+ to tag items via Native_OutfitSlot_AddCatalogSupplied.}
+
+Function Native_OutfitSlot_SetSituationPreset(Actor akActor, String situation, Int presetIdx) Global Native
+{Map a situation name to a preset index. Pass -1 to clear the mapping.}
+
+Int Function Native_OutfitSlot_GetSituationPreset(Actor akActor, String situation) Global Native
+{Return preset index mapped to situation, or -1 if no mapping.}
+
+Function Native_OutfitSlot_SetAutoSwitch(Actor akActor, Bool enabled) Global Native
+{Per-actor toggle for auto-switching on situation change.}
+
+Bool Function Native_OutfitSlot_GetAutoSwitch(Actor akActor) Global Native
+{Per-actor auto-switch state (default true).}
+
+Actor[] Function Native_OutfitSlot_GetAssignedActors() Global Native
+{Return all actors currently holding an outfit slot. Used by Maintenance to repopulate LvlItems on game load.}
+
+ReferenceAlias Function Native_OutfitSlot_FindAliasByName(String aliasName) Global Native
+{Look up a ReferenceAlias on the SeverActions quest by its ALID name. Returns None if not found.}
+
+ReferenceAlias Function Native_OutfitSlot_GetAliasForSlot(Int slotIdx) Global Native
+{Resolve the "OutfitSlotNN" alias for the given slot index (0-49). Returns None if slot index is out of range or the alias doesn't exist in the ESP.}
+
+Actor[] Function Native_Outfit_GetActorsWithPresets() Global Native
+{Return all actors with at least one user-named preset in the native OutfitDataStore. Used by the slot-system migration to catch presets stored only in the native store (not StorageUtil mirror).}
+
+Int Function Native_Outfit_GetPresetCount(Actor akActor) Global Native
+{Count of user-named presets for an actor in the native OutfitDataStore (filters out internal _* presets).}
+
+String Function Native_Outfit_GetPresetNameAt(Actor akActor, Int idx) Global Native
+{Get a preset name by filtered index. Use with Native_Outfit_GetPresetCount for iteration. Returns empty string if idx out of range.}
+
+Function Native_OutfitSlot_Log(String msg) Global Native
+{Log a message to SeverActionsNative.log with an [OutfitSlot] prefix. Use alongside or instead of Debug.Trace for users without Papyrus logging enabled.}
+
+; =============================================================================
+; GUARDIAN CONTAINER REGISTRY
+; For compat with custom followers (e.g. Daegon) whose mods include a guardian
+; alias that enforces a container-backed outfit. When a guardian container is
+; registered for an actor, the slot system empties it to the satchel before
+; applying a preset (so the guardian alias's GetItemCount check fails), and
+; restores contents on clear.
+; =============================================================================
+
+Bool Function Native_OutfitSlot_AddGuardian(Actor akActor, ObjectReference guardianContainer) Global Native
+{Register a guardian container for an actor. Returns true if newly added, false if already registered or actor has no slot.}
+
+Function Native_OutfitSlot_RemoveGuardian(Actor akActor, ObjectReference guardianContainer) Global Native
+{Unregister a guardian container.}
+
+ObjectReference[] Function Native_OutfitSlot_GetGuardians(Actor akActor) Global Native
+{List all registered guardian containers for an actor.}
+
+Function Native_OutfitSlot_SetStowedItems(Actor akActor, ObjectReference guardianContainer, Form[] items) Global Native
+{Record which items were stowed from a guardian container (so we know what to restore on clear).}
+
+Form[] Function Native_OutfitSlot_GetStowedItems(Actor akActor, ObjectReference guardianContainer) Global Native
+{Retrieve the list of items currently stowed from a guardian container.}
+
+Function Native_OutfitSlot_ClearStowedItems(Actor akActor, ObjectReference guardianContainer) Global Native
+{Clear the stowed items list for a guardian (after successful restore).}

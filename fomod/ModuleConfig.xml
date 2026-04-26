@@ -18,7 +18,7 @@
                     <plugins order="Explicit">
 
                         <plugin name="Basic Actions">
-                            <description>Core follower, item, reading, and property actions:
+                            <description>Core follower, item, reading, property, and magic actions:
 • Start/Stop Following
 • Wait Here
 • Relax / Stop Relaxing
@@ -30,6 +30,8 @@
 • Loot Corpse
 • Read Book / Stop Reading
 • Transfer Ownership (property/building co-ownership)
+• Cast Spell (animated NPC cast, heals-to-full on restoration)
+• Learn Spell / Teach Spell
 
 Recommended for most users.</description>
                             <files>

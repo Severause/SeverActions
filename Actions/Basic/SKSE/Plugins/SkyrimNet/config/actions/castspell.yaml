@@ -1,0 +1,58 @@
+customCategory: magic
+name: CastSpell
+description: "Cast a spell the NPC knows. Works on actors, self, or aimed in front of them. Restoration spells auto-repeat until the target is fully healed or the caster runs out of magicka. IMPORTANT: pick a spell whose delivery type matches the intent — self-delivered spells like 'Healing' only ever heal the caster regardless of targetName, so use 'Healing Hands' / 'Close Wounds' / 'Grand Healing' / etc. when healing another actor. Same for buffs: 'Oakflesh' is self-only; use the touch / aimed variants when buffing an ally."
+questEditorId: SeverActions
+scriptName: SeverActions_SpellCast
+executionFunctionName: CastSpell_Execute
+parameterMapping:
+  - type: speaker
+    name: akCaster
+    description: Speaker Actor parameter (triggering entity)
+  - type: dynamic
+    name: spellName
+    description: "The name of the spell to cast (e.g. 'Healing', 'Healing Hands', 'Flames', 'Fireball'). Must be a spell this NPC actually knows. CRITICAL: match the spell's delivery to the situation — 'Healing' is self-only and ignores targetName; pick 'Healing Hands' (touch) or 'Close Wounds' / 'Grand Healing' (aimed/AoE) when healing someone other than yourself. Same rule for armor / fortify buffs: 'Oakflesh' is self; use the touch variant on allies."
+  - type: dynamic
+    name: targetName
+    description: "Display name of the target actor, 'self' to target the caster, or '0' for an aimed cast in front of the caster. Leave as '0' for self-delivered spells or when casting at no specific actor. Note: this is ignored for self-only spells like 'Healing' or 'Oakflesh' — those always target the caster regardless."
+    optional: true
+    default: "0"
+  - type: static
+    value: false
+    name: bDualCasting
+    description: Static bool - dual-hand cast for double magnitude at double cost
+  - type: static
+    value: true
+    name: bHealToFull
+    description: Static bool - for Restoration heals, keep casting until target is fully healed or caster is out of magicka
+  - type: static
+    value: true
+    name: bUseMagicka
+    description: Static bool - deduct magicka cost from the caster after each cast
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+# No eventString — the cast is visible in-game (animation + projectile + sound)
+# and we deliberately don't pollute the LLM context with a redundant "X casts Y"
+# event for every cast. The action invocation itself is enough signal.
+
