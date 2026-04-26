@@ -249,6 +249,14 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
         return -1
     endif
 
+    ; Was the preset we're about to overwrite the currently-active one?
+    ; If so, we'll auto-reapply at the end of BuildPreset so the user sees
+    ; the new outfit immediately instead of being stuck in default clothes
+    ; until they manually click Apply again. Tracked here (before any
+    ; mutation) so the active-state clearing inside the cleanup block can
+    ; still happen without losing this flag.
+    Bool wasActive = SeverActionsNative.Native_OutfitSlot_GetActivePreset(akActor) == presetIdx
+
     ; Overwriting an existing preset: DELETE the old chest contents AND clean
     ; up any temp-copies of those items currently in the actor's inventory.
     ;
@@ -263,10 +271,22 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
     ;   - User-owned duplicates are preserved: we only delete 1 per FormID.
     ;     If the follower legitimately owned a matching armor item, they
     ;     keep it.
+    ;   - EDIT MODE: items in the OLD preset that are ALSO in the NEW preset
+    ;     stay in actor inventory AND keep their catalog tag. Without this,
+    ;     the Edit-button flow loses items: the C++ buildOutfitSavePreset
+    ;     sees items already in inventory (still worn from the previous
+    ;     apply) and classifies them as "user-owned" — but the cleanup
+    ;     below would then strip them from inventory because they were
+    ;     catalog in the old preset. The build loop's "user-owned" branch
+    ;     only writes a chest marker without re-adding to actor inventory,
+    ;     so apply later sees "user-owned preset item not in inventory —
+    ;     skipping" and the actor ends up naked.
     ;
     ; akOtherContainer=None means delete (CK: "RemoveAllItems with no
     ; transfer destination removes items from the inventory"). No drop,
     ; no actor pollution, no satchel mixing, no player leak.
+    Form[] retainedCatalogItems = Utility.CreateFormArray(32)
+    Int retainedCatalogCount = 0
     Int oldChestCount = chest.GetNumItems()
     if oldChestCount > 0
         ; Snapshot the old chest's distinct FormIDs BEFORE deletion. We need
@@ -284,28 +304,79 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
 
         ; Ownership-aware cleanup: for each old preset FormID, only delete
         ; from actor if it was catalog-supplied. User-owned items stay.
+        ; EDIT-MODE PRESERVE: if a catalog FormID is also in the new items[]
+        ; list, KEEP it in actor inventory and remember it as "still catalog"
+        ; so the build loop below re-tags it instead of treating it as
+        ; user-owned.
+        ; BLACKLIST PRESERVE: blacklisted items are NEVER deleted from actor
+        ; here, regardless of catalog status. The user's "leave this alone"
+        ; intent overrides the wardrobe ownership semantics.
         Int cleanedCatalog = 0
         Int preservedUserOwned = 0
+        Int retainedAcrossEdit = 0
+        Int blacklistPreserved = 0
         Int ci = 0
         While ci < oldChestCount
             Form oldItem = oldFormIDs[ci]
             if oldItem
                 Int actorHasOld = akActor.GetItemCount(oldItem)
                 if actorHasOld > 0
-                    Bool wasCatalog = SeverActionsNative.Native_OutfitSlot_IsCatalogSupplied(akActor, presetIdx, oldItem)
-                    if wasCatalog
-                        akActor.RemoveItem(oldItem, 1, true, None)
-                        cleanedCatalog += 1
+                    if SeverActionsNative.Native_Blacklist_IsBlacklisted(oldItem)
+                        ; Blacklist wins: do not touch this item. If it was catalog
+                        ; AND survives into the new preset, also retain the catalog
+                        ; tag so the build loop doesn't re-classify it as user-owned
+                        ; (which would leak the temp copy on the next swap).
+                        Bool wasCatalogB = SeverActionsNative.Native_OutfitSlot_IsCatalogSupplied(akActor, presetIdx, oldItem)
+                        if wasCatalogB
+                            Bool survivesEditB = false
+                            Int skb = 0
+                            Int newCountB = items.Length
+                            While skb < newCountB && !survivesEditB
+                                if items[skb] == oldItem
+                                    survivesEditB = true
+                                endif
+                                skb += 1
+                            EndWhile
+                            if survivesEditB && retainedCatalogCount < 32
+                                retainedCatalogItems[retainedCatalogCount] = oldItem
+                                retainedCatalogCount += 1
+                            endif
+                        endif
+                        blacklistPreserved += 1
                     else
-                        preservedUserOwned += 1
+                        Bool wasCatalog = SeverActionsNative.Native_OutfitSlot_IsCatalogSupplied(akActor, presetIdx, oldItem)
+                        if wasCatalog
+                            ; Does this item survive into the new preset?
+                            Bool survivesEdit = false
+                            Int sk = 0
+                            Int newCount = items.Length
+                            While sk < newCount && !survivesEdit
+                                if items[sk] == oldItem
+                                    survivesEdit = true
+                                endif
+                                sk += 1
+                            EndWhile
+
+                            if survivesEdit && retainedCatalogCount < 32
+                                retainedCatalogItems[retainedCatalogCount] = oldItem
+                                retainedCatalogCount += 1
+                                retainedAcrossEdit += 1
+                            else
+                                akActor.RemoveItem(oldItem, 1, true, None)
+                                cleanedCatalog += 1
+                            endif
+                        else
+                            preservedUserOwned += 1
+                        endif
                     endif
                 endif
             endif
             ci += 1
         EndWhile
 
-        ; Clear catalog metadata for the overwritten preset (will be
-        ; re-populated below for the new preset's catalog items).
+        ; Clear catalog metadata for the overwritten preset. The build loop
+        ; below re-tags any retained-across-edit items so the slot system
+        ; keeps the catalog ownership semantics for them.
         SeverActionsNative.Native_OutfitSlot_ClearCatalogSupplied(akActor, presetIdx)
 
         ; If we just overwrote the currently-active preset, clear the active
@@ -318,7 +389,7 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
             Log("BuildPreset: cleared active state — overwrite affected the currently-active preset")
         endif
 
-        Log("BuildPreset: overwrite deleted " + oldChestCount + " old chest items, cleaned " + cleanedCatalog + " catalog temp-copies, preserved " + preservedUserOwned + " user-owned items (slot=" + slotIdx + " preset=" + presetIdx + ")")
+        Log("BuildPreset: overwrite deleted " + oldChestCount + " old chest items, cleaned " + cleanedCatalog + " catalog temp-copies, preserved " + preservedUserOwned + " user-owned items, retained " + retainedAcrossEdit + " across edit, preserved " + blacklistPreserved + " blacklisted (slot=" + slotIdx + " preset=" + presetIdx + ")")
     endif
 
     ; OWNERSHIP-AWARE BUILD:
@@ -375,6 +446,20 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
                 EndWhile
             endif
 
+            ; EDIT-MODE CARRYOVER: items that were catalog in the old preset
+            ; AND are still in the new preset stayed in actor inventory above
+            ; (they were "retained across edit"). Re-tag them as catalog so
+            ; ownership semantics are preserved across the edit.
+            if !isCatalog && retainedCatalogCount > 0
+                Int rk = 0
+                While rk < retainedCatalogCount && !isCatalog
+                    if retainedCatalogItems[rk] == items[i]
+                        isCatalog = true
+                    endif
+                    rk += 1
+                EndWhile
+            endif
+
             if isCatalog
                 ; Catalog-supplied: MOVE from actor to chest (clean temp-copy
                 ; pattern). C++ added it 1 to actor; move that 1 to chest.
@@ -414,6 +499,24 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
     ; resurrects the exact preset the slot system applied. Trims trailing None
     ; entries and respects the 32-item cap.
     MirrorPresetToLegacyStores(akActor, normalizedName, committedItems, committed)
+
+    ; If we just overwrote the currently-active preset, re-apply it so the
+    ; user immediately sees the new outfit. Without this the actor would be
+    ; stuck in default clothes (active state was cleared during the overwrite
+    ; cleanup) until the user manually clicks Apply — the exact UX paper-cut
+    ; user feedback flagged on the v2.9.2 Edit flow.
+    if wasActive && committed > 0
+        Log("BuildPreset: re-applying preset " + presetIdx + " — was active before overwrite")
+        ApplyPresetBySlot(akActor, presetIdx)
+    endif
+
+    ; Trigger a PrismaUI page refresh so the Outfits card shows the new item
+    ; count immediately. Frontend's post-save setTimeout (1000ms) fires before
+    ; this Papyrus function returns (chest manipulation + ApplyPresetBySlot
+    ; together can take 2+ seconds), so the C++ DataGatherer would otherwise
+    ; serve stale slot metadata. This call rebuilds the page from the current
+    ; slot store state.
+    SeverActionsNative.PrismaUI_RefreshPage("outfits")
 
     return committed
 EndFunction
@@ -466,6 +569,13 @@ Function RemovePresetItemsFromActor(Actor akActor, Int slotIdx, Int presetIdx)
        actor (the temp copy). Chest still holds the source for next apply.
      - User-owned items (already in actor inventory at build time): just
        UNEQUIP. Never delete — the user's item stays in their inventory.
+     - Blacklisted items (item or plugin in BlacklistStore): SKIP entirely.
+       The user's blacklist intent is "never touch this", which overrides
+       both catalog and user-owned semantics. If the item is also catalog
+       in this preset, the temp copy stays in actor inventory — that's a
+       small inventory leak in exchange for the strict "never remove"
+       contract the user expects. The chest still has its source copy, so
+       a future re-apply just no-ops on this item (already in actor).
 
      Catalog-supplied flag is per-(actor, presetIdx, formID), tracked in
      OutfitSlotStore::catalogSuppliedItems. Items not flagged are user-owned
@@ -483,31 +593,38 @@ Function RemovePresetItemsFromActor(Actor akActor, Int slotIdx, Int presetIdx)
     Int n = chest.GetNumItems()
     Int deletedCatalog = 0
     Int unequippedUserOwned = 0
+    Int blacklistSkipped = 0
     Int i = 0
     While i < n
         Form item = chest.GetNthForm(i)
         if item
             Int npcHas = akActor.GetItemCount(item)
             if npcHas > 0
-                Bool isCatalog = SeverActionsNative.Native_OutfitSlot_IsCatalogSupplied(akActor, presetIdx, item)
-                if isCatalog
-                    ; Catalog temp-copy: delete from actor. Chest still has source.
-                    akActor.RemoveItem(item, 1, true, None)
-                    deletedCatalog += 1
+                if SeverActionsNative.Native_Blacklist_IsBlacklisted(item)
+                    ; Blacklist trumps everything. Don't delete, don't unequip.
+                    ; The user said "leave this alone" — honor that strictly.
+                    blacklistSkipped += 1
                 else
-                    ; User-owned: just unequip if equipped, leave in inventory.
-                    if akActor.IsEquipped(item)
-                        akActor.UnequipItem(item, true, true)
+                    Bool isCatalog = SeverActionsNative.Native_OutfitSlot_IsCatalogSupplied(akActor, presetIdx, item)
+                    if isCatalog
+                        ; Catalog temp-copy: delete from actor. Chest still has source.
+                        akActor.RemoveItem(item, 1, true, None)
+                        deletedCatalog += 1
+                    else
+                        ; User-owned: just unequip if equipped, leave in inventory.
+                        if akActor.IsEquipped(item)
+                            akActor.UnequipItem(item, true, true)
+                        endif
+                        unequippedUserOwned += 1
                     endif
-                    unequippedUserOwned += 1
                 endif
             endif
         endif
         i += 1
     EndWhile
 
-    if deletedCatalog > 0 || unequippedUserOwned > 0
-        Log("RemovePresetItemsFromActor: preset " + presetIdx + " — deleted " + deletedCatalog + " catalog temp copies, unequipped " + unequippedUserOwned + " user-owned items (chest preserved)")
+    if deletedCatalog > 0 || unequippedUserOwned > 0 || blacklistSkipped > 0
+        Log("RemovePresetItemsFromActor: preset " + presetIdx + " — deleted " + deletedCatalog + " catalog temp copies, unequipped " + unequippedUserOwned + " user-owned items, preserved " + blacklistSkipped + " blacklisted items (chest preserved)")
     endif
 EndFunction
 
@@ -689,15 +806,29 @@ Function ApplyPresetBySlot(Actor akActor, Int presetIdx)
     String presetName = SeverActionsNative.Native_OutfitSlot_GetPresetName(akActor, presetIdx)
 
     ; === COMMIT or REPORT ===
-    ; Only mark the preset active when EVERY expected item is verified worn.
-    ; Marking active on a partial would make the alias short-circuit treat a
-    ; half-naked NPC as "preset is on" — exactly the silent-corruption path
-    ; we just spent a sprint hunting.
-    if verifiedEquipped == storedItemCount && verifiedEquipped > 0
+    ;
+    ; Native DirectEquipPreset now does slot-mask dedupe (first item per biped
+    ; slot wins) and respects the blacklist. So `verifiedEquipped < storedItemCount`
+    ; can mean two things:
+    ;   1. Intentional skip — slot conflict between preset items, or a preset
+    ;      item conflicts with a still-worn blacklisted piece. EXPECTED behavior.
+    ;   2. Engine race / item loss — partial cascade we couldn't stop.
+    ;
+    ; The success criterion is simpler now: did we equip ANYTHING?
+    ;   - verifiedEquipped > 0 → success, mark active
+    ;   - verifiedEquipped == 0 → catastrophic failure, actor is naked.
+    ;     Restore their original outfit so they're not running around bare.
+    ;   - verifiedEquipped < 0 → hard native failure (chest gone, equip mgr
+    ;     unavailable). Leave actor in whatever state, don't mark active.
+    if verifiedEquipped > 0
         ; DirectEquipPreset already set activePresetIdx in the slot store on
-        ; full success; mirror to StorageUtil for legacy alias fast-paths.
+        ; success; mirror to StorageUtil for legacy alias fast-paths.
         StorageUtil.SetIntValue(akActor, KEY_PRESET_ACTIVE, 1)
-        Log("Applied preset " + presetIdx + " ('" + presetName + "') to " + akActor.GetDisplayName() + " (" + verifiedEquipped + "/" + storedItemCount + " items equipped) [OK]")
+        if verifiedEquipped == storedItemCount
+            Log("Applied preset " + presetIdx + " ('" + presetName + "') to " + akActor.GetDisplayName() + " (" + verifiedEquipped + "/" + storedItemCount + " items equipped) [OK]")
+        else
+            Log("Applied preset " + presetIdx + " ('" + presetName + "') to " + akActor.GetDisplayName() + " (" + verifiedEquipped + "/" + storedItemCount + " items — slot conflicts or blacklist filtered the rest) [OK partial]")
+        endif
     elseif verifiedEquipped < 0
         ; Hard native failure — chest gone, equip mgr unavailable, etc.
         ; Do NOT mark active. NPC stays in whatever state we left them
@@ -705,9 +836,12 @@ Function ApplyPresetBySlot(Actor akActor, Int presetIdx)
         ; system will not short-circuit because PresetActive is unset.
         Log("ApplyPresetBySlot: HARD FAILURE applying '" + presetName + "' to " + akActor.GetDisplayName() + " — DirectEquip returned " + verifiedEquipped + " — preset NOT marked active")
     else
-        ; Partial equip — most likely body-slot conflict between two preset
-        ; items, or engine dropped one. Surface loudly, don't mark active.
-        Log("ApplyPresetBySlot: PARTIAL apply for '" + presetName + "' on " + akActor.GetDisplayName() + " — " + verifiedEquipped + "/" + storedItemCount + " worn — preset NOT marked active")
+        ; verifiedEquipped == 0 — strip succeeded but every equip failed.
+        ; The actor is fully naked right now. Restore their default outfit as
+        ; a safety net so they're not running around bare while the user
+        ; figures out what went wrong.
+        Log("ApplyPresetBySlot: ZERO-EQUIP failure for '" + presetName + "' on " + akActor.GetDisplayName() + " — restoring default outfit (preset NOT marked active)")
+        ClearPreset(akActor)
     endif
 EndFunction
 

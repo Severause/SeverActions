@@ -2,7 +2,7 @@
 <fomod>
     <Name>SeverActions - SkyrimNet Action Pack</Name>
     <Author>Sever</Author>
-    <Version>2.9.0</Version>
+    <Version>2.9.2</Version>
     <Description>A comprehensive action, prompt, and behavior pack for SkyrimNet. 58 actions, 25 context prompts, and a native C++ SKSE plugin (230+ functions). NPCs can follow, travel, craft, cook, brew, read books aloud, manage outfits with persistent outfit locking, handle gold and debts, use furniture, fight, get arrested and escorted to jail, and more — all driven naturally through conversation. Includes a full companion framework with relationship tracking, automatic LLM-based relationship assessment, EFF/NFF integration, and survival needs. Features a debt tracking system with credit limits, due dates, recurring charges, and automatic guard reporting for overdue debts. Native PackageManager with SKSE cosave persistence for LinkedRef auto-restoration across save/load. New in 1.0: PrismaUI-based configuration menu — a modern HTML/CSS/JS config interface with tabbed navigation replacing the MCM for users with PrismaUI installed (MCM remains available as fallback). Optional adult content modules included.</Description>
     <Groups>
         <element>Gameplay</element>

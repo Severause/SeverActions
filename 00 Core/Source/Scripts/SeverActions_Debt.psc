@@ -67,13 +67,29 @@ Function Maintenance()
 EndFunction
 
 Event OnPrismaClearDebt(String eventName, String strArg, Float numArg, Form sender)
-    {Clear a debt by creditor name. Called from PrismaUI "Clear" button.}
-    DebugMsg("OnPrismaClearDebt: name=" + strArg)
-    If strArg == ""
+    {Clear a debt by counterparty name. Called from PrismaUI "Clear" button.
+
+     strArg encoding: "actorName|debtName".
+     The PrismaUIActionHandler::SendModEvent helper unconditionally prepends
+     "actorName|" to strArg (resolving the FormID it gets passed — 0 here,
+     since clearDebt has no actor context — to a literal "0" via its int32
+     fallback). Without splitting on "|", the equality check below never
+     matches because Papyrus sees "0|Hod" vs creditor.GetDisplayName() == "Hod".
+     This was the root cause of the "Clear button does nothing" bug.}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    String targetName = strArg
+    If pipePos >= 0
+        targetName = StringUtil.Substring(strArg, pipePos + 1)
+    EndIf
+    DebugMsg("OnPrismaClearDebt: rawStrArg='" + strArg + "' parsedName='" + targetName + "'")
+    If targetName == ""
         Return
     EndIf
 
-    ; Find and remove all debts involving this creditor name
+    ; Find and remove all debts involving this counterparty name. Iterate
+    ; end-to-start so RemoveDebt's swap-with-last doesn't skip a swapped-in
+    ; entry we haven't checked yet.
+    Int removed = 0
     Int count = GetDebtCount()
     Int i = count - 1
     While i >= 0
@@ -89,12 +105,15 @@ Event OnPrismaClearDebt(String eventName, String strArg, Float numArg, Form send
         EndIf
 
         ; Match by creditor or debtor name (the UI shows the counterparty name)
-        If credName == strArg || debtName == strArg
+        If credName == targetName || debtName == targetName
             RemoveDebt(i)
-            DebugMsg("OnPrismaClearDebt: Removed debt #" + i + " involving " + strArg)
+            removed += 1
+            DebugMsg("OnPrismaClearDebt: Removed debt #" + i + " involving " + targetName)
         EndIf
         i -= 1
     EndWhile
+
+    DebugMsg("OnPrismaClearDebt: cleared " + removed + " debt(s) for '" + targetName + "'")
 EndEvent
 
 ; =============================================================================
