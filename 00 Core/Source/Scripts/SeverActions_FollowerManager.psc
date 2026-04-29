@@ -41,6 +41,11 @@ Float Property FollowerTeleportDistance = 2000.0 Auto
 {Distance at which actively-following companions are teleported to the player.
 Set to 0 to disable. Only when following — not waiting, sandboxing, or traveling.}
 
+Int Property TeleportCooldownSeconds = 30 Auto
+{Global cooldown between catch-up teleports. Applied across all followers, not
+per-follower. Read by SandboxManager at boot via SyncFromPluginConfig so the
+PrismaUI-set value persists across game restarts.}
+
 Bool Property ShowFollowerContext = true Auto
 {When true, the follower relationship/behavior prompt (0175) is included in NPC bios.
 When false, the section is skipped — useful for users who prefer vanilla-style companions.}

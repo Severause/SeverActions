@@ -171,6 +171,16 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
     slot.ForceRefTo(akCaster)
     SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] caster alias filled — engine should pick up package")
 
+    ; Force an explicit package re-evaluation. ForceRefTo is supposed to
+    ; trigger this automatically, but in practice (especially on registered
+    ; companions whose FollowPlayer alias package is competing for the same
+    ; quest's package list) the engine sometimes sticks on the previous
+    ; package until the next AI tick. EvaluatePackage forces the switch
+    ; right now so the UseMagic procedure on the cast package starts
+    ; running on this frame instead of whenever the AI ticker decides to
+    ; look. Belt-and-suspenders — harmless when ForceRefTo already worked.
+    akCaster.EvaluatePackage()
+
     ; (6) Hand off to alias for polling-state init. Pass the CLONED spell
     ; so heal-to-full and other downstream logic uses the same form the
     ; engine sees in the package.

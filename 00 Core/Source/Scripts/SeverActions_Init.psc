@@ -51,6 +51,22 @@ EndEvent
 Function Initialize(Bool isFirstInit)
     Debug.Trace("[SeverActions] Initializing SeverActions...")
 
+    ; ── Heal v2.1.7 aggression corruption ──
+    ; Pre-2.1.8 AttackTarget bumped both attacker AND target aggression. When
+    ; the player was the target, their Aggression actor value got stuck at 2
+    ; ("Very Aggressive"), which causes Calm-disposition NPCs to flee/cower
+    ; on sight. The cause was reverted in 2.1.8 but the corrupted value lives
+    ; in the save. Resetting to 0 on every load is a no-op for healthy saves
+    ; and self-heals affected ones.
+    Actor playerRef = Game.GetPlayer()
+    if playerRef
+        Float currentAggression = playerRef.GetActorValue("Aggression")
+        if currentAggression > 0.0
+            playerRef.SetActorValue("Aggression", 0.0)
+            Debug.Trace("[SeverActions] Healed corrupted player aggression: " + currentAggression + " -> 0")
+        endif
+    endif
+
     RegisterDecorators()
     InitializeBridge()
     InitializeTravelSystem(isFirstInit)

@@ -2138,6 +2138,7 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_PrismaBuilderEquip", "OnPrismaBuilderEquip")
     ; PrismaUI Builder save preset — sync preset to StorageUtil from native store
     RegisterForModEvent("SeverActions_PrismaBuilderSavePreset", "OnPrismaBuilderSavePreset")
+    RegisterForModEvent("SeverActions_PrismaBuilderRenamePreset", "OnPrismaBuilderRenamePreset")
     ; PrismaUI clear lock for builder — clears Papyrus FormList when builder opens
     RegisterForModEvent("SeverActions_PrismaClearLockForBuilder", "OnPrismaClearLockForBuilder")
     ; PrismaUI resume lock — clears Papyrus suspend when builder closes
@@ -2484,6 +2485,73 @@ Event OnPrismaBuilderSavePreset(String eventName, String strArg, Float numArg, F
     EndIf
 
     Debug.Trace("[SeverActions_Outfit] PrismaBuilderSavePreset: Synced preset '" + presetName + "' for " + akActor.GetDisplayName())
+EndEvent
+
+Event OnPrismaBuilderRenamePreset(String eventName, String strArg, Float numArg, Form sender)
+    {Fired by buildOutfitSavePreset C++ action when the frontend submits a save
+     with `oldPreset` populated and different from `preset`. Both native stores
+     (OutfitDataStore + OutfitSlotStore) have already been renamed. This handler
+     mirrors the rename in StorageUtil so the Papyrus side stays in sync:
+       - Renames the SeverOutfit_<oldName>_<actorFid> FormList key to <newName>
+       - Replaces the preset name in the per-actor StringList
+     strArg format: "actorName|oldName|newName" — the SendModEvent helper
+     prepends actorName, then we appended oldName|newName.}
+    SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderRenamePreset: ENTRY strArg='" + strArg + "'")
+
+    Int p1 = StringUtil.Find(strArg, "|")
+    If p1 < 0
+        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderRenamePreset: malformed strArg (no first pipe), aborting")
+        Return
+    EndIf
+    String actorName = StringUtil.Substring(strArg, 0, p1)
+    String rest = StringUtil.Substring(strArg, p1 + 1)
+    Int p2 = StringUtil.Find(rest, "|")
+    If p2 < 0
+        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderRenamePreset: malformed strArg (no second pipe), aborting")
+        Return
+    EndIf
+    String oldName = StringUtil.Substring(rest, 0, p2)
+    String newName = StringUtil.Substring(rest, p2 + 1)
+
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    If !akActor || oldName == "" || newName == ""
+        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderRenamePreset: actor=" + akActor + " oldName='" + oldName + "' newName='" + newName + "' — aborting")
+        Return
+    EndIf
+
+    String actorFid = akActor.GetFormID() as String
+
+    ; Rename the per-preset item FormList key. StorageUtil has no rename API,
+    ; so we copy from old → new and clear the old.
+    String oldKey = "SeverOutfit_" + oldName + "_" + actorFid
+    String newKey = "SeverOutfit_" + newName + "_" + actorFid
+    Int itemCount = StorageUtil.FormListCount(None, oldKey)
+    If itemCount > 0
+        ; Don't accidentally double-up if newKey already has data from a prior partial rename.
+        StorageUtil.FormListClear(None, newKey)
+        Int i = 0
+        While i < itemCount
+            Form item = StorageUtil.FormListGet(None, oldKey, i)
+            If item
+                StorageUtil.FormListAdd(None, newKey, item, false)
+            EndIf
+            i += 1
+        EndWhile
+        StorageUtil.FormListClear(None, oldKey)
+    EndIf
+
+    ; Replace name in the per-actor StringList. StorageUtil has no in-place
+    ; replace, so we remove old + append new (only if new isn't already there).
+    String namesKey = "SeverOutfit_Presets_" + actorFid
+    Int oldIdx = StorageUtil.StringListFind(None, namesKey, oldName)
+    If oldIdx >= 0
+        StorageUtil.StringListRemove(None, namesKey, oldName, true)
+    EndIf
+    If StorageUtil.StringListFind(None, namesKey, newName) < 0
+        StorageUtil.StringListAdd(None, namesKey, newName, false)
+    EndIf
+
+    SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderRenamePreset: renamed '" + oldName + "' → '" + newName + "' for " + akActor.GetDisplayName() + " (items copied=" + itemCount + ")")
 EndEvent
 
 Event OnPrismaClearLockForBuilder(String eventName, String strArg, Float numArg, Form sender)

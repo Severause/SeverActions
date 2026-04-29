@@ -195,6 +195,18 @@ Function CleanupCast()
         SeverActionsNative.Native_ForceReleaseCast(caster)
     EndIf
 
+    ; Pull the runtime-cloned SpellItem off the actor.
+    ; Native_CloneSpellForCast called actor->AddSpell(clone) during cast
+    ; setup so HasSpell() and the UseMagic procedure's spell-equip lookup
+    ; would resolve the clone. Without this RemoveSpell, every cast leaves
+    ; another runtime SpellItem (FF-prefixed) on the actor — three casts
+    ; of Firebolt = three "Firebolt" entries in their spell list, visible
+    ; in PrismaUI's Spells page. The clone has no other reason to exist
+    ; outside this single cast lifecycle.
+    If caster && spellToCast
+        caster.RemoveSpell(spellToCast)
+    EndIf
+
     ; Disable + delete the aim marker if we placed one
     If targetIsMarker && TargetAlias
         ObjectReference markerRef = TargetAlias.GetRef()

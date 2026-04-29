@@ -879,7 +879,15 @@ Function ClearPreset(Actor akActor)
         akActor.SetOutfit(blankOutfit, false)
     endif
     Utility.Wait(0.1)
-    akActor.UnequipAll()
+    ; Selective unequip: strip everything EXCEPT blacklisted items. The
+    ; engine's UnequipAll() takes no filter, so we walk worn armor manually
+    ; and skip blacklisted entries. Without this guard the user's
+    ; "blacklisted items never get touched" contract breaks at preset clear
+    ; / preset delete time — UnequipAll would blow away that worn cloak the
+    ; user explicitly told us to leave alone, and the SetOutfit cascade
+    ; below would re-equip everything from the original outfit on top of a
+    ; freshly-stripped actor.
+    UnequipAllExceptBlacklisted(akActor)
     Utility.Wait(0.1)
 
     ; ORDER MATTERS: guardian restoration reads from the satchel (it was used
@@ -1166,10 +1174,22 @@ EndFunction
 ; =============================================================================
 
 Int Function FindPresetIndexByName(Actor akActor, String name)
-    {Look up preset index 0-7 by name. Returns -1 if not found.
-     Case-INSENSITIVE match — defends against BSFixedString pool case flips
-     (e.g. "daedric" being returned as "DAEDRIC" because Skyrim has interned
-     the uppercase form via an armor keyword).}
+    {Look up a preset index 0-7 by name. Returns -1 if no match.
+
+     Two-tier match ladder:
+       Tier 1 — Exact CI match. Always wins; preserves prior behavior.
+                Defends against the BSFixedString pool case-flip (e.g.
+                "daedric" coming back as "DAEDRIC" because Skyrim has
+                interned the uppercase form via an armor keyword) by
+                lowercasing both sides.
+       Tier 2 — Token-overlap fuzzy match. Splits the query into
+                whitespace tokens, drops common filler/stopwords, and
+                selects any preset whose token shares a bidirectional
+                prefix relationship with a query token (so "sexy" hits
+                "sexy01", and "sexy01" hits "sexy"). If multiple
+                presets qualify, picks one at RANDOM — that is the
+                "name your sets sexy01 / sexy02 / sexy03 and ask for
+                'something sexy' to roll variety" power-user pattern.}
     if !akActor || name == ""
         Log("FindPresetIndexByName: bad input akActor=" + akActor + " name='" + name + "'")
         return -1
@@ -1180,25 +1200,178 @@ Int Function FindPresetIndexByName(Actor akActor, String name)
         return -1
     endif
 
-    ; Normalize query to lowercase once, compare each slot name lowercased.
     String queryLower = SeverActionsNative.StringToLower(name)
+
+    ; Build a debug dump of the actor's slot names once for all log paths.
     String dump = "slot=" + slotIdx + " names=["
+    Int dp = 0
+    While dp < 8
+        String dexisting = SeverActionsNative.Native_OutfitSlot_GetPresetName(akActor, dp)
+        dump = dump + "'" + dexisting + "'"
+        if dp < 7
+            dump = dump + ","
+        endif
+        dp += 1
+    EndWhile
+    dump = dump + "]"
+
+    ; --- Tier 1: exact CI match (always preferred over fuzzy) ---
     Int p = 0
     While p < 8
         String existing = SeverActionsNative.Native_OutfitSlot_GetPresetName(akActor, p)
-        dump = dump + "'" + existing + "'"
-        if p < 7
-            dump = dump + ","
-        endif
         String existingLower = SeverActionsNative.StringToLower(existing)
         if existingLower == queryLower && existingLower != ""
-            Log("FindPresetIndexByName: " + akActor.GetDisplayName() + " '" + name + "' -> idx " + p + " (" + dump + "])")
+            Log("FindPresetIndexByName: " + akActor.GetDisplayName() + " '" + name + "' -> idx " + p + " (exact match) " + dump)
             return p
         endif
         p += 1
     EndWhile
-    Log("FindPresetIndexByName: " + akActor.GetDisplayName() + " '" + name + "' NOT FOUND " + dump + "]")
-    return -1
+
+    ; --- Tier 2: token-overlap fuzzy match ---
+    String[] queryTokens = TokenizeAndFilter(queryLower)
+    if CountNonEmptyTokens(queryTokens) == 0
+        Log("FindPresetIndexByName: " + akActor.GetDisplayName() + " '" + name + "' NOT FOUND (no usable query tokens after stopword filter) " + dump)
+        return -1
+    endif
+
+    Int[] candidates = new Int[8]
+    Int candidateCount = 0
+    p = 0
+    While p < 8
+        String existing = SeverActionsNative.Native_OutfitSlot_GetPresetName(akActor, p)
+        if existing != ""
+            String existingLower = SeverActionsNative.StringToLower(existing)
+            String[] presetTokens = TokenizeAndFilter(existingLower)
+            if AnyTokenOverlap(queryTokens, presetTokens)
+                candidates[candidateCount] = p
+                candidateCount += 1
+            endif
+        endif
+        p += 1
+    EndWhile
+
+    if candidateCount == 0
+        Log("FindPresetIndexByName: " + akActor.GetDisplayName() + " '" + name + "' NOT FOUND (no fuzzy candidates) " + dump)
+        return -1
+    endif
+
+    if candidateCount == 1
+        Log("FindPresetIndexByName: " + akActor.GetDisplayName() + " '" + name + "' -> idx " + candidates[0] + " (fuzzy single match) " + dump)
+        return candidates[0]
+    endif
+
+    ; Multiple candidates — variety-pack pattern. Roll random.
+    Int pick = Utility.RandomInt(0, candidateCount - 1)
+    String dumpCandidates = ""
+    Int ci = 0
+    While ci < candidateCount
+        dumpCandidates = dumpCandidates + candidates[ci]
+        if ci < candidateCount - 1
+            dumpCandidates = dumpCandidates + ","
+        endif
+        ci += 1
+    EndWhile
+    Log("FindPresetIndexByName: " + akActor.GetDisplayName() + " '" + name + "' -> idx " + candidates[pick] + " (fuzzy random pick from [" + dumpCandidates + "]) " + dump)
+    return candidates[pick]
+EndFunction
+
+String[] Function TokenizeAndFilter(String s)
+    {Split a lowercased string on spaces, drop stopwords/short tokens, return
+     up to 8 tokens. Used by the Tier-2 fuzzy match in FindPresetIndexByName.
+
+     Cap at 8 because preset names are short — even verbose LLM-typed
+     inputs rarely exceed 5 meaningful tokens. Returns a fixed-size array
+     of 8 with unused slots as empty strings; callers must skip empties.}
+    String[] result = new String[8]
+    if s == ""
+        return result
+    endif
+    Int writeIdx = 0
+    Int start = 0
+    Int len = StringUtil.GetLength(s)
+    Int i = 0
+    While i <= len && writeIdx < 8
+        Bool atEnd = (i == len)
+        Bool atSpace = false
+        if !atEnd
+            atSpace = (StringUtil.GetNthChar(s, i) == " ")
+        endif
+        if atEnd || atSpace
+            if i > start
+                String tok = StringUtil.Substring(s, start, i - start)
+                if !IsFillerToken(tok)
+                    result[writeIdx] = tok
+                    writeIdx += 1
+                endif
+            endif
+            start = i + 1
+        endif
+        i += 1
+    EndWhile
+    return result
+EndFunction
+
+Bool Function IsFillerToken(String tok)
+    {Common stopwords + sub-3-char tokens that shouldn't drive a fuzzy match.
+     LLMs love to wrap requests with "your"/"the"/"some"/etc., and short
+     tokens like "a"/"to" produce too many spurious prefix-overlap hits.}
+    if tok == ""
+        return true
+    endif
+    if StringUtil.GetLength(tok) < 3
+        return true
+    endif
+    if tok == "the" || tok == "your" || tok == "for" || tok == "and"
+        return true
+    endif
+    if tok == "some" || tok == "something" || tok == "wear" || tok == "put"
+        return true
+    endif
+    if tok == "her" || tok == "his" || tok == "their" || tok == "ours"
+        return true
+    endif
+    return false
+EndFunction
+
+Int Function CountNonEmptyTokens(String[] arr)
+    Int n = 0
+    Int i = 0
+    While i < arr.Length
+        if arr[i] != ""
+            n += 1
+        endif
+        i += 1
+    EndWhile
+    return n
+EndFunction
+
+Bool Function AnyTokenOverlap(String[] a, String[] b)
+    {True if any (non-empty) token in `a` shares a bidirectional prefix
+     relationship with any (non-empty) token in `b`. Bidirectional means
+     either:
+        a-token is a prefix of b-token  (query "sexy" hits preset "sexy01")
+        b-token is a prefix of a-token  (query "sexy01" hits preset "sexy")
+     Equality is the trivial subset of both. StringUtil.Find returns 0
+     when its second arg is at index 0 of the first — that's a prefix.}
+    Int ai = 0
+    While ai < a.Length
+        if a[ai] != ""
+            Int bi = 0
+            While bi < b.Length
+                if b[bi] != ""
+                    if StringUtil.Find(b[bi], a[ai]) == 0
+                        return true
+                    endif
+                    if StringUtil.Find(a[ai], b[bi]) == 0
+                        return true
+                    endif
+                endif
+                bi += 1
+            EndWhile
+        endif
+        ai += 1
+    EndWhile
+    return false
 EndFunction
 
 Int Function FindFreeOrReusableIndex(Actor akActor, String name)
@@ -1302,6 +1475,51 @@ Bool Function DeletePresetFromSlot(Actor akActor, String presetName)
 
     Log("DeletePresetFromSlot: removed '" + presetName + "' from slot " + slotIdx + " preset " + presetIdx + " for " + akActor.GetDisplayName())
     return true
+EndFunction
+
+Function UnequipAllExceptBlacklisted(Actor akActor)
+    {Walk currently-worn armor on the actor and unequip each piece UNLESS it
+     is blacklisted. Replacement for akActor.UnequipAll() in code paths where
+     the user's "never touch blacklisted items" contract must hold (preset
+     clear, preset delete, etc.).
+
+     The engine's UnequipAll takes no filter, so we list worn armor through
+     Native_Outfit_GetWornArmor and call Actor.UnequipItem on each non-
+     blacklisted entry. Slightly more expensive than UnequipAll (one native
+     call per equipped armor + one blacklist lookup per piece) but bounded
+     by however many slots the actor has filled — typically 4–8.}
+    if !akActor
+        return
+    endif
+
+    Form[] worn = SeverActionsNative.Native_Outfit_GetWornArmor(akActor)
+    if !worn || worn.Length == 0
+        return
+    endif
+
+    Int kept = 0
+    Int unequipped = 0
+    Int i = 0
+    While i < worn.Length
+        Form item = worn[i]
+        if item
+            if SeverActionsNative.Native_Blacklist_IsBlacklisted(item)
+                kept += 1
+            else
+                ; preventEquip=false, silent=true. preventEquip would lock
+                ; the slot against future re-equips, which we don't want —
+                ; the SetOutfit cascade in ClearPreset re-equips items
+                ; freely; we only want this single unequip pass.
+                akActor.UnequipItem(item, false, true)
+                unequipped += 1
+            endif
+        endif
+        i += 1
+    EndWhile
+
+    if kept > 0
+        Log("UnequipAllExceptBlacklisted: " + akActor.GetDisplayName() + " — unequipped " + unequipped + " items, preserved " + kept + " blacklisted")
+    endif
 EndFunction
 
 Function ClearSituationsPointingTo(Actor akActor, Int presetIdx)
