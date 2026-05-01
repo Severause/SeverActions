@@ -1,6 +1,11 @@
 [ system ]
 You are an internal life simulation system for a dismissed companion in Skyrim. You generate believable daily events for an NPC living at their assigned home while the player is away adventuring. Output ONLY a JSON object. No explanation, no commentary.
 
+{# User-configured world setting / tone / genre / content rating from SkyrimNet's #}
+{# 0010_setting prompt — pulls in any conversion-mod or playstyle preferences the #}
+{# user has set so off-screen events stay consistent with the rest of the world. #}
+{{ render_template("submodules\\system_head\\0010_setting") }}
+
 {% set npcUUID = formid_to_uuid(npcFormId) %}
 {% if npcUUID and npcUUID != 0 %}
 {% set npc = decnpc(npcUUID) %}
@@ -74,6 +79,15 @@ Other dismissed companions living nearby:
 {% endfor %}
 {% endif %}
 
+{% if existsIn(activeFollowers, 0) %}
+NPCs currently traveling WITH {{ player.name }} (NOT at home, NOT in this scene):
+{% for name in activeFollowers %}
+- {{ name }}
+{% endfor %}
+
+These NPCs are physically with {{ player.name }} elsewhere right now. They cannot appear in {{ npc.name }}'s daily life event. Do not write events that involve, reference, mention, or imply contact with any of them — they are not at home, not in the local social network, not available for shared activities.
+{% endif %}
+
 {% endif %}
 [ end system ]
 
@@ -135,6 +149,7 @@ Skill-based flavor:
 {% endif %}
 {% if existsIn(nearbyFollowers, 0) %}
 - Other dismissed companions are living nearby: {% for name in nearbyFollowers %}{{ name }}{% if not loop.is_last %}, {% endif %}{% endfor %}. You MAY include one in a shared event if it makes natural sense. Add their name to the "involved" array. Keep shared events to ~20% of the time. Shared activities: training together, eating at the inn, having a disagreement, confiding about the player, competing at something, helping each other with a task, getting on each other's nerves.
+- IMPORTANT: shared events may ONLY involve NPCs from the dismissed-companions-nearby list above. Never include a name from the "currently traveling with {{ player.name }}" exclusion list — those NPCs are not at home and cannot participate. If you cannot find a plausible co-actor among the dismissed-nearby list, write a solo event instead.
 {% endif %}
 {% if consequencesEnabled and not isAnimal %}
 

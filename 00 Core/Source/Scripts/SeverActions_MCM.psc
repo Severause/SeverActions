@@ -184,6 +184,9 @@ int OID_FM_OffScreenCooldownMin
 int OID_FM_OffScreenCooldownMax
 int OID_FM_OffScreenConsequences
 int OID_FM_ConsequenceCooldown
+int OID_FM_AutoAmbientBanter
+int OID_FM_AmbientBanterCooldownMin
+int OID_FM_AmbientBanterCooldownMax
 int OID_FM_MaxBounty
 int OID_FM_MaxGoldChange
 int[] OID_FM_DismissFollower
@@ -866,6 +869,9 @@ Function DrawFollowersPage()
         OID_FM_OffScreenCooldownMax = AddSliderOption("Off-Screen Max Cooldown", FollowerManagerScript.OffScreenLifeCooldownMaxHours, "{1} hrs")
         OID_FM_OffScreenConsequences = AddToggleOption("Off-Screen Consequences", FollowerManagerScript.OffScreenConsequences)
         OID_FM_ConsequenceCooldown = AddSliderOption("Consequence Cooldown", FollowerManagerScript.ConsequenceCooldownHours, "{1} hrs")
+        OID_FM_AutoAmbientBanter = AddToggleOption("Ambient NPC Banter", FollowerManagerScript.AutoAmbientBanter)
+        OID_FM_AmbientBanterCooldownMin = AddSliderOption("Ambient Banter Min Cooldown", FollowerManagerScript.AmbientBanterCooldownMinHours, "{1} hrs")
+        OID_FM_AmbientBanterCooldownMax = AddSliderOption("Ambient Banter Max Cooldown", FollowerManagerScript.AmbientBanterCooldownMaxHours, "{1} hrs")
         OID_FM_MaxBounty = AddSliderOption("Max Off-Screen Bounty", FollowerManagerScript.MaxOffScreenBounty as Float, "{0}")
         OID_FM_MaxGoldChange = AddSliderOption("Max Gold Change", FollowerManagerScript.MaxOffScreenGoldChange as Float, "{0}")
         OID_FM_DeathGracePeriod = AddSliderOption("Death Cleanup Delay", FollowerManagerScript.DeathGracePeriodHours, "{0} hrs")
@@ -1207,6 +1213,11 @@ Event OnOptionSelect(int option)
         If FollowerManagerScript
             FollowerManagerScript.OffScreenConsequences = !FollowerManagerScript.OffScreenConsequences
             SetToggleOptionValue(OID_FM_OffScreenConsequences, FollowerManagerScript.OffScreenConsequences)
+        EndIf
+    elseif option == OID_FM_AutoAmbientBanter
+        If FollowerManagerScript
+            FollowerManagerScript.AutoAmbientBanter = !FollowerManagerScript.AutoAmbientBanter
+            SetToggleOptionValue(OID_FM_AutoAmbientBanter, FollowerManagerScript.AutoAmbientBanter)
         EndIf
     elseif option == OID_FM_ForceRemove
         If FollowerManagerScript && CachedManagedFollowers && SelectedCompanionIdx < CachedManagedFollowers.Length
@@ -1903,6 +1914,20 @@ Event OnOptionSliderOpen(int option)
             SetSliderDialogRange(6.0, 72.0)
             SetSliderDialogInterval(1.0)
         EndIf
+    elseif option == OID_FM_AmbientBanterCooldownMin
+        If FollowerManagerScript
+            SetSliderDialogStartValue(FollowerManagerScript.AmbientBanterCooldownMinHours)
+            SetSliderDialogDefaultValue(3.0)
+            SetSliderDialogRange(1.0, 24.0)
+            SetSliderDialogInterval(1.0)
+        EndIf
+    elseif option == OID_FM_AmbientBanterCooldownMax
+        If FollowerManagerScript
+            SetSliderDialogStartValue(FollowerManagerScript.AmbientBanterCooldownMaxHours)
+            SetSliderDialogDefaultValue(7.0)
+            SetSliderDialogRange(2.0, 48.0)
+            SetSliderDialogInterval(1.0)
+        EndIf
     elseif option == OID_FM_MaxBounty
         If FollowerManagerScript
             SetSliderDialogStartValue(FollowerManagerScript.MaxOffScreenBounty as Float)
@@ -2132,6 +2157,24 @@ Event OnOptionSliderAccept(int option, float value)
             FollowerManagerScript.ConsequenceCooldownHours = value
             SetSliderOptionValue(OID_FM_ConsequenceCooldown, value, "{1} hrs")
         EndIf
+    elseif option == OID_FM_AmbientBanterCooldownMin
+        If FollowerManagerScript
+            FollowerManagerScript.AmbientBanterCooldownMinHours = value
+            If value > FollowerManagerScript.AmbientBanterCooldownMaxHours
+                FollowerManagerScript.AmbientBanterCooldownMaxHours = value
+                SetSliderOptionValue(OID_FM_AmbientBanterCooldownMax, value, "{1} hrs")
+            EndIf
+            SetSliderOptionValue(OID_FM_AmbientBanterCooldownMin, value, "{1} hrs")
+        EndIf
+    elseif option == OID_FM_AmbientBanterCooldownMax
+        If FollowerManagerScript
+            FollowerManagerScript.AmbientBanterCooldownMaxHours = value
+            If value < FollowerManagerScript.AmbientBanterCooldownMinHours
+                FollowerManagerScript.AmbientBanterCooldownMinHours = value
+                SetSliderOptionValue(OID_FM_AmbientBanterCooldownMin, value, "{1} hrs")
+            EndIf
+            SetSliderOptionValue(OID_FM_AmbientBanterCooldownMax, value, "{1} hrs")
+        EndIf
     elseif option == OID_FM_MaxBounty
         If FollowerManagerScript
             FollowerManagerScript.MaxOffScreenBounty = value as Int
@@ -2353,6 +2396,12 @@ Event OnOptionHighlight(int option)
         SetInfoText("When enabled, off-screen life events may have real consequences: followers can get arrested, earn or lose gold, or take on debt. Events are personality-driven — principled followers rarely commit crimes. Default: OFF.")
     elseif option == OID_FM_ConsequenceCooldown
         SetInfoText("Game hours between consequential off-screen events per follower. Consequences are rarer than regular events. Default: 36 hours.")
+    elseif option == OID_FM_AutoAmbientBanter
+        SetInfoText("When enabled, nearby non-follower NPCs occasionally talk to each other so populated areas feel alive without requiring player input. Hostile cells (dungeons / bandit camps / under-attack settlements) are skipped automatically. Default: ON.")
+    elseif option == OID_FM_AmbientBanterCooldownMin
+        SetInfoText("Minimum game hours between ambient NPC banter cycles. The cooldown is global, not per-NPC. Default: 3 hours.")
+    elseif option == OID_FM_AmbientBanterCooldownMax
+        SetInfoText("Maximum game hours between ambient NPC banter cycles. Each cycle picks a random cooldown between min and max. Default: 7 hours.")
     elseif option == OID_FM_MaxBounty
         SetInfoText("Maximum cumulative bounty a follower can accumulate from off-screen crime events. Prevents runaway bounties. Default: 1000 gold.")
     elseif option == OID_FM_MaxGoldChange

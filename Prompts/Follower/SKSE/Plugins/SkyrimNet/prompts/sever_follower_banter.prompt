@@ -32,7 +32,7 @@ Mood: {{ f.mood }} (-100 to 100) | Combat Style: {{ f.combatStyle }}
 
 ## Recent Events
 
-{% set events = get_recent_events(20) %}
+{% set events = get_recent_events(30) %}
 {% set followerNames = [] %}
 {% for f in followers %}
 {% set fUUID = formid_to_uuid(f.formId) %}
@@ -55,10 +55,28 @@ Mood: {{ f.mood }} (-100 to 100) | Combat Style: {{ f.combatStyle }}
 {% endfor %}
 {% if length(relevantEvents) > 0 %}
 {% for ev in relevantEvents %}
-[{{ ev.gameTimeStr }}] {{ default(ev.data.speaker, "someone") }} to {{ default(ev.data.listener, "someone") }}: {{ ev.data.dialogue }}
+[{{ ev.gameTimeStr }}] {{ default(ev.data.speaker, "someone") }} to {{ default(ev.data.listener, "someone") }}{% if existsIn(ev.data, "topic") and ev.data.topic != "" %} — topic: "{{ ev.data.topic }}"{% endif %}: {{ ev.data.dialogue }}
 {% endfor %}
 {% else %}
 No recent dialogue involving companions.
+{% endif %}
+
+## Topics Already Covered (banter only)
+
+These are the explicit banter topics this party has already used. **Do not pick a topic that is the same theme as any of these — even loosely related counts as repetition.** "Complaining about the cold" and "remarking on the weather" are the same theme; "ribbing about a missed arrow" and "ribbing about clumsy footwork" are the same theme.
+
+{% set pastTopics = [] %}
+{% for ev in relevantEvents %}
+{% if existsIn(ev.data, "topic") and ev.data.topic != "" %}
+{% set pastTopics = append(pastTopics, ev) %}
+{% endif %}
+{% endfor %}
+{% if length(pastTopics) > 0 %}
+{% for ev in pastTopics %}
+- [{{ ev.gameTimeStr }}] {{ ev.data.speaker }} & {{ ev.data.listener }}: "{{ ev.data.topic }}"
+{% endfor %}
+{% else %}
+No prior banter topics on record. Wide-open field.
 {% endif %}
 
 Current location: {{ player.location }}
@@ -76,18 +94,49 @@ Guidelines:
 - Mood matters: a companion at -50 mood is not going to crack jokes. They might complain, brood, or snap.
 - Consider what just happened: after combat, reactions are natural. After a long quiet walk, someone might break the silence. Arriving at a new location can prompt comments.
 - Consider personality compatibility from their bios: a scholarly mage and a brash warrior have different interests. That can create interesting conversations OR awkward silence.
-- The topic should be a brief direction (4-8 words), NOT full dialogue. Examples:
-  * "comparing battle scars from yesterday"
-  * "debating whether to trust the Jarl"
-  * "ribbing about that missed arrow"
-  * "asking about their homeland"
-  * "complaining about the cold"
-  * "reminiscing about a shared fight"
-  * "questioning the player's latest decision"
-  * "awkward attempt at small talk"
+
+### Pick a beat type FIRST, then a topic
+
+To avoid samey output, pick the *kind* of moment before the topic. Cycle through different beat types over time so the same pair doesn't always do the same kind of exchange. Categories (with example topics — these are seeds, do NOT copy them verbatim):
+
+- **Personal / vulnerable** — confession, regret, dream, family memory, missing someone, an old wound resurfacing
+  * "the brother who didn't make it home"
+  * "what they're afraid of becoming"
+  * "the smell that reminds them of the homestead"
+- **Reactive / situational** — the player's last action, a stranger they passed, a place they just entered, a thing on the road
+  * "what to make of the stranger at the inn last night"
+  * "the player's choice with the bandit chief"
+  * "the cracked statue in this temple"
+- **Banter / friendly friction** — ribbing, teasing, mild disagreement, callbacks to past mistakes
+  * "the time one of them missed an obvious shot"
+  * "who would win in a sober drinking contest"
+  * "an ongoing argument over campfire watches"
+- **Speculation / philosophical** — rumors, prophecy, "what if", afterlife, the Divines, magic theory
+  * "what the Greybeards actually do up there"
+  * "whether daedra dream"
+  * "what they'd do with a hundred septims, no consequences"
+- **Cultural / heritage** — explaining their people's view, comparing customs, food/drink/song they miss
+  * "the dish from home neither place serves right"
+  * "a saying from one province versus another"
+  * "what counts as an insult where they're from"
+- **Tactical / craft** — weapon preferences, fight critique, a trap they remembered, gear talk
+  * "why one swears by daggers, the other by maces"
+  * "a fight they could have handled better"
+  * "the trap they almost set off in the last ruin"
+- **Quotidian / texture** — complaint, wry observation, brag — use sparingly. ONLY pick a quotidian beat if no specific bio-driven angle fits AND the recent topic list has nothing in this register already.
+
+### Anti-repetition rules
+
+- **Scan the "Topics Already Covered" list before deciding.** If your candidate topic shares a theme with anything there, pick something else. Same theme = same answer, no matter how the words are arranged.
+- **Avoid recycling beat types within the same in-game day.** If today's banter already had a "complaining about the cold" beat (Quotidian), pick a Personal or Speculation beat next, not another Quotidian one.
+- **Mine the bios for specifics.** Each follower's bio has unique hooks (homeland, family, profession, tics, peeves, scars). The topic should USE one specific hook from one follower and contrast against the OTHER follower's hook. Generic topics anyone could have are forbidden if a bio-specific one is available.
+- **Forbid generic filler.** Do NOT pick "casual conversation", "small talk", "passing the time", or "the weather" unless every other category genuinely doesn't fit AND nothing weather-adjacent is in the recent topic list.
+
+### Output discipline
+
+- The topic should be a brief direction (4-8 words), NOT full dialogue.
 - Pick the speaker as the one more likely to initiate based on personality (extroverts start, introverts respond).
-- Never repeat the same pair and topic pattern. Vary who speaks and what about.
-- If recent events show they JUST talked, don't trigger again immediately.
+- If recent events show this pair JUST talked, prefer a different pair or silence.
 
 Respond with ONLY one of these JSON formats. No explanation. One line:
 {% raw %}{"banter":null}{% endraw %}

@@ -1,5 +1,300 @@
 # SeverActions Changelog
 
+## v2.9.9
+
+### SkyrimNet Bio Audit — Tier 1 (Parallel Track, Not In FOMOD)
+
+Independent audit pass over the SkyrimNet character bios shipped at `Data/SKSE/Plugins/SkyrimNet/original_prompts/characters/` (3,146 bios total). Drove by the same lesson learned from the Kynreeve case: bio `speech_style` blocks that describe a character as "clipped, terse, blunt" prime the model to produce period-stopped Tough-Guy One-Liner output regardless of any prompt-level guardrails, because character-scoped voice instructions outweigh scene-scoped ones. Same applies to `summary` blocks that bake in forward-looking quest spoilers — a stranger meeting the NPC for the first time shouldn't have those framings driving the LLM's first-impression dialogue.
+
+Wrote a triage script (`bio_triage.py` — temp, not in repo) that flagged 1,354 bios across 3,146 with at least one issue: 951 with speech_style priming only, 259 with summary spoilers only, 144 with both. Of those, 55 are flagged as priority NPCs (vanilla followers, major quest characters, key faction figures).
+
+Processed all 55 priority bios in this pass:
+
+- **Lydia** (worked example, hand-edited as the template): replaced "direct, concise sentences with minimal embellishment" with "measured rather than clipped — full thoughts, even when brief, with their joints intact." Removed Dragonborn-specific framings from summary; kept thaneship references (publicly bestowed honor, not a spoiler). Werewolf/Greybeards/Western-Watchtower references reframed.
+- **54 additional bios** processed in 5 parallel agent batches, each given the handoff doc + Lydia's before/after as a worked template:
+  - **Whiterun & Companions (11)**: aela_the_huntress, athis, balgruuf_the_greater, farkas, irileth, kodlak_whitemane, njada_stonearm, proventus_avenicci, skjor, uthgerd_the_unbroken, vilkas
+  - **College & Mages (7)**: ancano, drevis_neloren, festus_krex, mirabelle_ervine, neloth, phinis_gestor, savos_aren
+  - **Greybeards & War Factions (9)**: arngeir, borri, delphine, einarth, elenwen, esbern, galmar_stone-fist, paarthurnax, wulfgar
+  - **Thieves Guild & Dark Brotherhood (6)**: arnbjorn, babette, karliah, mercer_frey, tonilia, vex
+  - **Followers & Dawnguard DLC (21)**: ahtar, annekke_crag-jumper, argis_the_bulwark, borgakh_the_steel_heart, calder, florentius_baenius, frea, golldir, ingjard, iona, isran, jenassa, marcurio, mjoll_the_lioness, rayya, serana, sorine_jurard, teldryn_sero, valdimar, valerica, vorstag
+
+**Approach per bio**:
+- `speech_style`: rewritten to capture voice without priming. The replacement vocabulary pattern: "X, never clipped — full sentences with their joints intact" / "economical with words but always answers fully" / "speaks plainly, no flourish, no theater." Each character's accent, register, and personality preserved (Nord cadence, Dunmer formality, scholarly precision, etc.) — only the priming language was changed.
+- `summary`: forward-looking quest spoilers stripped. Public-knowledge framings kept (Jarl titles, Harbinger, Greybeard membership for Greybeards themselves, public faction roles). Hidden identity reveals moved to the `background` block where the LLM still has the context for in-character behavior but the player isn't tipped off through summary-driven dialogue.
+- All other blocks (`personality`, `appearance`, `aspirations`, `relationships`, `occupation`, `skills`, `interject_summary`, `background`) preserved verbatim, with the documented exception of `background` accepting relocated spoiler material from `summary` (per the handoff doc's explicit allowance).
+
+**Spoiler decisions worth flagging**:
+- Companions werewolves (Aela, Farkas, Skjor, Vilkas, Kodlak) — werewolf nature stripped from summary, preserved in background. Kodlak's "Harbinger" title kept as it's publicly known.
+- Balgruuf's Talos worship — explicit "secretly" framing removed; reframed as "quietly worship in private" in background.
+- Delphine's Blade identity — full reframe to Riverwood innkeeper in summary; Blade material in background.
+- Esbern's Blades scholarship + Alduin expertise — full reframe; quest-specific material in background only.
+- Paarthurnax's dragon-priest past + Alduin betrayal — full reframe to "ancient wise being who teaches the Way of the Voice"; quest-specific material in background.
+- Mercer Frey's Karliah-betrayal arc — stripped from summary; kept in background.
+- Karliah's Nightingale identity — stripped from summary; reframed as "Dunmer thief of the old school carrying a long-waiting grudge."
+- Babette's vampire age and posing-as-child gotcha — stripped from summary; kept in background for behavioral fidelity.
+- Serana's Daughter-of-Coldharbour lineage — softened to "vampire of unusual lineage" in summary.
+- Valerica's Soul Cairn imprisonment + Elder Scroll + Tyranny-of-Sun prophecy — heavy summary reframe to "ancient vampire of unusual lineage with a long history rooted in old Nord nobility"; quest-specific material in background.
+- Housecarls (Argis, Calder, Iona, Rayya, Valdimar) — false-positive spoiler hits on "thane" references; thaneship is publicly bestowed and is literally their job description, kept verbatim. Speech_style priming fixed where flagged.
+
+**Codex spot-check**: ran `codex exec` over a 3-sample cross-section (Aela, Delphine, Valerica) for independent quality review. Verdict: PASS on all three, with two minor caveats noted (Aela's background got one new sentence relocating the werewolf-as-private-Circle-matter detail from summary — which is allowed per handoff; Valerica's "Serana's daughter" reference stayed in summary, which is fine since that relationship is revealed in the opening minutes of Dawnguard).
+
+**Where the override bios live**:
+- Live game (deployed): `Data/SKSE/Plugins/SkyrimNet/prompts/characters/<filename>.prompt` — SkyrimNet's override path; takes precedence over `original_prompts/characters/`
+- Repo (captured for git): `Bios/SKSE/Plugins/SkyrimNet/prompts/characters/<filename>.prompt` — mirrors a future FOMOD module structure if we decide to package and ship publicly
+
+**Tier 2 — additional 27 priority NPCs (next commit)**
+
+Expanded the priority slug list in `bio_triage.py` to capture more high-traffic NPCs beyond the original Tier 1 hardcoded set. Re-running the triage surfaced 27 new priority candidates that weren't covered in Tier 1. Processed in 3 parallel agent batches:
+
+- **Cities & shopkeepers (10)**: camilla_valerius, lucan_valerius, ysolda, viola_giordano, brunwulf_free-winter, brelyna_maryon, temba_wide-arm, morwen, niranye, calixto_corrium
+- **Hold stewards & deeper Thieves Guild (8)**: anuriel, raerek, falk_firebeard, alessandra, sapphire, thrynn, cynric_endell, gallus
+- **Daedric Princes & Volkihar vampires (9)**: malacath, boethiah_cultist_generic, boethiah_generic, fura_bloodmouth, garan_marethi, orthjolf, ronthil, vingalmo, rexus
+
+**Key spoiler decisions in Tier 2**:
+- **Calixto Corrium** — most spoiler-sensitive bio in the audit. He's the Butcher of Windhelm (Blood on the Ice murder mystery). Summary completely reframed to public-facing antiquities collector / curator of the House of Curiosities. Interject_summary also edited (original told the LLM to volunteer murder-adjacent commentary unprompted — itself a leak path). All Butcher details in background only.
+- **Niranye** — Thieves Guild fence cover stripped from summary; reframed as Windhelm market vendor.
+- **Anuriel** — Maven Black-Briar bribery / spy framing stripped from summary; reframed as competent Mistveil Keep steward.
+- **Raerek** — covert Talos worship stripped from summary; reframed as Igmund's uncle and senior administrator.
+- **Falk Firebeard** — false-positive thane_ref hit, no spoiler change needed (public Solitude steward).
+- **Sapphire** — Mallory family lineage stripped from summary; reframed as guarded TG enforcer with hard past she does not discuss. Mallory hint preserved in background as in-world rumor without naming Glover/Delvin.
+- **Gallus** — Nightingale role + Nocturnal pact + Skeleton Key bond stripped from summary; reframed as previous Guildmaster murdered ~25 years ago, mentor and lover of Karliah. Background keeps full Nightingale context.
+- **Vingalmo** — "secretly plotting to take control" stripped from summary; relocated to background.
+- **Volkihar court vampires (Fura, Garan, Orthjolf, Ronthil, Vingalmo)** — vampire status kept in summary (faction-public among Volkihar); specific schemes / future-plot framings moved to background.
+- **Malacath** — Trinimac transformation kept (deep TES lore, scholar/Orc-known), summary lightly reframed; mostly speech_style fix.
+- **Boethiah** — quest-mechanic preserved in lore framing (Prince of Plots, encourages betrayal as virtue); the follower-sacrifice mechanic of Boethiah's Calling not specifically tipped off.
+- **Rexus** — Amaund Motierre's Dark Brotherhood contract framing stripped from summary; reframed as imperial attendant traveling with Amaund. DB association in background.
+
+**Tier 3 — additional 30 priority NPCs (next commit)**
+
+Further expansion of the priority slug list to capture Solstheim NPCs, Hold Jarls and court members, civil-war side cast, Daedric quest-givers, deeper TG/DB members, and spouse-able shopkeepers. Re-running the triage surfaced 30 new candidates beyond Tier 1+2. Processed in 3 parallel agent batches:
+
+- **Solstheim & Telvanni (7)**: bujold_the_unworthy, mogrul, fethis_alor, ralis_sedarys, elynea_mothren, adril_arano, tilisu_severin
+- **Holds politics & civil war side cast (10)**: igmund, hrongar, brina_merilis, faleen, vignar_gray-mane, idolaf_battle-born, olfina_gray-mane, ralof, yrsarald_thrice-pierced, hofgrir_horse-crusher
+- **Daedric / TG side / Thalmor / spouse-ables (13)**: erandur, ennodius_papius, sarthis_idren_generic, rulindil, dirge, vipir_the_fleet, ravyn_imyan, dravynea_the_stoneweaver, grelka, mralki, maven_s_bodyguard, carcette_the_survivor_generic, runa_generic
+
+**Key spoiler decisions in Tier 3**:
+- **Tilisu Severin** — most spoiler-sensitive of T3. The Severin family in Raven Rock is actually a Morag Tong assassin team hiding under House Hlaalu identity to kill Councilor Lleril Morvayn ("Served Cold" Solstheim quest). Summary fully reframed to wealthy Dunmer matron of a respectable merchant household + community benefactor + polite-and-reserved public persona. All Morag Tong / assassination plot detail in background.
+- **Ralis Sedarys** — Kolbjorn Barrow excavator who is being possessed by the dragon priest Ahzidal. Summary reframed to enthusiastic archaeologist looking for a backer. Possession/sacrifice arc in background.
+- **Olfina Gray-Mane** — secret romance with Jon Battle-Born (Whiterun's Romeo-and-Juliet sub-plot). Romance moved from summary to background.
+- **Erandur** — Vaermina cultist past stripped from summary. Reframed as kind priest of Mara helping with Dawnstar nightmares.
+- **Ennodius Papius** — Dark-Brotherhood-actually-after-him reveal de-specified to "a Daedric cult has marked him for death" so the Boethiah's Calling sacrifice option isn't tipped off. Summary reframed to paranoid hermit.
+- **Rulindil** — specific Etienne/Esbern Blade-interrogation framing stripped from summary. Reframed as Third Emissary / Elenwen's chief interrogator who runs informant networks. Esbern/Etienne specifics in background and aspirations.
+- **Runa (generic)** — vampire status moved from summary opening to background. Reframed as "vivacious Nord woman" with vampiric nature as background-only detail.
+- **Carcette the Survivor (generic)** — vampire/Vigil references kept (fighting vampires is the Vigilants' public mission). Speech_style only.
+- **Holds & civil war (Igmund, Hrongar, Brina, Vignar, Idolaf, Ralof, Yrsarald)** — public political stances + family feuds are open lore. Speech_style fixes only, no spoiler reframes.
+- **Daedric victims (Sarthis Idren)** — public framings as quest hooks (skooma dealer, etc.) preserved. Speech_style only.
+
+**Tier 4 — Class generics (89 new bios)**
+
+Tier 4 covers class-level generic bios — every Hold guard shares one, every bandit shares another, every vampire another, etc. Changes here propagate to dozens of NPCs at once. The user requested specific behavioral tweaks for the bandit family on top of the standard speech_style fix.
+
+**Bandit family with tier-scaled yield/surrender behavior** (13 bios):
+
+User-driven design: bandits should be less death-wish, should surrender when they see a no-win situation, AND there should be variance so they don't all sound the same. But higher-tier bandits should resist more. Implemented as a 3-tier scale across the bandit hierarchy:
+
+- **Base tier — `bandit_generic`** (rank-and-file outlaws). Self-preservation overrides bravado. Yields readily once a clear no-win emerges. Five sub-archetypes (opportunist / desperate / hot-head / weary veteran / cruel one — last one used sparingly) so individual bandits read as different people. Speech_style describes voice variation, profanity as situational not punctuation, surrender lines explicitly modeled ("I yield" / "Take the gold, just walk" / "Mercy, traveler") rather than defiant last words.
+- **Mid-tier — lieutenants** (4 bios: bandit_lieutenant, bandit_chief_lieutenant, bandit_raid_lieutenant, bandit_lieutenant_overseer). Between recruit and chief — more to prove than a recruit, less to lose than a chief. Yields more readily than a chief, less than a recruit. Same archetype variance pattern.
+- **High-tier — chief / leadership** (3 bios: bandit_chief_generic, bandit_ringleader_generic, bandit_reaver_lord_generic). Authority-driven resistance. Will fight harder, longer, through more pain than rank-and-file before yielding. Bargains from strength rather than collapsing into terror — "a chief who calmly proposes terms with their gang dying around them is in character; a chief who collapses into stammered terror is not."
+- **Elite/named-archetype — zealot tier** (5 bios: bandit_exalted_lieutenant, bandit_frostborn_disciple, bandit_finger_of_the_mountain, bandit_daughter_of_the_hammer, bandit_woman_of_the_hammer). Identity bound up in title. Yielding framed as "spiritual collapse, not just tactical defeat" — most would rather die than be the [archetype] who folded. Still leaves narrow archetype-variance room for rare exceptions, but the default is "rarely yield."
+
+Codex spot-check on the three tier representatives (base / chief / Frostborn Disciple): PASS on all three, tier-scaling clearly distinguishes panic-tier from authority-tier from zealot-tier.
+
+**Hold guard generics** (17 bios): Speech_style fixes only — public faction roles. Each Hold's regional flavor preserved (Whiterun's "I used to be an adventurer" lineage, Riften's Maven-quieting pattern, Markarth's tense Forsworn-shadow undertone, Eastmarch's Stormcloak conviction, etc.) without using priming words.
+
+**Faction soldiers** (26 bios): Imperial (10), Stormcloak (5), Dawnguard (3), Forsworn (8). Speech_style fixes. Forsworn explicitly NOT given yield/surrender language — they ARE zealots (Reachman tribal religion, generations of bitterness against Nord/Imperial conquest) and that's their character, not a failure mode to correct.
+
+**Predator / criminal class generics** (33 bios): Vampires (basic + elite tiers), Necromancers (novice through master), Mercenaries (East Empire, Black-Briar, Silver-Blood), Hunters (including Old Orc with culturally-accurate death-seeking PRESERVED — that's Malacath's tradition, not a death-wish bandit pattern), Thieves, Alik'r warriors, Orc raiders, Afflicted (Peryite cultists). Speech_style + minor reframes; vampire/necromancer class identity is the bio's class trait (not a spoiler).
+
+**Tier 5 — Long-tail spoilers-first sweep (322 new bios)**
+
+Tier 5 covers the remaining spoiler-bearing bios across the long tail — every bio whose `summary` block leaks forward-looking quest material, regardless of whether the NPC is named, generic, modded, or vanilla. Strategy was **Option A (spoilers-first)**: chase the spoiler vector, skip pure speech-style-only bios for now. Speech-style-only bios (~830 remaining) can be picked up in a Tier 6 / Option C full mechanical sweep if prioritized later.
+
+Triage produced 339 spoiler-bearing bios across the sub-categories. Processed in 10 parallel agent batches across 2 waves:
+
+**Wave 1 (5 batches, 154 bios)**:
+- **S1-A / S1-B — supernatural reveals (~60 bios)**: hidden vampires, werewolves, lycanthropes among townsfolk and stranded NPCs. Major reframe targets: Saadia (Hammerfell noble identity stripped), Movarth Piquine, Hert/Hern (Half-Moon Mill vampires).
+- **S1-C — hidden-identity reveals**: Sybille Stentor (Solitude court vampire reframed to Court Wizard role), Sam Guevenne (Sanguine in disguise — divine reveal stripped), the Nerevarine (Indoril Nerevar / Dagoth Ur reveals stripped to Dunmer warrior framing), Vyrthur, corrupt_agent, Bloodchill Manor staff.
+- **S2-A / S2-B — supernatural + Solstheim hidden identities**: thrall/cattle types kept frank (in-faction), vampire naturalists kept open. Major reveals processed: Eltrys (Forsworn conspiracy investigator with impending death NOT spoiled in summary), Korrilan, Eldawyn, Aringoth (Aretino skooma identity), Balagog gro-Nolob — the Gourmet (public-facing chef in summary, Listener-of-the-Dark-Brotherhood / cookbook author context in background), Vendil Severin (Morag Tong assassination team identity reframed).
+
+**Wave 2 (5 batches, 168 bios written + 17 false-positive skips)**:
+- **S2-C — supernatural reveals third batch (33 bios)**: Volkihar in-faction NPCs kept frank, Falkreath hidden vampire (Raven) reframed to wealthy patron, Hunters of Hircine kept frank (in-faction), Sinding (lycanthropy moved to background, jail context preserved), Bloodchill Manor staff (Tilde / Vori — held as cover-staff with vampirism in background).
+- **S3 — faction allegiance reveals (25 bios)**: Dark Brotherhood members reframed by cover persona (Mion, Vayne, Morrigan, Safia, etc.), DB initiates met inside the Sanctuary kept frank (player is Listener at that point), Thalmor agents kept frank when public (high_elf_*, thalmor_sentry, estormo, armion) and tightened when undercover (Captain Valmir cover identity); Nightingales (Llewellyn / Lyra / Pyrus / Zin Wythering) — all false positives, "Nightingale" was a stage name, surname, or self-styled epithet.
+- **S4-A — Dragonborn references first half (49 bios)**: townsfolk whose summaries assumed player-as-Dragonborn, Auryen Morellus (4 FormIDs — Legacy of the Dragonborn curator with player-as-guildmaster relationship sanitized; "Dragonborn Gallery" institution name preserved as proper noun), Sovngarde heroes (Felldir / Hakon / Gormlaith) kept dragon-war-explicit but no Dragonborn-pre-spoiler, Helgen survivors with "the great black dragon" framing, Whiterun Watchtower guards reframed.
+- **S4-B — Dragonborn references second half (49 bios)**: museum guards group treatment (10+ near-identical entries handled consistently), dragon NPCs kept dragon framing (Mirmulnir / Sahloknir / Nahagliiv / Odahviing / Vuljotnaak / Viinturuth / Silah) with player-pre-knowledge stripped, **Nerien** (Psijic Order spoiler reframing — first impression now "robed Altmer mystic of unclear origin"), **Shavari** (Thalmor assassin — assassination contract specifics moved out of aspirations/relationships), modded-NPC Dragonborn dependencies cleaned.
+- **S5 — misc spoilers (29 bios, 12 written + 17 skipped as false positives)**: most `thane_ref` hits were public-title noise (Thane Charlotte, Thane Eirfa Four-Shoes — title literally in name). Real fixes on Bryling, Dengeir, Irnskar, Jordis, Gregor, Markus, Engar (player-as-Thane reframings + speech_style); Kjar, Lagdu, Svetlana (speech_style only with backstory betrayal kept); Pelagius the Suspicious (speech-only, paranoia preserved as character trait); Stig Salt-Plank (meta-bribe hint cleaned).
+
+**Codex spot-check on Tier 5 representatives**: ran `codex exec` over a 10-sample cross-section (nerien, captain_valmir, raven, auryen_morellus_33F, klimmek, pelagius, nahagliiv, shavari, felldir, armion). Verdict: 7 PASS, 2 CONCERN, 1 FAIL. Patched the 3 flagged bios:
+
+- **captain_valmir_5B7** (FAIL): `occupation` block was leaking the undercover Thalmor reveal explicitly ("Outwardly: ... Actually: an undercover Thalmor agent..."). Rewrote occupation to public-facing captain-at-camp persona only; aspirations reframed away from "advance Thalmor power" / "avoid exposure as a Thalmor spy" toward task-and-cover language; relationships reordered so Thalmor superiors became "his real superiors (private)" trailing entry rather than lead.
+- **nerien_CC9** (CONCERN): relationships block had "The dragon-blooded warrior: Subject of prophecy and evaluation" as the lead entry. Removed; replaced with generic "Mortals of unusual potential: Watched, evaluated, and only ever addressed when the moment demands it."
+- **shavari_E22** (CONCERN): aspirations + relationships blocks surfaced the active assassination contract too directly (Esbern as secondary target, target-as-Dragonborn-embarrassment). Reframed aspirations to "close her current high-priority assignment cleanly," removed Esbern entirely from relationships, trimmed `interject_summary` references.
+
+After patches: all 10 sample bios PASS on spoiler containment + playability + speech style. Codex confirmed no `{% endml %}` typos across the sample — block markers all balanced.
+
+**Tier 6 — Long-tail speech-style mechanical sweep (840 new bios)**
+
+Tier 6 closes out the audit by sweeping every remaining bio whose `speech_style` block had priming language but whose `summary` had no spoilers (Tier 5 already swept the spoilers). Triage produced 840 bios across 14 batches of 60. Pattern distribution: 727 with `clipped`, 133 with `terse`, 77 with `blunt`, 13 misc (`brusque`, `concise/direct`, `short/sharp`, `minimal_sentences`, `economy_of_words`).
+
+Processed in two stages:
+
+**Stage 1 — Parallel agents (Wave 1 + partial Wave 2, 474 bios)**: 9 agents dispatched across batches T6-01 through T6-10, each with 60 bios. Wave 1 finished cleanly (T6-01 through T6-05, 300 bios). Wave 2 finished partially (T6-06: 36/60, T6-07: 36/60, T6-08: 30/60, T6-09: 32/60, T6-10: 40/60) before the org's monthly Anthropic API usage limit cut off the remaining work mid-flight. Agent rewrites are bespoke per character — accent, register, profession, mood preserved while the priming is removed and anti-priming language ("full sentences with their joints intact" / "complete thoughts, never chopped" / "compact but complete") is integrated into the existing voice.
+
+**Stage 2 — Mechanical Python fallback (366 bios)**: Wrote a regex-driven script (`t6_finish.py`) that does pattern-based substitutions (`clipped` → `compact`, `terse` → `economical`, `blunt` → `plain`, deletes `Example: "..."` quoted bait, etc.) and appends a standardized anti-priming clause: "Sentences keep their joints intact — full thoughts, even when brief, never reduced to chopped fragments." Skips any file that already has an override (preserves agent work). Ran in seconds; covered the unfinished tail of T6-06 through T6-10 plus all of T6-11 through T6-14.
+
+The mechanical pass is meaningfully more formulaic than the agent pass — Codex's QA observed that "agent passes integrate the anti-priming into character voice, while mechanical passes often read like the original sentence plus a standard clause." Acceptable tradeoff for the long tail of obscure modded NPCs that may rarely be encountered in play.
+
+**Codex spot-check on Tier 6 representatives** (10-sample mix of agent + mechanical): 7 PASS, 2 CONCERN, 1 sampling miss (I gave Codex a non-existent filename). Both CONCERNs are mechanical-pass bios with residual priming-**adjacent** language that wasn't in the regex set — `paratus_decimius_41B` keeps "sentences more fragmented" (stress-response description), `patrizia_4CA` keeps "trail off into mumbles." These are situational behavioral descriptions, not blanket cadence directives, and the standardized anti-priming clause counters them. Documented as known soft-priming tail residue rather than re-processed.
+
+No primary priming language (`clipped` / `terse` / `blunt` / `Example: "..."` quoted bait) survives in any of the 1363 deployed overrides per Codex's sample and per a final scan. Block markers all balanced (1 `{% endml %}` typo introduced by an agent on `kauanne_generic` was caught by the post-processing scan and patched).
+
+**Total bios audited across all 6 tiers**: 1,363 (Tier 1: 55, Tier 2: 27, Tier 3: 30, Tier 4: 89, Tier 5: 322, Tier 6: 840).
+**Audit coverage**: ~43% of the 3,146 SkyrimNet character bios. The remaining ~1,800 are the bios that were already clean on both the speech_style and summary axes — no priming language in speech_style, no forward-looking spoilers in summary — and don't need overrides.
+
+The Tier 4 batch is the highest-leverage of the audit — each generic bio touches dozens to hundreds of NPCs at runtime via SkyrimNet's character resolution. Editing `bandit_generic` once changes how every rank-and-file bandit speaks across the whole game.
+
+**Codex spot-check** on Tier 2 sample (Calixto / Sapphire / Vingalmo): three "concerns" returned, all false alarms — Codex's PowerShell terminal misread the UTF-8 em-dash bytes as mojibake (verified clean via Python byte inspection), and Codex's "spoiler material now in background" objection is exactly the documented pattern from the handoff doc. The interject_summary edit on Calixto was justified — original framing told the LLM to volunteer murder-adjacent commentary unprompted, which is itself a leak path.
+
+**What's still pending**:
+- Long-tail generic bios (1,272 flagged — bandits, generic guards, generic merchants, lower priority)
+- A `Bios` FOMOD module if the user decides to ship publicly. Currently the override files live in the repo at `Bios/` but aren't included in `build_fomod_zip.ps1`.
+
+Documented in detail at `handoff_bio_audit.md` (repo root) for future-session continuity. The handoff covers the full failure-mode taxonomy, replacement vocabulary, workflow, and explicit guardrails on what NOT to do.
+
+This is a parallel deliverable to the dialogue-prompt fixes — neither blocks the other, neither requires the other. The bios layer their effect on top of any prompt-level dialogue guidance.
+
+### Dialogue Anti-Patterns — Stripped In-Context Examples
+
+Hypothesis-driven trim of the BAD/GOOD example pairs in `0505_severactions_personality.prompt`. The previous structure listed each anti-pattern with a `BAD: "..."` and `GOOD: "..."` quoted illustration — useful for human readers, but documented few-shot leakage means LLMs sometimes reproduce surface features of in-context examples regardless of the negative label, especially when the BAD example happens to align with a specific character's voice (terse Dremora, clipped guards, etc.). Observed in playtesting: a Dremora character whose own bio described "clipped, philosophical" speech started producing Tough-Guy One-Liner-shaped output, with the model pattern-matching against the prompt's BAD examples that demonstrated exactly that shape.
+
+Removed all BAD example quotations across 11 anti-patterns. Kept the anti-pattern names (which are evocative pegs the model can hang behavior on) and rewrote each entry as descriptive prose explaining the failure mode. Where the name alone is genuinely ambiguous (Faux-Archaic Filter, Therapy Voice), kept short representative phrases inline as illustrations, not full sentences. Net effect: ~30% token reduction on this prompt, and removal of the strongest cadence-priming surface forms.
+
+The "When You Are the Engaged Speaker" section had a BAD/GOOD example pair built around a real playtesting failure ("A Dremora. Of course you do." — the Daegon scene). Replaced with descriptive prose that captures the same lesson without giving the model two sample lines to pattern-match against.
+
+The 0550 cross-reference that mentioned "uses BAD/GOOD examples to show substance" was updated to "describes substance" since the examples are now gone.
+
+This is a hypothesis worth testing in play. If dialogue quality regresses (model loses its grip on what specific anti-patterns mean without examples), examples can be added back selectively — they're in git history. If it stays good or improves, we've also freed token budget for other prompt work.
+
+Validated via `mcp__skyrimnet__validate_prompt` → `{"valid": true}`. No template syntax changes.
+
+### Off-Screen Life — World Setting Inclusion + Active-Follower Exclusion
+
+Two related fixes to off-screen life event generation:
+
+**Issue #8 (kiloughs) — World setting now flows through to off-screen events.** Added `{{ render_template("submodules\\system_head\\0010_setting") }}` to the system block of `sever_offscreen_life.prompt`. SkyrimNet's `0010_setting.prompt` is the file users replace to inject their own world-tone, genre, NSFW preferences, or conversion-mod context (Enderal etc.); previously off-screen events bypassed it entirely and would happily generate vanilla-Skyrim flavor regardless of whatever bespoke setting the user had configured for live dialogue. Now matches the same pattern SkyrimNet uses in `character_profile_update`, `dynamic_bio_update`, `generate_profile`, and `generate_memory` — single line, no behavior change for users who haven't customized 0010_setting (the default base file is just a `# Setting` header).
+
+**User-reported (Severause) — "events sometimes mention an NPC who's currently with the player".** Symptom: off-screen prompt fires for dismissed-with-home Lydia, LLM writes "Lydia and Jenassa shared dinner at the Bannered Mare" while Jenassa is actively following the player elsewhere. Root cause: the prompt's `socialGraph` (sourced from SkyrimNet's `GetRelatedActors` PublicAPI) includes ALL NPCs the subject has interacted with — past companions, faction contacts, the player's spouse, currently-active followers — without filtering. The LLM picks any of these names as a plausible co-actor for shared events. The existing `nearbyFollowers` array was correctly filtered to dismissed-only (line 869 of `OffScreenLifeDataStore::Papyrus_BuildContext`), but the LLM had access to the broader socialGraph and would draw on it.
+
+Two-layer fix in `OffScreenLifeDataStore::Papyrus_BuildContext`:
+- **Build `activeFollowers` array** of NPCs currently traveling with the player (FollowerStore entries with `isFollower=true`, alive, not the subject themselves) and pass it into the prompt context. Lowercased name set retained for filtering.
+- **Filter socialGraph** entries against the active-follower lowercase set so currently-following NPCs no longer appear as social connections in the prompt at all. Case-insensitive match handles BSFixedString case quirks. If filtering empties the graph, drop the field entirely instead of passing `[]`.
+
+Prompt-side changes in `sever_offscreen_life.prompt`:
+- New "NPCs currently traveling WITH {player}" section in the system block listing the excluded names with explicit "do not write events that involve, reference, mention, or imply contact with any of them" instruction.
+- Tightened the existing nearbyFollowers shared-event guidance: shared events MAY ONLY involve names from the dismissed-companions-nearby list. If no plausible co-actor is in that list, the LLM must write a solo event instead of inventing a partner from socialGraph or memory.
+
+Net effect: shared events are constrained to the same dismissed-followers-with-homes list the player can see in PrismaUI's Companions page. NPCs the player can currently see standing next to them never show up as off-screen co-actors. Solo events for affected followers when no dismissed peer lives in the same hold (the existing solo-event path is unchanged — `nearbyFollowers` was already a positive filter).
+
+Validated via `mcp__skyrimnet__validate_prompt` → `{"valid": true}`.
+
+### Outfit Actions — `0410_equipment.prompt` rebased on SkyrimNet Beta19
+
+User-reported (issue #7, dimadetroit): the override copy of `0410_equipment.prompt` in `Actions/Outfit/` shipped a snapshot taken one day before SkyrimNet Beta19 released. SkyrimNet Beta19 renamed the in-scope variable from `npc.UUID` → `actorUUID` in `character_bio` submodules, but our override still used `npc.UUID` in the first block. Result was ~32 missing-variable warnings per session in `SkyrimNet.log` (`'npc.UUID' not found at line 1844:47`, plus cascading `item.formID` / `item.equipment_slot` / `item.slot_body_area` warnings as Inja's graceful error handler rendered the empty equipment iteration). In-game behavior wasn't visibly broken, but the LLM context was missing equipment information for the affected actors, subtly degrading roleplay accuracy.
+
+Fix: replaced 4 occurrences of `npc.UUID` with `actorUUID` in the first block (the `full / thoughts / transform / equipment / action` render-mode branch). All five SeverActions-specific improvements preserved — `render_mode == "action"` extension, `original_name` lookup via `get_item_customization(item.formID).originalName`, parenthesized `(original_name)` display, and the "ground truth" disclaimer. The second block (`dialogue_target`) was already correct (uses `responseTarget.UUID`) and didn't need changes.
+
+Validated against the live SkyrimNet context engine — `mcp__skyrimnet__validate_prompt` returns `{"valid": true}`. Affected installs see the warnings stop appearing on the next prompt render after the fix lands.
+
+### Convenient Horses 7.1 — Multi-Follower Conflict Fix
+
+User-reported (issue #6, dimadetroit): with Convenient Horses 7.1 + AE Patch active and SA's `severactions` framework mode, recruiting Companion #2 would auto-dismiss Companion #1 within ~5 seconds. Doesn't reproduce without CH or with Convenient Horses With MCM v5.1 (a different mod). The 3-mod handshake breaks like this:
+
+1. SA recruits NPC #1 via `dfScript.SetFollower(NPC1)` → vanilla `pFollowerAlias.ForceRefTo(NPC1)` → engine adds NPC1 to `CurrentFollowerFaction` (CFF) via the alias's CK auto-management config
+2. CH 7.1's `chfollowerquestscript.OnUpdate` polls every 5s, scans `DialogueFollower` aliases 0-19, captures NPC1 via `localAlias.ForceRefTo(NPC1)` into its own CHFollowerAliasScript slot. The slot enters `Horseless` state and starts a 2s polling loop
+3. SA recruits NPC #2 via `dfScript.SetFollower(NPC2)` → `pFollowerAlias.ForceRefTo(NPC2)` silently evicts NPC1 from the alias, and the engine auto-removes NPC1 from CFF
+4. Within 2s, CH's `Horseless.OnUpdate` evaluates `GetFollowerRecruited()` = `FollowerRef.IsInFaction(CurrentFollowerFaction)` = false → calls `Clear()` on its alias → `OnFollowerRemoved()` → `FollowerRef.SetPlayerTeammate(GetFollowerRecruited())` = `SetPlayerTeammate(false)` on NPC1
+5. SA's native `TeammateMonitor` catches the SetPlayerTeammate(false), fires `SeverActions_NativeTeammateRemoved`, the Papyrus handler queues NPC1 in `PendingDismissActor` and registers a 2.5s confirmation update
+6. 2.5s later, OnUpdate confirms `!IsPlayerTeammate()` → `UnregisterFollower(NPC1)`. Total elapsed from NPC2 recruit: ~4.5s, matches the user's reported timing
+
+**Fix**: in `SeverActions_FollowerManager.psc::RegisterFollower`, immediately after `RecruitViaVanillaDialogue(akActor)` runs in the non-NFF path, iterate `GetAllFollowers()` and re-add every prior SA-managed follower (≠ akActor) to `CurrentFollowerFaction` if their rank is < 0. This restores the CFF membership the alias auto-management evicted, so CH 7.1 (and any other mod gating "is recruited?" on CFF) keeps treating prior followers as recruited. ~20 lines, no-op when no prior followers exist (single-follower scenario unaffected). Track-only followers (SPID/EFF/NFF/custom) are untouched — they don't go through `RecruitViaVanillaDialogue` in the first place.
+
+**Why this approach over alternatives**: independently verified by Codex against the same code — restoring CFF fixes the cause, not just the symptom (vs. a grace-period filter on `OnNativeTeammateRemoved`, which would mask the dismiss but leave NPC1 with stale `SetPlayerTeammate(false)` state). Skipping `dfScript.SetFollower()` entirely for subsequent recruits would also stop the eviction but break vanilla follower dialogue topics ("Follow me / Wait / Dismiss") and prevent CH from discovering the new follower at all — wider compat regression than the original bug.
+
+**Affected saves**: existing saves where NPC1 already got dismissed before the patch landed will need a one-time re-recruit. Subsequent recruits won't re-trigger the dismiss.
+
+### Outfit Builder Save → Auto-Apply + Auto-Map Standard Situations
+
+User-reported (Oldcustard): "I'm seeing a few instances of followers wearing their default outfit on cell load, this is in a home cell. They don't seem to auto-switch." Log triage on the user's `SeverActionsNative.log` traced the chain to two compounding gaps that share the same root cause — the user had defined preset slots and added items to chests, but never **applied** any preset.
+
+**The two gaps:**
+
+1. **No locked items.** The cell-load enforcement in `OutfitDataStore` only fires for actors that have `lockedItems` set. `lockedItems` are populated when a preset is *applied* (Apply Preset button or the equivalent action), not when it's merely *saved* (chest filled, name registered). Followers with saved-but-never-applied presets had no lock on cell load → engine equipped DefaultOutfit → followers in default attire.
+2. **No situation→preset mapping.** `SituationMonitor::SendSituationEvent` reads `outfitStore->GetSituationPreset(actorFormID, sitCopy)`. If the user named their preset "Home" but never separately mapped `home` situation → `Home` preset, this returns empty and the auto-switch silently no-ops. The user reasonably expected naming a preset "Home" to be sufficient.
+
+Both gaps were silent — no log line told the user what was missing. Confirmed by grepping the log for `setSituationPreset` and `Auto-switching` events: zero of either fired in 30 minutes of gameplay despite SituationMonitor correctly detecting `home` transitions for 10 followers.
+
+**Three changes:**
+
+1. **`buildOutfitSavePreset` (`Native/src/PrismaUIActionHandler.h`) → save AND apply.** After the existing save-to-OutfitDataStore step and the `SeverActions_PrismaBuilderSavePreset` ModEvent that registers the preset in the slot system, the action now calls `outfitStore->ApplyPresetNative(actor, presetName)`. Same shared equip+lock+suppress-DefaultOutfit path used by the Apply button and SituationMonitor's auto-switch. Strips current armor, equips new items, locks them, sets active preset, suppresses DefaultOutfit, naked-recovery if equip fails. Builder workflow inherently means "I want to see this on her right now" — there's no longer a split between save and apply for the builder.
+
+2. **New `SeverActions_PrismaBuilderSaveAndApply` ModEvent + Papyrus handler.** Mirrors the existing `OnPrismaBuilderEquip` StorageUtil-sync logic (rebuild lock FormList, set `SeverOutfit_LockActive=1`, track actor, ResumeOutfitLock, restore stashed items) but **preserves the active preset name**. `OnPrismaBuilderEquip` clears it (correct for ad-hoc manual outfits, wrong for named-preset save-and-apply). Without this, StorageUtil's active preset would diverge from the native store's `activePresetName` set by `ApplyPresetNative`. Three sibling handlers now exist: `OnPrismaBuilderEquip` (manual outfit, clears name), `OnPrismaBuilderSaveAndApply` (named preset, preserves name), `OnPrismaBuilderSavePreset` (legacy save-only, unchanged).
+
+3. **Auto-map standard situation names in `buildOutfitSavePreset`.** When a saved preset's normalized name matches a known situation (`home` / `town` / `adventure` / `sleep`) AND no situation→preset mapping exists for that situation yet, the system creates the mapping automatically. Won't override a user's existing mapping (respects intent). Fires the same `SeverActions_PrismaSetSitPreset` ModEvent the explicit mapping action uses, so OutfitSlotStore + StorageUtil stay in sync. Closes the second half of Oldcustard's gap — even with apply working, auto-switch still needed the situation map.
+
+4. **`SituationMonitor` diagnostic trace** (`Native/src/SituationMonitor.h`). When a follower's situation transitions but no preset mapping is configured, the monitor now logs:
+   ```
+   SituationMonitor: <Name> (FormID) transitioned to '<situation>' but no preset mapping configured — skipping auto-switch
+   ```
+   Self-debugging breadcrumb so future "auto-switch isn't working" reports trace immediately to the right gap (detection vs mapping vs apply).
+
+**Net user experience after the change:** open builder → pick items → Save with name "Home" → follower is wearing the Home outfit immediately, the lock is committed, the situation map `home → home` is auto-created. Next time they enter a home cell, SituationMonitor fires `Auto-switching <Name> to 'home' for situation 'home'`. No second Apply step, no separate Map Situations step.
+
+### Auto-Assign a Bed When a Home Is Set
+
+User-requested (Kromryl): "Are bed assignments still being looked at? I'm reworking a few things including how homes are assigned, so I could also auto-assign an empty bed for them to actually use (assuming there's any available)."
+
+When `AssignHome(follower, locationName)` runs, the system now scans the player's current cell for a usable bed and sets the follower as its OWNR. The follower's home sandbox sleep package finds the claimed bed at sleep hours and uses it. On `ClearHome` (or re-AssignHome to a new cell, or permanent dismiss via cosave revert), the original owner is restored — no phantom OWNR left behind.
+
+**Bed-claim filter (in priority order):**
+
+| Bed owner | Claim? | Reason |
+|---|---|---|
+| Unowned | ✅ Claim | Free for the taking |
+| Specific named NPC | ❌ Skip | Don't steal personal beds |
+| PlayerFaction (`0x000DB1`) | ❌ Skip | Player home — vanilla housecarl/spouse sharing already works |
+| Inn faction | ✅ Claim | Per design — assigning an inn as home means renting a bed there |
+| Other faction | ✅ Claim | Generic NPC factions, mod-added shared beds |
+
+Preference order when multiple candidates exist: unowned > faction-owned. Less disruptive choice wins.
+
+**Implementation:**
+
+- **`Native/src/BedAssignment.h`** (new, ~200 lines) — `ClaimBedForFollower(follower, cell)`, `ReleaseBedForFollower(follower)`, `FindBestBedInCell(...)`. Bed detection via furniture-keyword check (`FurnitureBedRoll` / `IsBedRoll`) plus an editorID heuristic fallback for modded beds without standard keywords. Releases any previous claim before claiming a new one, so re-AssignHome to a different cell cleanly transfers the OWNR.
+- **`Native/src/FollowerDataStore.h`** — `FollowerData` extended with `homeBedFormID` + `homeBedOriginalOwnerFormID`. Cosave bumped from v6 → v7. Both FormIDs go through `ResolveFormID` on load; if either fails (mod uninstalled, ref deleted), the field is reset to 0 — no dangling claim.
+- **`Native/src/papyrus.cpp`** — registers `Native_BedAssignment_Claim`, `Native_BedAssignment_Release`, `Native_BedAssignment_GetBedFormID` on the SeverActionsNative script.
+- **`SeverActions_FollowerManager.psc::AssignHome`** — calls `Native_BedAssignment_Claim(akActor)` after the home marker is moved to the player's position. Returns false silently if no usable bed is in the cell — follower will sleep on the floor or wherever the home sandbox finds, same as before.
+- **`SeverActions_FollowerManager.psc::ClearHome`** — calls `Native_BedAssignment_Release(akActor)` first thing, before clearing home tracking, so the C++ side can read the bed FormID + original owner from FollowerDataStore (which still has the entry at this point) and restore the original OWNR cleanly.
+
+**Track-only followers are NOT excluded.** Initial design proposed skipping custom AI keyword holders (Inigo, Lucien, Kaidan, Daegon-keyworded, etc.) on the theory that their mods manage sleep with custom packages. Reverted on user feedback: "If users assign them a home via my system, they'll have my package, so they should use a bed." If the player explicitly invokes AssignHome on a custom AI follower, they're opting into SeverActions managing that aspect — claim the bed. Worst case for a custom AI follower whose mod still runs its own packages: the bed sits with our OWNR record harmlessly until ClearHome releases it. The release path doesn't gate on track-only either, so no leak risk.
+
+### CompanionWait / CompanionFollow — Track-Only Follower Fix
+
+User-reported (severause): testing the wheel-menu Wait/Resume Follow on a custom AI follower (Daegon, with the SPID `SeverActions_CustomAIFollower` keyword) revealed that the Wait command would correctly sandbox her (via her own mod's package handling), but pressing the wheel button again to resume following would silently force SeverActions's CK alias-based follow package onto her. From that point her own mod's dismiss couldn't remove the package, and SeverActions's Tracking-mode dismiss intentionally doesn't touch packages, so she was stuck.
+
+**Root cause:** `CompanionWait(akActor)` and `CompanionFollow(akActor)` in `SeverActions_FollowerManager.psc` checked `IsRegisteredFollower(akActor)` but NOT `IsTrackOnlyFollower(akActor)`. For a Tracking-mode follower (custom AI keyword present), `IsRegisteredFollower` returns true (she's in the FollowerStore from her Tracking-mode recruit), so the wait path called `followSys.Sandbox(akActor)` and the follow path called `followSys.CompanionStartFollowing(akActor)` — both attaching SeverActions packages on top of her own mod's packages.
+
+The same bug surfaced via three entry points, all of which funneled through these two functions: the LLM picking `companionwait.yaml` / `companionfollow.yaml` actions during dialogue, the wheel menu's `HandleWait` / `HandleFollowToggle`, and the `HandleCompanionWait` hotkey. Single fix covers all.
+
+**Fix:** mirrors the `RegisterFollower` track-only branch — observe-only, no SA package attachment. For track-only followers:
+
+1. **Recovery cleanup first.** Call `followSys.CompanionStopFollowing(akActor, false)` + `followSys.StopSandbox(akActor)`. Both are safe no-ops if no SA state exists; if a prior incorrect call already attached SA's sandbox or alias-based follow package (the bug condition), this releases it. Means existing stuck Daegons recover automatically on the next wheel press — no console workaround needed.
+2. **Toggle the vanilla wait flag.** `SetAV("WaitingForPlayer", 1)` for wait, `SetAV("WaitingForPlayer", 0)` for follow, then `EvaluatePackage`. The custom AI follower's own follow package respects this standard flag via the vanilla DialogueFollower hooks, so the follower transitions cleanly between wait and follow behavior under their mod's control.
+
+Vanilla followers are unchanged — they still go through `followSys.Sandbox(akActor)` for wait and `followSys.CompanionStartFollowing(akActor)` for resume, exactly as before.
+
+**Coverage check:** every voice/wheel/hotkey/LLM path that lets the player tell a follower to wait or resume now goes through these two patched functions. No remaining gap where a custom AI follower could pick up an SA package.
+
+---
+
 ## v2.9.5
 
 ### Key Features

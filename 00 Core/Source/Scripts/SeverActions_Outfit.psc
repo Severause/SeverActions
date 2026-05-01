@@ -2136,6 +2136,11 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_PrismaInventorySync", "OnPrismaInventorySync")
     ; PrismaUI Builder equip — sync StorageUtil lock FormList from native store
     RegisterForModEvent("SeverActions_PrismaBuilderEquip", "OnPrismaBuilderEquip")
+    ; PrismaUI Builder save-and-apply — same sync as Builder equip BUT preserves
+    ; the active preset name (the auto-apply path commits to a named preset, not
+    ; an ad-hoc manual outfit, so SituationMonitor's "already wearing X" check
+    ; needs the name intact).
+    RegisterForModEvent("SeverActions_PrismaBuilderSaveAndApply", "OnPrismaBuilderSaveAndApply")
     ; PrismaUI Builder save preset — sync preset to StorageUtil from native store
     RegisterForModEvent("SeverActions_PrismaBuilderSavePreset", "OnPrismaBuilderSavePreset")
     RegisterForModEvent("SeverActions_PrismaBuilderRenamePreset", "OnPrismaBuilderRenamePreset")
@@ -2396,6 +2401,64 @@ Event OnPrismaBuilderEquip(String eventName, String strArg, Float numArg, Form s
     ; NOW restore conflicting items that were removed from inventory during equip.
     ; Deferred to here so the lock is fully synced and the alias can fight any
     ; engine auto-equip triggered by AddObjectToContainer.
+    SeverActionsNative.Native_Outfit_RestoreStashedItems(akActor)
+EndEvent
+
+Event OnPrismaBuilderSaveAndApply(String eventName, String strArg, Float numArg, Form sender)
+    {Fired by buildOutfitSavePreset C++ action AFTER ApplyPresetNative has run.
+     Mirrors OnPrismaBuilderEquip's StorageUtil sync (lock FormList + tracking)
+     but PRESERVES the active preset name — the save-and-apply flow commits to a
+     named preset, not an ad-hoc manual outfit, so SituationMonitor's
+     already-wearing-X check needs the name intact to skip redundant re-applies.
+     strArg format: "actorName|presetName" (standard SendModEvent encoding).}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    String actorName = StringUtil.Substring(strArg, 0, pipePos)
+    String presetName = StringUtil.Substring(strArg, pipePos + 1)
+    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    If !akActor
+        Return
+    EndIf
+
+    ; Read lock items from native store and rebuild the StorageUtil FormList.
+    ; OutfitAlias reads from StorageUtil, so this sync is what makes the
+    ; native lock visible to the on-cell-load re-equip pipeline.
+    Form[] nativeItems = SeverActionsNative.Native_Outfit_GetLockedItems(akActor)
+    If nativeItems && nativeItems.Length > 0
+        String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
+        StorageUtil.FormListClear(None, lockKey)
+        Int i = 0
+        While i < nativeItems.Length
+            If nativeItems[i]
+                StorageUtil.FormListAdd(None, lockKey, nativeItems[i])
+            EndIf
+            i += 1
+        EndWhile
+        StorageUtil.SetIntValue(akActor, "SeverOutfit_LockActive", 1)
+
+        ; Track actor in outfit system if not already
+        String trackedKey = "SeverOutfit_TrackedActors"
+        If StorageUtil.FormListFind(None, trackedKey, akActor as Form) < 0
+            StorageUtil.FormListAdd(None, trackedKey, akActor as Form)
+        EndIf
+
+        Debug.Trace("[SeverActions_Outfit] PrismaBuilderSaveAndApply: Synced " + nativeItems.Length + " lock items for " + akActor.GetDisplayName() + " preset='" + presetName + "'")
+    EndIf
+
+    ; Set active preset to the saved preset name (NOT empty like OnPrismaBuilderEquip
+    ; does). This keeps StorageUtil aligned with the native store's activePresetName
+    ; that ApplyPresetNative just set, so SituationMonitor's auto-switch sees
+    ; "already wearing X" correctly and the legacy MCM read sees a meaningful value.
+    StorageUtil.SetStringValue(akActor, "SeverOutfit_ActivePreset", presetName)
+
+    ; Resume the suspend that suspendOutfitLock set when the builder opened.
+    ; This MUST happen after StorageUtil is synced — otherwise the alias
+    ; re-equips old items from the stale FormList before we update it.
+    ResumeOutfitLock(akActor)
+
+    ; Restore conflicting items that were removed from inventory during equip.
     SeverActionsNative.Native_Outfit_RestoreStashedItems(akActor)
 EndEvent
 

@@ -102,6 +102,20 @@ Float Property BanterCooldownMinHours = 2.0 Auto
 Float Property BanterCooldownMaxHours = 5.0 Auto
 {Maximum game hours between follower banter opportunities.}
 
+Bool Property AutoAmbientBanter = true Auto
+{Enable spontaneous NPC-to-NPC conversations among non-follower NPCs nearby.
+When true, an ambient banter director periodically picks a pair of nearby
+non-follower NPCs and triggers a brief exchange so populated areas feel alive
+without the player having to initiate every interaction. Hostile cells (any
+loaded actor hostile to the player — dungeons, bandit camps, under-attack
+settlements) are skipped automatically.}
+
+Float Property AmbientBanterCooldownMinHours = 3.0 Auto
+{Minimum game hours between ambient NPC banter opportunities.}
+
+Float Property AmbientBanterCooldownMaxHours = 7.0 Auto
+{Maximum game hours between ambient NPC banter opportunities.}
+
 Bool Property AutoOffScreenLife = true Auto
 {Enable off-screen life event generation for dismissed followers with homes.
 When true, dismissed followers generate believable daily events that become
@@ -309,6 +323,8 @@ String Property KEY_NEXT_INTER_ASSESS_GT = "SeverFollower_NextInterAssessGT" Aut
 ; Cooldown tracking for follower banter (global, stored on quest form via None)
 String Property KEY_LAST_BANTER_GT = "SeverActions_LastBanterGT" AutoReadOnly
 String Property KEY_NEXT_BANTER_GT = "SeverActions_NextBanterGT" AutoReadOnly
+String Property KEY_LAST_AMBIENT_GT = "SeverActions_LastAmbientGT" AutoReadOnly
+String Property KEY_NEXT_AMBIENT_GT = "SeverActions_NextAmbientGT" AutoReadOnly
 
 ; Cooldown tracking for off-screen life event generation (game time seconds)
 String Property KEY_LAST_LIFE_EVENT_GT = "SeverFollower_LastLifeEventGT" AutoReadOnly
@@ -386,6 +402,10 @@ Bool InterFollowerAssessmentInProgress = false
 
 ; Follower banter tracking — lowest priority LLM system
 Bool BanterInProgress = false
+
+; Ambient NPC banter tracking — independent of follower banter so both can
+; cycle without blocking each other. Separate cooldown (3-7 game hours).
+Bool AmbientBanterInProgress = false
 
 ; Off-screen life event tracking — separate from both assessment types
 Actor PendingOffScreenLifeActor = None
@@ -1548,6 +1568,15 @@ Event OnUpdate()
         CheckFollowerBanter()
     EndIf
 
+    ; Ambient NPC banter — independent of every other LLM system; targets
+    ; non-follower NPCs near the player so populated areas feel alive without
+    ; the player having to initiate every interaction. Separate cooldown
+    ; (3-7 game hours) and separate flag so it doesn't block or get blocked
+    ; by follower banter.
+    If AutoAmbientBanter && !AmbientBanterInProgress
+        CheckAmbientBanter()
+    EndIf
+
     IsUpdating = false
     RegisterForSingleUpdate(30.0)
 EndEvent
@@ -2223,6 +2252,39 @@ Function RegisterFollower(Actor akActor)
                 If dfAlias && dfAlias.GetReference() == None
                     dfAlias.ForceRefTo(akActor)
                     DebugMsg("Filled DialogueFollower alias: " + akActor.GetDisplayName())
+                EndIf
+            EndIf
+
+            ; ── CurrentFollowerFaction repair for prior SA followers ──
+            ; Vanilla pFollowerAlias.ForceRefTo() inside SetFollower() implicitly
+            ; evicts the previous alias occupant from CurrentFollowerFaction
+            ; (alias auto-management configured in the CK). Convenient Horses 7.1
+            ; (issue #6) polls every 2-5s and treats CFF absence as a dismissal —
+            ; calling SetPlayerTeammate(false) on the evictee, which trips our own
+            ; vanilla-dismiss detection in OnNativeTeammateRemoved and unregisters
+            ; the previous follower ~5s after the new recruit lands.
+            ;
+            ; Repair: re-add all previously-registered SA followers to CFF so any
+            ; mod that gates "is recruited?" on CFF (CH 7.1 and likely others)
+            ; keeps treating them as recruited. Restores the multi-follower
+            ; contract that vanilla's single-alias model would otherwise break.
+            ; No-op when no prior SA followers exist (single-follower scenario).
+            Faction cffRepair = Game.GetFormFromFile(0x0005C84E, "Skyrim.esm") as Faction
+            If cffRepair
+                Actor[] priorFollowers = GetAllFollowers()
+                Int repaired = 0
+                Int p = 0
+                While p < priorFollowers.Length
+                    Actor priorF = priorFollowers[p]
+                    If priorF && priorF != akActor && priorF.GetFactionRank(cffRepair) < 0
+                        priorF.AddToFaction(cffRepair)
+                        priorF.SetFactionRank(cffRepair, 0)
+                        repaired += 1
+                    EndIf
+                    p += 1
+                EndWhile
+                If repaired > 0
+                    DebugMsg("Repaired CurrentFollowerFaction on " + repaired + " prior follower(s) after vanilla SetFollower for " + akActor.GetDisplayName())
                 EndIf
             EndIf
         EndIf
@@ -3766,15 +3828,151 @@ Function OnFollowerBanter(String response, Int success)
     If topicDirection == ""
         topicDirection = "casual conversation"
     EndIf
-    ; Use ContinueConversation format with isContinuation + topic fields.
-    ; SkyrimNet's DialogueManager processes these and the topic becomes visible
-    ; in the NPC's event context for dialogue generation.
-    String eventJson = "{\"speaker\":\"" + speakerName + "\",\"target\":\"" + targetName + "\",\"topic\":\"" + topicDirection + "\",\"isContinuation\":true,\"dialogue\":\"" + speakerName + " turns to " + targetName + " — " + topicDirection + "\"}"
+    ; Pass speaker + target + topic. The topic field is rendered by SkyrimNet's
+    ; gamemaster_dialogue verbose template independent of the isContinuation
+    ; flag, so we deliberately omit isContinuation here — including it makes the
+    ; event log read "...(continuing conversation)" even on a fresh banter,
+    ; which is misleading and (worse) leaks back into get_recent_events context
+    ; where future LLM calls treat the scene as mid-conversation.
+    String eventJson = "{\"speaker\":\"" + speakerName + "\",\"target\":\"" + targetName + "\",\"topic\":\"" + topicDirection + "\",\"dialogue\":\"" + speakerName + " turns to " + targetName + " — " + topicDirection + "\"}"
 
     SkyrimNetApi.RegisterEvent("gamemaster_dialogue", eventJson, speakerActor, targetActor)
 
     Debug.Notification("[Banter] " + speakerName + " -> " + targetName + ": " + banterTopic)
 
+EndFunction
+
+; =============================================================================
+; AMBIENT NPC BANTER — non-follower / non-player pairs in the player's cell
+; =============================================================================
+
+Function CheckAmbientBanter()
+    {Game-time based ambient banter check. Called from OnUpdate every 30s.
+     Picks pairs of non-follower NPCs near the player and asks the LLM to
+     decide whether one should speak to another (or stay silent).
+
+     Independent from CheckFollowerBanter — its own cooldown + flag, no shared
+     state. Hostile-cell guard lives in the C++ scanner: if any nearby actor
+     is hostile to the player, ScanAndCache returns 0 and we just skip.}
+
+    ; Game-time cooldown
+    Float now = GetGameTimeInSeconds()
+    Float nextEligible = StorageUtil.GetFloatValue(None, KEY_NEXT_AMBIENT_GT, 0.0)
+    If nextEligible > 0.0 && now < nextEligible
+        Return
+    EndIf
+
+    ; Skip if player is in combat (matches CheckFollowerBanter behavior)
+    Actor player = Game.GetPlayer()
+    If player.IsInCombat()
+        Return
+    EndIf
+
+    ; C++ scan: candidate pairs of non-follower NPCs in the player's cell.
+    ; Returns 0 if hostile actor present, no qualifying pairs, or empty cell.
+    ; Pass 0 for all params to use defaults (hearing=2000, pair=768, max=6).
+    Int pairCount = SeverActionsNative.Native_AmbientBanter_ScanAndCache(0.0, 0.0, 0)
+    If pairCount < 1
+        Return
+    EndIf
+
+    Debug.Trace("[AmbientBanter] " + pairCount + " candidate pair(s) found")
+    FireAmbientBanter(pairCount)
+EndFunction
+
+Function FireAmbientBanter(Int pairCount)
+    {Send the ambient banter director prompt to the LLM with all candidate
+     pairs. Builds context JSON from the C++ scan cache.}
+    AmbientBanterInProgress = true
+
+    ; Set cooldown immediately so we don't re-fire while the LLM is in flight
+    Float now = GetGameTimeInSeconds()
+    StorageUtil.SetFloatValue(None, KEY_LAST_AMBIENT_GT, now)
+    Float nextCooldown = Utility.RandomFloat(AmbientBanterCooldownMinHours, AmbientBanterCooldownMaxHours) * SECONDS_PER_GAME_HOUR
+    StorageUtil.SetFloatValue(None, KEY_NEXT_AMBIENT_GT, now + nextCooldown)
+
+    ; Build context JSON from the cached scan results
+    String contextJson = "{\"pairs\":["
+    Int i = 0
+    While i < pairCount
+        If i > 0
+            contextJson += ","
+        EndIf
+        Int formA = SeverActionsNative.Native_AmbientBanter_GetPairFormA(i)
+        Int formB = SeverActionsNative.Native_AmbientBanter_GetPairFormB(i)
+        String nameA = SeverActionsNative.Native_AmbientBanter_GetPairNameA(i)
+        String nameB = SeverActionsNative.Native_AmbientBanter_GetPairNameB(i)
+        String raceA = SeverActionsNative.Native_AmbientBanter_GetPairRaceA(i)
+        String raceB = SeverActionsNative.Native_AmbientBanter_GetPairRaceB(i)
+        Float dist = SeverActionsNative.Native_AmbientBanter_GetPairDistance(i)
+        contextJson += "{\"formIdA\":" + formA + ",\"formIdB\":" + formB
+        contextJson += ",\"nameA\":\"" + nameA + "\",\"nameB\":\"" + nameB + "\""
+        contextJson += ",\"raceA\":\"" + raceA + "\",\"raceB\":\"" + raceB + "\""
+        contextJson += ",\"distance\":" + (dist as Int) + "}"
+        i += 1
+    EndWhile
+    contextJson += "]}"
+
+    Int result = SkyrimNetApi.SendCustomPromptToLLM("sever_ambient_banter", "sever_background", contextJson, \
+        Self as Quest, "SeverActions_FollowerManager", "OnAmbientBanter")
+
+    If result < 0
+        AmbientBanterInProgress = false
+        Debug.Trace("[AmbientBanter] LLM call failed (code " + result + ")")
+    EndIf
+EndFunction
+
+Function OnAmbientBanter(String response, Int success)
+    {Callback from SendCustomPromptToLLM for the ambient banter director.
+     If the LLM picked a pair, fires a gamemaster_dialogue event so SkyrimNet's
+     DialogueManager generates the actual line between the two NPCs.}
+    AmbientBanterInProgress = false
+
+    If success != 1
+        Debug.Trace("[AmbientBanter] LLM call failed")
+        Return
+    EndIf
+
+    ; LLM chose silence this cycle — common case (~50% per the prompt)
+    If StringUtil.Find(response, "\"banter\":null") >= 0 || StringUtil.Find(response, "\"banter\": null") >= 0
+        Debug.Trace("[AmbientBanter] LLM chose silence this cycle")
+        Return
+    EndIf
+
+    ; Extract speaker, target, topic from the nested banter object
+    String speakerName = ExtractJsonString(response, "speaker")
+    String targetName  = ExtractJsonString(response, "target")
+    String banterTopic = ExtractJsonString(response, "topic")
+
+    If speakerName == "" || targetName == ""
+        Debug.Trace("[AmbientBanter] Bad LLM response — missing names")
+        Return
+    EndIf
+
+    ; Resolve names to Actors. We use the same Native ActorFinder used elsewhere
+    ; rather than scanning the cache by name — the cache is just (formId,name)
+    ; tuples and the LLM may return either a slight name variant. ActorFinder
+    ; handles fuzzy matching cleanly.
+    Actor speakerActor = SeverActionsNative.FindActorByName(speakerName)
+    Actor targetActor  = SeverActionsNative.FindActorByName(targetName)
+
+    If !speakerActor || !targetActor
+        Debug.Trace("[AmbientBanter] Could not resolve " + speakerName + " or " + targetName)
+        Return
+    EndIf
+
+    ; Match the follower banter's gamemaster_dialogue event shape so SkyrimNet's
+    ; DialogueManager picks it up identically. isContinuation deliberately
+    ; omitted — see OnFollowerBanter for the reasoning.
+    String topicDirection = banterTopic
+    If topicDirection == ""
+        topicDirection = "casual conversation"
+    EndIf
+    String eventJson = "{\"speaker\":\"" + speakerName + "\",\"target\":\"" + targetName + "\",\"topic\":\"" + topicDirection + "\",\"dialogue\":\"" + speakerName + " turns to " + targetName + " — " + topicDirection + "\"}"
+
+    SkyrimNetApi.RegisterEvent("gamemaster_dialogue", eventJson, speakerActor, targetActor)
+
+    Debug.Trace("[AmbientBanter] " + speakerName + " -> " + targetName + ": " + banterTopic)
 EndFunction
 
 ; =============================================================================
@@ -4787,6 +4985,31 @@ Function AssignHome(Actor akActor, String locationName)
         EndIf
     EndIf
 
+    ; ── Auto-claim a bed in the home cell ─────────────────────────
+    ; Scan the player's current cell for a usable bed (unowned, or owned by a
+    ; non-player faction such as an inn) and set this follower as the bed's
+    ; owner so the SeverActions home sandbox sleep package finds it.
+    ;
+    ; Inn beds ARE claimed per design — assigning an inn as home means the
+    ; follower has rented a bed there. Beds owned by PlayerFaction or by a
+    ; specific named NPC are skipped (don't steal personal beds; don't
+    ; displace player-faction ownership in player homes).
+    ;
+    ; Applies to ALL followers, including custom AI keyword holders (Inigo,
+    ; Lucien, Kaidan, etc.). If the player explicitly invoked AssignHome on a
+    ; custom AI follower, they're opting into SeverActions managing this
+    ; follower's home — claim the bed. Worst case for a custom AI follower
+    ; whose mod still runs its own packages: the bed sits with our OWNR
+    ; harmlessly until ClearHome releases it.
+    ;
+    ; Returns false silently if no usable bed is in the cell — follower will
+    ; sleep on the floor or wherever the home sandbox finds, which is the
+    ; same behavior as before this change.
+    Bool bedClaimed = SeverActionsNative.Native_BedAssignment_Claim(akActor)
+    If bedClaimed
+        DebugMsg("Bed assigned in home cell for " + akActor.GetDisplayName())
+    EndIf
+
     ; Track in global homed NPCs list for MCM visibility
     If !StorageUtil.FormListHas(None, KEY_HOMED_NPCS, akActor as Form)
         StorageUtil.FormListAdd(None, KEY_HOMED_NPCS, akActor as Form, false)
@@ -5050,10 +5273,16 @@ EndFunction
 
 Function ClearHome(Actor akActor)
     {Remove home assignment. Releases the marker slot and moves the XMarker
-     back to the holding cell (MHiYH pattern).}
+     back to the holding cell (MHiYH pattern). Also releases any auto-claimed
+     home bed so we don't leave a phantom OWNR behind on the bed reference.}
     If !akActor
         Return
     EndIf
+
+    ; Release the auto-claimed bed BEFORE we drop home tracking — the C++ side
+    ; reads the bed FormID + original owner from FollowerDataStore (which still
+    ; has the entry at this point) and restores the original OWNR.
+    SeverActionsNative.Native_BedAssignment_Release(akActor)
 
     ; Remove sandbox package if active
     RemoveHomeSandbox(akActor)
@@ -5492,14 +5721,36 @@ EndFunction
 Function CompanionWait(Actor akActor)
     {Tell any NPC to wait and sandbox at the current location.
      Called by SkyrimNet via companionwait.yaml. Works for both companions and non-companions.
-     Delegates to SeverActions_Follow.Sandbox() which handles all package management:
-     removing FollowPlayer, applying sandbox override, SandboxManager registration, etc.}
+
+     Two paths:
+     - Vanilla followers: Delegates to SeverActions_Follow.Sandbox() which handles all
+       SA package management (removing FollowPlayer, applying sandbox override,
+       SandboxManager registration, etc.).
+     - Track-only followers (Inigo, Lucien, Kaidan, Daegon-keyworded, etc.): Their
+       own mods manage AI packages, so we DON'T apply ours. Mirrors the
+       RegisterFollower track-only branch — observe-only, no package attachment.
+       Instead we clear any stale SA state from a prior incorrect attachment
+       (bug-recovery pass) and toggle the vanilla WaitingForPlayer ActorValue,
+       which their follow package respects via the standard DialogueFollower
+       hooks. Voice/wheel "Wait" still works without forcing our package on them.}
     If !akActor
         Return
     EndIf
 
     SeverActions_Follow followSys = GetFollowScript()
-    If followSys
+
+    If IsTrackOnlyFollower(akActor)
+        ; Track-only path — don't put SA's package on them. Recovery: if a prior
+        ; broken call already attached SA's sandbox or alias-based follow package,
+        ; clean it up here. Then let their own mod's follow package handle "wait"
+        ; via the vanilla WaitingForPlayer flag.
+        If followSys
+            followSys.CompanionStopFollowing(akActor, false)
+            followSys.StopSandbox(akActor)
+        EndIf
+        akActor.SetAV("WaitingForPlayer", 1)
+        akActor.EvaluatePackage()
+    ElseIf followSys
         followSys.Sandbox(akActor)
     Else
         ; Fallback: just set waiting flag if Follow system unavailable
@@ -5518,14 +5769,35 @@ EndFunction
 
 Function CompanionFollow(Actor akActor)
     {Tell a waiting NPC to resume following. Called by SkyrimNet via companionfollow.yaml.
-     Routes to the companion alias path for registered followers, or restarts the casual
-     FollowPlayer package for non-companions who were following via StartFollowing.}
+
+     Three paths:
+     - Track-only followers (Inigo, Lucien, Kaidan, Daegon-keyworded, etc.): Their
+       own mods manage AI packages, so we DON'T apply ours. Mirrors the
+       RegisterFollower track-only branch. Recovery: clean up any stale SA
+       package state from a prior incorrect attachment, then clear the vanilla
+       WaitingForPlayer ActorValue so their follow package resumes via the
+       standard DialogueFollower hooks.
+     - Registered companions: CompanionStartFollowing handles alias + LinkedRef + cleanup.
+     - Non-companions who were following via StartFollowing: restart the casual
+       FollowPlayer package.}
     If !akActor
         Return
     EndIf
 
     SeverActions_Follow followSys = GetFollowScript()
-    If followSys
+
+    If IsTrackOnlyFollower(akActor)
+        ; Track-only path — don't put SA's follow package on them. Recovery: if
+        ; a prior broken call already attached our alias-based follow package or
+        ; a sandbox override, clean it up here. Then clear the vanilla wait
+        ; flag and let their mod's package take over via DialogueFollower hooks.
+        If followSys
+            followSys.CompanionStopFollowing(akActor, false)
+            followSys.StopSandbox(akActor)
+        EndIf
+        akActor.SetAV("WaitingForPlayer", 0)
+        akActor.EvaluatePackage()
+    ElseIf followSys
         If IsRegisteredFollower(akActor)
             ; Companion path: CompanionStartFollowing handles alias + LinkedRef + cleanup
             followSys.CompanionStartFollowing(akActor)

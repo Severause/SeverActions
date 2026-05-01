@@ -1211,6 +1211,48 @@ String Function Native_GetHome(Actor akActor) Global Native
 Function Native_ClearHome(Actor akActor) Global Native
 {Clear home location from SKSE cosave.}
 
+; =============================================================================
+; HOME BED AUTO-ASSIGNMENT
+; When a follower is assigned a home cell, scan the cell for a usable bed and
+; SetActorOwner to the follower so their sleep package finds it during sleep
+; hours. Releases on home reassignment / dismiss. Cosave-persisted via
+; FollowerDataStore (v7+).
+; =============================================================================
+
+Bool Function Native_BedAssignment_Claim(Actor akActor) Global Native
+{Try to claim a bed for the follower in their CURRENT parent cell. Returns
+ true if a bed was claimed. Releases any previous bed claim first. Skips
+ beds owned by specific named NPCs and PlayerFaction; claims unowned and
+ inn/generic-faction-owned beds.}
+
+Function Native_BedAssignment_Release(Actor akActor) Global Native
+{Release the follower's currently assigned bed (restores original owner).
+ Safe to call with no assignment (no-op).}
+
+Int Function Native_BedAssignment_GetBedFormID(Actor akActor) Global Native
+{Returns the FormID of the currently assigned bed, or 0 if none.}
+
+; =============================================================================
+; AMBIENT NPC BANTER SCANNER
+; Find non-follower / non-player NPC pairs near the player who could
+; spontaneously banter. Hostile-cell guard returns 0 if any nearby actor is
+; hostile to the player (skips dungeons, bandit camps, under-attack settlements).
+; =============================================================================
+
+Int Function Native_AmbientBanter_ScanAndCache(Float hearingRadius, Float pairRadius, Int maxPairs) Global Native
+{Scan the player's cell for banter-eligible NPC pairs. Caches results for the
+ GetPair* getters. Returns the count of pairs found (0-maxPairs). Returns 0 if
+ a hostile actor is loaded near the player. Pass 0 for any param to use defaults
+ (hearingRadius=2000, pairRadius=768, maxPairs=6).}
+
+Int Function Native_AmbientBanter_GetPairFormA(Int idx) Global Native
+Int Function Native_AmbientBanter_GetPairFormB(Int idx) Global Native
+String Function Native_AmbientBanter_GetPairNameA(Int idx) Global Native
+String Function Native_AmbientBanter_GetPairNameB(Int idx) Global Native
+String Function Native_AmbientBanter_GetPairRaceA(Int idx) Global Native
+String Function Native_AmbientBanter_GetPairRaceB(Int idx) Global Native
+Float Function Native_AmbientBanter_GetPairDistance(Int idx) Global Native
+
 Function Native_SetCombatStyle(Actor akActor, String style) Global Native
 {Store combat style in SKSE cosave. Persists reliably across save/load.}
 
