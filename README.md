@@ -283,8 +283,8 @@ Followers track hunger, fatigue, and cold exposure on a 0-100 scale with native 
 | OmniSight | Gender-aware item names and descriptions in the equipment prompt |
 | PrismaUI | Modern React-based in-game config menu (auto-detected; MCM works without it) |
 | [Fertility Mode Reloaded](https://www.loverslab.com/) | Pregnancy and fertility cycle awareness |
-| [OSL Aroused](https://www.nexusmods.com/skyrimspecialedition/mods/74037) | Arousal state awareness and modification |
-| [SexLab Aroused](https://www.loverslab.com/) | Arousal state awareness and modification |
+| [OSL Aroused](https://www.nexusmods.com/skyrimspecialedition/mods/65454) | Arousal state awareness and modification |
+| [SexLab Aroused](https://www.nexusmods.com/skyrimspecialedition/mods/151502?tab=description) | Arousal state awareness and modification |
 
 ### FOMOD Installer
 
