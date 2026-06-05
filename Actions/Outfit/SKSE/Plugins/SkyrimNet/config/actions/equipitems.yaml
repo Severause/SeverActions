@@ -1,16 +1,16 @@
 customCategory: outfit
 name: EquipArmor
-description: "Equip one or more items from inventory by name. Comma-separate for multiple."
+description: "The speaker pulls specific pieces out of their pack and puts them on — buckling on steel gauntlets before a fight, lacing up boots before a long march, pulling on a circlet to meet a Jarl. Equip one or more named items from inventory; comma-separate for multiple."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: EquipMultipleItems_Execute
 parameterMapping:
   - type: speaker
     name: akActor
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor pulling gear on
   - type: dynamic
     name: itemNames
-    description: "Item name(s) to equip, comma-separated for multiple (e.g. 'steel gauntlets, iron helmet')"
+    description: "what to put on, comma-separated for multiple pieces (e.g. 'steel gauntlets, iron helmet')"
 enabled: true
 eligibilityRules:
   - conditions:

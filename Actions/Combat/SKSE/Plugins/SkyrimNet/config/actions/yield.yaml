@@ -1,13 +1,13 @@
 customCategory: combat
 name: Yield
-description: "Surrender and stop fighting."
+description: "The speaker drops their guard and throws up empty hands — a bandit who's lost the stomach for it, a wounded soldier sinking to one knee in the snow, a thief cornered in an alley. They surrender, hoping mercy will come."
 questEditorId: SeverActions
 scriptName: SeverActions_Combat
 executionFunctionName: Yield_Execute
 parameterMapping:
   - type: speaker
     name: akYielder
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor giving up the fight
 enabled: true
 defaultPriority: 8
 eligibilityRules:

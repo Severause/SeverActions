@@ -1,25 +1,25 @@
 customCategory: companion
 name: AdjustRelationship
-description: "Adjust companion relationship after meaningful interactions. Rapport/Trust/Loyalty: ONLY from direct interactions with {{ player.name }} (-15 to +15). Mood: from ANY source (-20 to +20). Small 1-5 routine, medium 5-10 significant, large 10-15 major. Use 0 if unaffected."
+description: "How the companion is feeling about {{ player.name }} — and about life in general — shifts after a meaningful moment together. A kind word at the campfire warms them; a betrayal in the market hardens them; a beautiful sunrise over the Throat of the World lifts the mood for no one's benefit but their own. Rapport, trust, and loyalty only move with direct {{ player.name }} interactions (-15 to +15); mood can swing from anything (-20 to +20). Use small numbers (1-5) for routine moments, medium (5-10) for significant ones, large (10-15) for major, and 0 if a stat isn't affected."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: AdjustRelationship
 parameterMapping:
   - type: speaker
     name: akActor
-    description: The companion being adjusted
+    description: the companion whose feelings are shifting
   - type: dynamic
     name: rapportChange
-    description: "Rapport change (-15 to +15). ONLY from {{ player.name }} interactions. 0 if unaffected."
+    description: "how their warmth toward {{ player.name }} moves (-15 to +15). Only from direct interactions with {{ player.name }}. 0 if untouched."
   - type: dynamic
     name: trustChange
-    description: "Trust change (-15 to +15). ONLY from {{ player.name }} interactions. 0 if unaffected."
+    description: "how their trust in {{ player.name }} moves (-15 to +15). Only from direct interactions with {{ player.name }}. 0 if untouched."
   - type: dynamic
     name: loyaltyChange
-    description: "Loyalty change (-15 to +15). ONLY from {{ player.name }} interactions. 0 if unaffected."
+    description: "how their loyalty to {{ player.name }} moves (-15 to +15). Only from direct interactions with {{ player.name }}. 0 if untouched."
   - type: dynamic
     name: moodChange
-    description: "Mood change (-20 to +20). Can change from ANY source. 0 if unaffected."
+    description: "how their general mood shifts (-20 to +20). Can swing from anything — weather, news, a song. 0 if untouched."
 # Disabled: relationship assessment is now handled automatically via background
 # LLM calls (sever_relationship_assess.prompt) triggered by the FollowerManager
 # update loop. This frees the action slot for behavioral actions instead.

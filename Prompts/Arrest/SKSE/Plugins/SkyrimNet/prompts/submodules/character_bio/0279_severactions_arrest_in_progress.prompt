@@ -1,0 +1,119 @@
+{# SeverActions Arrest — Same-cell arrest in progress (ArrestState 1..4), extracted from 0275 in the prompt-split refactor. #}
+{# State semantics: 1=approach, 2=cuffing, 3=escort to jail, 4=escort plea (NPC pleading mid-march, guard paused). #}
+{# Distinct from cross-cell DispatchPhase — handled in 0278_severactions_dispatch_active. #}
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{% if player and player.UUID and actorUUID != player.UUID %}
+{% set arrestState = get_script_property("SeverActions", "SeverActions_Arrest", "ArrestState") %}
+{# Cross-mode exclusion (PR #71 follow-up): yield to 0276 persuasion AND to
+   any active dispatch (0277 judgment OR 0278 dispatch). Matches the
+   original 0275 monolith's if/elif precedence (persuasion > judgment >
+   dispatch > arrest), where the same-cell arrest content was the LAST
+   active-mode branch before the normal-mode fallback. Without this guard,
+   a same-cell arrest that overlaps with a cross-cell dispatch (different
+   FSM scalars) would render BOTH 0278/0279 for the affected actor. #}
+{% set _inPersuasionMode = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "InPersuasionMode") %}
+{% set _confrontingGuard = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "ConfrontingGuard") %}
+{% set _suppressForPersuasion = false %}
+{% if _inPersuasionMode and _confrontingGuard and _confrontingGuard.uuid and _confrontingGuard.uuid == actorUUID %}
+{% set _suppressForPersuasion = true %}
+{% endif %}
+{% set _dispatchPhase = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchPhase") %}
+{% set _dispatchOn = (_dispatchPhase >= 1 and _dispatchPhase <= 6) %}
+{% if arrestState >= 1 and arrestState <= 4 and not _suppressForPersuasion and not _dispatchOn %}
+{% set currentGuard = get_script_property("SeverActions", "SeverActions_Arrest", "CurrentGuard") %}
+{% set currentPrisoner = get_script_property("SeverActions", "SeverActions_Arrest", "CurrentPrisoner") %}
+{% set escortPleaAttempted = get_script_property("SeverActions", "SeverActions_Arrest", "EscortPleaAttempted") %}
+{% set isSameCellGuard = false %}
+{% if currentGuard and currentGuard.uuid %}
+{% set isSameCellGuard = (currentGuard.uuid == actorUUID) %}
+{% endif %}
+{% set isSameCellPrisoner = false %}
+{% if currentPrisoner and currentPrisoner.uuid %}
+{% set isSameCellPrisoner = (currentPrisoner.uuid == actorUUID) %}
+{% endif %}
+{% if isSameCellGuard %}
+{% if actorUUID and actorUUID != 0 and currentPrisoner and currentPrisoner.uuid and currentPrisoner.uuid != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set prisonerData = decnpc(currentPrisoner.uuid) %}
+{% set prisonerName = prisonerData.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set poss = actor.possessivePronoun %}
+{% if arrestState == 4 %}
+## ESCORT PLEA — LISTENING TO PRISONER
+{{ actor.name }} has paused the escort to hear {{ prisonerName }}'s plea. {{ poss | capitalize }} weapon is still drawn. {{ prisonerName }} is making their case — perhaps offering a bribe, claiming innocence, begging for mercy, or trying to buy their freedom with future favors.
+
+**CRITICAL INSTRUCTIONS FOR THIS PLEA:**
+- {{ actor.name }} MUST listen to {{ prisonerName }}'s arguments and decide.
+- {{ actor.name }} MUST select the **Arrest** action category, then choose one of:
+    - **AcceptEscortPlea** — If convinced (by argument, bribe offer, mercy plea, or any persuasive case) to release {{ prisonerName }}
+    - **RejectEscortPlea** — If not convinced and {{ prisonerName }} should continue to jail
+- DO NOT use any other action category during this plea.
+- DO NOT use any **Travel** category actions — the escort is paused, not cancelled.
+- After deciding, {{ actor.name }} should respond in character explaining {{ poss }} ruling.
+
+**Consider when judging {{ prisonerName }}'s plea:**
+- The crime — was it serious or trivial? Worth releasing for?
+- {{ prisonerName }}'s argument — genuinely compelling, or just excuses?
+- {{ actor.name }}'s personality — by-the-book? Corruptible? Sympathetic? Severe?
+- Is {{ prisonerName }} offering anything {{ actor.name }} would value (gold, future favors, information)?
+- Would releasing {{ prisonerName }} undermine {{ actor.name }}'s authority or duty?
+{% else %}
+## ACTIVE DUTY — ESCORTING PRISONER TO JAIL
+{{ actor.name }} has {{ prisonerName }} in restraints and is marching them to jail. The arrest is in progress.
+
+**CRITICAL INSTRUCTIONS:**
+- {{ actor.name }} is on official duty escorting a prisoner. The escort path is already controlled — {{ subj }} knows exactly where {{ subj }} is going.
+- DO NOT select any **Travel** category actions — no `TravelToPlace`, no `CancelTravel`, no movement actions of any kind. The arrest pipeline owns the escort route; any travel action will break it.
+- DO NOT select any other action categories either. {{ actor.name }} should not be distracted from the escort.
+- {{ actor.name }} should keep {{ poss }} attention on the prisoner and stay vigilant.
+- If someone speaks to {{ actor.name }}, {{ subj }} can respond briefly but should make clear {{ subj }} is busy transporting a prisoner and cannot stop.
+- {{ actor.name }} may comment on the prisoner, the journey, or warn bystanders to stay clear, but should NOT attempt to go anywhere else.
+{% endif %}
+{% endif %}
+{% elif isSameCellPrisoner %}
+{% if actorUUID and actorUUID != 0 and currentGuard and currentGuard.uuid and currentGuard.uuid != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set guardData = decnpc(currentGuard.uuid) %}
+{% set guardName = guardData.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set poss = actor.possessivePronoun %}
+{% if arrestState == 4 %}
+## ESCORT PLEA — PLEADING YOUR CASE
+{{ actor.name }} has called for {{ guardName }} to halt the escort and hear {{ poss }} case. {{ guardName }} has paused the march, weapon still drawn, and is listening. {{ subj | capitalize }} has ONE chance to convince the guard.
+
+**CRITICAL INSTRUCTIONS:**
+- {{ actor.name }} should plead {{ poss }} case to {{ guardName }} convincingly. This is {{ poss }} only chance to avoid jail.
+- {{ actor.name }} can argue innocence, offer a bribe, beg for mercy, promise future gold or favors, threaten consequences, or appeal to the guard's personality — whatever fits {{ poss }} character.
+- {{ actor.name }} does NOT have access to any actions right now. {{ subj | capitalize }} can only speak.
+- DO NOT select any action categories whatsoever.
+- The guard may accept (release {{ poss }}) or reject (resume the escort). If neither happens within ~60 seconds, the guard will lose patience and resume the march on {{ poss }} own.
+- {{ actor.name }} should make {{ poss }} case clearly and quickly, suited to {{ poss }} personality (humble, defiant, desperate, cunning, etc.).
+{% elif arrestState == 3 %}
+## UNDER ARREST — BEING ESCORTED TO JAIL
+{{ actor.name }} has been arrested by {{ guardName }} and is in restraints, being marched to jail.
+
+**CRITICAL INSTRUCTIONS:**
+- {{ actor.name }} is a prisoner. {{ subj | capitalize }} is restrained and under guard.
+- {{ actor.name }} can only speak — expressing fear, anger, defiance, resignation, or pleas for mercy depending on {{ poss }} personality.
+- {{ actor.name }} cannot run, fight, or resist physically.
+{% if escortPleaAttempted %}
+- {{ actor.name }} has ALREADY attempted to plead {{ poss }} case once during this escort. The guard will not listen again. DO NOT use any action categories whatsoever.
+{% else %}
+- {{ actor.name }} has ONE remaining option: {{ subj }} may use the **Arrest** action category and select **AppealDuringEscort** to call for the guard's attention and plead {{ poss }} case (offer a bribe, argue innocence, beg for mercy, etc.). The guard will pause the escort to listen, then either release {{ poss }} or resume the march. **Single attempt — once attempted, this option is gone for the rest of the arrest.**
+- DO NOT use any other action category. Only `AppealDuringEscort` is permitted, and only if {{ actor.name }} actually intends to make a plea.
+{% endif %}
+{% else %}
+## UNDER ARREST — BEING DETAINED
+{{ actor.name }} is being arrested by {{ guardName }}. {{ subj | capitalize }} is being approached / cuffed right now and cannot resist.
+
+**CRITICAL INSTRUCTIONS:**
+- {{ actor.name }} does NOT have access to any actions right now. {{ subj | capitalize }} can only speak.
+- DO NOT select any action categories whatsoever.
+- {{ actor.name }} may speak — protesting, threatening, pleading, going quietly — depending on {{ poss }} personality.
+- Once the escort begins, {{ actor.name }} will have one chance to formally plead {{ poss }} case via the AppealDuringEscort action. For now {{ subj }} can only react verbally.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

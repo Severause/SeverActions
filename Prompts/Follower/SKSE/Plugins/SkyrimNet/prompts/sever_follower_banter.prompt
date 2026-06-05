@@ -79,6 +79,43 @@ These are the explicit banter topics this party has already used. **Do not pick 
 No prior banter topics on record. Wide-open field.
 {% endif %}
 
+## Rotation Pressure — recent speakers and recent pairs
+
+The single most common failure mode is the same pair bantering every tick with the same speaker each time. Use the list below to actively rotate AWAY from whoever just spoke.
+
+{% set lastSpeakers = [] %}
+{% set lastPairs = [] %}
+{% for ev in pastTopics %}
+{% if existsIn(ev.data, "speaker") and existsIn(ev.data, "listener") and ev.data.speaker != "" and ev.data.listener != "" %}
+{% set lastSpeakers = append(lastSpeakers, ev.data.speaker) %}
+{% set lastPairs = append(lastPairs, ev.data.speaker + " & " + ev.data.listener) %}
+{% endif %}
+{% endfor %}
+
+{% if length(lastSpeakers) > 0 %}
+**Recent speakers (most recent at the bottom):**
+{% for s in lastSpeakers %}
+- {{ s }}
+{% endfor %}
+
+**Recent banter pairs (most recent at the bottom):**
+{% for p in lastPairs %}
+- {{ p }}
+{% endfor %}
+
+**Hard rotation rule (read this carefully):**
+1. Look at the LAST entry in "Recent speakers" — that follower CANNOT be the speaker this turn. Pick a different speaker (swap roles within the pair if needed).
+2. If a single follower's name appears in the last 3 speaker entries, that follower CANNOT speak again — force a different opener.
+{% if followerCount >= 3 %}
+3. Look at the LAST entry in "Recent banter pairs" — that exact pair (in either order) CANNOT banter this turn. Pick a different pair, even if it means lower affinity.
+4. If only one pair is eligible after these filters and they just bantered, output {"banter":null}. Silence is preferable to repetition.
+{% else %}
+3. (Pair rotation skipped — only {{ followerCount }} follower(s) present, so the same pair is the only option. Vary the speaker and the topic instead, and lean toward silence more often than usual so this same pair isn't trading lines every tick.)
+{% endif %}
+{% else %}
+No recent banters on record — any pair is fair game. Pick the most thematically interesting pair, not just the highest-affinity one.
+{% endif %}
+
 Current location: {{ player.location }}
 
 [ end system ]
@@ -95,35 +132,53 @@ Guidelines:
 - Consider what just happened: after combat, reactions are natural. After a long quiet walk, someone might break the silence. Arriving at a new location can prompt comments.
 - Consider personality compatibility from their bios: a scholarly mage and a brash warrior have different interests. That can create interesting conversations OR awkward silence.
 
-### Pick a beat type FIRST, then a topic
+### Step 1: identify the angle (who is opening on whom, and why)
 
-To avoid samey output, pick the *kind* of moment before the topic. Cycle through different beat types over time so the same pair doesn't always do the same kind of exchange. Categories (with example topics — these are seeds, do NOT copy them verbatim):
+Before picking a topic, lock in:
+1. **Who initiates** — the speaker. Pick whichever of the pair more naturally opens this beat: extroverts, opinionated types, people with a stake in the subject.
+2. **What the speaker wants from the target** — to tease them, confess to them, ask them, warn them, agree/disagree with them, contradict them, share an observation with them. The topic must serve this want.
+3. **Why now** — a recent event, a place they just entered, an old grievance resurfacing, the silence growing awkward. There should be a beat reason, not just a topic in a vacuum.
+
+### Step 2: pick a beat type, then phrase the topic as a directive
+
+Cycle through different beat types over time so the same pair doesn't always do the same kind of exchange. **CRITICAL — phrasing convention:** SkyrimNet feeds your topic to the speaker as the literal cue `"speak about <topic>"`. If your topic reads as a generic question or noun phrase (e.g. `"whether mages are reliable partners"`), the speaker will answer it as an essay prompt instead of addressing the target. **Phrase the topic as the speaker's action toward the target — lead with a verb and name the target.**
+
+Bad: `"whether mages make reliable partners in a real fight"` → answered as an essay
+Good: `"warn Daegon that mages fold the moment a blade gets close"`
+
+Bad: `"the brother who didn't make it home"` → drifts into private monologue
+Good: `"open up to <target> about the brother who didn't make it home"`
+
+Bad: `"the cracked statue in this temple"` → could be muttered to no one
+Good: `"point out the cracked statue to <target> and ask what god they think it was"`
+
+Categories (with example seeds — already in directive form; do NOT copy verbatim, mine the bios instead):
 
 - **Personal / vulnerable** — confession, regret, dream, family memory, missing someone, an old wound resurfacing
-  * "the brother who didn't make it home"
-  * "what they're afraid of becoming"
-  * "the smell that reminds them of the homestead"
+  * "confess to <target> the recurring dream that's been keeping them up"
+  * "ask <target> whether they ever go back to the homestead in their head"
+  * "admit to <target> what they're actually afraid of becoming"
 - **Reactive / situational** — the player's last action, a stranger they passed, a place they just entered, a thing on the road
-  * "what to make of the stranger at the inn last night"
-  * "the player's choice with the bandit chief"
-  * "the cracked statue in this temple"
+  * "ask <target> what they made of the stranger at the inn last night"
+  * "tell <target> they think the player handled the bandit chief wrong"
+  * "point out the cracked statue to <target> and wonder which god it was"
 - **Banter / friendly friction** — ribbing, teasing, mild disagreement, callbacks to past mistakes
-  * "the time one of them missed an obvious shot"
-  * "who would win in a sober drinking contest"
-  * "an ongoing argument over campfire watches"
+  * "rib <target> about the obvious shot they missed last ambush"
+  * "challenge <target> to settle once and for all who can outdrink whom"
+  * "needle <target> about always taking the longer campfire watch"
 - **Speculation / philosophical** — rumors, prophecy, "what if", afterlife, the Divines, magic theory
-  * "what the Greybeards actually do up there"
-  * "whether daedra dream"
-  * "what they'd do with a hundred septims, no consequences"
+  * "ask <target> what they think the Greybeards actually do up there"
+  * "float to <target> whether daedra dream the way people do"
+  * "ask <target> what they'd spend a hundred consequence-free septims on"
 - **Cultural / heritage** — explaining their people's view, comparing customs, food/drink/song they miss
-  * "the dish from home neither place serves right"
-  * "a saying from one province versus another"
-  * "what counts as an insult where they're from"
+  * "complain to <target> that no inn south of home serves the dish right"
+  * "teach <target> a saying from their province and dare them to translate"
+  * "warn <target> that what they just said is a killing insult back home"
 - **Tactical / craft** — weapon preferences, fight critique, a trap they remembered, gear talk
-  * "why one swears by daggers, the other by maces"
-  * "a fight they could have handled better"
-  * "the trap they almost set off in the last ruin"
-- **Quotidian / texture** — complaint, wry observation, brag — use sparingly. ONLY pick a quotidian beat if no specific bio-driven angle fits AND the recent topic list has nothing in this register already.
+  * "argue with <target> over why daggers beat maces in close quarters"
+  * "critique <target>'s footwork from the last fight"
+  * "warn <target> about the trap they almost tripped in the last ruin"
+- **Quotidian / texture** — complaint, wry observation, brag — use sparingly. ONLY pick a quotidian beat if no specific bio-driven angle fits AND the recent topic list has nothing in this register already. Still phrase as a directive ("gripe to <target> about the boots"), not a subject.
 
 ### Anti-repetition rules
 
@@ -134,13 +189,14 @@ To avoid samey output, pick the *kind* of moment before the topic. Cycle through
 
 ### Output discipline
 
-- The topic should be a brief direction (4-8 words), NOT full dialogue.
-- Pick the speaker as the one more likely to initiate based on personality (extroverts start, introverts respond).
+- The topic must be a brief **directive** (6-14 words) phrased as the speaker's action toward the target. It is NOT dialogue, NOT a noun-phrase subject, NOT a question to be answered. The downstream prompt will literally see `"speak about <topic>"` — if your topic doesn't read naturally after `"speak about"` as something one would do TO a specific person, fix it.
+- The target's actual in-game name MUST appear in the topic (use the literal name of the target you picked, not the placeholder `<target>` from the seed examples above). This anchors the downstream speaker on whom they're addressing.
+- Pick the speaker as the one more likely to initiate based on personality (extroverts start, introverts respond, the one with a stake speaks first).
 - If recent events show this pair JUST talked, prefer a different pair or silence.
 
 Respond with ONLY one of these JSON formats. No explanation. One line:
 {% raw %}{"banter":null}{% endraw %}
-{% raw %}{"banter":{"speaker":"Name","target":"Name","topic":"brief topic direction"}}{% endraw %}
+{% raw %}{"banter":{"speaker":"Name","target":"Name","topic":"verb the target about a specific thing"}}{% endraw %}
 {% else %}
 {% raw %}{"banter":null}{% endraw %}
 {% endif %}

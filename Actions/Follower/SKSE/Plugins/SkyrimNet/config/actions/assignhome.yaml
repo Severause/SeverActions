@@ -1,15 +1,15 @@
 name: AssignHome
-description: "Assign the current location as this follower's home. When dismissed, they return here."
+description: "The follower marks this place as somewhere they belong — a room above the Bannered Mare, the upstairs of Breezehome, a homestead at Lakeview Manor. When the road parts and they're dismissed, this is where they'll head back to."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: AssignHome
 parameterMapping:
   - type: speaker
     name: akActor
-    description: The follower getting a home assignment
+    description: the follower putting down roots
   - type: dynamic
     name: locationName
-    description: "Specific location name (e.g. 'Breezehome', 'Lakeview Manor', 'Bannered Mare')"
+    description: "the place to call home (e.g. 'Breezehome', 'Lakeview Manor', 'Bannered Mare')"
 enabled: true
 defaultPriority: 5
 eligibilityRules:

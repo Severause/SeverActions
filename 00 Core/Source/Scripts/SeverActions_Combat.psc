@@ -5,16 +5,6 @@ Scriptname SeverActions_Combat extends Quest
 ; PROPERTIES
 ; ============================================================================
 
-; DEPRECATED: These factions are no longer used for attack actions.
-; They caused issues where followers would become hostile to unintended targets.
-; Kept for backwards compatibility - cleanup code will remove actors from these
-; factions if they were added by older versions of the mod.
-Faction Property CombatAggressorFaction Auto
-{DEPRECATED - No longer used. Kept for backwards compatibility cleanup.}
-
-Faction Property CombatVictimFaction Auto
-{DEPRECATED - No longer used. Kept for backwards compatibility cleanup.}
-
 ; Vanilla follower faction - used for reference only now
 Faction Property CurrentFollowerFaction Auto
 {Set to CurrentFollowerFaction from Skyrim.esm}
@@ -49,38 +39,6 @@ Faction Property SeverSurrenderedFaction Auto
 FormList Property SeverHostileFactions Auto
 {FormList containing factions that should be replaced on surrender (Bandit, Forsworn, etc.)}
 
-; Individual faction properties as fallback if FormList not set
-; These are the main hostile factions from vanilla Skyrim
-Faction Property BanditFaction Auto
-{Main bandit faction - 0x0001BCC0}
-
-Faction Property ForswornFaction Auto
-{Forsworn faction - 0x00043599}
-
-Faction Property VampireFaction Auto
-{Vampire faction - 0x00027242}
-
-Faction Property WarlockFaction Auto
-{Warlock/hostile mage faction - 0x00026724}
-
-Faction Property SilverHandFaction Auto
-{Silver Hand werewolf hunters - 0x000AA0A4}
-
-Faction Property ThalmorFaction Auto
-{Thalmor faction - 0x00039F26}
-
-Faction Property NecromancerFaction Auto
-{Necromancer faction - 0x00034B74}
-
-Faction Property DraugrFaction Auto
-{Draugr faction - 0x0002430D}
-
-Faction Property HagravenFaction Auto
-{Hagraven faction - 0x0004359E}
-
-Faction Property DLC1VampireFaction Auto
-{Dawnguard vampire faction - 0x02003376}
-
 ; ============================================================================
 ; YIELD PERSISTENCE ALIASES
 ; ============================================================================
@@ -108,20 +66,22 @@ Bool Property YieldPersistenceEnabled = true Auto
 ; SeverCombat_OriginalAggression - Float (stored aggression value for followers)
 ; SeverCombat_OriginalRelationship - Int
 ; SeverCombat_CombatTarget - Form (who they're fighting)
-; SeverCombat_CooldownEnd - Float (game time when cooldown ends)
+; SeverCombat_CooldownEnd - Float (LEGACY; replaced Phase 6 by native CombatCooldownStore)
 ; SeverCombat_WasSurrendered - Int (1 = this actor has surrendered)
+; SeverCombat_WasNormallyHostile - Int (1 = at yield/ceasefire time they were
+;     in a SeverHostileFactions member. Drives prompt-side guidance for
+;     post-truce behaviour — bandits fall back to base hostility, guards/
+;     housecarls/civilians get explicit "resolved conflict" stand-down.)
 ; SeverCombat_OriginalFaction - Form (the hostile faction they were removed from)
-; SeverCombat_OriginalFactions - FormList ID (if they were in multiple hostile factions)
+; SeverCombat_RemovedFactions - FormList (hostile factions removed during ConvertToSurrendered)
+; SeverCombat_CeasefireRemovedFactions - FormList (hostile factions removed during ceasefire)
+; SeverCombat_CeasefireFactionSwapped - Int (1 = faction swap occurred, restore on break)
 ; SeverCombat_NeedsAggroRestore - Int (1 = aggression was zeroed, needs delayed restore)
 ; SeverCombat_CeasefirePartner - Form (the other actor in the ceasefire pair)
+; SeverCombat_YieldBroken - Int (1 = surrender was broken, set by OnYieldBroken)
 ;
 ; YIELD PERSISTENCE KEYS (stored on None via StorageUtil):
 ; SeverCombat_YieldedGenericActors - FormList (all yielded generic NPCs needing persistence)
-;
-; DEPRECATED KEYS (cleaned up for backwards compatibility):
-; - SeverCombat_AddedToFaction - No longer used, we don't add to combat factions anymore
-; - SeverCombat_AddedToVictimFaction - No longer used, we don't add to victim factions anymore
-; - SeverCombat_RecentCeasefire - Replaced by SeverCombat_CeasefireTime
 
 ; ============================================================================
 ; SINGLETON
@@ -140,7 +100,24 @@ Event OnInit()
     RegisterForModEvent("SeverActionsNative_YieldBroken", "OnYieldBroken")
     RegisterForModEvent("SeverActionsNative_CeasefireBroken", "OnCeasefireBroken")
     RegisterForModEvent("SeverActions_ForcedCombatEnded", "OnForcedCombatEnded")
+
+    ; Phase 5 — hand the configured factions to native CeasefireMonitor so
+    ; it can do the full apply/restore cycle without Papyrus round-trips.
+    ; Both are persisted in the C++ cosave, but we re-set on every init/load
+    ; to cover fresh-game/reorder/upgrade cases.
+    PushCeasefireConfigToNative()
 EndEvent
+
+Function PushCeasefireConfigToNative()
+    If SeverSurrenderedFaction
+        SeverActionsNativeExt.Ceasefire_SetSurrenderedFaction(SeverSurrenderedFaction)
+        SeverActionsNativeExt.Yield_SetSurrenderedFaction(SeverSurrenderedFaction)
+    EndIf
+    If SeverHostileFactions
+        SeverActionsNativeExt.Ceasefire_SetHostileFactionsList(SeverHostileFactions)
+        SeverActionsNativeExt.Yield_SetHostileFactionsList(SeverHostileFactions)
+    EndIf
+EndFunction
 
 ; ============================================================================
 ; FORCED COMBAT END HOOK
@@ -165,14 +142,6 @@ Event OnForcedCombatEnded(String eventName, String strArg, Float numArg, Form se
 EndEvent
 
 ; ============================================================================
-; CEASEFIRE DELAYED RESTORE STATE
-; ============================================================================
-
-; Actors that need aggression restored after ceasefire cooldown expires
-Actor CeasefireActor1
-Actor CeasefireActor2
-
-; ============================================================================
 ; MAIN ATTACK FUNCTION
 ; ============================================================================
 
@@ -195,7 +164,21 @@ Function AttackTarget_Execute(Actor akAttacker, Actor akTarget)
     EndIf
     
     Debug.Trace("[SeverCombat] AttackTarget: " + akAttacker.GetDisplayName() + " -> " + akTarget.GetDisplayName())
-    
+
+    ; If either actor is currently surrendered or ceasefire'd, fully reset
+    ; them first. Without this, we'd add them to the attack/target faction
+    ; while they're still in SeverSurrenderedFaction and tracked by the yield
+    ; or ceasefire monitor — the next incidental hit would fire YieldBroken/
+    ; CeasefireBroken mid-scripted-combat and leave dual-faction state.
+    If StorageUtil.GetIntValue(akAttacker, "SeverCombat_WasSurrendered", 0) == 1 || SeverActionsNative.Ceasefire_IsMonitored(akAttacker) || SeverActionsNative.IsYieldMonitored(akAttacker)
+        Debug.Trace("[SeverCombat] AttackTarget: attacker " + akAttacker.GetDisplayName() + " was surrendered/ceasefire'd — running FullCleanup first")
+        FullCleanup(akAttacker)
+    EndIf
+    If StorageUtil.GetIntValue(akTarget, "SeverCombat_WasSurrendered", 0) == 1 || SeverActionsNative.Ceasefire_IsMonitored(akTarget) || SeverActionsNative.IsYieldMonitored(akTarget)
+        Debug.Trace("[SeverCombat] AttackTarget: target " + akTarget.GetDisplayName() + " was surrendered/ceasefire'd — running FullCleanup first")
+        FullCleanup(akTarget)
+    EndIf
+
     ; Clear any recent ceasefire/yield state
     StorageUtil.UnsetFloatValue(akAttacker, "SeverCombat_CeasefireTime")
     StorageUtil.UnsetFloatValue(akTarget, "SeverCombat_CeasefireTime")
@@ -205,10 +188,7 @@ Function AttackTarget_Execute(Actor akAttacker, Actor akTarget)
     StorageUtil.UnsetFormValue(akTarget, "SeverCombat_YieldedTo")
     StorageUtil.UnsetFormValue(akAttacker, "SeverCombat_ReceivedYieldFrom")
     StorageUtil.UnsetFormValue(akTarget, "SeverCombat_ReceivedYieldFrom")
-    ; Also clear legacy flag if present
-    StorageUtil.UnsetIntValue(akAttacker, "SeverCombat_RecentCeasefire")
-    StorageUtil.UnsetIntValue(akTarget, "SeverCombat_RecentCeasefire")
-    
+
     ; Store original values for attacker (confidence only)
     StoreOriginalValues(akAttacker)
 
@@ -279,8 +259,12 @@ Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
 {Forces two actors to stop fighting and propagates ceasefire to all nearby faction allies.
  Ceasefire is INDEFINITE — aggression stays at 0 until the player attacks them (monitored
  by native CeasefireMonitor) or an NPC calls AttackTarget (which clears ceasefire state).
- CRITICAL: Must zero Aggression BEFORE calling StopCombat, otherwise the engine
- immediately re-enters combat on EvaluatePackage for hostile-faction NPCs.}
+
+ Phase 5: the per-actor faction-swap / aggression-zero / combat-stop /
+ relationship-rank / monitor-registration sequence — previously ~80 lines
+ of Papyrus repeated per affected actor — now lives in native
+ CeasefireMonitor::PropagateGroup. We keep only the Papyrus-side timestamp
+ bookkeeping the prompt template reads.}
 
     If !akActor1
         Debug.Trace("[SeverCombat] CeaseFire: Actor1 is None")
@@ -289,52 +273,33 @@ Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
 
     Debug.Trace("[SeverCombat] CeaseFire: " + akActor1.GetDisplayName() + " initiated ceasefire")
 
-    ; Get stored combat target if akActor2 wasn't provided
+    ; If akActor2 wasn't provided, fall back to the stored combat target.
     Actor akStoredTarget = akActor2
     If !akStoredTarget
         akStoredTarget = StorageUtil.GetFormValue(akActor1, "SeverCombat_CombatTarget") as Actor
     EndIf
 
-    ; ========================================================================
-    ; STEP 1: Apply ceasefire to the initiating actor
-    ; ========================================================================
-    ApplyCeasefireToActor(akActor1, akStoredTarget)
+    ; Single native call does the lot: apply to initiator + partner + nearby
+    ; combat-active faction allies, returning the list of affected actors.
+    Actor[] affected = SeverActionsNativeExt.Ceasefire_PropagateGroup(akActor1, akStoredTarget, 4096.0)
 
-    ; ========================================================================
-    ; STEP 2: Apply ceasefire to the target (if it's an NPC, not the player)
-    ; ========================================================================
-    If akStoredTarget && akStoredTarget != Game.GetPlayer()
-        ApplyCeasefireToActor(akStoredTarget, akActor1)
-    EndIf
-
-    ; ========================================================================
-    ; STEP 3: Propagate to nearby faction allies — GROUP CEASEFIRE
-    ; Find all loaded NPCs sharing a faction with the initiator and apply
-    ; ceasefire to each. This makes the whole bandit camp stand down.
-    ; ========================================================================
-    Actor[] allies = SeverActionsNative.Ceasefire_FindNearbyAllies(akActor1, 4096.0)
-    If allies
-        Actor playerRef = Game.GetPlayer()
+    ; Mirror per-actor prompt state into StorageUtil — the prompt template
+    ; reads SeverCombat_CeasefireTime and SeverCombat_WasNormallyHostile
+    ; directly via papyrus_util(), so they have to live on the Papyrus side.
+    Float ceasefireTime = Utility.GetCurrentGameTime() * 24 * 3631
+    If affected
         Int i = 0
-        While i < allies.Length
-            Actor ally = allies[i]
-            If ally && ally != akActor1 && ally != akStoredTarget && ally != playerRef
-                ; Only ceasefire allies that are actually in combat
-                If ally.IsInCombat()
-                    Debug.Trace("[SeverCombat] CeaseFire: Propagating to ally " + ally.GetDisplayName())
-                    ApplyCeasefireToActor(ally, playerRef)
+        While i < affected.Length
+            Actor a = affected[i]
+            If a
+                StorageUtil.SetFloatValue(a, "SeverCombat_CeasefireTime", ceasefireTime)
+                If SeverActionsNativeExt.Ceasefire_IsWasNormallyHostile(a)
+                    StorageUtil.SetIntValue(a, "SeverCombat_WasNormallyHostile", 1)
                 EndIf
             EndIf
             i += 1
         EndWhile
-        Debug.Trace("[SeverCombat] CeaseFire: Propagated to " + allies.Length + " nearby faction allies")
-    EndIf
-
-    ; Set ceasefire timestamp for prompt awareness (same format as gameTimeNumeric)
-    Float ceasefireTime = Utility.GetCurrentGameTime() * 24 * 3631
-    StorageUtil.SetFloatValue(akActor1, "SeverCombat_CeasefireTime", ceasefireTime)
-    If akStoredTarget
-        StorageUtil.SetFloatValue(akStoredTarget, "SeverCombat_CeasefireTime", ceasefireTime)
+        Debug.Trace("[SeverCombat] CeaseFire: native affected " + affected.Length + " actor(s)")
     EndIf
 
     ; Clear forced combat flag — combat is over
@@ -351,96 +316,6 @@ Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
     Debug.Trace("[SeverCombat] CeaseFire complete — group ceasefire active, indefinite until player attacks or NPC re-engages")
 EndFunction
 
-Function ApplyCeasefireToActor(Actor akActor, Actor akPartner)
-{Apply ceasefire to a single actor: zero aggression, remove from hostile factions,
- add to SeverSurrenderedFaction (player-friendly), stop combat, register with native monitor.
- Same faction-swap approach as Yield — just zeroing aggression is NOT enough because the
- engine's AI package evaluation re-enters combat based on faction hostility regardless of aggression.}
-    If !akActor
-        Return
-    EndIf
-
-    ; Skip if already ceasefire'd — prevents double-application from clobbering
-    ; the real original aggression with 0.0 on a second call
-    If SeverActionsNative.Ceasefire_IsMonitored(akActor)
-        Debug.Trace("[SeverCombat] ApplyCeasefire: " + akActor.GetDisplayName() + " already ceasefire'd, skipping")
-        Return
-    EndIf
-
-    ; Store original aggression BEFORE zeroing
-    Float origAggression = akActor.GetActorValue("Aggression")
-    StorageUtil.SetFloatValue(akActor, "SeverCombat_OriginalAggression", origAggression)
-
-    ; Zero aggression BEFORE stopping combat (prevents immediate re-aggro)
-    akActor.SetActorValue("Aggression", 0)
-
-    ; Remove from hostile factions and add to surrendered faction (same as Yield).
-    ; This is the KEY step — without it, the engine re-enters combat based on
-    ; faction hostility regardless of aggression value.
-    ; Store removed factions in a ceasefire-specific list for restoration on break.
-    If SeverSurrenderedFaction && !akActor.IsInFaction(SeverSurrenderedFaction)
-        ; Clear any previous ceasefire faction list
-        StorageUtil.FormListClear(akActor, "SeverCombat_CeasefireRemovedFactions")
-
-        If SeverHostileFactions
-            Int i = 0
-            While i < SeverHostileFactions.GetSize()
-                Faction hostileFaction = SeverHostileFactions.GetAt(i) as Faction
-                If hostileFaction && akActor.IsInFaction(hostileFaction)
-                    StorageUtil.FormListAdd(akActor, "SeverCombat_CeasefireRemovedFactions", hostileFaction, false)
-                    akActor.RemoveFromFaction(hostileFaction)
-                    Debug.Trace("[SeverCombat] Ceasefire: Removed " + akActor.GetDisplayName() + " from " + hostileFaction)
-                EndIf
-                i += 1
-            EndWhile
-        EndIf
-
-        akActor.AddToFaction(SeverSurrenderedFaction)
-        akActor.SetFactionRank(SeverSurrenderedFaction, 0)
-        StorageUtil.SetIntValue(akActor, "SeverCombat_CeasefireFactionSwapped", 1)
-        Debug.Trace("[SeverCombat] Ceasefire: Added " + akActor.GetDisplayName() + " to SeverSurrenderedFaction")
-    EndIf
-
-    ; Stop combat (safe now — faction hostility resolved)
-    akActor.StopCombatAlarm()
-    akActor.StopCombat()
-
-    ; Set neutral relationship with partner as extra safety
-    If akPartner
-        Int origRank = akActor.GetRelationshipRank(akPartner)
-        StorageUtil.SetIntValue(akActor, "SeverCombat_OriginalRelationship", origRank)
-        StorageUtil.SetFormValue(akActor, "SeverCombat_CeasefirePartner", akPartner)
-        If origRank < 0
-            akActor.SetRelationshipRank(akPartner, 0)
-        EndIf
-    EndIf
-
-    ; Clean up deprecated faction memberships (backwards compatibility)
-    If CombatAggressorFaction && StorageUtil.GetIntValue(akActor, "SeverCombat_AddedToFaction", 0) == 1
-        akActor.RemoveFromFaction(CombatAggressorFaction)
-        StorageUtil.UnsetIntValue(akActor, "SeverCombat_AddedToFaction")
-    EndIf
-    If CombatVictimFaction && StorageUtil.GetIntValue(akActor, "SeverCombat_AddedToVictimFaction", 0) == 1
-        akActor.RemoveFromFaction(CombatVictimFaction)
-        StorageUtil.UnsetIntValue(akActor, "SeverCombat_AddedToVictimFaction")
-    EndIf
-
-    ; Restore confidence (but NOT aggression — that stays at 0)
-    RestoreOriginalValues(akActor)
-    ClearAllCombatState(akActor)
-
-    ; Mark for ceasefire tracking
-    StorageUtil.SetIntValue(akActor, "SeverCombat_NeedsAggroRestore", 1)
-
-    ; Force AI re-evaluate (safe — aggression is 0, faction is friendly)
-    akActor.EvaluatePackage()
-
-    ; Register with native CeasefireMonitor — will fire ModEvent if player attacks this actor
-    SeverActionsNative.Ceasefire_Register(akActor, origAggression)
-
-    Debug.Trace("[SeverCombat] Ceasefire applied to " + akActor.GetDisplayName() + " (aggression " + origAggression + " -> 0, faction swapped)")
-EndFunction
-
 Bool Function CeaseFire_IsEligible(Actor akActor1, Actor akActor2)
     If !akActor1
         Return False
@@ -454,108 +329,83 @@ EndFunction
 ; ============================================================================
 
 Function Yield_Execute(Actor akYielder)
-{Makes an actor yield/surrender. Removes them from hostile factions and adds to surrendered faction.}
-    
+{Makes an actor yield/surrender. Phase 6: faction-swap + aggression-zero +
+ monitor-register all happen in one native call (Yield_ConvertToSurrendered).
+ Papyrus owns: stop combat, relationship-rank restore (CLib NG doesn't expose
+ those methods), yield prompt flags + timestamp, yield-slot persistence,
+ cooldown, EvaluatePackage.}
+
     If !akYielder
         Debug.Trace("[SeverCombat] Yield: Yielder is None")
         Return
     EndIf
-    
+
     Debug.Trace("[SeverCombat] Yield: " + akYielder.GetDisplayName() + " is yielding")
-    
-    ; Stop combat
+
     akYielder.StopCombatAlarm()
     akYielder.StopCombat()
-    
-    ; Get stored combat target
+
     Actor akStoredTarget = StorageUtil.GetFormValue(akYielder, "SeverCombat_CombatTarget") as Actor
     If akStoredTarget
         akStoredTarget.StopCombatAlarm()
         akStoredTarget.StopCombat()
     EndIf
-    
-    ; Clean up deprecated faction memberships (backwards compatibility)
-    If CombatAggressorFaction && StorageUtil.GetIntValue(akYielder, "SeverCombat_AddedToFaction", 0) == 1
-        akYielder.RemoveFromFaction(CombatAggressorFaction)
-        StorageUtil.UnsetIntValue(akYielder, "SeverCombat_AddedToFaction")
-    EndIf
-    If CombatVictimFaction && StorageUtil.GetIntValue(akYielder, "SeverCombat_AddedToVictimFaction", 0) == 1
-        akYielder.RemoveFromFaction(CombatVictimFaction)
-        StorageUtil.UnsetIntValue(akYielder, "SeverCombat_AddedToVictimFaction")
-    EndIf
-    
-    If akStoredTarget
-        If CombatAggressorFaction && StorageUtil.GetIntValue(akStoredTarget, "SeverCombat_AddedToFaction", 0) == 1
-            akStoredTarget.RemoveFromFaction(CombatAggressorFaction)
-            StorageUtil.UnsetIntValue(akStoredTarget, "SeverCombat_AddedToFaction")
-        EndIf
-        If CombatVictimFaction && StorageUtil.GetIntValue(akStoredTarget, "SeverCombat_AddedToVictimFaction", 0) == 1
-            akStoredTarget.RemoveFromFaction(CombatVictimFaction)
-            StorageUtil.UnsetIntValue(akStoredTarget, "SeverCombat_AddedToVictimFaction")
-        EndIf
-    EndIf
-    
-    ; Restore original values for both (confidence only)
+
     RestoreOriginalValues(akYielder)
     If akStoredTarget
         RestoreOriginalValues(akStoredTarget)
     EndIf
-    
-    ; Restore original relationships
+
     If akStoredTarget
+        ; Relationship-rank restore stays Papyrus-side — CommonLibSSE-NG
+        ; doesn't expose GetRelationshipRank / SetRelationshipRank on Actor.
         Int origRankYielder = StorageUtil.GetIntValue(akYielder, "SeverCombat_OriginalRelationship", 0)
         Int origRankAttacker = StorageUtil.GetIntValue(akStoredTarget, "SeverCombat_OriginalRelationship", 0)
         akYielder.SetRelationshipRank(akStoredTarget, origRankYielder)
         akStoredTarget.SetRelationshipRank(akYielder, origRankAttacker)
-        
-        ; Set yield flags for prompt awareness
+
         StorageUtil.SetFormValue(akYielder, "SeverCombat_YieldedTo", akStoredTarget)
         StorageUtil.SetFormValue(akStoredTarget, "SeverCombat_ReceivedYieldFrom", akYielder)
-        
-        ; Set yield timestamp for prompt awareness (same format as gameTimeNumeric)
+
         Float yieldTime = Utility.GetCurrentGameTime() * 24 * 3631
         StorageUtil.SetFloatValue(akYielder, "SeverCombat_YieldTime", yieldTime)
         StorageUtil.SetFloatValue(akStoredTarget, "SeverCombat_YieldTime", yieldTime)
     EndIf
-    
-    ; Clear all combat state for both
+
     ClearAllCombatState(akYielder)
     If akStoredTarget
         ClearAllCombatState(akStoredTarget)
     EndIf
-    
-    ; Store original aggression before modifying (for followers and special NPCs)
-    StorageUtil.SetFloatValue(akYielder, "SeverCombat_OriginalAggression", akYielder.GetActorValue("Aggression"))
-    
-    ; Make yielder non-aggressive (will be restored by ReturnToCrime or FullCleanup)
-    akYielder.SetActorValue("Aggression", 0)
-    
-    ; ========================================================================
-    ; FACTION CONVERSION - Replace hostile faction with surrendered faction
-    ; ========================================================================
-    ConvertToSurrendered(akYielder)
 
-    ; ========================================================================
-    ; YIELD PERSISTENCE - Make generic NPCs persistent via alias
-    ; ========================================================================
-    ; If the actor was in a hostile faction (bandit, necromancer, etc.),
-    ; assign them a YieldSlot so the engine doesn't recycle them across cells.
-    If YieldPersistenceEnabled && StorageUtil.FormListCount(akYielder, "SeverCombat_RemovedFactions") > 0
+    ; StorageUtil mirror of original aggression — kept for Phase 6 only so the
+    ; existing YieldAlias.psc OnLoad re-register path keeps working. Phase 7
+    ; deletes the alias and this mirror can go with it.
+    StorageUtil.SetFloatValue(akYielder, "SeverCombat_OriginalAggression", akYielder.GetActorValue("Aggression"))
+
+    ; Phase 6: one native call replaces the Papyrus ConvertToSurrendered loop
+    ; + manual aggression zero + WasSurrendered flag write + Native_SetSurrendered.
+    ; The native side stores the removed-factions list directly in the
+    ; YieldedActorData entry; OnYieldBroken / ReturnToCrime / FullCleanup
+    ; restore them from there without Papyrus FormList round-trips.
+    Bool wasHostile = SeverActionsNativeExt.Yield_ConvertToSurrendered(akYielder)
+    StorageUtil.SetIntValue(akYielder, "SeverCombat_WasSurrendered", 1)
+    If wasHostile
+        StorageUtil.SetIntValue(akYielder, "SeverCombat_WasNormallyHostile", 1)
+    EndIf
+    SeverActionsNative.Native_SetSurrendered(akYielder, true)
+
+    ; YieldSlot persistence — still Papyrus for Phase 6, Phase 7 replaces this
+    ; with C++ kPersistent flag manipulation.
+    If YieldPersistenceEnabled && wasHostile
         AssignYieldSlot(akYielder)
     EndIf
 
-    ; Apply cooldown to both
     ApplyCooldown(akYielder, akStoredTarget)
-    
-    ; Force AI to re-evaluate
+
     akYielder.EvaluatePackage()
     If akStoredTarget
         akStoredTarget.EvaluatePackage()
     EndIf
-
-    ; Register with native yield monitor — auto-reverts surrender if player keeps attacking
-    Float origAggro = StorageUtil.GetFloatValue(akYielder, "SeverCombat_OriginalAggression", 1.0)
-    SeverActionsNative.RegisterYieldedActor(akYielder, origAggro, SeverSurrenderedFaction)
 EndFunction
 
 Bool Function Yield_IsEligible(Actor akYielder)
@@ -569,237 +419,69 @@ EndFunction
 ; FACTION CONVERSION SYSTEM
 ; ============================================================================
 
-Function ConvertToSurrendered(Actor akActor)
-{Remove actor from hostile factions and add to surrendered faction.
- Stores original faction for potential reversal via ReturnToCrime.}
-    
+Function RestoreHostileFactions(Actor akActor, String storageKey)
+{Inverse of ConvertToSurrendered's faction loop. Removes akActor from
+ SeverSurrenderedFaction (if present), re-adds every faction stored in the
+ named FormList, then clears the list. Shared by ReturnToCrime,
+ OnYieldBroken, OnCeasefireBroken, and FullCleanup — previously each of
+ those duplicated the same loop with subtly different surrounding cleanup.}
     If !akActor
         Return
     EndIf
-    
-    ; Skip if no surrendered faction is set
-    If !SeverSurrenderedFaction
-        Debug.Trace("[SeverCombat] ConvertToSurrendered: No SeverSurrenderedFaction set, skipping faction conversion")
-        Return
+
+    If SeverSurrenderedFaction && akActor.IsInFaction(SeverSurrenderedFaction)
+        akActor.RemoveFromFaction(SeverSurrenderedFaction)
     EndIf
-    
-    ; Skip if already surrendered
-    If akActor.IsInFaction(SeverSurrenderedFaction)
-        Debug.Trace("[SeverCombat] ConvertToSurrendered: " + akActor.GetDisplayName() + " already surrendered")
-        Return
-    EndIf
-    
-    Bool wasConverted = False
-    Faction firstRemovedFaction = None
-    
-    ; Try FormList first (preferred method - allows runtime configuration)
-    If SeverHostileFactions
-        Int i = 0
-        While i < SeverHostileFactions.GetSize()
-            Faction hostileFaction = SeverHostileFactions.GetAt(i) as Faction
-            If hostileFaction && akActor.IsInFaction(hostileFaction)
-                Debug.Trace("[SeverCombat] Removing " + akActor.GetDisplayName() + " from faction: " + hostileFaction)
-                
-                ; Store the first faction for reversal (they might be in multiple)
-                If !firstRemovedFaction
-                    firstRemovedFaction = hostileFaction
-                EndIf
-                
-                ; Store in array for complete reversal later
-                StorageUtil.FormListAdd(akActor, "SeverCombat_RemovedFactions", hostileFaction, false)
-                
-                akActor.RemoveFromFaction(hostileFaction)
-                wasConverted = True
-            EndIf
-            i += 1
-        EndWhile
-    Else
-        ; Fallback: Check individual faction properties
-        Debug.Trace("[SeverCombat] ConvertToSurrendered: Using individual faction properties (FormList not set)")
-        
-        ; Bandit
-        If BanditFaction && akActor.IsInFaction(BanditFaction)
-            If !firstRemovedFaction
-                firstRemovedFaction = BanditFaction
-            EndIf
-            StorageUtil.FormListAdd(akActor, "SeverCombat_RemovedFactions", BanditFaction, false)
-            akActor.RemoveFromFaction(BanditFaction)
-            wasConverted = True
+
+    Int factionCount = StorageUtil.FormListCount(akActor, storageKey)
+    Int i = 0
+    While i < factionCount
+        Faction f = StorageUtil.FormListGet(akActor, storageKey, i) as Faction
+        If f
+            akActor.AddToFaction(f)
+            akActor.SetFactionRank(f, 0)
+            Debug.Trace("[SeverCombat] RestoreHostileFactions(" + storageKey + "): " + akActor.GetDisplayName() + " -> " + f)
         EndIf
-        
-        ; Forsworn
-        If ForswornFaction && akActor.IsInFaction(ForswornFaction)
-            If !firstRemovedFaction
-                firstRemovedFaction = ForswornFaction
-            EndIf
-            StorageUtil.FormListAdd(akActor, "SeverCombat_RemovedFactions", ForswornFaction, false)
-            akActor.RemoveFromFaction(ForswornFaction)
-            wasConverted = True
-        EndIf
-        
-        ; Vampire
-        If VampireFaction && akActor.IsInFaction(VampireFaction)
-            If !firstRemovedFaction
-                firstRemovedFaction = VampireFaction
-            EndIf
-            StorageUtil.FormListAdd(akActor, "SeverCombat_RemovedFactions", VampireFaction, false)
-            akActor.RemoveFromFaction(VampireFaction)
-            wasConverted = True
-        EndIf
-        
-        ; Warlock
-        If WarlockFaction && akActor.IsInFaction(WarlockFaction)
-            If !firstRemovedFaction
-                firstRemovedFaction = WarlockFaction
-            EndIf
-            StorageUtil.FormListAdd(akActor, "SeverCombat_RemovedFactions", WarlockFaction, false)
-            akActor.RemoveFromFaction(WarlockFaction)
-            wasConverted = True
-        EndIf
-        
-        ; Silver Hand
-        If SilverHandFaction && akActor.IsInFaction(SilverHandFaction)
-            If !firstRemovedFaction
-                firstRemovedFaction = SilverHandFaction
-            EndIf
-            StorageUtil.FormListAdd(akActor, "SeverCombat_RemovedFactions", SilverHandFaction, false)
-            akActor.RemoveFromFaction(SilverHandFaction)
-            wasConverted = True
-        EndIf
-        
-        ; Thalmor
-        If ThalmorFaction && akActor.IsInFaction(ThalmorFaction)
-            If !firstRemovedFaction
-                firstRemovedFaction = ThalmorFaction
-            EndIf
-            StorageUtil.FormListAdd(akActor, "SeverCombat_RemovedFactions", ThalmorFaction, false)
-            akActor.RemoveFromFaction(ThalmorFaction)
-            wasConverted = True
-        EndIf
-        
-        ; Necromancer
-        If NecromancerFaction && akActor.IsInFaction(NecromancerFaction)
-            If !firstRemovedFaction
-                firstRemovedFaction = NecromancerFaction
-            EndIf
-            StorageUtil.FormListAdd(akActor, "SeverCombat_RemovedFactions", NecromancerFaction, false)
-            akActor.RemoveFromFaction(NecromancerFaction)
-            wasConverted = True
-        EndIf
-        
-        ; Draugr
-        If DraugrFaction && akActor.IsInFaction(DraugrFaction)
-            If !firstRemovedFaction
-                firstRemovedFaction = DraugrFaction
-            EndIf
-            StorageUtil.FormListAdd(akActor, "SeverCombat_RemovedFactions", DraugrFaction, false)
-            akActor.RemoveFromFaction(DraugrFaction)
-            wasConverted = True
-        EndIf
-        
-        ; Hagraven
-        If HagravenFaction && akActor.IsInFaction(HagravenFaction)
-            If !firstRemovedFaction
-                firstRemovedFaction = HagravenFaction
-            EndIf
-            StorageUtil.FormListAdd(akActor, "SeverCombat_RemovedFactions", HagravenFaction, false)
-            akActor.RemoveFromFaction(HagravenFaction)
-            wasConverted = True
-        EndIf
-        
-        ; DLC1 Vampire
-        If DLC1VampireFaction && akActor.IsInFaction(DLC1VampireFaction)
-            If !firstRemovedFaction
-                firstRemovedFaction = DLC1VampireFaction
-            EndIf
-            StorageUtil.FormListAdd(akActor, "SeverCombat_RemovedFactions", DLC1VampireFaction, false)
-            akActor.RemoveFromFaction(DLC1VampireFaction)
-            wasConverted = True
-        EndIf
-    EndIf
-    
-    ; Add to surrendered faction
-    If wasConverted
-        akActor.AddToFaction(SeverSurrenderedFaction)
-        akActor.SetFactionRank(SeverSurrenderedFaction, 0)
-        StorageUtil.SetIntValue(akActor, "SeverCombat_WasSurrendered", 1)
-        SeverActionsNative.Native_SetSurrendered(akActor, true)
-        StorageUtil.SetFormValue(akActor, "SeverCombat_OriginalFaction", firstRemovedFaction)
-        Debug.Trace("[SeverCombat] " + akActor.GetDisplayName() + " converted to surrendered (was in " + firstRemovedFaction + ")")
-    Else
-        ; Not in any hostile faction - still add to surrendered for relationship purposes
-        akActor.AddToFaction(SeverSurrenderedFaction)
-        akActor.SetFactionRank(SeverSurrenderedFaction, 0)
-        StorageUtil.SetIntValue(akActor, "SeverCombat_WasSurrendered", 1)
-        SeverActionsNative.Native_SetSurrendered(akActor, true)
-        Debug.Trace("[SeverCombat] " + akActor.GetDisplayName() + " added to surrendered (wasn't in hostile faction)")
-    EndIf
+        i += 1
+    EndWhile
+
+    StorageUtil.FormListClear(akActor, storageKey)
 EndFunction
 
 Function ReturnToCrime_Execute(Actor akActor)
 {Revert a surrendered actor back to their original hostile faction(s).
- Use this for betrayal scenarios or if they "return to their old ways".}
-    
+ Phase 6: aggression restore + surrendered-faction removal + hostile-faction
+ re-add + monitor unregister all happen in Yield_ReturnToCrime. Papyrus
+ only clears the prompt-side StorageUtil keys.}
+
     If !akActor
         Return
     EndIf
-    
-    ; Check if they were ever surrendered
+
     If StorageUtil.GetIntValue(akActor, "SeverCombat_WasSurrendered", 0) != 1
         Debug.Trace("[SeverCombat] ReturnToCrime: " + akActor.GetDisplayName() + " was never surrendered")
         Return
     EndIf
-    
+
     Debug.Trace("[SeverCombat] ReturnToCrime: " + akActor.GetDisplayName() + " returning to hostile faction")
 
-    ; Release yield persistence alias — no longer surrendered
+    ; Release yield persistence alias — no longer surrendered (Phase 7 will
+    ; replace alias plumbing with C++ kPersistent manipulation).
     ClearYieldSlot(akActor)
 
-    ; Stop yield hit monitoring — they're returning to crime voluntarily
-    SeverActionsNative.UnregisterYieldedActor(akActor)
+    ; One native call does the whole restore (aggression / factions / unregister).
+    SeverActionsNativeExt.Yield_ReturnToCrime(akActor)
+    SeverActionsNative.Native_SetSurrendered(akActor, false)
 
-    ; Remove from surrendered faction
-    If SeverSurrenderedFaction && akActor.IsInFaction(SeverSurrenderedFaction)
-        akActor.RemoveFromFaction(SeverSurrenderedFaction)
-    EndIf
-    
-    ; Restore all original factions
-    Int factionCount = StorageUtil.FormListCount(akActor, "SeverCombat_RemovedFactions")
-    Int i = 0
-    While i < factionCount
-        Faction originalFaction = StorageUtil.FormListGet(akActor, "SeverCombat_RemovedFactions", i) as Faction
-        If originalFaction
-            akActor.AddToFaction(originalFaction)
-            akActor.SetFactionRank(originalFaction, 0)
-            Debug.Trace("[SeverCombat] Restored to faction: " + originalFaction)
-        EndIf
-        i += 1
-    EndWhile
-    
-    ; Clear the stored factions list
-    StorageUtil.FormListClear(akActor, "SeverCombat_RemovedFactions")
-    
-    ; Restore aggression - use stored value if available, otherwise default to 1
-    Float originalAggression = StorageUtil.GetFloatValue(akActor, "SeverCombat_OriginalAggression", -1.0)
-    If originalAggression >= 0.0
-        akActor.SetActorValue("Aggression", originalAggression)
-        Debug.Trace("[SeverCombat] Restored aggression to: " + originalAggression)
-    Else
-        ; Default to 1 (Aggressive) for NPCs returning to hostile behavior
-        akActor.SetActorValue("Aggression", 1)
-        Debug.Trace("[SeverCombat] Set aggression to default: 1")
-    EndIf
-    
-    ; Clear surrender flags
+    ; Clear prompt-side state + legacy keys.
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_OriginalFaction")
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasSurrendered")
+    StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasNormallyHostile")
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_YieldedTo")
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalAggression")
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_YieldTime")
-    
-    ; Force AI update
-    akActor.EvaluatePackage()
-    
+    StorageUtil.FormListClear(akActor, "SeverCombat_RemovedFactions")  ; legacy
+
     Debug.Trace("[SeverCombat] ReturnToCrime complete for " + akActor.GetDisplayName())
 EndFunction
 
@@ -832,9 +514,7 @@ Function ClearAllCombatState(Actor akActor)
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_CombatTarget")
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_InForcedCombat")
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_OriginalRelationship")
-    StorageUtil.UnsetIntValue(akActor, "SeverCombat_AddedToFaction")
-    StorageUtil.UnsetIntValue(akActor, "SeverCombat_AddedToVictimFaction")
-    
+
     ; Clear stored original values (already restored by this point)
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalConfidence")
     
@@ -896,63 +576,30 @@ EndFunction
 ; ============================================================================
 
 Function ApplyCooldown(Actor akActor, Actor akPartner)
-{Apply cooldown to prevent immediate re-engagement}
-    Float cooldownEnd = Utility.GetCurrentGameTime() + (CombatCooldownDuration / 24.0 / 60.0)
-    StorageUtil.SetFloatValue(akActor, "SeverCombat_CooldownEnd", cooldownEnd)
+{Apply cooldown to prevent immediate re-engagement. Phase 6: backed by
+ native CombatCooldownStore (cosave-persisted FormID->expiry map) instead
+ of the SeverCombat_CooldownEnd StorageUtil key.}
+    If akActor
+        SeverActionsNativeExt.Cooldown_Set(akActor, CombatCooldownDuration)
+    EndIf
     If akPartner
-        StorageUtil.SetFloatValue(akPartner, "SeverCombat_CooldownEnd", cooldownEnd)
+        SeverActionsNativeExt.Cooldown_Set(akPartner, CombatCooldownDuration)
     EndIf
 EndFunction
 
 Bool Function IsActorInCooldown(Actor akActor)
-{Check if actor is in cooldown period}
-    Float cooldownEnd = StorageUtil.GetFloatValue(akActor, "SeverCombat_CooldownEnd", 0.0)
-    If cooldownEnd == 0.0
+{Check if actor is in cooldown period. Reads the native store; lazily
+ clears expired entries inside Cooldown_IsActive.}
+    If !akActor
         Return False
     EndIf
-    
-    Float currentTime = Utility.GetCurrentGameTime()
-    If currentTime < cooldownEnd
-        Return True
-    Else
-        StorageUtil.UnsetFloatValue(akActor, "SeverCombat_CooldownEnd")
-        Return False
-    EndIf
+    Return SeverActionsNativeExt.Cooldown_IsActive(akActor)
 EndFunction
 
 Function ClearCooldownState(Actor akActor)
-{Manually clear cooldown for an actor}
-    StorageUtil.UnsetFloatValue(akActor, "SeverCombat_CooldownEnd")
-EndFunction
-
-; ============================================================================
-; UTILITY
-; ============================================================================
-
-Function StopActorCombat(Actor akActor)
-{Utility to stop combat for a single actor}
+{Manually clear cooldown for an actor.}
     If akActor
-        akActor.StopCombatAlarm()
-        akActor.StopCombat()
-        akActor.EvaluatePackage()
-    EndIf
-EndFunction
-
-Function ClearCeasefireFlag(Actor akActor)
-{Clear the ceasefire timestamp - no longer needed with time-based expiry, kept for compatibility}
-    If akActor
-        StorageUtil.UnsetFloatValue(akActor, "SeverCombat_CeasefireTime")
-        ; Also clear legacy flag if present
-        StorageUtil.UnsetIntValue(akActor, "SeverCombat_RecentCeasefire")
-    EndIf
-EndFunction
-
-Function ClearYieldFlags(Actor akActor)
-{Clear yield-related data - no longer needed with time-based expiry, kept for compatibility}
-    If akActor
-        StorageUtil.UnsetFloatValue(akActor, "SeverCombat_YieldTime")
-        StorageUtil.UnsetFormValue(akActor, "SeverCombat_YieldedTo")
-        StorageUtil.UnsetFormValue(akActor, "SeverCombat_ReceivedYieldFrom")
+        SeverActionsNativeExt.Cooldown_Clear(akActor)
     EndIf
 EndFunction
 
@@ -967,28 +614,56 @@ Function FullCleanup(Actor akActor)
     ; Release yield persistence alias if active
     ClearYieldSlot(akActor)
 
-    ; Stop yield hit monitoring if active
-    SeverActionsNative.UnregisterYieldedActor(akActor)
-
     ; Stop any combat
     akActor.StopCombatAlarm()
     akActor.StopCombat()
-    
-    ; Remove from aggressor faction (backwards compatibility)
-    If CombatAggressorFaction && akActor.IsInFaction(CombatAggressorFaction)
-        akActor.RemoveFromFaction(CombatAggressorFaction)
+
+    ; Phase 6: if the native yield monitor is still tracking this actor,
+    ; tell C++ to restore aggression + factions + unregister silently.
+    ; ForceBreak is equivalent to ReturnToCrime but reads better at the
+    ; FullCleanup call site.
+    If SeverActionsNative.IsYieldMonitored(akActor)
+        SeverActionsNativeExt.Yield_ForceBreak(akActor)
+        SeverActionsNative.Native_SetSurrendered(akActor, false)
+    ElseIf StorageUtil.GetIntValue(akActor, "SeverCombat_WasSurrendered", 0) == 1
+        ; Surrendered but not in monitor (pre-Phase-6 save) — use the legacy
+        ; StorageUtil-driven restore path so old saves don't break.
+        RestoreHostileFactions(akActor, "SeverCombat_RemovedFactions")
+        SeverActionsNative.UnregisterYieldedActor(akActor)
+    Else
+        ; Not surrendered — just make sure they're not stuck in
+        ; SeverSurrenderedFaction (rare edge: ceasefire faction-swap that
+        ; never set WasSurrendered, FullCleanup invoked while still in it).
+        If SeverSurrenderedFaction && akActor.IsInFaction(SeverSurrenderedFaction)
+            akActor.RemoveFromFaction(SeverSurrenderedFaction)
+        EndIf
+        SeverActionsNative.UnregisterYieldedActor(akActor)
     EndIf
-    
-    ; Remove from victim faction (backwards compatibility)
-    If CombatVictimFaction && akActor.IsInFaction(CombatVictimFaction)
-        akActor.RemoveFromFaction(CombatVictimFaction)
+
+    ; Phase 5: if the native monitor is still tracking a ceasefire on this
+    ; actor (e.g. FullCleanup invoked from OnForcedCombatEnded before any
+    ; player hit broke it), tell C++ to restore aggression / factions
+    ; silently. ForceBreak skips the SeverActionsNative_CeasefireBroken
+    ; ModEvent so we don't trigger our own OnCeasefireBroken handler mid-wipe.
+    If SeverActionsNative.Ceasefire_IsMonitored(akActor)
+        SeverActionsNativeExt.Ceasefire_ForceBreak(akActor)
     EndIf
-    
-    ; Remove from surrendered faction if present
-    If SeverSurrenderedFaction && akActor.IsInFaction(SeverSurrenderedFaction)
-        akActor.RemoveFromFaction(SeverSurrenderedFaction)
+
+    ; Legacy: if a pre-Phase-5 save still has the CeasefireFactionSwapped
+    ; flag, restore via the Papyrus path.
+    If StorageUtil.GetIntValue(akActor, "SeverCombat_CeasefireFactionSwapped", 0) == 1
+        RestoreHostileFactions(akActor, "SeverCombat_CeasefireRemovedFactions")
+        StorageUtil.UnsetIntValue(akActor, "SeverCombat_CeasefireFactionSwapped")
     EndIf
-    
+
+    ; Always clear the native surrendered flag, regardless of whether the
+    ; StorageUtil "WasSurrendered" key was set. Belt-and-suspenders against
+    ; partial-state cleanup (crash between SetIntValue and Native_SetSurrendered,
+    ; older save with the native flag set but the Papyrus flag already unset,
+    ; etc.). Native flag stuck true would keep decorators reporting the actor
+    ; as surrendered for the rest of the session.
+    SeverActionsNative.Native_SetSurrendered(akActor, false)
+
     ; Restore aggression - use stored value if available, otherwise default to 1
     Float originalAggression = StorageUtil.GetFloatValue(akActor, "SeverCombat_OriginalAggression", -1.0)
     If originalAggression >= 0.0
@@ -1015,23 +690,20 @@ Function FullCleanup(Actor akActor)
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_CombatTarget")
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_InForcedCombat")
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_OriginalRelationship")
-    StorageUtil.UnsetIntValue(akActor, "SeverCombat_AddedToFaction")
-    StorageUtil.UnsetIntValue(akActor, "SeverCombat_AddedToVictimFaction")
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalAggression")
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalConfidence")
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_CeasefireTime")
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_YieldTime")
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_YieldedTo")
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_ReceivedYieldFrom")
-    StorageUtil.UnsetFloatValue(akActor, "SeverCombat_CooldownEnd")
-    ; Also clear legacy flags if present
-    StorageUtil.UnsetIntValue(akActor, "SeverCombat_RecentCeasefire")
-    
+    SeverActionsNativeExt.Cooldown_Clear(akActor)  ; Phase 6: native-backed (was SeverCombat_CooldownEnd)
+
     ; Clear surrender state
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasSurrendered")
+    StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasNormallyHostile")
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_OriginalFaction")
     StorageUtil.FormListClear(akActor, "SeverCombat_RemovedFactions")
-    
+
     akActor.EvaluatePackage()
     Debug.Trace("[SeverCombat] FullCleanup complete for " + akActor.GetDisplayName())
 EndFunction
@@ -1055,155 +727,59 @@ Event OnPlayerLoadGame()
 
     ; Re-assign yield persistence aliases (ForceRefTo doesn't survive save/load)
     ReassignYieldSlots()
-
-    ; Re-register ceasefire'd actors with native monitor on game load
-    ; (native tracking doesn't persist across save/load — re-register any with NeedsAggroRestore)
-    If CeasefireActor1 && StorageUtil.GetIntValue(CeasefireActor1, "SeverCombat_NeedsAggroRestore", 0) == 1
-        Float origAggro1 = StorageUtil.GetFloatValue(CeasefireActor1, "SeverCombat_OriginalAggression", 1.0)
-        SeverActionsNative.Ceasefire_Register(CeasefireActor1, origAggro1)
-        Debug.Trace("[SeverCombat] Re-registered ceasefire actor1 with native monitor on load")
-    EndIf
-    If CeasefireActor2 && StorageUtil.GetIntValue(CeasefireActor2, "SeverCombat_NeedsAggroRestore", 0) == 1
-        Float origAggro2 = StorageUtil.GetFloatValue(CeasefireActor2, "SeverCombat_OriginalAggression", 1.0)
-        SeverActionsNative.Ceasefire_Register(CeasefireActor2, origAggro2)
-        Debug.Trace("[SeverCombat] Re-registered ceasefire actor2 with native monitor on load")
-    EndIf
+    ; Ceasefire'd actors are restored from the C++ cosave ('CEAS' record in
+    ; CeasefireMonitor); no Papyrus-side re-registration is needed.
+    ; Re-push the faction config in case the cosave was clobbered or the
+    ; load order shifted.
+    PushCeasefireConfigToNative()
 EndEvent
 
 Event OnCeasefireBroken(String eventName, String strArg, Float numArg, Form sender)
-    {Native CeasefireMonitor detected player hit on a ceasefire'd actor.
-     C++ already restored aggression and called EvaluatePackage.
-     We handle Papyrus-side cleanup: restore factions, relationship, clear StorageUtil keys.}
+    {Native CeasefireMonitor detected a player hit on a ceasefire'd actor and
+     already did the heavy lifting in C++: restored Aggression, removed from
+     SeverSurrenderedFaction, re-added the hostile factions, restored the
+     relationship rank vs. the stored partner, called EvaluatePackage.
+
+     This handler exists only to clean up the Papyrus-side StorageUtil keys
+     the prompt template reads, and to clear any legacy keys from saves
+     made before the Phase 5 migration.}
     Actor akActor = sender as Actor
     If !akActor
         Return
     EndIf
 
-    Debug.Trace("[SeverCombat] CeasefireBroken: Player attacked " + akActor.GetDisplayName() + " — restoring combat state")
+    Debug.Trace("[SeverCombat] CeasefireBroken: " + akActor.GetDisplayName() + " — clearing prompt-side state")
 
-    ; Restore hostile factions that were removed during ceasefire
+    ; Legacy keys (Phase 4 and earlier): clear if any old save still has them.
+    ; Phase 5 onward, the C++ side owns the faction list + partner.
     If StorageUtil.GetIntValue(akActor, "SeverCombat_CeasefireFactionSwapped", 0) == 1
-        ; Remove from surrendered faction
-        If SeverSurrenderedFaction
-            akActor.RemoveFromFaction(SeverSurrenderedFaction)
-        EndIf
-
-        ; Restore all hostile factions that were removed
-        Int factionCount = StorageUtil.FormListCount(akActor, "SeverCombat_CeasefireRemovedFactions")
-        Int i = 0
-        While i < factionCount
-            Faction hostileFaction = StorageUtil.FormListGet(akActor, "SeverCombat_CeasefireRemovedFactions", i) as Faction
-            If hostileFaction
-                akActor.AddToFaction(hostileFaction)
-                akActor.SetFactionRank(hostileFaction, 0)
-                Debug.Trace("[SeverCombat] CeasefireBroken: Restored " + akActor.GetDisplayName() + " to " + hostileFaction)
-            EndIf
-            i += 1
-        EndWhile
-
         StorageUtil.FormListClear(akActor, "SeverCombat_CeasefireRemovedFactions")
         StorageUtil.UnsetIntValue(akActor, "SeverCombat_CeasefireFactionSwapped")
     EndIf
-
-    ; Restore original relationship rank
-    Actor partner = StorageUtil.GetFormValue(akActor, "SeverCombat_CeasefirePartner") as Actor
-    If partner
-        Int origRank = StorageUtil.GetIntValue(akActor, "SeverCombat_OriginalRelationship", 0)
-        akActor.SetRelationshipRank(partner, origRank)
-    EndIf
-
-    ; Clean up ceasefire state
-    StorageUtil.UnsetIntValue(akActor, "SeverCombat_NeedsAggroRestore")
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_CeasefirePartner")
+
+    ; Current prompt-side state cleanup.
+    StorageUtil.UnsetIntValue(akActor, "SeverCombat_NeedsAggroRestore")
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalAggression")
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_CeasefireTime")
+    StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasNormallyHostile")
 
-    ; Clear forced combat flag — combat is resuming naturally
+    ; Clear forced combat flag — combat is resuming naturally.
     SeverActionsNative.Native_SetInForcedCombat(akActor, false)
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_InForcedCombat")
-
-    ; Force AI re-evaluation — now hostile again
-    akActor.EvaluatePackage()
-
-    ; Clear references if this was one of our tracked actors
-    If akActor == CeasefireActor1
-        CeasefireActor1 = None
-    ElseIf akActor == CeasefireActor2
-        CeasefireActor2 = None
-    EndIf
 EndEvent
-
-Function RestoreCeasefireAggression(Actor akActor)
-    {Restore a single actor's aggression and factions after ceasefire ends.
-     Only restores if the actor still has the NeedsAggroRestore flag set
-     (i.e., hasn't been re-engaged in new combat or had FullCleanup called).}
-
-    If !akActor
-        Return
-    EndIf
-
-    If StorageUtil.GetIntValue(akActor, "SeverCombat_NeedsAggroRestore", 0) != 1
-        Return
-    EndIf
-
-    ; Restore original aggression
-    Float origAggression = StorageUtil.GetFloatValue(akActor, "SeverCombat_OriginalAggression", -1.0)
-    If origAggression >= 0.0
-        akActor.SetActorValue("Aggression", origAggression)
-        Debug.Trace("[SeverCombat] Restored aggression for " + akActor.GetDisplayName() + " to " + origAggression)
-    Else
-        ; Default to 1 (Aggressive) - standard for most hostile NPCs
-        akActor.SetActorValue("Aggression", 1)
-        Debug.Trace("[SeverCombat] Restored aggression for " + akActor.GetDisplayName() + " to default 1")
-    EndIf
-
-    ; Restore hostile factions removed during ceasefire
-    If StorageUtil.GetIntValue(akActor, "SeverCombat_CeasefireFactionSwapped", 0) == 1
-        If SeverSurrenderedFaction
-            akActor.RemoveFromFaction(SeverSurrenderedFaction)
-        EndIf
-
-        Int factionCount = StorageUtil.FormListCount(akActor, "SeverCombat_CeasefireRemovedFactions")
-        Int i = 0
-        While i < factionCount
-            Faction hostileFaction = StorageUtil.FormListGet(akActor, "SeverCombat_CeasefireRemovedFactions", i) as Faction
-            If hostileFaction
-                akActor.AddToFaction(hostileFaction)
-                akActor.SetFactionRank(hostileFaction, 0)
-            EndIf
-            i += 1
-        EndWhile
-
-        StorageUtil.FormListClear(akActor, "SeverCombat_CeasefireRemovedFactions")
-        StorageUtil.UnsetIntValue(akActor, "SeverCombat_CeasefireFactionSwapped")
-    EndIf
-
-    ; Restore original relationship rank (undo the ceasefire neutral override)
-    Actor partner = StorageUtil.GetFormValue(akActor, "SeverCombat_CeasefirePartner") as Actor
-    If partner
-        Int origRank = StorageUtil.GetIntValue(akActor, "SeverCombat_OriginalRelationship", 0)
-        akActor.SetRelationshipRank(partner, origRank)
-        Debug.Trace("[SeverCombat] Restored relationship rank for " + akActor.GetDisplayName() + " -> " + partner.GetDisplayName() + " to " + origRank)
-    EndIf
-
-    ; Clean up ceasefire-specific state
-    StorageUtil.UnsetIntValue(akActor, "SeverCombat_NeedsAggroRestore")
-    StorageUtil.UnsetFormValue(akActor, "SeverCombat_CeasefirePartner")
-    StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalAggression")
-
-    ; DON'T call EvaluatePackage here - let the NPC naturally decide
-    ; whether to re-engage based on distance and perception
-    ; If the player has walked away during the cooldown, they won't re-aggro
-EndFunction
 
 ; ============================================================================
 ; YIELD BROKEN EVENT HANDLER
 ; ============================================================================
 
 Event OnYieldBroken(string eventName, string strArg, float numArg, Form sender)
-    {Called by native YieldMonitor when a yielded actor takes enough hits to break surrender.
-     C++ already restored aggression and removed from SeverSurrenderedFaction.
-     This handler restores hostile factions, cleans up StorageUtil keys, and fires SkyrimNet event.}
+    {Called by native YieldMonitor when a yielded actor takes enough hits to
+     break surrender. Phase 6: C++ already restored aggression, removed from
+     SeverSurrenderedFaction, AND re-added the hostile factions (data lives
+     in the YieldedActorData entry). This handler only clears prompt-side
+     StorageUtil keys, sets the YieldBroken prompt flag, and fires the
+     SkyrimNet event.}
     Actor akActor = sender as Actor
     If !akActor
         Return
@@ -1211,43 +787,24 @@ Event OnYieldBroken(string eventName, string strArg, float numArg, Form sender)
 
     Debug.Trace("[SeverCombat] YieldBroken: " + akActor.GetDisplayName() + " was attacked after surrendering")
 
-    ; Release yield persistence alias — no longer surrendered
     ClearYieldSlot(akActor)
 
-    ; Restore original hostile factions from StorageUtil (C++ only removed SeverSurrenderedFaction)
-    Int factionCount = StorageUtil.FormListCount(akActor, "SeverCombat_RemovedFactions")
-    Int i = 0
-    While i < factionCount
-        Faction originalFaction = StorageUtil.FormListGet(akActor, "SeverCombat_RemovedFactions", i) as Faction
-        If originalFaction
-            akActor.AddToFaction(originalFaction)
-            akActor.SetFactionRank(originalFaction, 0)
-            Debug.Trace("[SeverCombat] YieldBroken: Restored faction " + originalFaction)
-        EndIf
-        i += 1
-    EndWhile
-
-    ; Clean up surrender-related StorageUtil keys
+    ; Prompt-side state cleanup.
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasSurrendered")
+    StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasNormallyHostile")
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_OriginalFaction")
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalAggression")
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_YieldTime")
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_YieldedTo")
-    StorageUtil.FormListClear(akActor, "SeverCombat_RemovedFactions")
+    StorageUtil.FormListClear(akActor, "SeverCombat_RemovedFactions")  ; legacy
 
-    ; Also clean up the other actor's yield-received data if present
     Actor playerRef = Game.GetPlayer()
     If playerRef
         StorageUtil.UnsetFormValue(playerRef, "SeverCombat_ReceivedYieldFrom")
     EndIf
 
-    ; Set yield-broken flag for prompt awareness
     StorageUtil.SetIntValue(akActor, "SeverCombat_YieldBroken", 1)
 
-    ; Force AI re-evaluate now that factions are restored
-    akActor.EvaluatePackage()
-
-    ; Fire SkyrimNet event
     If playerRef
         SkyrimNetApi.RegisterEvent("yield_broken", \
             akActor.GetDisplayName() + " was attacked after surrendering and is fighting back against " + playerRef.GetDisplayName(), \

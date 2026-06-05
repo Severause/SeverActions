@@ -1,0 +1,46 @@
+customCategory: economy
+name: BuyItem
+description: "The speaker is buying something here and now — coin one way, goods the other, settled in the same breath. A patron paying the barkeep for the meal, a traveler picking up arrows from a fletcher, a hunter handing over pelts and walking off with what they came for."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: BuyItem_Execute
+parameterMapping:
+  - type: speaker
+    name: akBuyer
+    description: the actor handing over the coin to take the goods
+  - type: dynamic
+    name: akSeller
+    description: the actor whose goods are being bought — the merchant at the counter, the fletcher, the trader on the road
+  - type: dynamic
+    name: asItemName
+    description: name of the item the buyer is taking (fuzzy-matched against the seller's personal inventory and, for shopkeepers, their merchant chest)
+  - type: dynamic
+    name: aiQuantity
+    description: how many units of the item (1 for a single piece)
+  - type: dynamic
+    name: aiTotalGold
+    description: the agreed price in gold coins for the whole deal (not per unit)
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

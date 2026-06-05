@@ -1,13 +1,13 @@
 customCategory: arrest
 name: ArrestPlayer
-description: "Confront the player about their existing bounty. Only works if bounty exists — use AddBountyToPlayer first. Under 300g: pay or refuse. Over 300g: submit, resist, bribe, or persuade."
+description: "The guard squares up to the player with a hand on their hilt — 'Hold there, citizen. The hold has a price on your head.' For light bounties the player can settle it on the spot or refuse; for heavier ones (over 300g) they can submit, resist, bribe, or try to talk their way out. Only works if a bounty already stands on the books — run AddBountyToPlayer first if the speaker just witnessed the crime."
 questEditorId: SeverActions
-scriptName: SeverActions_Arrest
+scriptName: SeverActions_ArrestPlayer
 executionFunctionName: ArrestPlayer_Internal
 parameterMapping:
   - type: speaker
     name: akGuard
-    description: Speaker Actor parameter (triggering entity)
+    description: the guard pressing the bounty
 enabled: true
 eligibilityRules:
   - conditions:
@@ -24,52 +24,16 @@ eligibilityRules:
         expectedValue: false
     logicalOperator: "AND"
     required: true
+  # Replaced an 11-condition OR ladder (9 GuardFactionX + JobJarlFaction
+  # + JobHousecarlFaction) with the single native is_guard_or_authority
+  # decorator. Same semantics — see SkyrimNetBridge.h for the cached
+  # faction-pointer set, plus mod-added holds via HoldResolver.
   - conditions:
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWhiterun"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionRiften"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionSolitude"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionHaafingar"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWindhelm"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionMarkarth"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionFalkreath"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionDawnstar"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWinterhold"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "JobJarlFaction"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "JobHousecarlFaction"]
-        comparisonOperator: "=="
-        expectedValue: true
-    logicalOperator: "OR"
+      - decoratorName: "is_guard_or_authority"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
     required: true
   - conditions:
       - decoratorName: "get_faction_rank"
@@ -83,5 +47,12 @@ eligibilityRules:
         arguments: ["currentActor", "OStimExcitementFaction"]
         comparisonOperator: "<"
         expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SeverActions_DispatchFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
     logicalOperator: "AND"
     required: true

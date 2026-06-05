@@ -1,23 +1,24 @@
 customCategory: crafting
 name: BrewPotion
-description: "Brew a potion at the nearest alchemy lab and deliver it to the recipient."
+description: "The speaker heads to the nearest alchemy lab, grinds the ingredients, decants the brew, and hands the finished bottle off to the one who needs it — a healing draught for a wounded friend, a fortifying tonic before a job, an antidote ground out in a back-room apothecary."
 questEditorId: SeverActions
 scriptName: SeverActions_Crafting
 executionFunctionName: BrewPotion_Internal
 parameterMapping:
   - type: speaker
     name: akActor
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor working the mortar and pestle
   - type: dynamic
     name: potionName
-    description: "Potion to brew (e.g. 'health potion', 'fortify smithing')"
+    description: "what's being brewed (e.g. 'health potion', 'fortify smithing')"
   - type: dynamic
     name: akRecipient
-    description: Recipient of the potion
-  - type: static
-    value: 1
+    description: the actor the finished bottle is going to
+  - type: dynamic
     name: itemCount
-    description: Static int parameter
+    description: "how many to brew — leave empty (or 1) for a single bottle. Only use > 1 when the request clearly asks for multiples (e.g. 'brew three healing potions')."
+    optional: true
+    default: 1
 enabled: true
 eligibilityRules:
   - conditions:

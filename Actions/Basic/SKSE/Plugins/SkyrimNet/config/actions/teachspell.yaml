@@ -1,16 +1,16 @@
 customCategory: magic
 name: TeachSpell
-description: "Teach the player a spell that you know. You must actually know the spell to teach it. Refer to your Known Spells list to see what you can teach. Only use this when the player asks you to teach them a specific spell, or during roleplay where spell teaching would make sense."
+description: "The speaker walks the player through one of their own spells — guiding the gestures by a College brazier, sketching the runes in chalk on a tavern table, demonstrating the cantrip until it takes. The speaker must actually know the spell (check their Known Spells list). Only use when the player has asked the speaker to teach a specific spell, or during roleplay where it would naturally come up."
 questEditorId: SeverActions
 scriptName: SeverActions_SpellTeach
 executionFunctionName: TeachSpell
 parameterMapping:
   - type: speaker
     name: akActor
-    description: The NPC who is teaching the spell
+    description: the actor passing the spell on
   - type: dynamic
     name: spellName
-    description: "The name of the spell to teach (e.g. 'Fireball', 'Close Wounds', 'Oakflesh')"
+    description: "the spell being taught (e.g. 'Fireball', 'Close Wounds', 'Oakflesh')"
 enabled: true
 defaultPriority: 5
 eligibilityRules:

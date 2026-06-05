@@ -12,6 +12,7 @@ SeverActions_Combat Property CombatScript Auto
 SeverActions_Outfit Property OutfitScript Auto
 SeverActions_WheelMenu Property WheelMenuScript Auto
 SeverActions_Arrest Property ArrestScript Auto
+SeverActions_ArrestBounty Property BountyScript Auto
 SeverActions_Survival Property SurvivalScript Auto
 SeverActions_FollowerManager Property FollowerManagerScript Auto
 SeverActions_Loot Property LootScript Auto
@@ -114,8 +115,10 @@ int OID_BountyHjaalmarch
 int OID_BountyWinterhold
 int OID_ClearAllBounties
 int OID_ArrestCooldown
-int OID_NPCArrestCooldown
 int OID_PersuasionTimeLimit
+
+; General page - PrismaUI escape hatch
+int OID_UIScale
 
 ; General page - Native DLL toggles
 int OID_DialogueAnimEnabled
@@ -187,6 +190,7 @@ int OID_FM_ConsequenceCooldown
 int OID_FM_AutoAmbientBanter
 int OID_FM_AmbientBanterCooldownMin
 int OID_FM_AmbientBanterCooldownMax
+int OID_FM_QuestAwarenessOutputCap
 int OID_FM_MaxBounty
 int OID_FM_MaxGoldChange
 int[] OID_FM_DismissFollower
@@ -476,6 +480,18 @@ Function DrawGeneralPage()
     AddTextOption("", "Configure SeverActions modules")
     AddTextOption("", "using the pages on the left.")
     AddEmptyOption()
+    ; PrismaUI escape hatch — if Prisma renders too large to reach the
+    ; in-app scale slider, MCM is the fallback. Reads the FollowerManager
+    ; UIScale property (the source of truth for both MCM and the in-app
+    ; slider). Default 1.5x.
+    AddHeaderOption("PrismaUI Display")
+    Float curScale = 1.5
+    If FollowerManagerScript
+        curScale = FollowerManagerScript.UIScale
+    EndIf
+    OID_UIScale = AddSliderOption("UI Scale", curScale, "{2}x")
+    AddEmptyOption()
+
     AddHeaderOption("Native Features")
     OID_DialogueAnimEnabled = AddToggleOption("Dialogue Animations", DialogueAnimEnabled)
     OID_SilenceChance = AddSliderOption("Silence Chance", SilenceChance as Float, "{0}%")
@@ -729,7 +745,6 @@ Function DrawCrimePage()
         AddEmptyOption()
         AddHeaderOption("Settings")
         OID_ArrestCooldown = AddSliderOption("Arrest Cooldown", ArrestScript.ArrestPlayerCooldown, "{0} sec")
-        OID_NPCArrestCooldown = AddSliderOption("NPC Arrest Cooldown", ArrestScript.NPCArrestCooldown, "{0} sec")
         OID_PersuasionTimeLimit = AddSliderOption("Persuasion Time", ArrestScript.PersuasionTimeLimit, "{0} sec")
 
         AddEmptyOption()
@@ -744,8 +759,14 @@ EndFunction
 
 String Function GetBountyDisplayText(Faction akCrimeFaction)
     {Get display text for a bounty amount}
-    If ArrestScript
-        Int bounty = ArrestScript.GetTrackedBounty(akCrimeFaction)
+    If !BountyScript
+        Quest myQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
+        If myQuest
+            BountyScript = myQuest as SeverActions_ArrestBounty
+        EndIf
+    EndIf
+    If BountyScript
+        Int bounty = BountyScript.GetTrackedBounty(akCrimeFaction)
         If bounty > 0
             Return bounty + " gold"
         Else
@@ -852,8 +873,8 @@ Function DrawFollowersPage()
         OID_FM_RelCooldown = AddSliderOption("Relationship Cooldown", FollowerManagerScript.RelationshipCooldown, "{0} sec")
         If OutfitScript
             OID_FM_OutfitLock = AddToggleOption("Outfit Lock System", OutfitScript.OutfitLockEnabled)
-            OID_FM_AutoSwitch = AddToggleOption("Outfit Auto-Switching", SeverActionsNative.SituationMonitor_IsEnabled())
-            OID_FM_StabilityDelay = AddSliderOption("Situation Stability", (SeverActionsNative.SituationMonitor_GetStabilityThreshold() as Float) / 1000.0, "{0} sec")
+            OID_FM_AutoSwitch = AddToggleOption("Outfit Auto-Switching", SeverActionsNativeExt.SituationMonitor_IsEnabled())
+            OID_FM_StabilityDelay = AddSliderOption("Situation Stability", (SeverActionsNativeExt.SituationMonitor_GetStabilityThreshold() as Float) / 1000.0, "{0} sec")
         EndIf
         OID_FM_FrameworkMode = AddMenuOption("Recruitment Mode", FrameworkModeOptions[FollowerManagerScript.FrameworkMode])
         OID_FM_Notifications = AddToggleOption("Show Notifications", FollowerManagerScript.ShowNotifications)
@@ -872,6 +893,7 @@ Function DrawFollowersPage()
         OID_FM_AutoAmbientBanter = AddToggleOption("Ambient NPC Banter", FollowerManagerScript.AutoAmbientBanter)
         OID_FM_AmbientBanterCooldownMin = AddSliderOption("Ambient Banter Min Cooldown", FollowerManagerScript.AmbientBanterCooldownMinHours, "{1} hrs")
         OID_FM_AmbientBanterCooldownMax = AddSliderOption("Ambient Banter Max Cooldown", FollowerManagerScript.AmbientBanterCooldownMaxHours, "{1} hrs")
+        OID_FM_QuestAwarenessOutputCap = AddSliderOption("Quest Awareness Entries", FollowerManagerScript.QuestAwarenessOutputCap as Float, "{0}")
         OID_FM_MaxBounty = AddSliderOption("Max Off-Screen Bounty", FollowerManagerScript.MaxOffScreenBounty as Float, "{0}")
         OID_FM_MaxGoldChange = AddSliderOption("Max Gold Change", FollowerManagerScript.MaxOffScreenGoldChange as Float, "{0}")
         OID_FM_DeathGracePeriod = AddSliderOption("Death Cleanup Delay", FollowerManagerScript.DeathGracePeriodHours, "{0} hrs")
@@ -934,11 +956,15 @@ Function DrawFollowersPage()
                     EndIf
                 EndIf
 
-                ; Outfit lock status (read-only)
-                Int lockActive = StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0)
-                If lockActive == 1
-                    String lockKey = "SeverOutfit_Locked_" + (follower.GetFormID() as String)
-                    Int itemCount = StorageUtil.FormListCount(None, lockKey)
+                ; Outfit lock status (read-only). Phase 3: read from native —
+                ; the StorageUtil mirror could drift behind C++ catalog writes
+                ; that updated lockedItems without going through Papyrus.
+                If SeverActionsNativeExt.Native_Outfit_IsLockActive(follower)
+                    Form[] nativeLocked = SeverActionsNative.Native_Outfit_GetLockedItems(follower)
+                    Int itemCount = 0
+                    If nativeLocked
+                        itemCount = nativeLocked.Length
+                    EndIf
                     AddTextOption("Outfit Lock", "Active (" + itemCount + " items)", OPTION_FLAG_DISABLED)
                 Else
                     AddTextOption("Outfit Lock", "Inactive", OPTION_FLAG_DISABLED)
@@ -1165,8 +1191,8 @@ Event OnOptionSelect(int option)
             SetToggleOptionValue(OID_FM_OutfitLock, OutfitScript.OutfitLockEnabled)
         EndIf
     elseif option == OID_FM_AutoSwitch
-        Bool curEnabled = SeverActionsNative.SituationMonitor_IsEnabled()
-        SeverActionsNative.SituationMonitor_SetEnabled(!curEnabled)
+        Bool curEnabled = SeverActionsNativeExt.SituationMonitor_IsEnabled()
+        SeverActionsNativeExt.SituationMonitor_SetEnabled(!curEnabled)
         StorageUtil.SetIntValue(None, "SeverOutfit_GlobalAutoSwitch", (!curEnabled) as Int)
         SetToggleOptionValue(OID_FM_AutoSwitch, !curEnabled)
     elseif option == OID_FM_PerActorAutoSwitch
@@ -1435,11 +1461,17 @@ EndFunction
 
 Function ClearBountyWithConfirm(Faction akCrimeFaction, String holdName)
     {Clear a specific hold's bounty with confirmation}
-    If !ArrestScript || !akCrimeFaction
+    If !BountyScript
+        Quest myQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
+        If myQuest
+            BountyScript = myQuest as SeverActions_ArrestBounty
+        EndIf
+    EndIf
+    If !ArrestScript || !BountyScript || !akCrimeFaction
         Return
     EndIf
 
-    Int bounty = ArrestScript.GetTrackedBounty(akCrimeFaction)
+    Int bounty = BountyScript.GetTrackedBounty(akCrimeFaction)
     If bounty <= 0
         ShowMessage("You have no bounty in " + holdName + ".", false)
         Return
@@ -1449,7 +1481,7 @@ Function ClearBountyWithConfirm(Faction akCrimeFaction, String holdName)
     Bool doConfirm = ShowMessage(confirmMsg, true, "Yes", "No")
 
     If doConfirm
-        ArrestScript.ClearTrackedBounty(akCrimeFaction)
+        BountyScript.ClearTrackedBounty(akCrimeFaction)
         ForcePageReset()
         Debug.Notification("Bounty cleared in " + holdName)
     EndIf
@@ -1457,21 +1489,27 @@ EndFunction
 
 Function ClearAllBountiesWithConfirm()
     {Clear all bounties in all holds with confirmation}
-    If !ArrestScript
+    If !BountyScript
+        Quest myQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
+        If myQuest
+            BountyScript = myQuest as SeverActions_ArrestBounty
+        EndIf
+    EndIf
+    If !ArrestScript || !BountyScript
         Return
     EndIf
 
     ; Check if there are any bounties to clear
     Int totalBounty = 0
-    totalBounty += ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionWhiterun)
-    totalBounty += ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionRift)
-    totalBounty += ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionHaafingar)
-    totalBounty += ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionEastmarch)
-    totalBounty += ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionReach)
-    totalBounty += ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionFalkreath)
-    totalBounty += ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionPale)
-    totalBounty += ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionHjaalmarch)
-    totalBounty += ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionWinterhold)
+    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionWhiterun)
+    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionRift)
+    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionHaafingar)
+    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionEastmarch)
+    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionReach)
+    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionFalkreath)
+    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionPale)
+    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionHjaalmarch)
+    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionWinterhold)
 
     If totalBounty <= 0
         ShowMessage("You have no bounties in any hold.", false)
@@ -1482,15 +1520,15 @@ Function ClearAllBountiesWithConfirm()
     Bool doConfirm = ShowMessage(confirmMsg, true, "Yes", "No")
 
     If doConfirm
-        ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionWhiterun)
-        ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionRift)
-        ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionHaafingar)
-        ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionEastmarch)
-        ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionReach)
-        ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionFalkreath)
-        ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionPale)
-        ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionHjaalmarch)
-        ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionWinterhold)
+        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionWhiterun)
+        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionRift)
+        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionHaafingar)
+        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionEastmarch)
+        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionReach)
+        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionFalkreath)
+        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionPale)
+        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionHjaalmarch)
+        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionWinterhold)
         ForcePageReset()
         Debug.Notification("All bounties cleared!")
     EndIf
@@ -1735,11 +1773,6 @@ Event OnOptionSliderOpen(int option)
         SetSliderDialogDefaultValue(60.0)
         SetSliderDialogRange(0.0, 300.0)
         SetSliderDialogInterval(5.0)
-    elseif option == OID_NPCArrestCooldown
-        SetSliderDialogStartValue(ArrestScript.NPCArrestCooldown)
-        SetSliderDialogDefaultValue(300.0)
-        SetSliderDialogRange(0.0, 600.0)
-        SetSliderDialogInterval(15.0)
     elseif option == OID_PersuasionTimeLimit
         SetSliderDialogStartValue(ArrestScript.PersuasionTimeLimit)
         SetSliderDialogDefaultValue(90.0)
@@ -1750,6 +1783,16 @@ Event OnOptionSliderOpen(int option)
         SetSliderDialogDefaultValue(50.0)
         SetSliderDialogRange(0.0, 100.0)
         SetSliderDialogInterval(5.0)
+
+    elseif option == OID_UIScale
+        Float startScale = 1.5
+        If FollowerManagerScript
+            startScale = FollowerManagerScript.UIScale
+        EndIf
+        SetSliderDialogStartValue(startScale)
+        SetSliderDialogDefaultValue(1.5)
+        SetSliderDialogRange(0.7, 2.0)
+        SetSliderDialogInterval(0.05)
 
     elseif option == OID_SpellFailDifficulty
         if SpellTeachScript
@@ -1903,7 +1946,7 @@ Event OnOptionSliderOpen(int option)
     elseif option == OID_FM_OffScreenCooldownMax
         If FollowerManagerScript
             SetSliderDialogStartValue(FollowerManagerScript.OffScreenLifeCooldownMaxHours)
-            SetSliderDialogDefaultValue(40.0)
+            SetSliderDialogDefaultValue(72.0)
             SetSliderDialogRange(6.0, 96.0)
             SetSliderDialogInterval(1.0)
         EndIf
@@ -1928,6 +1971,13 @@ Event OnOptionSliderOpen(int option)
             SetSliderDialogRange(2.0, 48.0)
             SetSliderDialogInterval(1.0)
         EndIf
+    elseif option == OID_FM_QuestAwarenessOutputCap
+        If FollowerManagerScript
+            SetSliderDialogStartValue(FollowerManagerScript.QuestAwarenessOutputCap as Float)
+            SetSliderDialogDefaultValue(5.0)
+            SetSliderDialogRange(1.0, 15.0)
+            SetSliderDialogInterval(1.0)
+        EndIf
     elseif option == OID_FM_MaxBounty
         If FollowerManagerScript
             SetSliderDialogStartValue(FollowerManagerScript.MaxOffScreenBounty as Float)
@@ -1950,7 +2000,7 @@ Event OnOptionSliderOpen(int option)
             SetSliderDialogInterval(1.0)
         EndIf
     elseif option == OID_FM_StabilityDelay
-        SetSliderDialogStartValue((SeverActionsNative.SituationMonitor_GetStabilityThreshold() as Float) / 1000.0)
+        SetSliderDialogStartValue((SeverActionsNativeExt.SituationMonitor_GetStabilityThreshold() as Float) / 1000.0)
         SetSliderDialogDefaultValue(5.0)
         SetSliderDialogRange(3.0, 15.0)
         SetSliderDialogInterval(1.0)
@@ -1997,9 +2047,6 @@ Event OnOptionSliderAccept(int option, float value)
     elseif option == OID_ArrestCooldown
         ArrestScript.ArrestPlayerCooldown = value
         SetSliderOptionValue(OID_ArrestCooldown, value, "{0} sec")
-    elseif option == OID_NPCArrestCooldown
-        ArrestScript.NPCArrestCooldown = value
-        SetSliderOptionValue(OID_NPCArrestCooldown, value, "{0} sec")
     elseif option == OID_PersuasionTimeLimit
         ArrestScript.PersuasionTimeLimit = value
         SetSliderOptionValue(OID_PersuasionTimeLimit, value, "{0} sec")
@@ -2007,6 +2054,16 @@ Event OnOptionSliderAccept(int option, float value)
         SilenceChance = value as Int
         StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", SilenceChance)
         SetSliderOptionValue(OID_SilenceChance, value, "{0}%")
+
+    elseif option == OID_UIScale
+        ; Write the property + StorageUtil mirror. The PrismaUI gatherer
+        ; reads the property on next page-data fetch, so the new scale
+        ; takes effect the next time the player opens Prisma.
+        If FollowerManagerScript
+            FollowerManagerScript.UIScale = value
+            StorageUtil.SetFloatValue(None, "SeverActions_UIScale", value)
+        EndIf
+        SetSliderOptionValue(OID_UIScale, value, "{2}x")
 
     elseif option == OID_SpellFailDifficulty
         if SpellTeachScript
@@ -2175,6 +2232,20 @@ Event OnOptionSliderAccept(int option, float value)
             EndIf
             SetSliderOptionValue(OID_FM_AmbientBanterCooldownMax, value, "{1} hrs")
         EndIf
+    elseif option == OID_FM_QuestAwarenessOutputCap
+        If FollowerManagerScript
+            Int newCap = value as Int
+            If newCap < 1
+                newCap = 1
+            ElseIf newCap > 15
+                newCap = 15
+            EndIf
+            FollowerManagerScript.QuestAwarenessOutputCap = newCap
+            ; Push to C++ immediately so the next prompt render uses the new cap
+            ; without waiting for a game reload's boot sync.
+            SeverActionsNative.Native_QuestAwareness_SetOutputCap(newCap)
+            SetSliderOptionValue(OID_FM_QuestAwarenessOutputCap, newCap as Float, "{0}")
+        EndIf
     elseif option == OID_FM_MaxBounty
         If FollowerManagerScript
             FollowerManagerScript.MaxOffScreenBounty = value as Int
@@ -2191,7 +2262,7 @@ Event OnOptionSliderAccept(int option, float value)
             SetSliderOptionValue(OID_FM_DeathGracePeriod, value, "{0} hrs")
         EndIf
     elseif option == OID_FM_StabilityDelay
-        SeverActionsNative.SituationMonitor_SetStabilityThreshold((value * 1000.0) as Int)
+        SeverActionsNativeExt.SituationMonitor_SetStabilityThreshold((value * 1000.0) as Int)
         SetSliderOptionValue(OID_FM_StabilityDelay, value, "{0} sec")
 
     ; Per-follower relationship sliders
@@ -2229,6 +2300,8 @@ Event OnOptionHighlight(int option)
         SetInfoText("Enable or disable conversation animations on NPCs during SkyrimNet dialogue. When enabled, NPCs will use vanilla Skyrim talking gestures while conversing.")
     elseif option == OID_SilenceChance
         SetInfoText("Probability (0-100%) that silence is offered as an option when choosing the next speaker. 0% = NPCs always speak, 100% = silence always available. Default: 50%")
+    elseif option == OID_UIScale
+        SetInfoText("PrismaUI render scale. Use this if Prisma renders too large for your screen and you can't reach the in-app Settings slider. Takes effect the next time you open PrismaUI. Range 0.7-2.0, default 1.5.")
     elseif option == OID_BookReadMode
         SetInfoText("How NPCs read books aloud. Verbatim: reads word-for-word (takes longer). Summarize: gives a summary and shares their in-character thoughts. Default: Read Aloud.")
 
@@ -2313,9 +2386,6 @@ Event OnOptionHighlight(int option)
 
     elseif option == OID_ArrestCooldown
         SetInfoText("Cooldown in seconds before guards can use the ArrestPlayer action again. Prevents guards from spamming arrest during persuasion. Set to 0 to disable. Default: 60 seconds.")
-
-    elseif option == OID_NPCArrestCooldown
-        SetInfoText("Cooldown in seconds before the ArrestNPC and Dispatch actions can be used again. Set to 0 to disable. Default: 300 seconds (5 minutes).")
 
     elseif option == OID_PersuasionTimeLimit
         SetInfoText("Time in seconds the player has to convince the guard during the persuasion phase. After this time expires, the guard will demand a decision. Default: 90 seconds.")
@@ -2402,6 +2472,8 @@ Event OnOptionHighlight(int option)
         SetInfoText("Minimum game hours between ambient NPC banter cycles. The cooldown is global, not per-NPC. Default: 3 hours.")
     elseif option == OID_FM_AmbientBanterCooldownMax
         SetInfoText("Maximum game hours between ambient NPC banter cycles. Each cycle picks a random cooldown between min and max. Default: 7 hours.")
+    elseif option == OID_FM_QuestAwarenessOutputCap
+        SetInfoText("Maximum quest awareness entries followers see in dialogue context per render. Newest entries fill the budget first; completed quests with memories are skipped automatically. The per-follower storage cap (30) is unaffected — this only controls how many reach the LLM. Range: 1-15. Default: 5.")
     elseif option == OID_FM_MaxBounty
         SetInfoText("Maximum cumulative bounty a follower can accumulate from off-screen crime events. Prevents runaway bounties. Default: 1000 gold.")
     elseif option == OID_FM_MaxGoldChange
@@ -2496,6 +2568,12 @@ Event OnOptionDefault(int option)
         SilenceChance = 50
         StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", 50)
         SetSliderOptionValue(OID_SilenceChance, 50.0, "{0}%")
+    elseif option == OID_UIScale
+        If FollowerManagerScript
+            FollowerManagerScript.UIScale = 1.5
+            StorageUtil.SetFloatValue(None, "SeverActions_UIScale", 1.5)
+        EndIf
+        SetSliderOptionValue(OID_UIScale, 1.5, "{2}x")
     elseif option == OID_BookReadMode
         If LootScript
             LootScript.BookReadMode = 0
@@ -2641,12 +2719,6 @@ Event OnOptionDefault(int option)
             SetSliderOptionValue(OID_ArrestCooldown, 60.0, "{0} sec")
         EndIf
 
-    elseif option == OID_NPCArrestCooldown
-        If ArrestScript
-            ArrestScript.NPCArrestCooldown = 300.0
-            SetSliderOptionValue(OID_NPCArrestCooldown, 300.0, "{0} sec")
-        EndIf
-
     elseif option == OID_PersuasionTimeLimit
         If ArrestScript
             ArrestScript.PersuasionTimeLimit = 90.0
@@ -2738,11 +2810,11 @@ Event OnOptionDefault(int option)
             SetToggleOptionValue(OID_FM_OutfitLock, true)
         EndIf
     elseif option == OID_FM_AutoSwitch
-        SeverActionsNative.SituationMonitor_SetEnabled(true)
+        SeverActionsNativeExt.SituationMonitor_SetEnabled(true)
         StorageUtil.SetIntValue(None, "SeverOutfit_GlobalAutoSwitch", 1)
         SetToggleOptionValue(OID_FM_AutoSwitch, true)
     elseif option == OID_FM_StabilityDelay
-        SeverActionsNative.SituationMonitor_SetStabilityThreshold(5000)
+        SeverActionsNativeExt.SituationMonitor_SetStabilityThreshold(5000)
         SetSliderOptionValue(OID_FM_StabilityDelay, 5.0, "{0} sec")
     elseif option == OID_FM_PerActorAutoSwitch
         If CachedManagedFollowers && SelectedCompanionIdx < CachedManagedFollowers.Length
@@ -2820,8 +2892,8 @@ Event OnOptionDefault(int option)
         EndIf
     elseif option == OID_FM_OffScreenCooldownMax
         If FollowerManagerScript
-            FollowerManagerScript.OffScreenLifeCooldownMaxHours = 40.0
-            SetSliderOptionValue(OID_FM_OffScreenCooldownMax, 40.0, "{1} hrs")
+            FollowerManagerScript.OffScreenLifeCooldownMaxHours = 72.0
+            SetSliderOptionValue(OID_FM_OffScreenCooldownMax, 72.0, "{1} hrs")
         EndIf
     elseif option == OID_FM_OffScreenConsequences
         If FollowerManagerScript

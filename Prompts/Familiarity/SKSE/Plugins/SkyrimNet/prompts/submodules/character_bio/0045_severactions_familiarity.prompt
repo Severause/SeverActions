@@ -1,14 +1,21 @@
 {% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "target" %}
 {# Familiarity — what this NPC knows about the player. Sources:                 #}
-{#   player_familiarity (tier + interactions), an LLM-generated per-NPC blurb   #}
-{#   regenerated on first dialogue and every 100 exchanges thereafter.          #}
-{#   Blurb is produced by sever_reputation_assess.prompt (uses                  #}
-{#   get_world_knowledge as raw material). We deliberately do NOT pull world    #}
-{#   knowledge directly here — SkyrimNet's conditional-knowledge prompt         #}
-{#   injects it per-character, and duplicating would double-feed the LLM.       #}
+{#   player_familiarity (tier + interactions + lastSeenDaysAgo), an LLM-        #}
+{#   generated per-NPC blurb regenerated on first dialogue and every 100        #}
+{#   exchanges thereafter. Blurb is produced by sever_reputation_assess.prompt. #}
+{#                                                                              #}
+{#   World knowledge is pulled here SOLELY to gate name-recognition: if the     #}
+{#   player's name appears in any world-knowledge entry visible to this NPC     #}
+{#   (per-character condition already evaluated by SkyrimNet), we let them      #}
+{#   use the name even at tier=stranger. The world-knowledge CONTENT itself     #}
+{#   is injected separately by SkyrimNet's own conditional-knowledge prompt —   #}
+{#   we never re-render it here.                                                #}
 {% if not is_follower(actorUUID) and not is_player(actorUUID) %}
 {% set familiarity = player_familiarity(actorUUID) %}
 {% if familiarity %}
+{# World-knowledge name gate. Substring test against the per-NPC-filtered text. #}
+{% set wk_text = get_world_knowledge(actorUUID) %}
+{% set knows_name_via_world = wk_text and player.name in wk_text %}
 
 {# ═══════════════════════════════════════════════════════════════════ #}
 {# SECTION 0: TEMPORAL CONTEXT — how long since last encounter        #}
@@ -16,12 +23,12 @@
 
 {% set days_ago = familiarity.lastSeenDaysAgo %}
 {% set time_desc = "" %}
-{% if days_ago and days_ago > 1 %}
+{% if days_ago and days_ago >= 1 %}
 {% if days_ago > 30 %}{% set time_desc = "many weeks" %}
 {% elif days_ago > 14 %}{% set time_desc = "a few weeks" %}
 {% elif days_ago > 7 %}{% set time_desc = "about a week" %}
 {% elif days_ago > 3 %}{% set time_desc = "several days" %}
-{% elif days_ago > 1 %}{% set time_desc = "a day or two" %}
+{% else %}{% set time_desc = "a day or two" %}
 {% endif %}
 {% endif %}
 
@@ -52,7 +59,16 @@
 {% set rep_blurb = papyrus_util("GetStringValue", actorUUID, "SeverFamiliarity_Blurb", "") %}
 {% set has_blurb = rep_blurb != "" %}
 
-{% set knows_name = familiarity.tier == "met_once" or familiarity.tier == "acquainted" or familiarity.tier == "familiar" or familiarity.heardName %}
+{# Name-recognition gate. Multiple sources can establish it:                   #}
+{#   - Tier >= met_once: heard it during dialogue.                             #}
+{#   - knows_name_via_world: an authored world-knowledge entry mentions the    #}
+{#     player and reaches this NPC (reputation).                               #}
+{#   - has_blurb: a stored impression exists, which means the NPC has at some  #}
+{#     point in this save's history accumulated enough signal to warrant one.  #}
+{#     Tier can drop back to "stranger" if SkyrimNet's recent dialogue window  #}
+{#     rolls off (e.g., long absence, parallel-timeline saves), but the blurb  #}
+{#     itself testifies that recognition was earned — don't gaslight the NPC.  #}
+{% set knows_name = familiarity.tier == "met_once" or familiarity.tier == "acquainted" or familiarity.tier == "familiar" or knows_name_via_world or has_blurb %}
 
 {# ═══════════════════════════════════════════════════════════════════ #}
 {# SECTION 3: OUTPUT                                                  #}
@@ -64,11 +80,16 @@
 {% if shared_guild != "" %}
 {# Shared-guild variants — relationship framing only, no fame titles #}
 {% if familiarity.tier == "stranger" %}
-You are both members of {{ shared_guild }}, but you have never spoken to this person directly.
+{% if has_blurb %}
+You are both members of {{ shared_guild }} and you have a settled impression of {{ player.name }} (rendered below), even though it has been a while since you last spoke directly.
+- You can speak with the warmth of guild connection plus the weight of what you already think of them.
+- Let your impression shape your manner, not just the bare fact of shared membership.
+{% else %}
+You are both members of {{ shared_guild }}, but you have not had a direct conversation with this person.
 - You may have seen them around or heard their name mentioned by other members.
-- You do not know them personally — treat them as a fellow member you haven't met yet, not as a friend.
-- You can be warmer than you would with a complete outsider, but don't assume familiarity beyond the guild connection.
-{% if familiarity.heardName %}- You overheard {{ familiarity.heardFrom }} mention this person by name recently.
+- Treat them as a fellow member you haven't met properly yet — warmer than a complete outsider, but don't assume familiarity beyond the guild connection.
+{% if knows_name_via_world %}- The name **{{ player.name }}** is one you have heard tied to deeds beyond the guild. You may use it, but you do not know them personally — only their reputation.
+{% endif %}
 {% endif %}
 {% elif familiarity.tier == "passing" %}
 You are both members of {{ shared_guild }} and have exchanged words before, but you don't know this person's name.
@@ -101,15 +122,21 @@ You are both members of {{ shared_guild }} and know each other well after many c
 {% else %}
 {# Standard (non-shared-guild) variants #}
 {% if familiarity.tier == "stranger" %}
-You have NEVER spoken to this person before. This is your first interaction.
-- You do not know their name unless you have a specific lore reason (someone introduced them, or you overheard their name).
-- Do not act familiar. No warmth, no inside references, no assumptions about their character.
-- React as you would to any stranger: cautious, polite, suspicious, curious, or indifferent — whatever fits your personality and role.
-- If they tell you their name, you can use it going forward, but you are hearing it for the first time.
-- Address them by what you can observe — their gear, bearing, or a generic greeting that fits your personality.
-{% if familiarity.heardName %}- You overheard {{ familiarity.heardFrom }} mention this person by name recently. You may use their name cautiously, but you do not know them personally — you only caught a name in passing.
+{% if has_blurb %}
+You have not had a recent direct conversation with this person, but you do have a settled impression of them (rendered below). They are not a stranger to you in the deeper sense — at some point you accumulated enough exposure to form an opinion, even if it has been a long time since you actually spoke.
+- You may use the name **{{ player.name }}** if it fits your role and the situation.
+- Let your impression of them shape your manner — warm, wary, dismissive, whatever fits the relationship as it stands.
+- If your character description establishes a prior relationship, that backstory takes precedence.
+{% elif knows_name_via_world %}
+You have never spoken to this person, but the name **{{ player.name }}** is one you have heard tied to deeds beyond their own circle.
+- Use the name if it fits, but you do not know them personally — only their reputation. Recognition is provisional until they confirm.
+- Let what you know of {{ player.name }} (already in your context) shape your manner — awed, wary, deferential, dismissive, whatever fits the deeds and your role.
+- If your character description establishes a prior relationship with this person, that backstory takes precedence.
+{% else %}
+You have not spoken with this person directly. Default to a stranger's manner in keeping with your personality and role.
+- Default to indirect address (their bearing, gear, role) unless an introduction or your character description establishes the name.
+- If memories, recent events, or other context elsewhere in this prompt clearly establish recognition, trust that signal — but don't invent familiarity that isn't grounded there.
 {% endif %}
-- If your character description establishes a prior relationship with this person, that backstory takes precedence over this assessment.
 {% elif familiarity.tier == "passing" %}
 You have spoken to this person before, but you do not know their name.
 - You may recognize their face or voice from a previous encounter.

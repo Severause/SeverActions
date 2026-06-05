@@ -2,7 +2,7 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
 
-    <moduleName>SeverActions - SkyrimNet Action Pack v2.2</moduleName>
+    <moduleName>SeverActions - SkyrimNet Action Pack v3.0</moduleName>
 
     <requiredInstallFiles>
         <folder source="00 Core" destination="" priority="0"/>
@@ -73,6 +73,24 @@ Allows NPCs to engage or disengage from combat.</description>
                             </typeDescriptor>
                         </plugin>
 
+                        <plugin name="Brawl Actions">
+                            <description>Ritual fist-fight challenges:
+• Challenge Brawl - Throw down the gauntlet, picks a target and starts a wait state
+• Accept Brawl - Take an incoming challenge (or start one directly from dialogue)
+• Decline Brawl - Refuse an incoming challenge
+• Forfeit Brawl - Yield mid-fight to end the brawl peacefully
+
+Non-lethal: NPCs are routed through DGIntimidateFaction so brawl damage triggers bleedout instead of death. Weapons and spells are stripped for the duration and restored when the fight ends.
+
+Works against the player AND between any two NPCs (tavern brawls). Includes a non-pausing PrismaUI overlay for the player-target challenge popup.</description>
+                            <files>
+                                <folder source="Actions/Brawl" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
+                            </typeDescriptor>
+                        </plugin>
+
                         <plugin name="Outfit Actions">
                             <description>Clothing and armor management:
 • Equip Armor - Equip one or more items from inventory by name (comma-separate for multiple)
@@ -116,9 +134,10 @@ Allows NPCs to use chairs, beds, and other furniture.</description>
 • Add to Debt - Add charges to existing debts (e.g. "another round on my tab")
 
 Full debt tracking with credit limits, due dates, recurring charges, auto-growth from item gifts, and automatic guard reporting when debts go severely overdue.
-Install with Merchant Prompts for full economy awareness including debt context.</description>
+Includes the debt-context prompt so NPCs are aware of debts they're involved in.</description>
                             <files>
                                 <folder source="Actions/Economy" destination="" priority="1"/>
+                                <folder source="Prompts/Economy-Core" destination="" priority="1"/>
                             </files>
                             <typeDescriptor>
                                 <type name="Optional"/>
@@ -130,10 +149,12 @@ Install with Merchant Prompts for full economy awareness including debt context.
 • Craft Item (smithing/smelting)
 • Brew Potion (alchemy)
 • Cook Meal (cooking)
+• Commission Item / Collect Commission (deferred orders — smith forges it over a few days, player returns to collect)
 
-Allows NPCs to craft items at workbenches, alchemy labs, and cooking pots.</description>
+Allows NPCs to craft items at workbenches, alchemy labs, and cooking pots, and to take deferred commissions for later pickup. Includes the workshop-commission prompt so smiths are aware of orders they're holding.</description>
                             <files>
                                 <folder source="Actions/Crafting" destination="" priority="1"/>
+                                <folder source="Prompts/Crafting" destination="" priority="1"/>
                             </files>
                             <typeDescriptor>
                                 <type name="Optional"/>
@@ -198,8 +219,7 @@ Install with Follower Prompts for full companion awareness.</description>
                     <plugins order="Explicit">
 
                         <plugin name="Core Awareness Prompts">
-                            <description>Core NPC awareness and action selection:
-• Enhanced Action Selector - Improved action matching with full exchange context and parameter schemas
+                            <description>Core NPC awareness submodules:
 • Known Spells - NPCs know what spells they have
 • Gold Awareness - NPCs know their gold amount
 • Inventory Awareness - NPCs know their items
@@ -207,7 +227,7 @@ Install with Follower Prompts for full companion awareness.</description>
 • Nearby Objects - NPCs aware of surroundings (items, flora, furniture)
 • Book Reading Rules - Prevents NPCs from fabricating book content
 
-Recommended — includes the action selector needed for all SeverActions action YAMLs.</description>
+Recommended — these character_bio submodules are referenced by most SeverActions actions and prompts.</description>
                             <files>
                                 <folder source="Prompts/Core" destination="" priority="1"/>
                             </files>
@@ -242,6 +262,21 @@ Recommended for immersive NPC interactions. Without this, NPCs have no concept o
 Helps NPCs respond appropriately during fights.</description>
                             <files>
                                 <folder source="Prompts/Combat" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Brawl Awareness Prompt">
+                            <description>Brawl context:
+• Pending Challenge Awareness - NPCs know when they've been challenged or have challenged someone
+• Active Brawl Awareness - Active fighters know they're in a fist-fight, must keep it to fists
+• Recent Brawl Memory - Both fighters reference the outcome briefly after the fight ends
+
+Composed entirely in C++ via the sever_brawl_state decorator — fires only for actors actually involved in a brawl right now. Install alongside Brawl Actions for the full fist-fight flow.</description>
+                            <files>
+                                <folder source="Prompts/Brawl" destination="" priority="1"/>
                             </files>
                             <typeDescriptor>
                                 <type name="Recommended"/>
@@ -295,30 +330,16 @@ Install with Follower Actions for the full companion system.</description>
                         </plugin>
 
                         <plugin name="Group Meeting Awareness">
-                            <description>Group conversation awareness for traveling companions:
-• NPCs know which other companions are nearby
-• Scales naturally from duo to large group
-• Keeps dialogue conversational — NPCs speak to whoever they're engaging with, use names when it makes sense, and don't force checklist-style participation
+                            <description>Group conversation awareness for traveling parties:
+• Each follower sees the rest of the active party in their system_head prompt
+• Detects party members via SkyrimNet's own primitives (is_follower / is_in_package) — no SeverActions factions required
+• Mirrors upstream tag vocabulary: COMPANION / ENGAGED / IN SCENE
+• In-scene party members surface in a separate sub-list so the LLM knows not to address them
+• Honors the dashboard's "tag engaged" toggle so it stays off when you turn engagement tagging off globally
 
 Recommended if you travel with multiple followers. Install with Follower Prompts for full companion awareness.</description>
                             <files>
                                 <folder source="Prompts/GroupMeeting" destination="" priority="1"/>
-                            </files>
-                            <typeDescriptor>
-                                <type name="Recommended"/>
-                            </typeDescriptor>
-                        </plugin>
-
-                        <plugin name="Dialogue Style — Natural Speech">
-                            <description>Installs two prompts that shape how NPCs speak in conversation:
-
-• Personality — NPCs speak naturally with varied sentence length, filler words, hesitation, and mundane lines. Less theatrical, more human. Different backgrounds produce different speech patterns (a warrior sounds different from a mage).
-
-• Conversation Flow — Guides natural conversation rhythm. NPCs vary between short and long responses, don't fixate on one topic across multiple lines, use reactions before opinions, and let conversations end naturally.
-
-If you prefer SkyrimNet's default dialogue style or use your own custom prompts, skip this. These prompts are opinionated and change how ALL NPCs talk, not just companions.</description>
-                            <files>
-                                <folder source="Prompts/DialogueStyle" destination="" priority="1"/>
                             </files>
                             <typeDescriptor>
                                 <type name="Recommended"/>
@@ -332,12 +353,11 @@ If you prefer SkyrimNet's default dialogue style or use your own custom prompts,
                     <plugins order="Explicit">
 
                         <plugin name="Merchant Prompt - Show Anywhere">
-                            <description>Merchant inventory and debt awareness:
+                            <description>Merchant inventory awareness:
 • Merchant Inventory - Merchants display their inventory and pricing at all times, regardless of location
-• Debt Context - NPCs involved in debts see their financial obligations (who owes what, due dates, credit limits)
 
 Use this if you want merchants to always be ready to trade no matter where you encounter them.
-Includes debt awareness for the Economy Actions debt system.</description>
+(Debt context is bundled with Economy Actions itself, so it is included regardless of this choice.)</description>
                             <files>
                                 <folder source="Prompts/Economy-Anywhere" destination="" priority="1"/>
                             </files>
@@ -347,12 +367,11 @@ Includes debt awareness for the Economy Actions debt system.</description>
                         </plugin>
 
                         <plugin name="Merchant Prompt - Location Restricted">
-                            <description>Merchant inventory and debt awareness:
+                            <description>Merchant inventory awareness:
 • Merchant Inventory - Merchants only display their inventory when inside recognized shop locations (inns, stores, market stalls, etc.)
-• Debt Context - NPCs involved in debts see their financial obligations (who owes what, due dates, credit limits)
 
 More immersive - merchants won't try to sell you things while walking down the road.
-Includes debt awareness for the Economy Actions debt system.</description>
+(Debt context is bundled with Economy Actions itself, so it is included regardless of this choice.)</description>
                             <files>
                                 <folder source="Prompts/Economy-LocationOnly" destination="" priority="1"/>
                             </files>
@@ -389,6 +408,29 @@ The patch adds conditions to all 7 AIO flee packages:
 Requires: AI Overhaul SSE (any version)</description>
                             <files>
                                 <folder source="Patches/AI Overhaul" destination="" priority="2"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                        <plugin name="Daegon Kaekiri Outfit Patch">
+                            <description>Replaces two Daegon scripts so SeverActions can manage her outfit.
+
+Daegon's mod ships re-equip enforcement that fights SeverActions outfit actions:
+• k101PlayerAliasLoaderScript::Initialize re-applies her default outfit on every load
+• k101DaegonQuestAliasScript::OnItemRemoved / OnObjectUnequipped re-add + re-equip outfit pieces with preventRemoval=True
+
+Without this patch, SeverActions Undress/Equip/Save Preset actions silently fail on Daegon — her default clothes always come back on save load.
+
+The patch checks SeverActions_FollowerFaction at runtime via GetFormFromFile (no master dependency added). If Daegon is tracked as a SeverActions follower, the enforcement hooks skip and SeverActions owns her outfit. Otherwise her mod behaves identically.
+
+Brawls against Daegon: this patch does NOT cleanly fix brawls. Daegon's outfit enforcement re-equips her dagger faster than SeverActions can strip it, even with SeverBrawl_Active guards added. The conflict appears to bypass the patch — likely because her dagger is enforced through a script path we don't yet understand. Instead, SeverActions auto-detects the re-equip war after 3 attempts and whitelists her dagger for that brawl — Daegon fights with her dagger, but the brawl still resolves through DGIntimidateFaction bleedout routing.
+
+Replaces: k101DaegonQuestAliasScript.pex + k101PlayerAliasLoaderScript.pex from Daegon Kaekiri.
+Requires: Daegon Kaekiri by Kukielle (Nexus 112097). Install AFTER it (higher MO2 priority).</description>
+                            <files>
+                                <folder source="Patches/Daegon Kaekiri" destination="" priority="2"/>
                             </files>
                             <typeDescriptor>
                                 <type name="Optional"/>
@@ -495,6 +537,50 @@ Requires Fertility Mode mod.</description>
                             </files>
                             <typeDescriptor>
                                 <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
+                    </plugins>
+                </group>
+
+            </optionalFileGroups>
+        </installStep>
+
+        <!-- Page 5: Sever's Hearth (Camp System) -->
+        <installStep name="Sever's Hearth (Camp System)">
+            <optionalFileGroups order="Explicit">
+
+                <group name="Optional: bundled camp system" type="SelectAny">
+                    <plugins order="Explicit">
+
+                        <plugin name="Sever's Hearth (Camp System)">
+                            <description>AI-first campfire system that integrates with SeverActions:
+• Pitch a camp anywhere with "let's camp here"
+• Followers route to the active camp via the new TravelToCamp pathway
+• Camp time + distance, occupancy, and threat-nearby warnings shown on the Survival page
+• Survival needs (hunger / fatigue / cold) restore while sandboxing at the fire
+• ModEvent buttons on the Survival page for Break Camp / Travel to Camp
+
+Self-contained (no Campfire dependency). Adds:
+• SeversHearth.esp (ESL-flagged, FormID 0x800-0xFFF)
+• SeversHearthNative.dll + .toml (SKSE plugin)
+• SeversHearth_Camp Papyrus script + SeversHearth.seq
+• Camp action YAMLs: EstablishCamp, BreakCamp, GoToCamp
+
+Recommended if you want camping integrated into the SeverActions experience.</description>
+                            <files>
+                                <!-- FOMOD <folder source=X destination=Y> strips X and lays
+                                     content at Y. One entry per Hearth subdir so each prefix
+                                     gets stripped to Skyrim's Data root — a single entry on
+                                     "99 Sever's Hearth" would leave 00 Core/Actions/Prompts/
+                                     literally in the mod, hiding the ESP from MO2's plugin list
+                                     and putting every other file in the wrong place. -->
+                                <folder source="99 Sever's Hearth/00 Core" destination="" priority="5"/>
+                                <folder source="99 Sever's Hearth/Actions/Camp" destination="" priority="5"/>
+                                <folder source="99 Sever's Hearth/Prompts/Camp" destination="" priority="5"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Recommended"/>
                             </typeDescriptor>
                         </plugin>
 

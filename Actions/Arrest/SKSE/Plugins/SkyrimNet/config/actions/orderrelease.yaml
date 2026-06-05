@@ -1,13 +1,13 @@
 customCategory: arrest
 name: OrderRelease
-description: "Order a prisoner brought for judgment to be released. Only when a prisoner stands before the speaker after DispatchGuardToArrest."
+description: "The Jarl or magistrate weighs the case in the hall, finds the charges thin or the prisoner's account convincing, and waves them off — 'Cut them loose.' Only valid when a prisoner stands before the speaker after a DispatchGuardToArrest brought them in for judgment."
 questEditorId: SeverActions
-scriptName: SeverActions_Arrest
+scriptName: SeverActions_ArrestJudgment
 executionFunctionName: OrderRelease_Execute
 parameterMapping:
   - type: speaker
     name: akSender
-    description: The person deciding the prisoner's fate
+    description: the authority deciding to let the prisoner walk
 enabled: true
 defaultPriority: 9
 eligibilityRules:
@@ -19,51 +19,29 @@ eligibilityRules:
     logicalOperator: "AND"
     required: true
   - conditions:
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWhiterun"]
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
         comparisonOperator: "=="
         expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionRiften"]
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "busy_reason"
+        arguments: ["currentActor"]
         comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionSolitude"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionHaafingar"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWindhelm"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionMarkarth"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionFalkreath"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionDawnstar"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWinterhold"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "JobJarlFaction"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "JobHousecarlFaction"]
-        comparisonOperator: "=="
-        expectedValue: true
-    logicalOperator: "OR"
+        expectedValue: "judgment"
+    logicalOperator: "AND"
+    required: true
+  # Replaced an 11-condition OR ladder (9 GuardFactionX + JobJarlFaction
+  # + JobHousecarlFaction) with the single native is_guard_or_authority
+  # decorator. Same semantics — see SkyrimNetBridge.h for the cached
+  # faction-pointer set, plus mod-added holds via HoldResolver.
+  - conditions:
+      - decoratorName: "is_guard_or_authority"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
     required: true
   - conditions:
       - decoratorName: "get_faction_rank"

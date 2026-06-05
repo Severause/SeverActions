@@ -1,16 +1,16 @@
 customCategory: items
 name: UseItem
-description: "Consume a potion, food, or ingredient from inventory."
+description: "The speaker reaches into their pack and uses something they're carrying — drinking a potion to mend their wounds, biting into a hunk of bread to take the edge off hunger, popping a frost mirriam ingredient to test its sting."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: UseItem_Execute
 parameterMapping:
   - type: dynamic
     name: akActor
-    description: The person using the item
+    description: the actor reaching for something in their pack
   - type: dynamic
     name: itemName
-    description: The name of the consumable item to use
+    description: name of the consumable being used (e.g. "Health Potion", "Bread", "Frost Mirriam")
 enabled: true
 eligibilityRules:
   - conditions:

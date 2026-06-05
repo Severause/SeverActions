@@ -1,28 +1,79 @@
-{# Group Meeting Awareness - Shows this NPC which other nearby NPCs are ENGAGED #}
+{# Group Meeting Awareness — gives an engaged party member the names of the
+   rest of the active party so multi-companion conversations read naturally.
+
+   SkyrimNet-native: uses only is_follower, is_in_package, is_in_faction,
+   get_nearby_npc_list, get_speaker_selector_settings, and player.UUID — no
+   SeverActions-specific factions or scripts required.
+
+   Party detection mirrors the upstream dialogue_speaker_selector.prompt
+   tags: COMPANION = is_follower(uuid) (CurrentFollowerFaction); ENGAGED =
+   is_in_package(uuid, "SkyrimNet_PlayerFollowPackage"). Either one counts
+   as "in the party" for this prompt.
+
+   IN SCENE peers are split into their own sub-list with explicit
+   "do not address" guidance, mirroring the upstream selector's
+   "Strongly deprioritize" treatment so behavior stays consistent across
+   prompts.
+
+   Gated on dashboard tagEngaged so a user who turned off engagement
+   tagging globally doesn't see it sneak back in via this path. #}
 {% if npc and npc.UUID %}
 {% set _myUUID = to_number(to_string(npc.UUID)) %}
-{% if _myUUID != 0 and is_in_faction(_myUUID, "SeverActions_ActivelyFollowing") %}
+{% if _myUUID != 0 and (is_follower(_myUUID) or is_in_package(_myUUID, "SkyrimNet_PlayerFollowPackage")) %}
+{# Read the dashboard toggle, but defend against the decorator returning
+   nothing — e.g. SkyrimNet schema defaults not yet written, or a build
+   that resolves the call but hasn't populated the settings yet. When
+   tagEngaged isn't present in the returned object we default to "on" so
+   the block still renders. (If the decorator itself is missing entirely
+   — pre-#807 SkyrimNet — the call errors and the whole template skips,
+   same as before this prompt existed.) #}
+{% set _ss = get_speaker_selector_settings() %}
+{% set _tagEngaged = (not _ss or not existsIn(_ss, "tagEngaged")) or _ss.tagEngaged %}
+{% if _tagEngaged %}
 {% set _nearby = get_nearby_npc_list(_myUUID) %}
-{% set _engaged = [] %}
+{% set _party = [] %}
+{% set _occupied = [] %}
 {% for _n in _nearby %}
 {% set _nUUID = to_number(to_string(_n.UUID)) %}
-{% if _nUUID != 0 and _nUUID != _myUUID and is_in_faction(_nUUID, "SeverActions_ActivelyFollowing") %}
-{% set _engaged = append(_engaged, _n.name) %}
+{% if _nUUID != 0 and _nUUID != _myUUID and (is_follower(_nUUID) or is_in_package(_nUUID, "SkyrimNet_PlayerFollowPackage")) %}
+{% if is_in_faction(_nUUID, "SexLabAnimatingFaction") or is_in_faction(_nUUID, "OStimExcitementFaction") %}
+{% set _occupied = append(_occupied, _n.name) %}
+{% else %}
+{% set _party = append(_party, _n.name) %}
+{% endif %}
 {% endif %}
 {% endfor %}
-{% if length(_engaged) == 1 %}
-## Traveling Companion
-You are traveling with {{ player.name }} and {% for _name in _engaged %}{{ _name }}{% endfor %}. Respond like a real person walking alongside someone, not like you're giving a speech. Do not monologue or over-explain.
-{% elif length(_engaged) >= 2 %}
-## Group Awareness
-You are traveling with {{ player.name }} and a group:
-{% for _name in _engaged %}
+{% set _playerUUID = to_number(to_string(player.UUID)) %}
+{% set _playerOccupied = _playerUUID != 0 and (is_in_faction(_playerUUID, "SexLabAnimatingFaction") or is_in_faction(_playerUUID, "OStimExcitementFaction")) %}
+{% if length(_party) > 0 or length(_occupied) > 0 or _playerOccupied %}
+## Traveling Party
+{# Rendering shapes:
+   _party=1                     → "You are traveling with <player> and <Name>."
+   _party>=2                    → "You are traveling with <player> and:\n- ...\n- ..."
+   _party=0                     → "You are traveling with <player>."
+   The single-member inline form avoids the awkward "and:\n- Name" output
+   that older revisions emitted for solo-companion runs. #}
+You are traveling with {{ player.name }}{% if length(_party) == 1 %} and {{ _party.0 }}.{% else %}{% if length(_party) >= 2 %} and:
+{% for _name in _party %}
+- {{ _name }}
+{% endfor %}{% else %}.
+{% endif %}{% endif %}
+{% if length(_occupied) > 0 %}
+
+**[IN SCENE]** — currently occupied with intimate/sexual activity. Strongly deprioritize — do not address by name or pull into the conversation; they will speak again once free:
+{% for _name in _occupied %}
 - {{ _name }}
 {% endfor %}
+{% endif %}
+{% if _playerOccupied %}
 
-Everyone is nearby and can hear you. Speak naturally — respond to whoever you're actually engaging with. Use names when it makes sense (responding to someone, asking a question, reacting to what they said), but don't force it. Not every response needs to name-drop. A quip, observation, or reaction to the group is fine without tagging someone.
+{{ player.name }} is currently **[IN SCENE]** — you can still speak with other party members, but do not address {{ player.name }} until they're free.
+{% endif %}
 
-Don't run through a checklist of participants. {{ player.name }} is part of the group, not a spectator — include them naturally when relevant.
+Everyone above (except those marked [IN SCENE]) is nearby and can hear you. Speak naturally — respond to whoever you're actually engaging with. Use names when it makes sense (responding to someone, asking a question, reacting to what they said), but don't force it. Not every line needs to name-drop. A quip, observation, or group reaction is fine without tagging anyone.
+
+Don't run through a checklist of participants. {{ player.name }} is part of the party, not a spectator — include them naturally when relevant.
+{% endif %}
 {% endif %}
 {% endif %}
 {% endif %}

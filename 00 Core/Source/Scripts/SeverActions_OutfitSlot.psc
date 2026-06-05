@@ -1,24 +1,30 @@
 ﻿Scriptname SeverActions_OutfitSlot extends Quest
 {
-    NFF-style outfit slot system.
+    NFF-style outfit slot system (wardrobe pattern).
 
     Each managed NPC is assigned a slot index 0-49. Each slot has 8 preset
     indices, each backed by:
-        - A BGSOutfit record (points to a LeveledItem)
+        - A BGSOutfit record (legacy artifact — no longer used as the apply
+          mechanism; retained for FormList scaffolding compatibility)
         - A LeveledItem placeholder (populated at apply-time from container)
-        - An ObjectReference container (player-editable storage)
-    Plus one satchel container per slot (holds personal items while a preset
-    is active).
+        - An ObjectReference container (player-editable wardrobe storage)
+    Plus one satchel container per slot (used only by guardian-container
+    stow/restore for custom-follower compatibility).
 
-    Preset apply flow (mirrors NFF's SwitchOutfit):
-        1. Move personal items to satchel (first-time only)
-        2. SetOutfit(BlankOutfit) â€” break old outfit assertion
-        3. UnequipAll â€” strip actor
-        4. PopulateLvlItem â€” Revert() + AddForm() loop from container
-        5. SetOutfit(presetOutfit) â€” engine auto-equips the LeveledItem contents
+    Preset apply flow (atomic C++ wardrobe pattern):
+        1. Stow guardian containers if any (first-time only)
+        2. Native_OutfitSlot_DirectEquipPreset â€” snapshots chest, strips ALL
+           worn armor, adds + equips preset items synchronously with
+           applyNow=true, verifies IsWorn
+        3. Mark active preset in slot store (only on full equip; partial
+           equips leave activePresetIdx=-1)
 
-    After apply, the engine re-enforces the outfit on every cell load
-    automatically via the DefaultOutfit mechanism. No re-equip loop needed.
+    SetOutfit() is deliberately NOT called â€” it queues an implicit UnequipAll
+    that fires OnObjectUnequipped 0.5â€“1.5s later, triggering our debounce
+    cascade and re-running DirectEquipPreset 2â€“3 times for a single user
+    click. The chest is the persistent wardrobe; cell-load re-application
+    is driven by SeverActions_OutfitAlias.OnLoad calling DirectEquipPreset
+    directly, NOT by the engine's DefaultOutfit mechanism.
 
     Author: Severause
 }
@@ -247,6 +253,17 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
     if !chest
         Log("BuildPreset: Could not spawn container for slot=" + slotIdx + " preset=" + presetIdx)
         return -1
+    endif
+
+    ; Suspend the alias before any inventory mutation. The overwrite-cleanup
+    ; block below removes old preset temp-copies from actor inventory, which
+    ; fires OnObjectUnequipped → debounce → reapply against a half-built chest.
+    ; Without this guard, editing the active preset can race the alias and leave
+    ; the actor with a mix of old + new gear. Resumed before ApplyPresetBySlot
+    ; (which manages its own suspend/resume).
+    SeverActions_Outfit outfitSysBuild = GetOutfitScript()
+    if outfitSysBuild
+        outfitSysBuild.SuspendOutfitLock(akActor)
     endif
 
     ; Was the preset we're about to overwrite the currently-active one?
@@ -499,6 +516,13 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
     ; resurrects the exact preset the slot system applied. Trims trailing None
     ; entries and respects the 32-item cap.
     MirrorPresetToLegacyStores(akActor, normalizedName, committedItems, committed)
+
+    ; Resume the alias before re-apply — ApplyPresetBySlot manages its own
+    ; suspend/resume cycle. Resuming here avoids nested-suspend bookkeeping
+    ; (single int flag, would clear on first Resume regardless of nesting).
+    if outfitSysBuild
+        outfitSysBuild.ResumeOutfitLock(akActor)
+    endif
 
     ; If we just overwrote the currently-active preset, re-apply it so the
     ; user immediately sees the new outfit. Without this the actor would be
@@ -821,13 +845,17 @@ Function ApplyPresetBySlot(Actor akActor, Int presetIdx)
     ;   - verifiedEquipped < 0 → hard native failure (chest gone, equip mgr
     ;     unavailable). Leave actor in whatever state, don't mark active.
     if verifiedEquipped > 0
-        ; DirectEquipPreset already set activePresetIdx in the slot store on
-        ; success; mirror to StorageUtil for legacy alias fast-paths.
-        StorageUtil.SetIntValue(akActor, KEY_PRESET_ACTIVE, 1)
+        ; Native only sets activePresetIdx on full equip (OutfitSlotStore.h:1098).
+        ; Mirror the same gate in StorageUtil — marking PRESET_ACTIVE on a partial
+        ; equip caused split-brain: alias short-circuit saw active=1 from
+        ; StorageUtil, slot reapply read native activePresetIdx=-1 and no-op'd,
+        ; so cell-load enforcement silently dropped after partial applies.
         if verifiedEquipped == storedItemCount
+            StorageUtil.SetIntValue(akActor, KEY_PRESET_ACTIVE, 1)
             Log("Applied preset " + presetIdx + " ('" + presetName + "') to " + akActor.GetDisplayName() + " (" + verifiedEquipped + "/" + storedItemCount + " items equipped) [OK]")
         else
-            Log("Applied preset " + presetIdx + " ('" + presetName + "') to " + akActor.GetDisplayName() + " (" + verifiedEquipped + "/" + storedItemCount + " items — slot conflicts or blacklist filtered the rest) [OK partial]")
+            StorageUtil.SetIntValue(akActor, KEY_PRESET_ACTIVE, 0)
+            Log("Applied preset " + presetIdx + " ('" + presetName + "') to " + akActor.GetDisplayName() + " (" + verifiedEquipped + "/" + storedItemCount + " items — slot conflicts or blacklist filtered the rest) [partial — NOT marked active]")
         endif
     elseif verifiedEquipped < 0
         ; Hard native failure — chest gone, equip mgr unavailable, etc.
@@ -1443,9 +1471,27 @@ Bool Function DeletePresetFromSlot(Actor akActor, String presetName)
     endif
 
     ; If this preset is currently active, restore original outfit first.
+    ; Belt-and-suspenders parity: only ClearPreset when BOTH the slot store
+    ; AND the outfit data store agree that this preset name is the active one.
+    ; The slot store's activePresetIdx can lag behind reality if a
+    ; SituationMonitor auto-switch applied a DIFFERENT preset by name via
+    ; ApplyPresetNative (the C++ also-sync now fixes that at the source, but
+    ; this guard protects against any future drift). Without it, deleting an
+    ; INACTIVE preset whose stale idx still matches activePresetIdx triggers
+    ; ClearPreset, which strips the actor of the actually-worn outfit.
     Int activeIdx = SeverActionsNative.Native_OutfitSlot_GetActivePreset(akActor)
     if activeIdx == presetIdx
-        ClearPreset(akActor)
+        String storeActiveName = SeverActionsNative.Native_Outfit_GetActivePreset(akActor)
+        ; Empty store name → trust the slot index (legacy / pure-slot-path case).
+        ; Non-empty → require case-insensitive match before stripping.
+        if storeActiveName == "" || SeverActionsNative.StringToLower(storeActiveName) == SeverActionsNative.StringToLower(presetName)
+            ClearPreset(akActor)
+        else
+            Log("DeletePresetFromSlot: slot.activeIdx=" + activeIdx + " matches presetIdx but OutfitDataStore.activePresetName='" + storeActiveName + "' != '" + presetName + "' — skipping ClearPreset to avoid stripping the wrong outfit. Fixing slot index.")
+            ; The slot's activeIdx was stale. Clear it without invoking ClearPreset's
+            ; strip/restore — actor stays in whatever outfit they're actually wearing.
+            SeverActionsNative.Native_OutfitSlot_SetActivePreset(akActor, -1)
+        endif
     endif
 
     ; Empty + delete the container.
@@ -1551,9 +1597,13 @@ EndFunction
 Bool Function ClearActivePresetForAdHoc(Actor akActor)
     {Called by ad-hoc outfit actions (Dress, Undress, EquipItemByName, catalog
      Equip & Lock) before they modify the actor's worn state. If a slot preset
-     is currently active, deactivate it so the legacy outfit lock can take
-     effect — otherwise the alias's slot-preset enforcement would silently
-     undo the ad-hoc change.
+     is currently active, deactivate it AND clean up its catalog temp-copies
+     from actor inventory so they don't leak when a different preset (or no
+     preset) takes over.
+
+     Ownership-aware cleanup: catalog temp-copies are deleted from the actor
+     (chest still holds the source for a future re-apply); user-owned items
+     stay in inventory; blacklisted items are never touched.
 
      Does NOT touch the chest, name, item count, or catalog ownership data.
      The preset can be re-applied later via UI/LLM and will resume cleanly.
@@ -1563,14 +1613,42 @@ Bool Function ClearActivePresetForAdHoc(Actor akActor)
         return false
     endif
 
+    ; Phase 3: native is the single source of truth for slot preset active state.
+    ; Previously also checked StorageUtil's KEY_PRESET_ACTIVE as a fallback in
+    ; case the two had drifted apart; that fallback path could mask drift
+    ; instead of resolving it. With native canonical, the slot index alone is
+    ; the truth.
     Int activeIdx = SeverActionsNative.Native_OutfitSlot_GetActivePreset(akActor)
-    Int storageActive = StorageUtil.GetIntValue(akActor, KEY_PRESET_ACTIVE, 0)
-
-    if activeIdx < 0 && storageActive == 0
+    if activeIdx < 0
         return false
     endif
 
-    ; Deactivate without destroying the preset's chest/metadata.
+    ; Clean up the temp copies BEFORE clearing the active index — the cleanup
+    ; routine needs `activeIdx` to know which preset's items to remove.
+    ; Previously the active index was cleared first, so when a later
+    ; ApplyPresetBySlot ran its `if currentActive != presetIdx` cleanup branch
+    ; it saw -1 and silently skipped — catalog temp-copies accumulated across
+    ; ad-hoc → preset switches.
+    ;
+    ; Suspend the alias for the duration of the cleanup unequips so the
+    ; debounced reapply doesn't race against the half-cleared inventory.
+    if activeIdx >= 0
+        Int slotIdx = SeverActionsNative.Native_OutfitSlot_GetSlot(akActor)
+        if slotIdx >= 0
+            ; Route through Suspend/Resume so the watchdog timestamp is set,
+            ; matching every other suspend site.
+            SeverActions_Outfit outfitSysClear = GetOutfitScript()
+            if outfitSysClear
+                outfitSysClear.SuspendOutfitLock(akActor)
+            endif
+            RemovePresetItemsFromActor(akActor, slotIdx, activeIdx)
+            if outfitSysClear
+                outfitSysClear.ResumeOutfitLock(akActor)
+            endif
+        endif
+    endif
+
+    ; Now safe to deactivate. Chest + metadata stay intact for re-apply.
     SeverActionsNative.Native_OutfitSlot_SetActivePreset(akActor, -1)
     StorageUtil.UnsetIntValue(akActor, KEY_PRESET_ACTIVE)
 
@@ -1595,10 +1673,12 @@ Bool Function IsSlotEligible(Actor akActor)
     if SeverActionsNative.Native_OutfitSlot_GetSlot(akActor) >= 0
         return true
     endif
-    if StorageUtil.GetIntValue(akActor, "SeverFollower_IsFollower", 0) == 1
+    if SeverActionsNativeExt.Native_GetIsFollower(akActor)
         return true
     endif
-    if StorageUtil.GetIntValue(akActor, "SeverOutfit_NonFollowerLock", 0) == 1
+    ; Phase 5: native-backed non-follower lock.
+    if SeverActionsNativeExt.Native_Outfit_IsLockActive(akActor) \
+        && !SeverActionsNativeExt.Native_Outfit_IsFollowerLock(akActor)
         return true
     endif
     if akActor.IsPlayerTeammate()
@@ -1689,7 +1769,20 @@ Function MigrateToOutfitSlotSystem()
     Int ai = 0
     While ai < presetActors.Length
         Actor akActor = presetActors[ai]
-        if akActor && !akActor.IsDead()
+        ; Phase 3 perf: per-actor migration sentinel. The previous
+        ; "incremental" loop still touched every actor on every load —
+        ; for each preset name it did Native_OutfitSlot_GetContainer +
+        ; ObjectReference.GetNumItems just to confirm the chest had
+        ; items. For a 2-follower / 4-preset setup that's 16 native +
+        ; reference calls every load doing nothing useful. This
+        ; sentinel records "fully migrated at version 1" after a clean
+        ; pass and short-circuits subsequent loads. New legacy presets
+        ; aren't a concern — modern SavePresetToNativeStore writes
+        ; directly to the slot system, not StorageUtil. If a user
+        ; reports stale preset state after upgrading, clearing this
+        ; key force-remigrates.
+        Bool alreadyMigrated = akActor && StorageUtil.GetIntValue(akActor, "SeverActions_OutfitSlotMigDone", 0) >= 1
+        if akActor && !akActor.IsDead() && !alreadyMigrated
             ; Assign slot if not already
             Int slotIdx = AssignSlotToActor(akActor)
             if slotIdx >= 0
@@ -1799,6 +1892,16 @@ Function MigrateToOutfitSlotSystem()
                                 else
                                     Log("Migration: EnsureContainer failed for slot=" + slotIdx + " preset=" + targetIdx + " name='" + name + "' — name registered but items not committed")
                                 endif
+                            elseif existingSlotIdx < 0
+                                ; Name was freshly registered this pass (PHASE 1) but
+                                ; no items exist in any legacy store — roll it back so
+                                ; we don't leave a blank ghost that occupies the slot
+                                ; and skips FindFirstEmptyPresetIdx. (Pre-existing
+                                ; empties are handled by RepairGhostPresets.)
+                                SeverActionsNative.Native_OutfitSlot_ClearPreset(akActor, targetIdx)
+                                committedPresets -= 1
+                                migratedPresets -= 1
+                                Log("Migration: no items for '" + name + "' anywhere — rolled back empty name registration (slot freed)")
                             else
                                 Log("Migration: no items found for '" + name + "' in either StorageUtil or native store — name registered but items empty (user can rebuild via builder)")
                             endif
@@ -1841,6 +1944,13 @@ Function MigrateToOutfitSlotSystem()
                 if committedPresets > 0
                     migratedActors += 1
                 endif
+
+                ; Phase 3 perf: stamp the sentinel so subsequent loads
+                ; short-circuit this actor's per-preset native loop. Set
+                ; even when committedPresets == 0 — that case means we
+                ; verified everything was already in order, which is
+                ; exactly the "fully migrated" state we want to record.
+                StorageUtil.SetIntValue(akActor, "SeverActions_OutfitSlotMigDone", 1)
             endif
         endif
         ai += 1
@@ -1903,6 +2013,28 @@ Function Maintenance()
     EndWhile
     Log("Maintenance: Rebuilt LvlItems for " + rebuilt + " actors")
 
+    ; STEP 1.5: One-time ghost-preset repair. An older migration could register a
+    ; preset NAME without committing items (items not found in any legacy store),
+    ; leaving a "ghost": it occupies a slot (FindFirstEmptyPresetIdx skips it) and
+    ; renders blank in the menu, so new presets jump past it (the "presets 1-4
+    ; blank but taking slots, new one lands at #5" report). Clear unrecoverable
+    ; ghosts to free the slot; re-arm migration for any whose items still live in
+    ; a legacy store. Gated once — bump the key to re-run after a future fix.
+    if StorageUtil.GetIntValue(None, "SeverActions_OutfitGhostRepairDone", 0) < 1
+        Int ghostsCleared = 0
+        Int gi = 0
+        While gi < assigned.Length
+            if assigned[gi]
+                ghostsCleared += RepairGhostPresets(assigned[gi])
+            endif
+            gi += 1
+        EndWhile
+        StorageUtil.SetIntValue(None, "SeverActions_OutfitGhostRepairDone", 1)
+        if ghostsCleared > 0
+            Log("Maintenance: ghost-preset repair cleared " + ghostsCleared + " empty/blank presets")
+        endif
+    endif
+
     ; STEP 2: Register known guardian containers BEFORE the drain runs.
     ; Without this order, guardian-using actors would be misclassified as
     ; non-guardian during drain and have their guardian-stowed satchel
@@ -1922,6 +2054,64 @@ Function Maintenance()
     if stranded > 0
         Log("Maintenance: recovered " + stranded + " stranded satchel items")
     endif
+EndFunction
+
+Int Function RepairGhostPresets(Actor akActor)
+    {Clear or re-queue "ghost" presets: an index with a NAME registered but ZERO
+     items (empty container AND itemCount 0). Ghosts come from an older migration
+     that registered the name before confirming items, then found none — they
+     occupy a slot and show blank. Returns the count of unrecoverable ghosts
+     cleared. Recoverable ghosts (items still in a legacy store) are left in place
+     and the actor's migration sentinel is reset so the migration recovery path
+     refills them.}
+    if !akActor
+        return 0
+    endif
+    Int slotIdx = SeverActionsNative.Native_OutfitSlot_GetSlot(akActor)
+    if slotIdx < 0
+        return 0
+    endif
+
+    Int cleared = 0
+    Bool needsRemigrate = false
+    Int p = 0
+    While p < 8
+        String name = SeverActionsNative.Native_OutfitSlot_GetPresetName(akActor, p)
+        if name != ""
+            Int itemCount = SeverActionsNative.Native_OutfitSlot_GetPresetItemCount(akActor, p)
+            ObjectReference chest = SeverActionsNative.Native_OutfitSlot_GetContainer(slotIdx, p)
+            Int chestItems = 0
+            if chest
+                chestItems = chest.GetNumItems()
+            endif
+            if itemCount <= 0 && chestItems == 0
+                ; Ghost — recoverable only if items still live in a legacy store.
+                String presetKey = "SeverOutfit_" + name + "_" + (akActor.GetFormID() as String)
+                Int suCount = StorageUtil.FormListCount(None, presetKey)
+                Int nativeCount = 0
+                Form[] nativeItems = SeverActionsNative.Native_Outfit_GetPresetItems(akActor, name)
+                if nativeItems
+                    nativeCount = nativeItems.Length
+                endif
+                if suCount > 0 || nativeCount > 0
+                    needsRemigrate = true
+                    Log("RepairGhostPresets: '" + name + "' on " + akActor.GetDisplayName() + " empty but recoverable (su=" + suCount + " native=" + nativeCount + ") — re-queued for migration")
+                else
+                    SeverActionsNative.Native_OutfitSlot_ClearPreset(akActor, p)
+                    cleared += 1
+                    Log("RepairGhostPresets: cleared empty ghost preset '" + name + "' (idx " + p + ") on " + akActor.GetDisplayName())
+                endif
+            endif
+        endif
+        p += 1
+    EndWhile
+
+    if needsRemigrate
+        ; Re-arm the per-actor migration sentinel so MigrateToOutfitSlotSystem's
+        ; chest-empty recovery path refills the recoverable presets next pass.
+        StorageUtil.SetIntValue(akActor, "SeverActions_OutfitSlotMigDone", 0)
+    endif
+    return cleared
 EndFunction
 
 Int Function DrainStrandedSatchelItems(Actor akActor)

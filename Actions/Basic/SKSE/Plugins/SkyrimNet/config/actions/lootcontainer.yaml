@@ -1,19 +1,19 @@
 customCategory: items
 name: LootContainer
-description: "Loot items from a nearby container (chest, barrel, sack, end table)."
+description: "The speaker opens a chest, sack, barrel, drawer, or strongbox and helps themselves to what's inside. A bandit's stash unearthed, a forgotten endtable rifled through, a merchant's lockbox cracked open. Mode controls whether everything moves at once or only the worthwhile pieces."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: LootContainer_Execute
 parameterMapping:
   - type: speaker
     name: akActor
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor reaching in to take
   - type: dynamic
     name: containerName
-    description: The name of the container to loot (e.g. "Chest", "Barrel", "Sack")
+    description: name of the container being opened (e.g. "Chest", "Barrel", "Sack", "End Table")
   - type: dynamic
     name: itemsToTake
-    description: "'all', 'valuables', 'gold', or comma-separated item names"
+    description: "what to grab: 'all' (clean it out), 'valuables' (only worthwhile pieces), 'gold' (just coin), or a comma-separated list of specific item names ('Iron Sword, Health Potion')"
     optional: true
     default: "all"
 enabled: true

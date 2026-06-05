@@ -43,11 +43,51 @@ Event OnEnable()
     ReequipIfLocked()
 EndEvent
 
+Event OnEnterBleedout()
+    {Healer self-bleedout fail-safe (Katana pattern).
+     If this follower is in healer mode AND the bleedout cheat-heal toggle
+     is on, force-restore HP so they don't die alone with no one to help.
+     Rate-limited via a 60-second game-time cooldown so combat stays
+     consequential — multiple bleedouts within 60s won't all be healed.
+
+     Doesn't cover non-healer followers (vanilla bleedout) or the player
+     (the regular HealerPoll already targets them when below the player
+     threshold; bleeding-out isn't dead, so they remain valid heal targets).}
+    Actor akActor = self.GetReference() as Actor
+    If !akActor
+        Return
+    EndIf
+    If !SeverActionsNativeExt.Native_IsHealer(akActor)
+        Return
+    EndIf
+    If !SeverActionsNativeExt.Native_IsBleedoutCheatHealEnabled()
+        Return
+    EndIf
+
+    ; 60-second game-time cooldown — prevents looping if HP drains again.
+    Float now = Utility.GetCurrentRealTime()
+    Float lastFired = StorageUtil.GetFloatValue(akActor, "SeverFollower_HealerBleedoutLast", 0.0)
+    If lastFired > 0.0 && (now - lastFired) < 60.0
+        Return
+    EndIf
+    StorageUtil.SetFloatValue(akActor, "SeverFollower_HealerBleedoutLast", now)
+
+    ; Restore enough HP to lift them out of bleedout. Half of base health gets
+    ; them up without trivializing combat — a follower at 200 max HP comes back
+    ; at 100 HP, still vulnerable but functional.
+    Float maxHP = akActor.GetBaseActorValue("Health")
+    If maxHP <= 0.0
+        maxHP = 100.0
+    EndIf
+    akActor.RestoreActorValue("Health", maxHP * 0.5)
+EndEvent
+
 Event OnObjectUnequipped(Form akBaseObject, ObjectReference akReference)
-    {Fires when the NPC unequips any item. Debounces: record the unequip in C++
-     for burst detection, bump a generation counter, start a short timer. When
-     the timer fires and no new unequips arrived, THEN OnUpdate decides whether
-     to re-equip or yield.
+    {Fires when the NPC unequips any item. Debounces: record the unequip
+     timestamp in C++ for burst detection, then (re-)arm a short single-shot
+     timer via RegisterForSingleUpdate. Successive unequip events within the
+     window re-arm the same timer; OnUpdate fires once after the burst settles
+     and decides whether to re-equip or yield.
 
      Slot-preset path: with the wardrobe pattern (DirectEquip + SetOutfit blank),
      the engine does NOT self-enforce — we MUST run the debounce and reapply via
@@ -65,16 +105,16 @@ Event OnObjectUnequipped(Form akBaseObject, ObjectReference akReference)
             Return
         EndIf
         ; Don't fight our own outfit changes mid-apply
-        If StorageUtil.GetIntValue(follower, "SeverOutfit_Suspended", 0) == 1
-            Return
-        EndIf
         If SeverActionsNative.Native_Outfit_IsNativeSuspended(follower)
             Return
         EndIf
 
         ; Slot-preset OR legacy lock — both want debounced reapply.
         ; OnUpdate will choose the right path (DirectEquip vs ReapplyLockedOutfit).
-        If IsSlotPresetActive(follower) || StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0) == 1
+        ; Phase 3: read lock state from native (single source of truth).
+        ; StorageUtil mirror still written by phase-4 callers; this reader is
+        ; the first to flip and stop depending on the mirror staying in sync.
+        If IsSlotPresetActive(follower) || SeverActionsNativeExt.Native_Outfit_IsLockActive(follower)
             ; Record unequip for burst detection (C++ timestamps it)
             SeverActionsNative.Native_Outfit_RecordExternalUnequip(follower)
 
@@ -118,9 +158,6 @@ Event OnObjectEquipped(Form akBaseObject, ObjectReference akReference)
         Return
     EndIf
     ; Don't fight our own equip during apply
-    If StorageUtil.GetIntValue(follower, "SeverOutfit_Suspended", 0) == 1
-        Return
-    EndIf
     If SeverActionsNative.Native_Outfit_IsNativeSuspended(follower)
         Return
     EndIf
@@ -161,9 +198,6 @@ Event OnUpdate()
     EndIf
 
     ; Skip if our outfit system is mid-operation
-    If StorageUtil.GetIntValue(follower, "SeverOutfit_Suspended", 0) == 1
-        Return
-    EndIf
     If SeverActionsNative.Native_Outfit_IsNativeSuspended(follower)
         Return
     EndIf
@@ -194,7 +228,7 @@ Event OnUpdate()
         Return
     EndIf
 
-    If StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0) != 1
+    If !SeverActionsNativeExt.Native_Outfit_IsLockActive(follower)
         Return
     EndIf
 
@@ -229,9 +263,6 @@ Function ReequipIfLocked()
     EndIf
 
     ; Don't fight in-progress outfit operations (builder, preset apply, etc.)
-    If StorageUtil.GetIntValue(follower, "SeverOutfit_Suspended", 0) == 1
-        Return
-    EndIf
     If SeverActionsNative.Native_Outfit_IsNativeSuspended(follower)
         Return
     EndIf
@@ -252,7 +283,7 @@ Function ReequipIfLocked()
         Return
     EndIf
 
-    If StorageUtil.GetIntValue(follower, "SeverOutfit_LockActive", 0) != 1
+    If !SeverActionsNativeExt.Native_Outfit_IsLockActive(follower)
         Return
     EndIf
 
@@ -281,13 +312,30 @@ SeverActions_Outfit Function GetOutfitScript()
 EndFunction
 
 Bool Function IsSlotPresetActive(Actor follower)
-    {Fast short-circuit check: does this actor have an NFF-style slot preset
-     currently active? If so, the engine re-equips the outfit automatically on
-     every cell load via the DefaultOutfit mechanism. This alias becomes a
-     no-op to avoid fighting the engine or guardian aliases on custom followers.}
+    {Returns true if this actor has an active slot preset. Used as a routing
+     check by OnLoad/OnCellLoad/OnUpdate handlers to call DirectEquipPreset
+     (chest-canonical re-equip) instead of the legacy lock-list reapply.
+
+     Historical note: an earlier design relied on SetOutfit() so the engine
+     self-enforced on cell load and this alias was a no-op. That changed
+     when the apply path moved to the wardrobe pattern (SetOutfit calls were
+     removed — see SeverActions_OutfitSlot.ApplyPresetBySlot). Cell-load
+     re-application now runs through this alias.}
     If !follower
         Return False
     EndIf
-    Return StorageUtil.GetIntValue(follower, "SeverOutfit_PresetActive", 0) == 1
+    ; Phase 3: native slot store is the source of truth for active preset idx.
+    ; activePresetIdx >= 0 means a slot preset is active. Replaces the stale-
+    ; prone StorageUtil mirror that drifted whenever a C++ apply path ran
+    ; without the Papyrus mirror catching up.
+    Return SeverActionsNative.Native_OutfitSlot_GetActivePreset(follower) >= 0
 EndFunction
+
+; IsSuspendedWithWatchdog removed in the C1 cleanup.
+; The function gated on a SeverOutfit_Suspended StorageUtil key that Phase 5
+; stopped writing — leaving it as a permanent false-return that did nothing
+; useful at every callsite. The four callsites already followed it with a
+; direct Native_Outfit_IsNativeSuspended() check (the watchdog lives in the
+; native store now), so removing this wrapper is purely a cleanup with no
+; behaviour change. Kept the comment as a breadcrumb in case anyone greps.
 

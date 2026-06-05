@@ -1,0 +1,34 @@
+{% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" %}
+{# SeversHearth — Camp Awareness ────────────────────────────────────────
+   Injects ongoing camp context into a follower's character_bio block.
+   While a camp is active and this actor is a tracked follower, every
+   dialogue line from them is rendered with the camp summary appended,
+   so the LLM naturally references "the camp" / "this place" / "tonight"
+   without us having to fire a one-shot event.
+
+   Decorator: `current_camp(actorUUID)` — registered by SeversHearthNative
+   in SkyrimNetBridge.h. Returns "The player has a camp pitched near
+   <location>, established <N minutes|hours|days> ago." while a camp is
+   active in CampStore; empty string otherwise. The empty-string return
+   makes the {% if camp_ctx %} guard work cleanly without a separate
+   IsActive query.
+
+   Gating: only fires for followers (`is_follower` || `is_sever_follower`)
+   so random villagers / Whiterun guards don't reference the player's
+   wilderness camp in their dialogue.
+
+   Note: the render_mode check is intentionally on line 1 so SkyrimNet's
+   prompt linter can early-skip without parsing the comment — keeps the
+   "render_mode check in first 5 lines" best-practice happy. ─────────#}
+{% if actorUUID and actorUUID != 0 %}
+{% set is_fol = is_follower(actorUUID) or is_sever_follower(actorUUID) %}
+{% if is_fol %}
+{% set camp_ctx = current_camp(actorUUID) %}
+{% if camp_ctx and camp_ctx != "" %}
+{{ camp_ctx }}
+
+You and the player share this camp. Treat it as a known waypoint you can reference naturally — you might suggest resting here, mention a shared meal or the fire's warmth, or comment on the place. Do not invent specific furnishings or details about who built what — only what would be plain to anyone sitting around the fire. Let camp references come up organically when they fit the conversation; don't volunteer them unprompted.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

@@ -1,16 +1,16 @@
 customCategory: economy
 name: ForgiveDebt
-description: "Forgive a debt — cancel what someone owes. Speaker must be the creditor."
+description: "Wipe a tab clean. The speaker lets the other person off the hook for what they owed — a kindness, a favor returned in spirit, or simply giving up on collecting."
 questEditorId: SeverActions
 scriptName: SeverActions_Debt
 executionFunctionName: ForgiveDebt_Execute
 parameterMapping:
   - type: speaker
     name: akSpeaker
-    description: The creditor forgiving the debt
+    description: the actor letting the debt go — the one who is owed the coin
   - type: dynamic
     name: akTarget
-    description: The debtor whose debt is being forgiven
+    description: the actor being released from what they owed
 enabled: true
 eligibilityRules:
   - conditions:

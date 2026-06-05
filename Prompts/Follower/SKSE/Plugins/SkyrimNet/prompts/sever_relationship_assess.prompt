@@ -4,10 +4,10 @@ You are an internal relationship assessment system for a companion in Skyrim. Yo
 {% set npcUUID = formid_to_uuid(npcFormId) %}
 {% if npcUUID and npcUUID != 0 %}
 {% set npc = decnpc(npcUUID) %}
-{% set rapport = papyrus_util("GetFloatValue", npc.UUID, "SeverFollower_Rapport", 0) %}
-{% set trust = papyrus_util("GetFloatValue", npc.UUID, "SeverFollower_Trust", 25) %}
-{% set loyalty = papyrus_util("GetFloatValue", npc.UUID, "SeverFollower_Loyalty", 50) %}
-{% set mood = papyrus_util("GetFloatValue", npc.UUID, "SeverFollower_Mood", 50) %}
+{% set rapport = to_number(default(sever_rapport(npc.UUID), "0")) %}
+{% set trust   = to_number(default(sever_trust(npc.UUID), "25")) %}
+{% set loyalty = to_number(default(sever_loyalty(npc.UUID), "50")) %}
+{% set mood    = to_number(default(sever_mood(npc.UUID), "50")) %}
 {% set lastEventId = to_number(to_string(papyrus_util("GetIntValue", npc.UUID, "SeverFollower_LastAssessEventId", 0))) %}
 {% set lastMemoryId = to_number(to_string(papyrus_util("GetIntValue", npc.UUID, "SeverFollower_LastAssessMemoryId", 0))) %}
 {% set lastDiaryId = to_number(to_string(papyrus_util("GetIntValue", npc.UUID, "SeverFollower_LastAssessDiaryId", 0))) %}

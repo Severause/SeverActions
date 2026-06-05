@@ -1,28 +1,28 @@
 customCategory: travel
 name: TravelToPlace
-description: "Travel to a named location when {{ player.name }} explicitly directs it. Accepts named locations, semantic directions (outside, upstairs), or nearby features (bar, forge, bed)."
+description: "The speaker sets out for somewhere specific when {{ player.name }} explicitly directs it — over to Whiterun on a courier run, upstairs at the inn, across the room to the forge, just outside for some air. Accepts a named location, a direction (outside, upstairs), or a nearby feature (bar, forge, bed)."
 questEditorId: SeverActions
 scriptName: SeverActions_Travel
 executionFunctionName: TravelToPlace
 parameterMapping:
   - type: speaker
     name: akNPC
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor heading off
   - type: dynamic
     name: placeName
-    description: "Where to go: named location, direction (outside, upstairs), or feature (bar, forge, bed)"
+    description: "where they're going: a named location, a direction (outside, upstairs), or a nearby feature (bar, forge, bed)"
   - type: static
     value: 24
     name: WaitHours
-    description: Static float parameter
+    description: how long (in hours) they'll wait at the destination before drifting back to whatever they were doing
   - type: static
     value: true
     name: stopFollowing
-    description: Static bool parameter
+    description: whether to drop their following job while they make this trip
   - type: static
     value: 0
     name: Speed
-    description: Static int parameter
+    description: travel pace (0 = default natural speed)
 enabled: false
 eligibilityRules:
   - conditions:

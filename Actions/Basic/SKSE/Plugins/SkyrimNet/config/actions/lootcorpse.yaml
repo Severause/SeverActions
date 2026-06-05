@@ -1,19 +1,19 @@
 customCategory: items
 name: LootCorpse
-description: "Loot items from a dead body nearby."
+description: "The speaker kneels beside a body and pulls what's worth taking from it — coin from a dead bandit's belt, a soldier's blade from cold fingers, a smith's ring off a corpse on the road. Practical, sometimes grim."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: LootCorpse_Execute
 parameterMapping:
   - type: speaker
     name: akActor
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor kneeling to take from the dead
   - type: dynamic
     name: corpseName
-    description: The name of the dead person to loot (e.g. "Bandit", "Stormcloak Soldier")
+    description: name of the dead person being searched (e.g. "Bandit", "Stormcloak Soldier", a named NPC)
   - type: dynamic
     name: itemsToTake
-    description: "'all', 'valuables', 'gold', or comma-separated item names"
+    description: "what to grab: 'all' (everything they had), 'valuables' (only worthwhile pieces), 'gold' (just coin), or a comma-separated list of specific items"
     optional: true
     default: "all"
 enabled: true

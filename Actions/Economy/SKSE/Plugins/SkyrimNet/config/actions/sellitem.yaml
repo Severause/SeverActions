@@ -1,0 +1,46 @@
+customCategory: economy
+name: SellItem
+description: "The speaker is selling something here and now — goods one way, coin the other, settled in the same breath. A merchant pushing wares across the counter, an adventurer offloading loot to a fence, a smith finishing a commission and handing it over for the agreed price."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: SellItem_Execute
+parameterMapping:
+  - type: speaker
+    name: akSeller
+    description: the actor handing over the goods to take the coin
+  - type: dynamic
+    name: akBuyer
+    description: the actor paying for the goods — the patron at the counter, the customer on the road, the noble commissioning the work
+  - type: dynamic
+    name: asItemName
+    description: name of the item the seller is handing over (fuzzy-matched against the seller's personal inventory and, for shopkeepers, their merchant chest)
+  - type: dynamic
+    name: aiQuantity
+    description: how many units of the item (1 for a single piece)
+  - type: dynamic
+    name: aiTotalGold
+    description: the agreed price in gold coins for the whole deal (not per unit)
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

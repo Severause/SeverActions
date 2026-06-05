@@ -1,12 +1,12 @@
 name: CompanionWait
-description: "Wait at the current location until {{ player.name }} returns. The NPC will sandbox nearby."
+description: "The companion plants their feet right here and settles in to wait for {{ player.name }} — propped against a wagon, warming hands at a brazier, idling at the bar. They'll wander nearby on their own business until {{ player.name }} comes back."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: CompanionWait
 parameterMapping:
   - type: speaker
     name: akActor
-    description: The NPC being told to wait
+    description: the companion staying put
 enabled: true
 defaultPriority: 7
 eligibilityRules:

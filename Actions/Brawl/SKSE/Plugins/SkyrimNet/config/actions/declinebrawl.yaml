@@ -1,0 +1,30 @@
+customCategory: brawl
+name: DeclineBrawl
+description: "The speaker waves off a brawl challenge — too old for this, too tired, or just smart enough to know they'd lose. A merchant who'd rather keep his teeth, a noble who finds fistfights beneath them, a guard who reminds the challenger about the Hold's laws. akChallenger names who the speaker is brushing off; may be omitted if a ChallengeBrawl is already pending."
+questEditorId: SeverActions
+scriptName: SeverActions_Brawl
+executionFunctionName: DeclineBrawl_Execute
+parameterMapping:
+  - type: speaker
+    name: akDecliner
+    description: the actor refusing the challenge
+  - type: dynamic
+    name: akChallenger
+    description: the actor whose challenge is being declined. May be omitted when declining a pending challenge already recorded via ChallengeBrawl.
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

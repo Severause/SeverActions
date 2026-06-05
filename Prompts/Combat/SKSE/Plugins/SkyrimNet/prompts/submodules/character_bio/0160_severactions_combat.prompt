@@ -3,25 +3,42 @@
 {% if actorUUID and actorUUID != 0 %}
 {% set actor = decnpc(actorUUID) %}
 {% if actor and actor.UUID %}
-{# Read combat state from StorageUtil #}
-{# Use timestamps instead of flags so they auto-expire #}
+{# Read combat state from StorageUtil. Timestamps auto-expire via time delta. #}
 {% set ceasefire_time = papyrus_util("GetFloatValue", actor.UUID, "SeverCombat_CeasefireTime", 0) %}
 {% set yield_time = papyrus_util("GetFloatValue", actor.UUID, "SeverCombat_YieldTime", 0) %}
 {% set yielded_to = papyrus_util("GetFormValue", actor.UUID, "SeverCombat_YieldedTo") %}
 {% set received_yield_from = papyrus_util("GetFormValue", actor.UUID, "SeverCombat_ReceivedYieldFrom") %}
 {% set yield_broken_flag = papyrus_util("GetIntValue", actor.UUID, "SeverCombat_YieldBroken", 0) %}
 {% set yield_broken = (yield_broken_flag == 1) %}
+{% set was_normally_hostile_flag = papyrus_util("GetIntValue", actor.UUID, "SeverCombat_WasNormallyHostile", 0) %}
+{% set was_normally_hostile = (was_normally_hostile_flag == 1) %}
 {% set in_combat = actor.isInCombat %}
+{# Yield/surrender prompt gate — user toggle in Settings → Prompt Filters
+   (SeverActions_YieldPromptEnabled, default 1 = on). When 0, the yield-
+   specific guidance below is suppressed; ceasefire + active-combat context
+   are unaffected. Folded into the yield booleans so a yield-only state with
+   the toggle off renders nothing (no empty "## Recent Truce" header). #}
+{% set yield_prompt_enabled = (papyrus_util("GetIntValue", 0, "SeverActions_YieldPromptEnabled", 1) == 1) %}
 
-{# Calculate if events are still recent (within cooldown period) #}
-{# Cooldown is 30 real seconds = ~600 Skyrim seconds with default time scale #}
-{# Using 1800 game time units as threshold (~30 real seconds worth) #}
+{# Truce-awareness window. gameTimeNumeric = current_game_time_days * 24 * 3631,
+   so 1 game hour = 3631 units. At default timescale 20, that is ~3 real minutes
+   of awareness after the truce — long enough that the player can have a real
+   exchange, short enough that it doesn't dominate the character's voice forever.
+   Bumped from the previous 1800 (which the inline comment claimed was "30 real
+   seconds" but actually worked out to roughly half a game hour). #}
 {% set current_time = gameTimeNumeric %}
-{% set cooldown_threshold = 1800 %}
+{% set cooldown_threshold = 3631 %}
 
 {% set recent_ceasefire = (ceasefire_time > 0) and ((current_time - ceasefire_time) < cooldown_threshold) %}
-{% set recent_yield_given = (yield_time > 0) and (yielded_to) and ((current_time - yield_time) < cooldown_threshold) %}
-{% set recent_yield_received = (yield_time > 0) and (received_yield_from) and ((current_time - yield_time) < cooldown_threshold) %}
+{% set recent_yield_given = yield_prompt_enabled and (yield_time > 0) and (yielded_to) and ((current_time - yield_time) < cooldown_threshold) %}
+{% set recent_yield_received = yield_prompt_enabled and (yield_time > 0) and (received_yield_from) and ((current_time - yield_time) < cooldown_threshold) %}
+
+{# Post-window truce memory — only meaningful for non-hostile actors, who would
+   otherwise have no reason to re-engage but might be steered back into combat by
+   base character behavior if we said nothing. Bandits and other normally-hostile
+   actors fall through to baseline behaviour (their faction handles re-aggro). #}
+{% set post_truce_ceasefire = (ceasefire_time > 0) and not recent_ceasefire and not was_normally_hostile %}
+{% set post_truce_yield = yield_prompt_enabled and (yield_time > 0) and not recent_yield_given and not recent_yield_received and not was_normally_hostile %}
 
 {# Get combat target name via Form -> UUID -> decnpc #}
 {% set combat_target_form = papyrus_util("GetFormValue", actor.UUID, "SeverCombat_CombatTarget") %}
@@ -39,12 +56,17 @@
 {% set is_dialogue_context = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
 {# DIALOGUE GUIDANCE - Only show when rendering for direct actor dialogue #}
 {% if is_dialogue_context %}
-{# Yield broken state - attacked after surrendering #}
-{% if yield_broken and in_combat %}
+{# Yield broken state - attacked after surrendering. Tone splits by whether
+   this NPC is the kind that's normally hostile. #}
+{% if yield_broken and in_combat and yield_prompt_enabled %}
 ## Betrayed Surrender
+{% if was_normally_hostile %}
 You surrendered but were attacked anyway. Your surrender was not respected. You are furious and fighting back with renewed aggression — show no mercy to someone who would strike a defenseless opponent.
+{% else %}
+You surrendered but were attacked anyway. The betrayal stings, but you are not by nature a vicious fighter. Defend yourself, voice your sense of wronged honor, but you do not seek retribution beyond what survival demands.
 {% endif %}
-{# Truce states - yield or ceasefire #}
+{% endif %}
+{# Active truce states - yield or ceasefire #}
 {% if not yield_broken and (recent_ceasefire or recent_yield_given or recent_yield_received) %}
 ## Recent Truce
 {% if recent_yield_given %}
@@ -54,6 +76,15 @@ Someone just surrendered to you. You have the upper hand. You may be magnanimous
 {% elif recent_ceasefire %}
 You just stopped fighting. The tension is still high but you are holding back. You will NOT use threats, insults, or hostile language that could restart combat. You can be cold, wary, or resentful - but avoid anything that sounds like a new threat.
 {% endif %}
+{% endif %}
+{# Post-window guidance for non-hostile actors only. Without this, a guard or
+   housecarl who briefly fought the player can drift back toward hostile lines
+   in dialogue once the truce window expires, even though their faction and
+   actor values have no reason to re-aggro. Bandits get no guidance here —
+   they fall back to their base hostile-faction behaviour. #}
+{% if not yield_broken and (post_truce_ceasefire or post_truce_yield) %}
+## Resolved Conflict
+You and this person had a brief fight that ended without bloodshed. You are not the kind of person who carries that into renewed violence — the disagreement is behind you. Treat them with the demeanor your role and history with them would normally call for. Do not bring up the fight unprompted; do not re-engage.
 {% endif %}
 {# Active combat state #}
 {% if in_combat and not recent_ceasefire %}

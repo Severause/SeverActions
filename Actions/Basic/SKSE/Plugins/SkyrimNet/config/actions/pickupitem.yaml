@@ -1,16 +1,16 @@
 customCategory: items
 name: PickUpItem
-description: "Pick up a loose item from the ground or a surface (not from a container or body)."
+description: "The speaker stoops to grab something lying out in the open — a sword dropped in the dirt, an apple rolled under a table, a coin spilled across cobbles, a mountain flower at the roadside. For things lying loose in the world, not anything stowed in a chest, sack, or body."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: PickUpItem_Execute
 parameterMapping:
   - type: dynamic
     name: akActor
-    description: The person picking up the item
+    description: the actor reaching down to grab it
   - type: dynamic
     name: itemType
-    description: The name or type of item to pick up (e.g. "Iron Sword", "potion", "gold")
+    description: name or type of the loose item to pick up (e.g. "Iron Sword", "potion", "gold", "mountain flower")
 enabled: true
 eligibilityRules:
   - conditions:

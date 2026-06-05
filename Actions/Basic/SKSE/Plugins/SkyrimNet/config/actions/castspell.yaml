@@ -1,13 +1,13 @@
 customCategory: magic
 name: CastSpell
-description: "Cast a spell the NPC knows. Works on actors, self, or aimed in front of them. Restoration spells auto-repeat until the target is fully healed or the caster runs out of magicka. IMPORTANT: pick a spell whose delivery type matches the intent — self-delivered spells like 'Healing' only ever heal the caster regardless of targetName, so use 'Healing Hands' / 'Close Wounds' / 'Grand Healing' / etc. when healing another actor. Same for buffs: 'Oakflesh' is self-only; use the touch / aimed variants when buffing an ally."
+description: "The speaker raises a hand and lets the magic loose — flames hissing off the palm at a wolf in the road, a healing glow brushing across a bleeding friend, an ice spike whistling toward a draugr down a barrow corridor. Restoration spells on a wounded target auto-repeat until the target is whole or the caster runs dry. IMPORTANT: pick a spell whose delivery matches the intent — self-delivered spells like 'Healing' only ever mend the caster regardless of targetName, so use 'Healing Hands' / 'Close Wounds' / 'Grand Healing' / etc. when healing another actor. Same for armor buffs: 'Oakflesh' is self-only; use the touch or aimed variants when buffing an ally."
 questEditorId: SeverActions
 scriptName: SeverActions_SpellCast
 executionFunctionName: CastSpell_Execute
 parameterMapping:
   - type: speaker
     name: akCaster
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor raising their hand to work the magic
   - type: dynamic
     name: spellName
     description: "The name of the spell to cast (e.g. 'Healing', 'Healing Hands', 'Flames', 'Fireball'). Must be a spell this NPC actually knows. CRITICAL: match the spell's delivery to the situation — 'Healing' is self-only and ignores targetName; pick 'Healing Hands' (touch) or 'Close Wounds' / 'Grand Healing' (aimed/AoE) when healing someone other than yourself. Same rule for armor / fortify buffs: 'Oakflesh' is self; use the touch variant on allies."

@@ -1,19 +1,19 @@
 customCategory: economy
 name: GiveGold
-description: "Give gold to another person as a gift, tip, reward, or payment."
+description: "The speaker chooses to hand over coin freely — a gift, a generous tip, a finder's fee, or a reward for a job well done. Nothing is expected in return."
 questEditorId: SeverActions
 scriptName: SeverActions_Currency
 executionFunctionName: GiveGold_Execute
 parameterMapping:
   - type: speaker
     name: akGiver
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor parting with coin
   - type: dynamic
     name: akRecipient
-    description: The person receiving gold
+    description: the actor receiving the coin
   - type: dynamic
     name: aiAmount
-    description: Amount of gold to give
+    description: how many gold coins change hands
 enabled: true
 defaultPriority: 6
 eligibilityRules:

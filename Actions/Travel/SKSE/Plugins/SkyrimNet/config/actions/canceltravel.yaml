@@ -1,13 +1,13 @@
 customCategory: travel
 name: CancelTravel
-description: "Cancel any pending travel and stay at the current location."
+description: "The speaker thinks better of the road they were about to take — changes mind at the gate, decides the inn is fine after all, settles back into the chair by the fire. Any pending travel is called off and they stay right where they are."
 questEditorId: SeverActions
 scriptName: SeverActions_Travel
 executionFunctionName: CancelTravel
 parameterMapping:
   - type: speaker
     name: akNPC
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor who's no longer going anywhere
 enabled: true
 defaultPriority: 7
 eligibilityRules:

@@ -25,13 +25,13 @@ Every system is designed around one principle: **the AI decides what to do, and 
 
 | Module | Actions | Description |
 |--------|---------|-------------|
-| **Basic** | `StartFollowing` `StopFollowing` `Relax` `StopRelaxing` `PickUpItem` `UseItem` `GiveItem` `GiveItemTrue` `TakeItemFromPlayer` `BringItem` `LootContainer` `LootCorpse` `ReadBook` `StopReading` `LearnSpell` `TeachSpell` | Core commands — follow, relax, pick up items, give/take items (by name or reference), loot, read books aloud, and teach/learn spells |
+| **Basic** | `StartFollowing` `StopFollowing` `Relax` `StopRelaxing` `PickUpItem` `UseItem` `GiveItem` `TakeItem` `BringItem` `LootContainer` `LootCorpse` `ReadBook` `StopReading` `LearnSpell` `TeachSpell` | Core commands — follow, relax, pick up items, give/take items (between any actors, including the player), loot, read books aloud, and teach/learn spells |
 | **Travel** | `TravelToPlace` `TravelToLocation` `ChangeTravelSpeed` `CancelTravel` | NPCs navigate to named locations (cities, inns, dungeons) using a native travel marker database |
 | **Combat** | `AttackTarget` `CeaseFighting` `Yield` | Engage or disengage from combat based on conversation |
 | **Outfit** | `Undress` `GetDressed` `EquipItems` `UnequipItems` `SaveOutfitPreset` `ApplyOutfitPreset` | Full outfit management — equip/unequip by name (comma-separate for multiple), save/recall presets, persistent outfit locking across cell transitions. OmniSight-aware equipment prompt shows gender-aware item names and descriptions |
 | **Follower** | `SetCompanion` `DismissFollower` `CompanionWait` `CompanionFollow` `AssignHome` `SetCombatStyle` `FollowerLeaves` `AdjustRelationship` | Companion framework with relationship tracking (rapport, trust, loyalty, mood), NFF/EFF integration, combat styles, home assignment. Wait/Follow work on any NPC |
 | **Furniture** | `SitOrLayDown` `StopUsingFurniture` | NPCs use chairs, benches, beds, and crafting stations with automatic cleanup |
-| **Economy** | `GiveGold` `GiveGoldTrue` `CollectPayment` `ExtortGold` `AddToDebt` `CreateDebt` `CreateRecurringDebt` `ForgiveDebt` | Gold transactions and debt system — gifts, payments, extortion, tabs, credit limits, due dates, auto-growth, and faction-aware guard reporting. CollectPayment auto-reduces open debts |
+| **Economy** | `GiveGold` `CollectPayment` `ExtortGold` `BuyItem` `SellItem` `AddToDebt` `CreateDebt` `CreateRecurringDebt` `ForgiveDebt` | Gold transactions and debt system — gifts, payments, extortion, atomic item-for-gold purchases, tabs, credit limits, due dates, auto-growth, and faction-aware guard reporting. CollectPayment auto-reduces open debts |
 | **Crafting** | `CraftItem` `CookMeal` `BrewPotion` | Full crafting pipeline — NPC walks to the nearest workstation, crafts/cooks/brews, then delivers the item |
 | **Arrest** | `ArrestPlayer` `ArrestNPC` `DispatchGuardToArrest` `DispatchGuardToHome` `AddBountyToPlayer` `AcceptPersuasion` `RejectPersuasion` `FreeFromJail` `OrderJailed` `OrderRelease` | Full crime and justice system — guards track bounties, dispatch across cells, escort prisoners, investigate homes, and handle judgment |
 
@@ -188,7 +188,6 @@ A full financial obligation system where NPCs can track debts, tabs, and credit:
 - **Credit limits** — Optional per-debt credit caps that prevent further charges once exceeded
 - **Due dates** — Optional deadlines tracked in game hours with overdue detection
 - **Faction-aware reporting** — NPCs can report unpaid debts to guards of the appropriate hold faction
-- **`GiveGoldTrue`** — Unconditional gold transfer that bypasses debt checks, for gifts, rewards, and loot distribution
 
 ### Book Reading
 
@@ -283,8 +282,8 @@ Followers track hunger, fatigue, and cold exposure on a 0-100 scale with native 
 | OmniSight | Gender-aware item names and descriptions in the equipment prompt |
 | PrismaUI | Modern React-based in-game config menu (auto-detected; MCM works without it) |
 | [Fertility Mode Reloaded](https://www.loverslab.com/) | Pregnancy and fertility cycle awareness |
-| [OSL Aroused](https://www.nexusmods.com/skyrimspecialedition/mods/65454) | Arousal state awareness and modification |
-| [SexLab Aroused](https://www.nexusmods.com/skyrimspecialedition/mods/151502?tab=description) | Arousal state awareness and modification |
+| [OSL Aroused](https://www.nexusmods.com/skyrimspecialedition/mods/74037) | Arousal state awareness and modification |
+| [SexLab Aroused](https://www.loverslab.com/) | Arousal state awareness and modification |
 
 ### FOMOD Installer
 
@@ -417,6 +416,8 @@ The mod is configurable through the **MCM (Mod Configuration Menu)** and the **P
 - **[NPC Names Distributor](https://www.nexusmods.com/skyrimspecialedition/mods/73081)** — Optional NPC naming integration
 - **[Nether's Follower Framework](https://www.nexusmods.com/skyrimspecialedition/mods/55653)** — Optional follower framework integration
 - **[Extensible Follower Framework](https://www.nexusmods.com/skyrimspecialedition/mods/7003)** — Optional follower framework integration
+- **[Skyrim Paper Map for FWMF by Caro Tuts](https://www.nexusmods.com/skyrimspecialedition/mods/62705)** — Cartography used as the base map on the PrismaUI World page
+- **[CoMAP — Common Marker Addon Project by Parapets](https://www.nexusmods.com/skyrimspecialedition/mods/56123)** — Hold sigils derived from CoMAP and Cities of the North marker shapes, re-tinted to a parchment palette
 
 ---
 

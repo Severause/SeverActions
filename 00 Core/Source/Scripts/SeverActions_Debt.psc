@@ -1,15 +1,19 @@
 Scriptname SeverActions_Debt extends Quest
-{Debt tracking system for SeverActions — tracks gold obligations between actors.
- Supports one-time debts (tabs, loans) and recurring arrangements (rent, protection money).
- Integrates with SkyrimNet via StorageUtil per-actor summary strings read natively
- by papyrus_util in prompt templates. No custom decorator registration needed.}
+{Debt tracking system for SeverActions — gold obligations between actors.
+ Phase 3a moved the data into the native DebtStore (cosave 'DEBT'),
+ reached via SeverActionsNativeExt.Native_Debt_*.
+ Phase 4 moved the prompt-context strings into the debt_context /
+ debt_complaints SkyrimNet decorators, so RebuildDebtSummary,
+ RebuildAllSummaries, RebuildComplaintSummary, and the
+ SeverDebt_Info / SeverDebt_Complaints StorageUtil writes are gone —
+ the decorators read live from DebtStore.
+ What remains here: action _Execute handlers, TickDebts, the one-time
+ StorageUtil → native migration, the PrismaUI clear-by-name handler,
+ and the MCM detail formatters.}
 
 ; =============================================================================
 ; PROPERTIES
 ; =============================================================================
-
-SeverActions_Currency Property CurrencyScript Auto
-{Reference to the Currency system for gold transfers during debt settlement}
 
 Bool Property DebugMode = false Auto
 {Enable debug tracing for troubleshooting}
@@ -26,14 +30,12 @@ Float Property ReportThresholdHours = 72.0 Auto
 
 Faction Property DebtorFaction Auto
 {Faction for actors who currently owe money. Managed automatically — added when debt
- is created, removed when all debts are paid or forgiven. Used by YAML eligibility
- rules so SettleDebt only appears for actors involved in debts.
+ is created, removed when all debts are paid or forgiven.
  Create in CK with EditorID: SeverActions_DebtorFaction}
 
 Faction Property CreditorFaction Auto
 {Faction for actors who are currently owed money. Managed automatically — added when
- debt is created, removed when all debts are settled or forgiven. Used by YAML
- eligibility rules so ForgiveDebt only appears for actors who are owed money.
+ debt is created, removed when all debts are settled or forgiven.
  Create in CK with EditorID: SeverActions_CreditorFaction}
 
 ; =============================================================================
@@ -41,10 +43,23 @@ Faction Property CreditorFaction Auto
 ; =============================================================================
 
 String Property KEY_COUNT = "SeverDebt_Count" AutoReadOnly
+{Legacy StorageUtil count key. Read once during one-time migration, then unset.}
+
 String Property KEY_ACTOR_INFO = "SeverDebt_Info" AutoReadOnly
+{Legacy per-actor summary StorageUtil key. Phase 4 stopped writing it;
+ retained as a constant so the migration path can unset any pre-update
+ leftovers in DrainLegacySummaryKeys().}
+
 String Property KEY_COMPLAINTS = "SeverDebt_Complaints" AutoReadOnly
+{Legacy per-player complaint StorageUtil key. Phase 4 stopped writing it;
+ retained as a constant for the same DrainLegacySummaryKeys() cleanup.}
+
+String Property KEY_MIGRATED = "SeverDebt_Migrated_V1" AutoReadOnly
+{One-shot flag: when set to 1, Phase 3a migration has run. Stored on self.}
 
 Float Property SECONDS_PER_GAME_HOUR = 3631.0 AutoReadOnly
+Float Property SECONDS_PER_GAME_DAY = 87144.0 AutoReadOnly
+{24 * SECONDS_PER_GAME_HOUR. Converts native game-days <-> legacy seconds units.}
 
 ; =============================================================================
 ; INITIALIZATION
@@ -56,26 +71,39 @@ Event OnInit()
 EndEvent
 
 Function Maintenance()
-    {Called on init and game load. Rebuilds all per-actor summary strings
-     so papyrus_util reads return current data after load.}
-    DebugMsg("Maintenance — rebuilding debt summaries")
-    RebuildAllSummaries()
+    {Called on init and game load. Runs one-time StorageUtil → native migration
+     on first invocation. Phase 4 retired the per-actor summary cache — the
+     prompt templates now read via the debt_context / debt_complaints native
+     decorators, so no rebuild step is needed on load.}
+    DebugMsg("Maintenance — checking migration")
+    MigrateFromStorageUtilIfNeeded()
+    DrainLegacySummaryKeys()
 
     ; Register for PrismaUI debt clear events
     UnRegisterForModEvent("SeverActions_PrismaClearDebt")
     RegisterForModEvent("SeverActions_PrismaClearDebt", "OnPrismaClearDebt")
 EndFunction
 
-Event OnPrismaClearDebt(String eventName, String strArg, Float numArg, Form sender)
-    {Clear a debt by counterparty name. Called from PrismaUI "Clear" button.
+Function DrainLegacySummaryKeys()
+    {Phase 4 cleanup — pre-Phase-4 saves left SeverDebt_Info on every actor
+     and SeverDebt_Complaints on the player. They're harmless but stale; we
+     unset the player's keys here once (the per-actor leftovers fade naturally
+     as actors get touched).}
+    Actor player = Game.GetPlayer()
+    If player
+        StorageUtil.UnsetStringValue(player, KEY_ACTOR_INFO)
+        StorageUtil.UnsetStringValue(player, KEY_COMPLAINTS)
+    EndIf
+EndFunction
 
-     strArg encoding: "actorName|debtName".
-     The PrismaUIActionHandler::SendModEvent helper unconditionally prepends
-     "actorName|" to strArg (resolving the FormID it gets passed — 0 here,
-     since clearDebt has no actor context — to a literal "0" via its int32
-     fallback). Without splitting on "|", the equality check below never
-     matches because Papyrus sees "0|Hod" vs creditor.GetDisplayName() == "Hod".
-     This was the root cause of the "Clear button does nothing" bug.}
+Event OnPrismaClearDebt(String eventName, String strArg, Float numArg, Form sender)
+    {Clear all debts involving the named counterparty. Called from the PrismaUI
+     "Clear" button.
+
+     strArg encoding: "actorName|debtName". The PrismaUIActionHandler::SendModEvent
+     helper unconditionally prepends "actorName|" to strArg (resolving the FormID
+     it gets passed — 0 here, since clearDebt has no actor context — to a literal
+     "0" via its int32 fallback). Splitting on "|" recovers the intended name.}
     Int pipePos = StringUtil.Find(strArg, "|")
     String targetName = strArg
     If pipePos >= 0
@@ -86,74 +114,147 @@ Event OnPrismaClearDebt(String eventName, String strArg, Float numArg, Form send
         Return
     EndIf
 
-    ; Find and remove all debts involving this counterparty name. Iterate
-    ; end-to-start so RemoveDebt's swap-with-last doesn't skip a swapped-in
-    ; entry we haven't checked yet.
-    Int removed = 0
-    Int count = GetDebtCount()
-    Int i = count - 1
-    While i >= 0
-        Actor creditor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor")) as Actor
-        Actor debtor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor")) as Actor
-        String credName = ""
-        String debtName = ""
-        If creditor != None
-            credName = creditor.GetDisplayName()
-        EndIf
-        If debtor != None
-            debtName = debtor.GetDisplayName()
-        EndIf
-
-        ; Match by creditor or debtor name (the UI shows the counterparty name)
-        If credName == targetName || debtName == targetName
-            RemoveDebt(i)
-            removed += 1
-            DebugMsg("OnPrismaClearDebt: Removed debt #" + i + " involving " + targetName)
-        EndIf
-        i -= 1
-    EndWhile
-
+    Int removed = SeverActionsNativeExt.Native_Debt_RemoveDebtsInvolvingName(targetName)
     DebugMsg("OnPrismaClearDebt: cleared " + removed + " debt(s) for '" + targetName + "'")
 EndEvent
 
 ; =============================================================================
-; OFF-SCREEN DEBT BRIDGE — Convert off-screen consequence debts into real debts
+; MIGRATION (Phase 3a) — read legacy StorageUtil slots into the native store
 ; =============================================================================
 
-Function CreateOffScreenDebt(Actor akFollower, Int amount, String reason)
-    {Create a real debt entry from an off-screen life consequence.
-     The follower owes a generic "merchant" represented by None creditor.
-     Called from SeverActions_FollowerManager when processing off-screen consequences.}
-    If akFollower == None || amount <= 0
+Function MigrateFromStorageUtilIfNeeded()
+    {One-shot migration from the SeverDebt_<i>_<field> StorageUtil layout to
+     the native DebtStore. Idempotent — sets KEY_MIGRATED once it runs.
+
+     Legacy time fields were "seconds equivalent" (gameDays * 24 * 3631); the
+     native side stores game DAYS, so we divide by SECONDS_PER_GAME_DAY here.
+     The legacy "RecurringInterval" was in HOURS; native uses days, so divide
+     by 24.}
+    If StorageUtil.GetIntValue(self, KEY_MIGRATED, 0) == 1
         Return
     EndIf
 
-    ; Use the follower as debtor, player as creditor stand-in for now
-    ; In practice the debt is "follower owes the world"
-    Int index = GetDebtCount()
-    If index >= 20
-        DebugMsg("CreateOffScreenDebt: Max debts reached")
+    Int oldCount = StorageUtil.GetIntValue(self, KEY_COUNT, 0)
+    If oldCount <= 0
+        ; Nothing to migrate — mark done and exit.
+        StorageUtil.SetIntValue(self, KEY_MIGRATED, 1)
+        StorageUtil.UnsetIntValue(self, KEY_COUNT)
+        DebugMsg("Migration: no legacy debts found; marked migrated.")
         Return
     EndIf
 
-    StorageUtil.SetFormValue(self, GetDebtKey(index, "Creditor"), None)
-    StorageUtil.SetFormValue(self, GetDebtKey(index, "Debtor"), akFollower)
-    StorageUtil.SetIntValue(self, GetDebtKey(index, "Amount"), amount)
-    StorageUtil.SetStringValue(self, GetDebtKey(index, "Reason"), "Off-screen: " + reason)
-    StorageUtil.SetFloatValue(self, GetDebtKey(index, "Created"), GetGameTimeInSeconds())
-    StorageUtil.SetIntValue(self, GetDebtKey(index, "IsRecurring"), 0)
-    StorageUtil.SetIntValue(self, GetDebtKey(index, "CreditLimit"), 0)
-    StorageUtil.SetIntValue(self, GetDebtKey(index, "OverdueNotified"), 0)
-    StorageUtil.SetIntValue(self, GetDebtKey(index, "ReportedToGuards"), 0)
-    StorageUtil.SetIntValue(self, KEY_COUNT, index + 1)
+    DebugMsg("Migration: porting " + oldCount + " legacy debts to native store")
 
-    ; Update factions
-    If DebtorFaction != None
-        akFollower.AddToFaction(DebtorFaction)
+    Int migrated = 0
+    Int i = 0
+    While i < oldCount
+        Actor creditor = StorageUtil.GetFormValue(self, GetLegacyKey(i, "Creditor"), None) as Actor
+        Actor debtor   = StorageUtil.GetFormValue(self, GetLegacyKey(i, "Debtor"), None) as Actor
+        Int amount     = StorageUtil.GetIntValue(self, GetLegacyKey(i, "Amount"), 0)
+
+        Bool slotMigrated = false
+        Bool slotEmpty = !(creditor && debtor && amount > 0)
+
+        If !slotEmpty
+            String reason = StorageUtil.GetStringValue(self, GetLegacyKey(i, "Reason"), "")
+            Float dueSec  = StorageUtil.GetFloatValue(self, GetLegacyKey(i, "DueTime"), 0.0)
+            Int creditLim = StorageUtil.GetIntValue(self, GetLegacyKey(i, "CreditLimit"), 0)
+            Bool isRecur  = StorageUtil.GetIntValue(self, GetLegacyKey(i, "IsRecurring"), 0) == 1
+            Float intHrs  = StorageUtil.GetFloatValue(self, GetLegacyKey(i, "RecurringInterval"), 0.0)
+            Int chargeAmt = StorageUtil.GetIntValue(self, GetLegacyKey(i, "RecurringCharge"), 0)
+            Bool overdueN = StorageUtil.GetIntValue(self, GetLegacyKey(i, "OverdueNotified"), 0) == 1
+            Bool reported = StorageUtil.GetIntValue(self, GetLegacyKey(i, "ReportedToGuards"), 0) == 1
+            ; PR #85 review fix: preserve LastRecurred. Without this, every
+            ; migrated recurring debt skips one charge cycle because the
+            ; native Add() sets lastRecurredGameDays = now.
+            Float lastRecSec = StorageUtil.GetFloatValue(self, GetLegacyKey(i, "LastRecurred"), 0.0)
+
+            Float dueDays = 0.0
+            If dueSec > 0.0
+                dueDays = dueSec / SECONDS_PER_GAME_DAY
+            EndIf
+            Float intDays = 0.0
+            If intHrs > 0.0
+                intDays = intHrs / 24.0
+            EndIf
+
+            Int id = SeverActionsNativeExt.Native_Debt_Add( \
+                creditor, debtor, amount, reason, dueDays, isRecur, intDays, creditLim, chargeAmt)
+            If id > 0
+                If overdueN
+                    SeverActionsNativeExt.Native_Debt_SetOverdueNotified(id, true)
+                EndIf
+                If reported
+                    SeverActionsNativeExt.Native_Debt_SetReportedToGuards(id, true)
+                EndIf
+                ; Restore the recurring cursor (only meaningful for isRecur,
+                ; but harmless on non-recurring entries — MarkRecurred is a
+                ; pure setter).
+                If isRecur && lastRecSec > 0.0
+                    SeverActionsNativeExt.Native_Debt_MarkRecurred(id, lastRecSec / SECONDS_PER_GAME_DAY)
+                EndIf
+                migrated += 1
+                slotMigrated = true
+            EndIf
+        EndIf
+
+        ; PR #85 review fix: only clear legacy keys when migration succeeded
+        ; OR when the slot was already empty/unmigrateable. If Native_Debt_Add
+        ; returned 0 on a slot with valid creditor/debtor/amount, the entry
+        ; is preserved so a future migration pass can retry — better than
+        ; silently wiping the data while no native entry exists.
+        If slotMigrated || slotEmpty
+            ClearLegacySlot(i)
+        Else
+            DebugMsg("Migration: slot " + i + " has valid data but native Add returned 0 — keeping legacy keys for retry")
+        EndIf
+        i += 1
+    EndWhile
+
+    ; Only mark the migration "done" if EVERY slot was either migrated or
+    ; legitimately empty. Otherwise leave KEY_MIGRATED unset and KEY_COUNT
+    ; intact so a future Maintenance pass can retry the holdouts.
+    ; Count how many of the unmigrated were valid-but-failed (legacy keys still present)
+    Int retryable = 0
+    Int k = 0
+    While k < oldCount
+        If StorageUtil.GetFormValue(self, GetLegacyKey(k, "Creditor"), None) as Actor
+            retryable += 1
+        EndIf
+        k += 1
+    EndWhile
+
+    If retryable == 0
+        StorageUtil.UnsetIntValue(self, KEY_COUNT)
+        StorageUtil.SetIntValue(self, KEY_MIGRATED, 1)
+        DebugMsg("Migration: " + migrated + "/" + oldCount + " legacy debts migrated to native (complete)")
+    Else
+        DebugMsg("Migration: " + migrated + "/" + oldCount + " migrated; " + retryable + " kept for retry next Maintenance")
     EndIf
+EndFunction
 
-    RebuildDebtSummary(akFollower)
-    DebugMsg("CreateOffScreenDebt: " + akFollower.GetDisplayName() + " owes " + amount + "g for " + reason)
+String Function GetLegacyKey(Int index, String suffix)
+    {Build the legacy StorageUtil key — only used by migration.}
+    Return "SeverDebt_" + index + "_" + suffix
+EndFunction
+
+Function ClearLegacySlot(Int index)
+    {Wipe every legacy field at a slot, including the spurious "Created" key
+     that the dead CreateOffScreenDebt path left behind on some saves.}
+    StorageUtil.UnsetFormValue(self,   GetLegacyKey(index, "Creditor"))
+    StorageUtil.UnsetFormValue(self,   GetLegacyKey(index, "Debtor"))
+    StorageUtil.UnsetIntValue(self,    GetLegacyKey(index, "Amount"))
+    StorageUtil.UnsetStringValue(self, GetLegacyKey(index, "Reason"))
+    StorageUtil.UnsetFloatValue(self,  GetLegacyKey(index, "CreatedTime"))
+    StorageUtil.UnsetFloatValue(self,  GetLegacyKey(index, "Created"))
+    StorageUtil.UnsetFloatValue(self,  GetLegacyKey(index, "DueTime"))
+    StorageUtil.UnsetIntValue(self,    GetLegacyKey(index, "CreditLimit"))
+    StorageUtil.UnsetIntValue(self,    GetLegacyKey(index, "IsRecurring"))
+    StorageUtil.UnsetFloatValue(self,  GetLegacyKey(index, "RecurringInterval"))
+    StorageUtil.UnsetFloatValue(self,  GetLegacyKey(index, "LastRecurred"))
+    StorageUtil.UnsetIntValue(self,    GetLegacyKey(index, "RecurringCharge"))
+    StorageUtil.UnsetIntValue(self,    GetLegacyKey(index, "OverdueNotified"))
+    StorageUtil.UnsetIntValue(self,    GetLegacyKey(index, "ReportedToGuards"))
 EndFunction
 
 ; =============================================================================
@@ -161,13 +262,25 @@ EndFunction
 ; =============================================================================
 
 Float Function GetGameTimeInSeconds()
-    {Convert current game time to seconds — same formula as FollowerManager}
-    Return Utility.GetCurrentGameTime() * 24.0 * SECONDS_PER_GAME_HOUR
+    {Convert current game time to the "seconds-equivalent" unit Papyrus has
+     historically used here. Native stores game DAYS; this conversion keeps
+     the public formatting helpers (FormatTimeRemaining etc.) source-compatible
+     with PrismaUI's existing call sites.}
+    Return Utility.GetCurrentGameTime() * SECONDS_PER_GAME_DAY
 EndFunction
 
-String Function GetDebtKey(Int index, String suffix)
-    {Build a StorageUtil key for a debt field, e.g. SeverDebt_0_Amount}
-    Return "SeverDebt_" + index + "_" + suffix
+Float Function DaysFromSeconds(Float seconds)
+    If seconds <= 0.0
+        Return 0.0
+    EndIf
+    Return seconds / SECONDS_PER_GAME_DAY
+EndFunction
+
+Float Function SecondsFromDays(Float days)
+    If days <= 0.0
+        Return 0.0
+    EndIf
+    Return days * SECONDS_PER_GAME_DAY
 EndFunction
 
 Function DebugMsg(String msg)
@@ -177,339 +290,138 @@ Function DebugMsg(String msg)
 EndFunction
 
 ; =============================================================================
-; CORE CRUD OPERATIONS
+; PUBLIC API — thin wrappers around the native store
 ; =============================================================================
 
 Int Function GetDebtCount()
-    Return StorageUtil.GetIntValue(self, KEY_COUNT, 0)
+    Return SeverActionsNativeExt.Native_Debt_GetCount()
+EndFunction
+
+Int Function GetAmountOwed(Actor creditor, Actor debtor)
+    {Total gold debtor owes creditor across all matching debts.}
+    Return SeverActionsNativeExt.Native_Debt_SumOwed(creditor, debtor)
+EndFunction
+
+Int Function GetTotalOwedBy(Actor debtor)
+    Return SeverActionsNativeExt.Native_Debt_SumOwedBy(debtor)
+EndFunction
+
+Int Function GetTotalOwedTo(Actor creditor)
+    Return SeverActionsNativeExt.Native_Debt_SumOwedTo(creditor)
+EndFunction
+
+Bool Function HasAnyDebt(Actor akActor)
+    Return SeverActionsNativeExt.Native_Debt_HasAnyDebt(akActor)
+EndFunction
+
+Bool Function IsCreditorOnAnyDebt(Actor akActor)
+    Return SeverActionsNativeExt.Native_Debt_IsCreditorOnAnyDebt(akActor)
 EndFunction
 
 Int Function AddDebt(Actor creditor, Actor debtor, Int amount, String reason, Float dueTimeSeconds, Bool isRecurring, Float recurringIntervalHours, Int creditLimit = 0)
-    {Create a new debt record. Returns the index of the new debt, or -1 on failure.
-     creditLimit: max gold this debt can reach (0 = unlimited).}
-    If !creditor || !debtor || amount <= 0
-        DebugMsg("AddDebt failed — invalid params")
-        Return -1
-    EndIf
-    If creditor == debtor
-        DebugMsg("AddDebt failed — creditor == debtor")
-        Return -1
+    {Create a new debt. Returns the assigned native id (>= 1), or 0 on failure.
+     Converts legacy unit conventions at the boundary: dueTime is in
+     seconds-equivalent; recurringInterval is in hours; native uses days.}
+    If !creditor || !debtor || amount <= 0 || creditor == debtor
+        DebugMsg("AddDebt rejected — invalid params")
+        Return 0
     EndIf
 
-    Int index = GetDebtCount()
-    Float currentTime = GetGameTimeInSeconds()
-
-    StorageUtil.SetFormValue(self, GetDebtKey(index, "Creditor"), creditor)
-    StorageUtil.SetFormValue(self, GetDebtKey(index, "Debtor"), debtor)
-    StorageUtil.SetIntValue(self, GetDebtKey(index, "Amount"), amount)
-    StorageUtil.SetStringValue(self, GetDebtKey(index, "Reason"), reason)
-    StorageUtil.SetFloatValue(self, GetDebtKey(index, "CreatedTime"), currentTime)
-    StorageUtil.SetFloatValue(self, GetDebtKey(index, "DueTime"), dueTimeSeconds)
-    StorageUtil.SetIntValue(self, GetDebtKey(index, "CreditLimit"), creditLimit)
-
-    If isRecurring
-        StorageUtil.SetIntValue(self, GetDebtKey(index, "IsRecurring"), 1)
-        StorageUtil.SetFloatValue(self, GetDebtKey(index, "RecurringInterval"), recurringIntervalHours)
-        StorageUtil.SetFloatValue(self, GetDebtKey(index, "LastRecurred"), currentTime)
-    Else
-        StorageUtil.SetIntValue(self, GetDebtKey(index, "IsRecurring"), 0)
-        StorageUtil.SetFloatValue(self, GetDebtKey(index, "RecurringInterval"), 0.0)
-        StorageUtil.SetFloatValue(self, GetDebtKey(index, "LastRecurred"), 0.0)
+    Float dueDays  = DaysFromSeconds(dueTimeSeconds)
+    Float intDays  = 0.0
+    If isRecurring && recurringIntervalHours > 0.0
+        intDays = recurringIntervalHours / 24.0
     EndIf
-
-    StorageUtil.SetIntValue(self, GetDebtKey(index, "OverdueNotified"), 0)
-    StorageUtil.SetIntValue(self, GetDebtKey(index, "ReportedToGuards"), 0)
-    StorageUtil.SetIntValue(self, KEY_COUNT, index + 1)
-
-    DebugMsg("Added debt #" + index + ": " + creditor.GetDisplayName() + " <- " + debtor.GetDisplayName() + " " + amount + "g (" + reason + ")")
-
-    ; Update per-actor summaries for both parties
-    RebuildDebtSummary(creditor)
-    RebuildDebtSummary(debtor)
-
-    Return index
+    ; Pass 0 for recurringCharge — native defaults it to amount for recurring debts.
+    Int id = SeverActionsNativeExt.Native_Debt_Add(creditor, debtor, amount, reason, dueDays, isRecurring, intDays, creditLimit, 0)
+    If id > 0
+        DebugMsg("AddDebt id=" + id + ": " + creditor.GetDisplayName() + " <- " + debtor.GetDisplayName() + " " + amount + "g (" + reason + ")")
+        SyncDebtFactionsForActor(creditor)
+        SyncDebtFactionsForActor(debtor)
+    EndIf
+    Return id
 EndFunction
 
-Bool Function RemoveDebt(Int index)
-    {Remove a debt by swapping with the last entry. Returns true on success.}
-    Int count = GetDebtCount()
-    If index < 0 || index >= count
-        DebugMsg("RemoveDebt failed — index " + index + " out of range (count=" + count + ")")
+Bool Function RemoveDebt(Int debtId)
+    {Remove a debt by native id. Returns true on success.}
+    If debtId <= 0
+        Return false
+    EndIf
+    Actor creditor = SeverActionsNativeExt.Native_Debt_GetCreditor(debtId)
+    Actor debtor   = SeverActionsNativeExt.Native_Debt_GetDebtor(debtId)
+    Bool removed = SeverActionsNativeExt.Native_Debt_Remove(debtId)
+    If removed
+        DebugMsg("RemoveDebt id=" + debtId)
+        If creditor
+            SyncDebtFactionsForActor(creditor)
+        EndIf
+        If debtor
+            SyncDebtFactionsForActor(debtor)
+        EndIf
+    EndIf
+    Return removed
+EndFunction
+
+Bool Function ModifyDebtAmount(Int debtId, Int deltaAmount)
+    {Increase or decrease a debt's amount. Removes the debt if amount hits 0
+     or below. Enforces credit limit on positive deltas — clamps at limit and
+     fires the debt_credit_limit_reached event if reached. Returns false if
+     the debt was already at limit (no change made) or the id is invalid.}
+    If debtId <= 0
         Return false
     EndIf
 
-    ; Get actors before removal for summary rebuild
-    Actor creditor = StorageUtil.GetFormValue(self, GetDebtKey(index, "Creditor"), None) as Actor
-    Actor debtor = StorageUtil.GetFormValue(self, GetDebtKey(index, "Debtor"), None) as Actor
+    ; PR #85 review fix: snapshot creditor/debtor BEFORE the mutation. When
+    ; newAmount drops to 0 the native side erases the entry, and a post-call
+    ; Native_Debt_GetCreditor returns None — leaving faction membership and
+    ; per-actor summaries stale until the next full RebuildAllSummaries.
+    Actor preCreditor = SeverActionsNativeExt.Native_Debt_GetCreditor(debtId)
+    Actor preDebtor   = SeverActionsNativeExt.Native_Debt_GetDebtor(debtId)
 
-    Int lastIndex = count - 1
-
-    If index != lastIndex
-        ; Swap with last entry
-        CopyDebt(lastIndex, index)
+    Int newAmount = SeverActionsNativeExt.Native_Debt_ModifyAmount(debtId, deltaAmount)
+    If newAmount < 0
+        ; Already at credit limit — fire the limit-reached event so the NPC reacts.
+        If preCreditor && preDebtor
+            String reason = SeverActionsNativeExt.Native_Debt_GetReason(debtId)
+            Int creditLimit = SeverActionsNativeExt.Native_Debt_GetCreditLimit(debtId)
+            SkyrimNetApi.RegisterShortLivedEvent( \
+                "debt_" + debtId + "_limit", "debt_credit_limit_reached", \
+                preDebtor.GetDisplayName() + " has reached the " + creditLimit + " gold credit limit with " + preCreditor.GetDisplayName() + " for " + reason, \
+                "", 300000, preCreditor, preDebtor)
+        EndIf
+        DebugMsg("ModifyDebtAmount: credit limit reached on debt #" + debtId)
+        Return false
     EndIf
 
-    ; Clear the last slot
-    ClearDebtSlot(lastIndex)
-    StorageUtil.SetIntValue(self, KEY_COUNT, lastIndex)
-
-    DebugMsg("Removed debt #" + index + " (count now " + lastIndex + ")")
-
-    ; Rebuild summaries for affected actors
-    If creditor
-        RebuildDebtSummary(creditor)
+    ; Rebuild summaries for BOTH parties using the pre-snapshot — covers the
+    ; newAmount==0 case where the native entry is now erased.
+    Actor creditor2 = preCreditor
+    Actor debtor2   = preDebtor
+    If creditor2
+        SyncDebtFactionsForActor(creditor2)
     EndIf
-    If debtor
-        RebuildDebtSummary(debtor)
+    If debtor2
+        SyncDebtFactionsForActor(debtor2)
+    EndIf
+
+    ; If we just hit the credit limit after this change, fire the event.
+    If creditor2 && debtor2 && newAmount > 0
+        Int creditLimit2 = SeverActionsNativeExt.Native_Debt_GetCreditLimit(debtId)
+        If creditLimit2 > 0 && newAmount >= creditLimit2
+            String reason2 = SeverActionsNativeExt.Native_Debt_GetReason(debtId)
+            SkyrimNetApi.RegisterShortLivedEvent( \
+                "debt_" + debtId + "_limit", "debt_credit_limit_reached", \
+                debtor2.GetDisplayName() + " has reached the " + creditLimit2 + " gold credit limit with " + creditor2.GetDisplayName() + " for " + reason2, \
+                "", 300000, creditor2, debtor2)
+        EndIf
     EndIf
 
     Return true
 EndFunction
 
-Function CopyDebt(Int fromIndex, Int toIndex)
-    {Copy all fields from one debt slot to another}
-    StorageUtil.SetFormValue(self, GetDebtKey(toIndex, "Creditor"), StorageUtil.GetFormValue(self, GetDebtKey(fromIndex, "Creditor"), None))
-    StorageUtil.SetFormValue(self, GetDebtKey(toIndex, "Debtor"), StorageUtil.GetFormValue(self, GetDebtKey(fromIndex, "Debtor"), None))
-    StorageUtil.SetIntValue(self, GetDebtKey(toIndex, "Amount"), StorageUtil.GetIntValue(self, GetDebtKey(fromIndex, "Amount"), 0))
-    StorageUtil.SetStringValue(self, GetDebtKey(toIndex, "Reason"), StorageUtil.GetStringValue(self, GetDebtKey(fromIndex, "Reason"), ""))
-    StorageUtil.SetFloatValue(self, GetDebtKey(toIndex, "CreatedTime"), StorageUtil.GetFloatValue(self, GetDebtKey(fromIndex, "CreatedTime"), 0.0))
-    StorageUtil.SetFloatValue(self, GetDebtKey(toIndex, "DueTime"), StorageUtil.GetFloatValue(self, GetDebtKey(fromIndex, "DueTime"), 0.0))
-    StorageUtil.SetIntValue(self, GetDebtKey(toIndex, "CreditLimit"), StorageUtil.GetIntValue(self, GetDebtKey(fromIndex, "CreditLimit"), 0))
-    StorageUtil.SetIntValue(self, GetDebtKey(toIndex, "IsRecurring"), StorageUtil.GetIntValue(self, GetDebtKey(fromIndex, "IsRecurring"), 0))
-    StorageUtil.SetFloatValue(self, GetDebtKey(toIndex, "RecurringInterval"), StorageUtil.GetFloatValue(self, GetDebtKey(fromIndex, "RecurringInterval"), 0.0))
-    StorageUtil.SetFloatValue(self, GetDebtKey(toIndex, "LastRecurred"), StorageUtil.GetFloatValue(self, GetDebtKey(fromIndex, "LastRecurred"), 0.0))
-    StorageUtil.SetIntValue(self, GetDebtKey(toIndex, "RecurringCharge"), StorageUtil.GetIntValue(self, GetDebtKey(fromIndex, "RecurringCharge"), 0))
-    StorageUtil.SetIntValue(self, GetDebtKey(toIndex, "OverdueNotified"), StorageUtil.GetIntValue(self, GetDebtKey(fromIndex, "OverdueNotified"), 0))
-    StorageUtil.SetIntValue(self, GetDebtKey(toIndex, "ReportedToGuards"), StorageUtil.GetIntValue(self, GetDebtKey(fromIndex, "ReportedToGuards"), 0))
-EndFunction
-
-Function ClearDebtSlot(Int index)
-    {Clear all StorageUtil keys for a debt slot}
-    StorageUtil.UnsetFormValue(self, GetDebtKey(index, "Creditor"))
-    StorageUtil.UnsetFormValue(self, GetDebtKey(index, "Debtor"))
-    StorageUtil.UnsetIntValue(self, GetDebtKey(index, "Amount"))
-    StorageUtil.UnsetStringValue(self, GetDebtKey(index, "Reason"))
-    StorageUtil.UnsetFloatValue(self, GetDebtKey(index, "CreatedTime"))
-    StorageUtil.UnsetFloatValue(self, GetDebtKey(index, "DueTime"))
-    StorageUtil.UnsetIntValue(self, GetDebtKey(index, "CreditLimit"))
-    StorageUtil.UnsetIntValue(self, GetDebtKey(index, "IsRecurring"))
-    StorageUtil.UnsetFloatValue(self, GetDebtKey(index, "RecurringInterval"))
-    StorageUtil.UnsetFloatValue(self, GetDebtKey(index, "LastRecurred"))
-    StorageUtil.UnsetIntValue(self, GetDebtKey(index, "RecurringCharge"))
-    StorageUtil.UnsetIntValue(self, GetDebtKey(index, "OverdueNotified"))
-    StorageUtil.UnsetIntValue(self, GetDebtKey(index, "ReportedToGuards"))
-EndFunction
-
 ; =============================================================================
-; QUERY FUNCTIONS
+; FORMATTING HELPERS — used by MCM, PrismaUI, and the prompt summary builders
 ; =============================================================================
-
-Int Function FindDebt(Actor creditor, Actor debtor, String reason)
-    {Find the first debt matching creditor + debtor + reason. Returns -1 if not found.}
-    Int count = GetDebtCount()
-    Int i = 0
-    While i < count
-        Actor c = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-        Actor d = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-        If c == creditor && d == debtor
-            String r = StorageUtil.GetStringValue(self, GetDebtKey(i, "Reason"), "")
-            If r == reason
-                Return i
-            EndIf
-        EndIf
-        i += 1
-    EndWhile
-    Return -1
-EndFunction
-
-Int Function FindRecurringDebt(Actor creditor, Actor debtor)
-    {Find the first recurring debt matching creditor + debtor. Returns -1 if not found.}
-    Int count = GetDebtCount()
-    Int i = 0
-    While i < count
-        Int isRecurring = StorageUtil.GetIntValue(self, GetDebtKey(i, "IsRecurring"), 0)
-        If isRecurring == 1
-            Actor c = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-            Actor d = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-            If c == creditor && d == debtor
-                Return i
-            EndIf
-        EndIf
-        i += 1
-    EndWhile
-    Return -1
-EndFunction
-
-Int Function FindAnyDebt(Actor actorA, Actor actorB)
-    {Find the first debt between two actors (either direction). Returns -1 if not found.}
-    Int count = GetDebtCount()
-    Int i = 0
-    While i < count
-        Actor c = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-        Actor d = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-        If (c == actorA && d == actorB) || (c == actorB && d == actorA)
-            Return i
-        EndIf
-        i += 1
-    EndWhile
-    Return -1
-EndFunction
-
-Int Function GetAmountOwed(Actor creditor, Actor debtor)
-    {Total gold debtor owes creditor across all matching debts}
-    Int count = GetDebtCount()
-    Int total = 0
-    Int i = 0
-    While i < count
-        Actor c = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-        Actor d = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-        If c == creditor && d == debtor
-            total += StorageUtil.GetIntValue(self, GetDebtKey(i, "Amount"), 0)
-        EndIf
-        i += 1
-    EndWhile
-    Return total
-EndFunction
-
-Int Function GetTotalOwedBy(Actor debtor)
-    {Total gold this actor owes everyone}
-    Int count = GetDebtCount()
-    Int total = 0
-    Int i = 0
-    While i < count
-        Actor d = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-        If d == debtor
-            total += StorageUtil.GetIntValue(self, GetDebtKey(i, "Amount"), 0)
-        EndIf
-        i += 1
-    EndWhile
-    Return total
-EndFunction
-
-Int Function GetTotalOwedTo(Actor creditor)
-    {Total gold owed to this actor by everyone}
-    Int count = GetDebtCount()
-    Int total = 0
-    Int i = 0
-    While i < count
-        Actor c = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-        If c == creditor
-            total += StorageUtil.GetIntValue(self, GetDebtKey(i, "Amount"), 0)
-        EndIf
-        i += 1
-    EndWhile
-    Return total
-EndFunction
-
-String[] Function GetPlayerOwesDetails()
-    {Get formatted debt detail strings for debts the player owes.
-     Each entry: "Name: Xg (rate, reason, timeframe)".
-     Used by the MCM to show per-actor debt breakdowns.}
-    Actor player = Game.GetPlayer()
-    String[] result = PapyrusUtil.StringArray(0)
-    Float currentTime = GetGameTimeInSeconds()
-    Int count = GetDebtCount()
-    Int i = 0
-    While i < count
-        Actor creditor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-        Actor debtor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-        If debtor == player && creditor
-            Int amount = StorageUtil.GetIntValue(self, GetDebtKey(i, "Amount"), 0)
-            String reason = StorageUtil.GetStringValue(self, GetDebtKey(i, "Reason"), "")
-            Bool isRecurring = StorageUtil.GetIntValue(self, GetDebtKey(i, "IsRecurring"), 0) == 1
-            Float dueTime = StorageUtil.GetFloatValue(self, GetDebtKey(i, "DueTime"), 0.0)
-            String line = creditor.GetDisplayName() + ": " + amount + "g"
-            ; Build detail parenthetical
-            String details = ""
-            If isRecurring
-                Int chargeAmount = StorageUtil.GetIntValue(self, GetDebtKey(i, "RecurringCharge"), 0)
-                Float intervalHours = StorageUtil.GetFloatValue(self, GetDebtKey(i, "RecurringInterval"), 0.0)
-                If chargeAmount > 0
-                    details = FormatRecurringRate(chargeAmount, intervalHours)
-                Else
-                    details = FormatRecurringRate(amount, intervalHours)
-                EndIf
-            EndIf
-            If reason != ""
-                If details != ""
-                    details += ", " + reason
-                Else
-                    details = reason
-                EndIf
-            EndIf
-            ; Add timeframe
-            String timeStr = FormatTimeRemaining(dueTime, currentTime)
-            If timeStr != ""
-                If details != ""
-                    details += ", " + timeStr
-                Else
-                    details = timeStr
-                EndIf
-            EndIf
-            If details != ""
-                line += " (" + details + ")"
-            EndIf
-            result = PapyrusUtil.PushString(result, line)
-        EndIf
-        i += 1
-    EndWhile
-    Return result
-EndFunction
-
-String[] Function GetOwedToPlayerDetails()
-    {Get formatted debt detail strings for debts owed TO the player.
-     Each entry: "Name: Xg (rate, reason, timeframe)".
-     Used by the MCM to show per-actor debt breakdowns.}
-    Actor player = Game.GetPlayer()
-    String[] result = PapyrusUtil.StringArray(0)
-    Float currentTime = GetGameTimeInSeconds()
-    Int count = GetDebtCount()
-    Int i = 0
-    While i < count
-        Actor creditor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-        Actor debtor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-        If creditor == player && debtor
-            Int amount = StorageUtil.GetIntValue(self, GetDebtKey(i, "Amount"), 0)
-            String reason = StorageUtil.GetStringValue(self, GetDebtKey(i, "Reason"), "")
-            Bool isRecurring = StorageUtil.GetIntValue(self, GetDebtKey(i, "IsRecurring"), 0) == 1
-            Float dueTime = StorageUtil.GetFloatValue(self, GetDebtKey(i, "DueTime"), 0.0)
-            String line = debtor.GetDisplayName() + ": " + amount + "g"
-            ; Build detail parenthetical
-            String details = ""
-            If isRecurring
-                Int chargeAmount = StorageUtil.GetIntValue(self, GetDebtKey(i, "RecurringCharge"), 0)
-                Float intervalHours = StorageUtil.GetFloatValue(self, GetDebtKey(i, "RecurringInterval"), 0.0)
-                If chargeAmount > 0
-                    details = FormatRecurringRate(chargeAmount, intervalHours)
-                Else
-                    details = FormatRecurringRate(amount, intervalHours)
-                EndIf
-            EndIf
-            If reason != ""
-                If details != ""
-                    details += ", " + reason
-                Else
-                    details = reason
-                EndIf
-            EndIf
-            ; Add timeframe
-            String timeStr = FormatTimeRemaining(dueTime, currentTime)
-            If timeStr != ""
-                If details != ""
-                    details += ", " + timeStr
-                Else
-                    details = timeStr
-                EndIf
-            EndIf
-            If details != ""
-                line += " (" + details + ")"
-            EndIf
-            result = PapyrusUtil.PushString(result, line)
-        EndIf
-        i += 1
-    EndWhile
-    Return result
-EndFunction
 
 String Function FormatRecurringRate(Int amount, Float intervalHours)
     {Format a recurring rate into a human-readable string like "50g/day" or "100g/week".}
@@ -532,13 +444,13 @@ EndFunction
 
 String Function FormatTimeRemaining(Float dueTime, Float currentTime)
     {Format the time remaining or overdue status for a debt.
+     Both inputs are in the seconds-equivalent unit (gameDays * 87144).
      Returns "" for open-ended debts (dueTime == 0), "overdue" or "due in X days/hours".}
     If dueTime <= 0.0
         Return ""
     EndIf
     Float diffSeconds = dueTime - currentTime
     If diffSeconds <= 0.0
-        ; Overdue
         Float overdueHours = (currentTime - dueTime) / SECONDS_PER_GAME_HOUR
         If overdueHours >= 48.0
             Int days = (overdueHours / 24.0) as Int
@@ -554,7 +466,6 @@ String Function FormatTimeRemaining(Float dueTime, Float currentTime)
             EndIf
         EndIf
     Else
-        ; Not yet due
         Float remainHours = diffSeconds / SECONDS_PER_GAME_HOUR
         If remainHours >= 48.0
             Int days = (remainHours / 24.0) as Int
@@ -572,517 +483,190 @@ String Function FormatTimeRemaining(Float dueTime, Float currentTime)
     EndIf
 EndFunction
 
-Bool Function HasAnyDebt(Actor akActor)
-    {Check if the actor is involved in any debt (as creditor or debtor)}
-    Int count = GetDebtCount()
+; =============================================================================
+; MCM SUMMARY API — used by the Currency MCM page
+; =============================================================================
+
+String[] Function GetPlayerDebtDetails(Bool abPlayerIsCreditor)
+    {Formatted "Name: Xg (rate, reason, timeframe)" lines for the MCM.
+     abPlayerIsCreditor=true  → debts owed TO the player (counterparty = debtor).
+     abPlayerIsCreditor=false → debts the player owes  (counterparty = creditor).}
+    Actor player = Game.GetPlayer()
+    String[] result = PapyrusUtil.StringArray(0)
+    Float currentTime = GetGameTimeInSeconds()
+    Int[] ids = SeverActionsNativeExt.Native_Debt_GetAllIDs()
+    Int n = ids.Length
     Int i = 0
-    While i < count
-        Actor c = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-        Actor d = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-        If c == akActor || d == akActor
-            Return true
+    While i < n
+        Int debtId = ids[i]
+        Actor creditor = SeverActionsNativeExt.Native_Debt_GetCreditor(debtId)
+        Actor debtor   = SeverActionsNativeExt.Native_Debt_GetDebtor(debtId)
+
+        Actor counterparty = None
+        If abPlayerIsCreditor && creditor == player && debtor
+            counterparty = debtor
+        ElseIf !abPlayerIsCreditor && debtor == player && creditor
+            counterparty = creditor
         EndIf
-        i += 1
-    EndWhile
-    Return false
-EndFunction
 
-Bool Function IsCreditorOnAnyDebt(Actor akActor)
-    {Check if the actor is owed money by anyone}
-    Int count = GetDebtCount()
-    Int i = 0
-    While i < count
-        Actor c = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-        If c == akActor
-            Return true
-        EndIf
-        i += 1
-    EndWhile
-    Return false
-EndFunction
+        If counterparty
+            Int amount     = SeverActionsNativeExt.Native_Debt_GetAmount(debtId)
+            String reason  = SeverActionsNativeExt.Native_Debt_GetReason(debtId)
+            Bool isRecur   = SeverActionsNativeExt.Native_Debt_GetIsRecurring(debtId)
+            Float dueSec   = SecondsFromDays(SeverActionsNativeExt.Native_Debt_GetDueGameDays(debtId))
+            String line = counterparty.GetDisplayName() + ": " + amount + "g"
 
-Bool Function ModifyDebtAmount(Int index, Int deltaAmount)
-    {Increase or decrease a debt's amount. Removes the debt if amount hits 0 or below.
-     Enforces credit limit on positive deltas — clamps at limit and fires event if reached.
-     Returns false if index out of range or if already at credit limit (no change made).}
-    Int count = GetDebtCount()
-    If index < 0 || index >= count
-        Return false
-    EndIf
-
-    Int currentAmount = StorageUtil.GetIntValue(self, GetDebtKey(index, "Amount"), 0)
-    Int creditLimit = StorageUtil.GetIntValue(self, GetDebtKey(index, "CreditLimit"), 0)
-
-    ; Enforce credit limit on increases
-    If deltaAmount > 0 && creditLimit > 0
-        If currentAmount >= creditLimit
-            ; Already at limit — reject the increase
-            Actor creditor = StorageUtil.GetFormValue(self, GetDebtKey(index, "Creditor"), None) as Actor
-            Actor debtor = StorageUtil.GetFormValue(self, GetDebtKey(index, "Debtor"), None) as Actor
-            String reason = StorageUtil.GetStringValue(self, GetDebtKey(index, "Reason"), "")
-            If creditor && debtor
-                SkyrimNetApi.RegisterShortLivedEvent( \
-                    "debt_limit_" + index, "debt_credit_limit_reached", \
-                    debtor.GetDisplayName() + " has reached the " + creditLimit + " gold credit limit with " + creditor.GetDisplayName() + " for " + reason, \
-                    "", 300000, creditor, debtor)
+            String details = ""
+            If isRecur
+                Int chargeAmount = SeverActionsNativeExt.Native_Debt_GetRecurringCharge(debtId)
+                Float intervalHours = SeverActionsNativeExt.Native_Debt_GetIntervalDays(debtId) * 24.0
+                If chargeAmount > 0
+                    details = FormatRecurringRate(chargeAmount, intervalHours)
+                Else
+                    details = FormatRecurringRate(amount, intervalHours)
+                EndIf
             EndIf
-            DebugMsg("ModifyDebtAmount: credit limit reached on debt #" + index + " (" + currentAmount + "/" + creditLimit + "g)")
-            Return false
+            If reason != ""
+                If details != ""
+                    details += ", " + reason
+                Else
+                    details = reason
+                EndIf
+            EndIf
+            String timeStr = FormatTimeRemaining(dueSec, currentTime)
+            If timeStr != ""
+                If details != ""
+                    details += ", " + timeStr
+                Else
+                    details = timeStr
+                EndIf
+            EndIf
+            If details != ""
+                line += " (" + details + ")"
+            EndIf
+            result = PapyrusUtil.PushString(result, line)
         EndIf
-        ; Clamp the increase so it doesn't exceed the limit
-        Int maxIncrease = creditLimit - currentAmount
-        If deltaAmount > maxIncrease
-            deltaAmount = maxIncrease
-        EndIf
-    EndIf
+        i += 1
+    EndWhile
+    Return result
+EndFunction
 
-    Int newAmount = currentAmount + deltaAmount
+String[] Function GetPlayerOwesDetails()
+    Return GetPlayerDebtDetails(false)
+EndFunction
 
-    If newAmount <= 0
-        RemoveDebt(index)
-    Else
-        StorageUtil.SetIntValue(self, GetDebtKey(index, "Amount"), newAmount)
-        ; Rebuild summaries
-        Actor creditor = StorageUtil.GetFormValue(self, GetDebtKey(index, "Creditor"), None) as Actor
-        Actor debtor = StorageUtil.GetFormValue(self, GetDebtKey(index, "Debtor"), None) as Actor
-        If creditor
-            RebuildDebtSummary(creditor)
-        EndIf
-        If debtor
-            RebuildDebtSummary(debtor)
-        EndIf
-
-        ; Check if we just hit the credit limit after this change
-        If creditLimit > 0 && newAmount >= creditLimit && creditor && debtor
-            String reason = StorageUtil.GetStringValue(self, GetDebtKey(index, "Reason"), "")
-            SkyrimNetApi.RegisterShortLivedEvent( \
-                "debt_limit_" + index, "debt_credit_limit_reached", \
-                debtor.GetDisplayName() + " has reached the " + creditLimit + " gold credit limit with " + creditor.GetDisplayName() + " for " + reason, \
-                "", 300000, creditor, debtor)
-            DebugMsg("ModifyDebtAmount: credit limit reached on debt #" + index + " (" + newAmount + "/" + creditLimit + "g)")
-        EndIf
-    EndIf
-
-    Return true
+String[] Function GetOwedToPlayerDetails()
+    Return GetPlayerDebtDetails(true)
 EndFunction
 
 ; =============================================================================
-; PER-ACTOR SUMMARY CACHE (for papyrus_util native reads)
+; FACTION MEMBERSHIP SYNC
 ; =============================================================================
+;
+; Phase 4 retired the per-actor StorageUtil summary cache — the prompt
+; templates now read live via debt_context / debt_complaints decorators.
+; Faction membership management still lives here because the YAML eligibility
+; rules (CollectPayment / ForgiveDebt / AddToDebt) consult SeverActions_*Faction
+; and adding/removing faction membership has side effects (package re-eval)
+; we don't want native triggering implicitly.
 
-Function RebuildDebtSummary(Actor akActor)
-    {Rebuilds the SeverDebt_Info string stored on the actor via StorageUtil.
-     The prompt template reads this natively via papyrus_util("GetStringValue", npc.UUID, "SeverDebt_Info", "").
-     No Papyrus decorator needed — zero caching, always current.}
+Function SyncDebtFactionsForActor(Actor akActor)
+    {Add/remove the actor from DebtorFaction / CreditorFaction so its current
+     membership matches whether they're listed as debtor / creditor on any
+     live debt. Only mutates when state differs from desired (Phase 1 A15).}
     If !akActor
         Return
     EndIf
 
-    Actor player = Game.GetPlayer()
-    Int count = GetDebtCount()
-    String result = ""
-    Float currentTime = GetGameTimeInSeconds()
-    Int debtsFound = 0
     Bool isAnyCreditor = false
-    Bool isAnyDebtor = false
-
+    Bool isAnyDebtor   = false
+    Int[] ids = SeverActionsNativeExt.Native_Debt_GetAllIDs()
+    Int n = ids.Length
     Int i = 0
-    While i < count
-        Actor creditor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-        Actor debtor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-
-        If creditor == akActor || debtor == akActor
-            Int amount = StorageUtil.GetIntValue(self, GetDebtKey(i, "Amount"), 0)
-            String reason = StorageUtil.GetStringValue(self, GetDebtKey(i, "Reason"), "")
-            Int isRecurring = StorageUtil.GetIntValue(self, GetDebtKey(i, "IsRecurring"), 0)
-            Float dueTime = StorageUtil.GetFloatValue(self, GetDebtKey(i, "DueTime"), 0.0)
-            Float recurringInterval = StorageUtil.GetFloatValue(self, GetDebtKey(i, "RecurringInterval"), 0.0)
-            Int creditLimit = StorageUtil.GetIntValue(self, GetDebtKey(i, "CreditLimit"), 0)
-
-            ; Determine the "other" actor relative to akActor
-            Actor otherActor
-            Bool akActorIsCreditor
-            If creditor == akActor
-                otherActor = debtor
-                akActorIsCreditor = true
-                isAnyCreditor = true
-            Else
-                otherActor = creditor
-                akActorIsCreditor = false
-                isAnyDebtor = true
-            EndIf
-
-            ; Build the name of the other party
-            String otherName
-            If otherActor == player
-                otherName = player.GetDisplayName()
-            Else
-                otherName = otherActor.GetDisplayName()
-            EndIf
-
-            ; Format the amount — "X/Y gold" if credit limit exists, "X gold" otherwise
-            String amountStr
-            If creditLimit > 0
-                amountStr = amount + "/" + creditLimit + " gold"
-            Else
-                amountStr = amount + " gold"
-            EndIf
-
-            ; Build the debt line
-            String line = "- "
-
-            If isRecurring == 1
-                ; Recurring debt
-                Int intervalDays = Math.Floor(recurringInterval / 24.0) as Int
-                String intervalStr
-                If intervalDays <= 1
-                    intervalStr = "daily"
-                ElseIf intervalDays == 7
-                    intervalStr = "weekly"
-                ElseIf intervalDays == 30
-                    intervalStr = "monthly"
-                Else
-                    intervalStr = "every " + intervalDays + " days"
-                EndIf
-
-                Int chargeAmount = StorageUtil.GetIntValue(self, GetDebtKey(i, "RecurringCharge"), 0)
-                String chargeStr = ""
-                If chargeAmount > 0
-                    chargeStr = " (" + chargeAmount + " gold/cycle)"
-                EndIf
-
-                If akActorIsCreditor
-                    line += intervalStr + ": " + otherName + " owes you " + amountStr + " for " + reason + chargeStr
-                Else
-                    line += intervalStr + ": You owe " + otherName + " " + amountStr + " for " + reason + chargeStr
-                EndIf
-            Else
-                ; One-time debt
-                If akActorIsCreditor
-                    line += otherName + " owes you " + amountStr + " (" + reason + ")"
-                Else
-                    line += "You owe " + otherName + " " + amountStr + " (" + reason + ")"
-                EndIf
-            EndIf
-
-            ; Credit limit reached indicator
-            If creditLimit > 0 && amount >= creditLimit
-                line += " [credit limit reached]"
-            EndIf
-
-            ; Due date / overdue info
-            If dueTime > 0.0
-                If currentTime > dueTime
-                    Float overdueHours = (currentTime - dueTime) / SECONDS_PER_GAME_HOUR
-                    Int overdueDays = Math.Floor(overdueHours / 24.0) as Int
-                    If overdueDays > 0
-                        line += " — " + overdueDays + " days overdue"
-                    Else
-                        line += " — overdue"
-                    EndIf
-                Else
-                    Float remainingHours = (dueTime - currentTime) / SECONDS_PER_GAME_HOUR
-                    Int remainingDays = Math.Floor(remainingHours / 24.0) as Int
-                    If remainingDays > 0
-                        line += " — due in " + remainingDays + " days"
-                    Else
-                        line += " — due today"
-                    EndIf
-                EndIf
-            EndIf
-
-            If debtsFound > 0
-                result += "\n"
-            EndIf
-            result += line
-            debtsFound += 1
+    While i < n
+        Int debtId = ids[i]
+        Actor creditor = SeverActionsNativeExt.Native_Debt_GetCreditor(debtId)
+        Actor debtor   = SeverActionsNativeExt.Native_Debt_GetDebtor(debtId)
+        If creditor == akActor
+            isAnyCreditor = true
         EndIf
-
-        i += 1
+        If debtor == akActor
+            isAnyDebtor = true
+        EndIf
+        If isAnyCreditor && isAnyDebtor
+            i = n ; both already known — short-circuit
+        Else
+            i += 1
+        EndIf
     EndWhile
 
-    If debtsFound > 0
-        StorageUtil.SetStringValue(akActor, KEY_ACTOR_INFO, result)
-    Else
-        StorageUtil.UnsetStringValue(akActor, KEY_ACTOR_INFO)
-    EndIf
-
-    ; Update faction membership based on debt involvement
     If DebtorFaction
-        If isAnyDebtor
+        Bool isInDebtor = akActor.IsInFaction(DebtorFaction)
+        If isAnyDebtor && !isInDebtor
             akActor.AddToFaction(DebtorFaction)
-        Else
+        ElseIf !isAnyDebtor && isInDebtor
             akActor.RemoveFromFaction(DebtorFaction)
         EndIf
     EndIf
     If CreditorFaction
-        If isAnyCreditor
+        Bool isInCreditor = akActor.IsInFaction(CreditorFaction)
+        If isAnyCreditor && !isInCreditor
             akActor.AddToFaction(CreditorFaction)
-        Else
+        ElseIf !isAnyCreditor && isInCreditor
             akActor.RemoveFromFaction(CreditorFaction)
         EndIf
     EndIf
-EndFunction
-
-Function RebuildAllSummaries()
-    {Rebuild summary strings for all actors involved in any debt.
-     Called during Maintenance (game load) to ensure papyrus_util reads are fresh.}
-    Int count = GetDebtCount()
-
-    ; Collect unique actors — Papyrus has no Set type, so use a fixed-size array
-    ; with manual dedup. Max realistic unique actors across all debts.
-    If count <= 0
-        Return
-    EndIf
-    Actor[] actors = new Actor[40]
-    Int actorCount = 0
-
-    Int i = 0
-    While i < count
-        Actor creditor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-        Actor debtor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-
-        If creditor
-            If !ArrayContainsActor(actors, actorCount, creditor)
-                If actorCount < 40
-                    actors[actorCount] = creditor
-                    actorCount += 1
-                EndIf
-            EndIf
-        EndIf
-        If debtor
-            If !ArrayContainsActor(actors, actorCount, debtor)
-                If actorCount < 40
-                    actors[actorCount] = debtor
-                    actorCount += 1
-                EndIf
-            EndIf
-        EndIf
-
-        i += 1
-    EndWhile
-
-    ; Rebuild each actor's summary
-    i = 0
-    While i < actorCount
-        RebuildDebtSummary(actors[i])
-        i += 1
-    EndWhile
-
-    DebugMsg("RebuildAllSummaries — refreshed " + actorCount + " actors across " + count + " debts")
-
-    ; Also rebuild guard complaint summary for player debts
-    RebuildComplaintSummary()
-EndFunction
-
-Function RebuildComplaintSummary()
-    {Rebuild the SeverDebt_Complaints string stored on the player.
-     Guards read this via papyrus_util in the bounty prompt.
-     Only includes debts where the player is debtor AND ReportedToGuards == 1.}
-    Actor player = Game.GetPlayer()
-    If !player
-        Return
-    EndIf
-
-    Int count = GetDebtCount()
-    String result = ""
-    Float currentTime = GetGameTimeInSeconds()
-    Int complaintsFound = 0
-
-    Int i = 0
-    While i < count
-        Actor debtor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-        If debtor == player
-            Int reported = StorageUtil.GetIntValue(self, GetDebtKey(i, "ReportedToGuards"), 0)
-            If reported == 1
-                Actor creditor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-                Int amount = StorageUtil.GetIntValue(self, GetDebtKey(i, "Amount"), 0)
-                String reason = StorageUtil.GetStringValue(self, GetDebtKey(i, "Reason"), "")
-                Float dueTime = StorageUtil.GetFloatValue(self, GetDebtKey(i, "DueTime"), 0.0)
-
-                String line = "- "
-                If creditor
-                    line += creditor.GetDisplayName()
-                Else
-                    line += "Unknown creditor"
-                EndIf
-                line += " is owed " + amount + " gold for " + reason
-
-                If dueTime > 0.0 && currentTime > dueTime
-                    Float overdueHours = (currentTime - dueTime) / SECONDS_PER_GAME_HOUR
-                    Int overdueDays = (overdueHours / 24.0) as Int
-                    If overdueDays > 0
-                        line += " — " + overdueDays + " days overdue"
-                    Else
-                        line += " — overdue"
-                    EndIf
-                EndIf
-
-                If complaintsFound > 0
-                    result += "\n"
-                EndIf
-                result += line
-                complaintsFound += 1
-            EndIf
-        EndIf
-        i += 1
-    EndWhile
-
-    If complaintsFound > 0
-        StorageUtil.SetStringValue(player, KEY_COMPLAINTS, result)
-    Else
-        StorageUtil.UnsetStringValue(player, KEY_COMPLAINTS)
-    EndIf
-
-    DebugMsg("RebuildComplaintSummary — " + complaintsFound + " active complaints")
-EndFunction
-
-Bool Function ArrayContainsActor(Actor[] arr, Int arrLen, Actor target)
-    Int i = 0
-    While i < arrLen
-        If arr[i] == target
-            Return true
-        EndIf
-        i += 1
-    EndWhile
-    Return false
 EndFunction
 
 ; =============================================================================
 ; TICK PROCESSING (called from FollowerManager OnUpdate)
 ; =============================================================================
 
-Function TickDebts(Float gameHoursPassed)
-    {Process recurring charges and overdue notifications.
-     Called every 30 real seconds when >= 0.5 game hours have passed.}
-    Int count = GetDebtCount()
-    If count == 0
+Function TickDebts()
+    {Phase 3b — the recurring-charge / overdue / guard-report walk lives in
+     the native DebtStore::Tick. Papyrus only drains the side-effect queue
+     here, because SkyrimNet's PublicAPI doesn't expose event registration
+     to C++ callers — only Papyrus can call SkyrimNetApi.Register*Event.
+
+     Tick kinds (mirrors DebtStore::DebtEventKind):
+       0 = Regular     — RegisterEvent(name, content, creditor, debtor)
+       1 = ShortLived  — RegisterShortLivedEvent(key, name, content, "", ttl, creditor, debtor)
+       2 = Persistent  — RegisterPersistentEvent(content, creditor, debtor)
+
+     The native side converts MCM-tunable hours to days so the data layer
+     stays unit-consistent (everything in Calendar days).}
+    Float graceDays  = OverdueGracePeriodHours / 24.0
+    Float reportDays = ReportThresholdHours / 24.0
+    Int pending = SeverActionsNativeExt.Native_Debt_Tick(EnableOverdueReminders, graceDays, reportDays)
+    If pending <= 0
         Return
     EndIf
 
-    Float currentTime = GetGameTimeInSeconds()
-    Bool anySummaryChanged = false
+    Int i = 0
+    While i < pending
+        Int kind        = SeverActionsNativeExt.Native_Debt_PendingEvent_Kind(i)
+        String eventName = SeverActionsNativeExt.Native_Debt_PendingEvent_Name(i)
+        String content   = SeverActionsNativeExt.Native_Debt_PendingEvent_Content(i)
+        String dedupKey  = SeverActionsNativeExt.Native_Debt_PendingEvent_Key(i)
+        Int ttlMs        = SeverActionsNativeExt.Native_Debt_PendingEvent_TTL(i)
+        Actor creditor   = SeverActionsNativeExt.Native_Debt_PendingEvent_Creditor(i)
+        Actor debtor     = SeverActionsNativeExt.Native_Debt_PendingEvent_Debtor(i)
 
-    ; Process in reverse order since RemoveDebt swaps with last
-    Int i = count - 1
-    While i >= 0
-        ; --- Recurring charges ---
-        Int isRecurring = StorageUtil.GetIntValue(self, GetDebtKey(i, "IsRecurring"), 0)
-        If isRecurring == 1
-            Float lastRecurred = StorageUtil.GetFloatValue(self, GetDebtKey(i, "LastRecurred"), 0.0)
-            Float intervalHours = StorageUtil.GetFloatValue(self, GetDebtKey(i, "RecurringInterval"), 0.0)
-            Float intervalSeconds = intervalHours * SECONDS_PER_GAME_HOUR
-
-            If intervalSeconds > 0.0 && (currentTime - lastRecurred) >= intervalSeconds
-                ; Add recurring charge — respects credit limits
-                Int amount = StorageUtil.GetIntValue(self, GetDebtKey(i, "Amount"), 0)
-                Int creditLimit = StorageUtil.GetIntValue(self, GetDebtKey(i, "CreditLimit"), 0)
-
-                ; Check if already at credit limit
-                If creditLimit > 0 && amount >= creditLimit
-                    ; At limit — skip this cycle's charge, just update timestamp
-                    StorageUtil.SetFloatValue(self, GetDebtKey(i, "LastRecurred"), currentTime)
-                    DebugMsg("Recurring charge skipped: debt #" + i + " at credit limit (" + amount + "/" + creditLimit + "g)")
-                Else
-                    ; Read the per-cycle charge from a dedicated field
-                    Int chargeAmount = StorageUtil.GetIntValue(self, GetDebtKey(i, "RecurringCharge"), 0)
-                    If chargeAmount <= 0
-                        ; Fallback for debts created before this field existed — use current amount
-                        chargeAmount = amount
-                        StorageUtil.SetIntValue(self, GetDebtKey(i, "RecurringCharge"), chargeAmount)
-                    EndIf
-
-                    ; Clamp charge to credit limit if set
-                    Int newAmount = amount + chargeAmount
-                    If creditLimit > 0 && newAmount > creditLimit
-                        newAmount = creditLimit
-                    EndIf
-
-                    StorageUtil.SetIntValue(self, GetDebtKey(i, "Amount"), newAmount)
-                    StorageUtil.SetFloatValue(self, GetDebtKey(i, "LastRecurred"), currentTime)
-                    anySummaryChanged = true
-
-                    Actor creditor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-                    Actor debtor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-                    String reason = StorageUtil.GetStringValue(self, GetDebtKey(i, "Reason"), "")
-
-                    DebugMsg("Recurring charge: +" + chargeAmount + "g on debt #" + i + " (" + reason + "), now " + newAmount + "g total")
-
-                    ; Short-lived event for scene context (5 min TTL)
-                    If creditor && debtor
-                        String eventDesc = creditor.GetDisplayName() + " is owed another " + chargeAmount + " gold by " + debtor.GetDisplayName() + " for " + reason + " (recurring charge)"
-                        SkyrimNetApi.RegisterShortLivedEvent( \
-                            "debt_recurring_" + i, "debt_recurring", eventDesc, "", 300000, creditor, debtor)
-
-                        ; Fire credit limit event if we just hit it
-                        If creditLimit > 0 && newAmount >= creditLimit
-                            SkyrimNetApi.RegisterShortLivedEvent( \
-                                "debt_limit_" + i, "debt_credit_limit_reached", \
-                                debtor.GetDisplayName() + " has reached the " + creditLimit + " gold credit limit with " + creditor.GetDisplayName() + " for " + reason, \
-                                "", 300000, creditor, debtor)
-                        EndIf
-                    EndIf
-                EndIf
-            EndIf
+        If kind == 1
+            SkyrimNetApi.RegisterShortLivedEvent(dedupKey, eventName, content, "", ttlMs, creditor, debtor)
+            DebugMsg("Tick short-lived: " + content)
+        ElseIf kind == 2
+            SkyrimNetApi.RegisterPersistentEvent(content, creditor, debtor)
+            DebugMsg("Tick persistent: " + content)
+        Else
+            SkyrimNetApi.RegisterEvent(eventName, content, creditor, debtor)
+            DebugMsg("Tick regular: " + content)
         EndIf
 
-        ; --- Overdue notifications ---
-        If EnableOverdueReminders
-            Float dueTime = StorageUtil.GetFloatValue(self, GetDebtKey(i, "DueTime"), 0.0)
-            Int alreadyNotified = StorageUtil.GetIntValue(self, GetDebtKey(i, "OverdueNotified"), 0)
-
-            If dueTime > 0.0 && alreadyNotified == 0
-                Float gracePeriodSeconds = OverdueGracePeriodHours * SECONDS_PER_GAME_HOUR
-                If currentTime > (dueTime + gracePeriodSeconds)
-                    Actor creditor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-                    Actor debtor = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-                    Int amount = StorageUtil.GetIntValue(self, GetDebtKey(i, "Amount"), 0)
-                    String reason = StorageUtil.GetStringValue(self, GetDebtKey(i, "Reason"), "")
-
-                    StorageUtil.SetIntValue(self, GetDebtKey(i, "OverdueNotified"), 1)
-
-                    If creditor && debtor
-                        String eventContent = debtor.GetDisplayName() + " is overdue on " + amount + " gold owed to " + creditor.GetDisplayName() + " for " + reason
-                        SkyrimNetApi.RegisterPersistentEvent(eventContent, creditor, debtor)
-                        DebugMsg("Overdue: debt #" + i + " — " + eventContent)
-                    EndIf
-                EndIf
-            EndIf
-        EndIf
-
-        ; --- Guard report filing (severe overdue) ---
-        Float dueTime_r = StorageUtil.GetFloatValue(self, GetDebtKey(i, "DueTime"), 0.0)
-        Int alreadyReported = StorageUtil.GetIntValue(self, GetDebtKey(i, "ReportedToGuards"), 0)
-
-        If dueTime_r > 0.0 && alreadyReported == 0
-            Float reportSeconds = ReportThresholdHours * SECONDS_PER_GAME_HOUR
-            If currentTime > (dueTime_r + reportSeconds)
-                Actor debtor_r = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-                ; Only file reports against the player
-                If debtor_r == Game.GetPlayer()
-                    Actor creditor_r = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-                    ; Only when creditor is NOT near the player (3D not loaded = player is away)
-                    If creditor_r && !creditor_r.Is3DLoaded()
-                        StorageUtil.SetIntValue(self, GetDebtKey(i, "ReportedToGuards"), 1)
-                        anySummaryChanged = true
-
-                        Int amount_r = StorageUtil.GetIntValue(self, GetDebtKey(i, "Amount"), 0)
-                        String reason_r = StorageUtil.GetStringValue(self, GetDebtKey(i, "Reason"), "")
-                        String reportMsg = creditor_r.GetDisplayName() + " has reported " + debtor_r.GetDisplayName() + " to the authorities for an unpaid debt of " + amount_r + " gold (" + reason_r + ")"
-                        SkyrimNetApi.RegisterPersistentEvent(reportMsg, creditor_r, debtor_r)
-                        DebugMsg("Debt reported to guards: debt #" + i + " — " + reportMsg)
-                    EndIf
-                EndIf
-            EndIf
-        EndIf
-
-        i -= 1
+        i += 1
     EndWhile
 
-    ; Rebuild affected summaries if anything changed
-    If anySummaryChanged
-        RebuildAllSummaries()
-    EndIf
+    SeverActionsNativeExt.Native_Debt_ClearPendingEvents()
 EndFunction
 
 ; =============================================================================
@@ -1097,9 +681,9 @@ Function CreateDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor akDebtor, I
         Return
     EndIf
 
-    ; Duplicate prevention — reject if same creditor+debtor+reason already exists
-    Int existingIndex = FindDebt(akCreditor, akDebtor, asReason)
-    If existingIndex >= 0
+    ; Duplicate prevention
+    Int existingId = SeverActionsNativeExt.Native_Debt_FindByTriple(akCreditor, akDebtor, asReason)
+    If existingId > 0
         DebugMsg("CreateDebt: Duplicate rejected — " + akDebtor.GetDisplayName() + " already owes " + akCreditor.GetDisplayName() + " for " + asReason)
         SkyrimNetApi.RegisterEvent("debt_create_failed", akDebtor.GetDisplayName() + " already has an outstanding debt to " + akCreditor.GetDisplayName() + " for " + asReason, akSpeaker, akCreditor)
         Return
@@ -1108,17 +692,15 @@ Function CreateDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor akDebtor, I
     ; Calculate due time in game seconds (0 = no deadline)
     Float dueTimeSeconds = 0.0
     If aiDueDays > 0
-        dueTimeSeconds = GetGameTimeInSeconds() + (aiDueDays as Float * 24.0 * SECONDS_PER_GAME_HOUR)
+        dueTimeSeconds = GetGameTimeInSeconds() + (aiDueDays as Float * SECONDS_PER_GAME_DAY)
     EndIf
 
-    ; Clamp initial amount to credit limit if set
     If aiCreditLimit > 0 && aiAmount > aiCreditLimit
         aiAmount = aiCreditLimit
     EndIf
 
     Actor player = Game.GetPlayer()
 
-    ; Build prompt details for due date and credit limit
     String extraDetails = ""
     If aiDueDays > 0
         extraDetails += " Due in " + aiDueDays + " days."
@@ -1127,12 +709,9 @@ Function CreateDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor akDebtor, I
         extraDetails += " Credit limit: " + aiCreditLimit + " gold."
     EndIf
 
-    ; Player confirmation
     If akDebtor == player
-        ; Player is being told they owe money
         String promptText = akCreditor.GetDisplayName() + " claims you owe them " + aiAmount + " gold for " + asReason + "." + extraDetails + " Accept this debt?"
         String result = SkyMessage.Show(promptText, "Yes", "No", "No (Silent)")
-
         If result == "Yes"
             AddDebt(akCreditor, akDebtor, aiAmount, asReason, dueTimeSeconds, false, 0.0, aiCreditLimit)
             SkyrimNetApi.RegisterEvent("debt_created", akDebtor.GetDisplayName() + " now owes " + akCreditor.GetDisplayName() + " " + aiAmount + " gold for " + asReason, akCreditor, akDebtor)
@@ -1143,10 +722,8 @@ Function CreateDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor akDebtor, I
         EndIf
 
     ElseIf akCreditor == player
-        ; Someone acknowledges owing the player money
         String promptText = akDebtor.GetDisplayName() + " acknowledges owing you " + aiAmount + " gold for " + asReason + "." + extraDetails + " Accept?"
         String result = SkyMessage.Show(promptText, "Yes", "No", "No (Silent)")
-
         If result == "Yes"
             AddDebt(akCreditor, akDebtor, aiAmount, asReason, dueTimeSeconds, false, 0.0, aiCreditLimit)
             SkyrimNetApi.RegisterEvent("debt_created", akDebtor.GetDisplayName() + " now owes " + akCreditor.GetDisplayName() + " " + aiAmount + " gold for " + asReason, akCreditor, akDebtor)
@@ -1157,7 +734,6 @@ Function CreateDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor akDebtor, I
         EndIf
 
     Else
-        ; NPC-to-NPC debt — no player confirmation needed
         AddDebt(akCreditor, akDebtor, aiAmount, asReason, dueTimeSeconds, false, 0.0, aiCreditLimit)
         SkyrimNetApi.RegisterEvent("debt_created", akDebtor.GetDisplayName() + " now owes " + akCreditor.GetDisplayName() + " " + aiAmount + " gold for " + asReason, akCreditor, akDebtor)
     EndIf
@@ -1171,10 +747,9 @@ Function CreateRecurringDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor ak
         Return
     EndIf
 
-    ; Duplicate prevention — only one recurring arrangement per creditor+debtor pair
-    Int existingIndex = FindRecurringDebt(akCreditor, akDebtor)
-    If existingIndex >= 0
-        String existingReason = StorageUtil.GetStringValue(self, GetDebtKey(existingIndex, "Reason"), "")
+    Int existingId = SeverActionsNativeExt.Native_Debt_FindRecurringPair(akCreditor, akDebtor)
+    If existingId > 0
+        String existingReason = SeverActionsNativeExt.Native_Debt_GetReason(existingId)
         DebugMsg("CreateRecurringDebt: Duplicate rejected — recurring debt already exists between " + akCreditor.GetDisplayName() + " and " + akDebtor.GetDisplayName() + " for " + existingReason)
         SkyrimNetApi.RegisterEvent("debt_create_failed", akDebtor.GetDisplayName() + " already has a recurring payment arrangement with " + akCreditor.GetDisplayName() + " for " + existingReason, akSpeaker, akCreditor)
         Return
@@ -1183,7 +758,6 @@ Function CreateRecurringDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor ak
     Float intervalHours = aiIntervalDays as Float * 24.0
     Actor player = Game.GetPlayer()
 
-    ; Build interval description for player prompts
     String intervalDesc
     If aiIntervalDays == 1
         intervalDesc = "daily"
@@ -1195,23 +769,16 @@ Function CreateRecurringDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor ak
         intervalDesc = "every " + aiIntervalDays + " days"
     EndIf
 
-    ; Build credit limit info for prompts
     String limitInfo = ""
     If aiCreditLimit > 0
         limitInfo = " Credit limit: " + aiCreditLimit + " gold."
     EndIf
 
-    ; Player confirmation
     If akDebtor == player
         String promptText = akCreditor.GetDisplayName() + " wants you to pay " + aiAmount + " gold " + intervalDesc + " for " + asReason + "." + limitInfo + " Accept?"
         String result = SkyMessage.Show(promptText, "Yes", "No", "No (Silent)")
-
         If result == "Yes"
-            Int debtIndex = AddDebt(akCreditor, akDebtor, aiAmount, asReason, 0.0, true, intervalHours, aiCreditLimit)
-            If debtIndex >= 0
-                ; Store the per-cycle charge for tick processing
-                StorageUtil.SetIntValue(self, GetDebtKey(debtIndex, "RecurringCharge"), aiAmount)
-            EndIf
+            AddDebt(akCreditor, akDebtor, aiAmount, asReason, 0.0, true, intervalHours, aiCreditLimit)
             SkyrimNetApi.RegisterEvent("debt_created", akDebtor.GetDisplayName() + " agreed to pay " + akCreditor.GetDisplayName() + " " + aiAmount + " gold " + intervalDesc + " for " + asReason, akCreditor, akDebtor)
         ElseIf result == "No"
             SkyrimNetApi.DirectNarration(player.GetDisplayName() + " refused the recurring payment arrangement for " + asReason, akCreditor)
@@ -1222,12 +789,8 @@ Function CreateRecurringDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor ak
     ElseIf akCreditor == player
         String promptText = akDebtor.GetDisplayName() + " agrees to pay you " + aiAmount + " gold " + intervalDesc + " for " + asReason + "." + limitInfo + " Accept?"
         String result = SkyMessage.Show(promptText, "Yes", "No", "No (Silent)")
-
         If result == "Yes"
-            Int debtIndex = AddDebt(akCreditor, akDebtor, aiAmount, asReason, 0.0, true, intervalHours, aiCreditLimit)
-            If debtIndex >= 0
-                StorageUtil.SetIntValue(self, GetDebtKey(debtIndex, "RecurringCharge"), aiAmount)
-            EndIf
+            AddDebt(akCreditor, akDebtor, aiAmount, asReason, 0.0, true, intervalHours, aiCreditLimit)
             SkyrimNetApi.RegisterEvent("debt_created", akDebtor.GetDisplayName() + " will pay " + akCreditor.GetDisplayName() + " " + aiAmount + " gold " + intervalDesc + " for " + asReason, akCreditor, akDebtor)
         ElseIf result == "No"
             SkyrimNetApi.DirectNarration(player.GetDisplayName() + " declined the payment arrangement", akDebtor)
@@ -1236,11 +799,7 @@ Function CreateRecurringDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor ak
         EndIf
 
     Else
-        ; NPC-to-NPC
-        Int debtIndex = AddDebt(akCreditor, akDebtor, aiAmount, asReason, 0.0, true, intervalHours, aiCreditLimit)
-        If debtIndex >= 0
-            StorageUtil.SetIntValue(self, GetDebtKey(debtIndex, "RecurringCharge"), aiAmount)
-        EndIf
+        AddDebt(akCreditor, akDebtor, aiAmount, asReason, 0.0, true, intervalHours, aiCreditLimit)
         SkyrimNetApi.RegisterEvent("debt_created", akDebtor.GetDisplayName() + " will pay " + akCreditor.GetDisplayName() + " " + aiAmount + " gold " + intervalDesc + " for " + asReason, akCreditor, akDebtor)
     EndIf
 EndFunction
@@ -1253,59 +812,23 @@ Function ReduceDebtByPayment(Actor akCollector, Actor akPayer, Int aiAmountPaid)
         Return
     EndIf
 
-    Int totalOwed = GetAmountOwed(akCollector, akPayer)
+    Int totalOwed = SeverActionsNativeExt.Native_Debt_SumOwed(akCollector, akPayer)
     If totalOwed <= 0
-        Return ; No debt in this direction
+        Return
     EndIf
 
-    Int remaining = aiAmountPaid
-    If remaining > totalOwed
-        remaining = totalOwed
-    EndIf
+    Int reduced = SeverActionsNativeExt.Native_Debt_ReduceForPayment(akCollector, akPayer, aiAmountPaid)
 
-    Int count = GetDebtCount()
-    Int i = 0
-    While i < count && remaining > 0
-        Actor c = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-        Actor d = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-
-        If c == akCollector && d == akPayer
-            Int debtAmount = StorageUtil.GetIntValue(self, GetDebtKey(i, "Amount"), 0)
-            If remaining >= debtAmount
-                remaining -= debtAmount
-                RemoveDebt(i)
-                ; After removal, the swapped-in debt is now at index i, so don't increment
-                count = GetDebtCount()
-            Else
-                StorageUtil.SetIntValue(self, GetDebtKey(i, "Amount"), debtAmount - remaining)
-                remaining = 0
-                ; Rebuild summaries for the partial payment
-                RebuildDebtSummary(akCollector)
-                RebuildDebtSummary(akPayer)
-                i += 1
-            EndIf
-        Else
-            i += 1
-        EndIf
-    EndWhile
-
-    ; Determine how much debt was actually reduced
-    Int actualReduction = aiAmountPaid
-    If actualReduction > totalOwed
-        actualReduction = totalOwed
-    EndIf
-
-    ; Register debt-specific events
-    If actualReduction >= totalOwed
+    If reduced >= totalOwed
         SkyrimNetApi.RegisterEvent("debt_settled", akPayer.GetDisplayName() + " paid off their " + totalOwed + " gold debt with " + akCollector.GetDisplayName(), akCollector, akPayer)
-    Else
-        Int newTotal = totalOwed - actualReduction
-        SkyrimNetApi.RegisterEvent("debt_partial_payment", akPayer.GetDisplayName() + " paid " + actualReduction + " gold toward debt with " + akCollector.GetDisplayName() + " (" + newTotal + " remaining)", akCollector, akPayer)
+    ElseIf reduced > 0
+        Int newTotal = totalOwed - reduced
+        SkyrimNetApi.RegisterEvent("debt_partial_payment", akPayer.GetDisplayName() + " paid " + reduced + " gold toward debt with " + akCollector.GetDisplayName() + " (" + newTotal + " remaining)", akCollector, akPayer)
     EndIf
 
-    ; Rebuild guard complaints in case a reported debt was settled
-    RebuildComplaintSummary()
-    DebugMsg("ReduceDebtByPayment: " + akPayer.GetDisplayName() + " paid " + actualReduction + "g toward debt with " + akCollector.GetDisplayName() + " (was " + totalOwed + "g)")
+    SyncDebtFactionsForActor(akCollector)
+    SyncDebtFactionsForActor(akPayer)
+    DebugMsg("ReduceDebtByPayment: " + akPayer.GetDisplayName() + " paid " + reduced + "g toward debt with " + akCollector.GetDisplayName() + " (was " + totalOwed + "g)")
 EndFunction
 
 Function ForgiveDebt_Execute(Actor akSpeaker, Actor akTarget)
@@ -1316,7 +839,7 @@ Function ForgiveDebt_Execute(Actor akSpeaker, Actor akTarget)
     EndIf
 
     Actor player = Game.GetPlayer()
-    Int totalOwed = GetAmountOwed(akSpeaker, akTarget)
+    Int totalOwed = SeverActionsNativeExt.Native_Debt_SumOwed(akSpeaker, akTarget)
 
     If totalOwed <= 0
         DebugMsg("ForgiveDebt: " + akTarget.GetDisplayName() + " doesn't owe " + akSpeaker.GetDisplayName() + " anything")
@@ -1324,11 +847,9 @@ Function ForgiveDebt_Execute(Actor akSpeaker, Actor akTarget)
         Return
     EndIf
 
-    ; Player confirmation only if player is forgiving (giving up money owed to them)
     If akSpeaker == player
         String promptText = "Forgive " + akTarget.GetDisplayName() + "'s debt of " + totalOwed + " gold?"
         String result = SkyMessage.Show(promptText, "Yes", "No", "No (Silent)")
-
         If result == "No"
             SkyrimNetApi.DirectNarration(player.GetDisplayName() + " decided not to forgive the debt", akTarget)
             Return
@@ -1338,92 +859,74 @@ Function ForgiveDebt_Execute(Actor akSpeaker, Actor akTarget)
         EndIf
     EndIf
 
-    ; Remove all debts where speaker is creditor and target is debtor
-    Int count = GetDebtCount()
-    Int i = count - 1
-    While i >= 0
-        Actor c = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-        Actor d = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-
+    ; Remove every speaker→target debt. Iterate via native ids — collect first
+    ; so we mutate cleanly.
+    Int[] ids = SeverActionsNativeExt.Native_Debt_GetAllIDs()
+    Int n = ids.Length
+    Int i = 0
+    While i < n
+        Int debtId = ids[i]
+        Actor c = SeverActionsNativeExt.Native_Debt_GetCreditor(debtId)
+        Actor d = SeverActionsNativeExt.Native_Debt_GetDebtor(debtId)
         If c == akSpeaker && d == akTarget
-            RemoveDebt(i)
+            SeverActionsNativeExt.Native_Debt_Remove(debtId)
         EndIf
-
-        i -= 1
+        i += 1
     EndWhile
 
     SkyrimNetApi.RegisterEvent("debt_forgiven", akSpeaker.GetDisplayName() + " forgave " + akTarget.GetDisplayName() + "'s debt of " + totalOwed + " gold", akSpeaker, akTarget)
     DebugMsg("ForgiveDebt: " + akSpeaker.GetDisplayName() + " forgave " + totalOwed + "g from " + akTarget.GetDisplayName())
 
-    ; Rebuild guard complaints in case a reported debt was forgiven
-    RebuildComplaintSummary()
+    SyncDebtFactionsForActor(akSpeaker)
+    SyncDebtFactionsForActor(akTarget)
 EndFunction
 
-; =============================================================================
-; ACTION: AddToDebt — add charges to an existing debt
-; =============================================================================
-
 Function AddToDebt_Execute(Actor akSpeaker, Actor akTarget, Int aiAmount, String asReason)
-    {Add charges to an existing debt between speaker and target.
-     asReason helps match a specific debt. If empty or no match, uses first debt found.
+    {Add charges to an existing debt where speaker is the creditor and target is the debtor.
+     asReason helps match a specific debt; falls back to the first speaker→target debt found.
      Respects credit limits. Player confirmation if player is the debtor.}
     If !akSpeaker || !akTarget || aiAmount <= 0
         DebugMsg("AddToDebt_Execute failed — invalid params")
         Return
     EndIf
 
-    ; Try to find the debt — first by specific reason, then any debt between them
-    Int debtIndex = -1
-
-    ; Try both directions: speaker as creditor, or speaker as debtor
+    Int debtId = 0
     If asReason != ""
-        debtIndex = FindDebt(akSpeaker, akTarget, asReason)
-        If debtIndex < 0
-            debtIndex = FindDebt(akTarget, akSpeaker, asReason)
-        EndIf
+        debtId = SeverActionsNativeExt.Native_Debt_FindByTriple(akSpeaker, akTarget, asReason)
+    EndIf
+    If debtId <= 0
+        debtId = SeverActionsNativeExt.Native_Debt_FindFirstPair(akSpeaker, akTarget)
     EndIf
 
-    ; Fallback: find any debt between the two actors
-    If debtIndex < 0
-        debtIndex = FindAnyDebt(akSpeaker, akTarget)
-    EndIf
-
-    If debtIndex < 0
-        DebugMsg("AddToDebt: No debt found between " + akSpeaker.GetDisplayName() + " and " + akTarget.GetDisplayName())
-        SkyrimNetApi.RegisterEvent("debt_add_failed", "No existing debt between " + akSpeaker.GetDisplayName() + " and " + akTarget.GetDisplayName() + " to add charges to", akSpeaker, akTarget)
+    If debtId <= 0
+        DebugMsg("AddToDebt: No speaker→target debt found (" + akSpeaker.GetDisplayName() + " → " + akTarget.GetDisplayName() + ")")
+        SkyrimNetApi.RegisterEvent("debt_add_failed", akTarget.GetDisplayName() + " has no open debt with " + akSpeaker.GetDisplayName() + " to add charges to", akSpeaker, akTarget)
         Return
     EndIf
 
-    ; Read debt details
-    Actor creditor = StorageUtil.GetFormValue(self, GetDebtKey(debtIndex, "Creditor"), None) as Actor
-    Actor debtor = StorageUtil.GetFormValue(self, GetDebtKey(debtIndex, "Debtor"), None) as Actor
-    String reason = StorageUtil.GetStringValue(self, GetDebtKey(debtIndex, "Reason"), "")
-    Int currentAmount = StorageUtil.GetIntValue(self, GetDebtKey(debtIndex, "Amount"), 0)
-    Int creditLimit = StorageUtil.GetIntValue(self, GetDebtKey(debtIndex, "CreditLimit"), 0)
+    String reason     = SeverActionsNativeExt.Native_Debt_GetReason(debtId)
+    Int currentAmount = SeverActionsNativeExt.Native_Debt_GetAmount(debtId)
+    Int creditLimit   = SeverActionsNativeExt.Native_Debt_GetCreditLimit(debtId)
 
-    ; Check if already at credit limit
     If creditLimit > 0 && currentAmount >= creditLimit
-        DebugMsg("AddToDebt: Credit limit already reached on debt #" + debtIndex)
+        DebugMsg("AddToDebt: Credit limit already reached on debt #" + debtId)
         SkyrimNetApi.RegisterShortLivedEvent( \
-            "debt_limit_" + debtIndex, "debt_credit_limit_reached", \
-            debtor.GetDisplayName() + " has reached the " + creditLimit + " gold credit limit with " + creditor.GetDisplayName() + " for " + reason, \
-            "", 300000, creditor, debtor)
+            "debt_" + debtId + "_limit", "debt_credit_limit_reached", \
+            akTarget.GetDisplayName() + " has reached the " + creditLimit + " gold credit limit with " + akSpeaker.GetDisplayName() + " for " + reason, \
+            "", 300000, akSpeaker, akTarget)
         Return
     EndIf
 
     Actor player = Game.GetPlayer()
-
-    ; Player confirmation if player is the debtor (being charged more)
-    If debtor == player
+    If akTarget == player
         String limitStr = ""
         If creditLimit > 0
             limitStr = " (limit: " + creditLimit + "g)"
         EndIf
-        String promptText = creditor.GetDisplayName() + " is adding " + aiAmount + " gold to your " + reason + " debt (currently " + currentAmount + "g" + limitStr + "). Accept?"
+        String promptText = akSpeaker.GetDisplayName() + " is adding " + aiAmount + " gold to your " + reason + " debt (currently " + currentAmount + "g" + limitStr + "). Accept?"
         String result = SkyMessage.Show(promptText, "Yes", "No", "No (Silent)")
-
         If result == "No"
-            SkyrimNetApi.DirectNarration(player.GetDisplayName() + " refused the additional charge of " + aiAmount + " gold on the " + reason, creditor)
+            SkyrimNetApi.DirectNarration(player.GetDisplayName() + " refused the additional charge of " + aiAmount + " gold on the " + reason, akSpeaker)
             Return
         ElseIf result != "Yes"
             DebugMsg("AddToDebt: Player silently declined additional charge")
@@ -1431,15 +934,15 @@ Function AddToDebt_Execute(Actor akSpeaker, Actor akTarget, Int aiAmount, String
         EndIf
     EndIf
 
-    ; Apply the increase (ModifyDebtAmount handles credit limit clamping)
-    Bool success = ModifyDebtAmount(debtIndex, aiAmount)
-
+    Bool success = ModifyDebtAmount(debtId, aiAmount)
     If success
-        Int newAmount = StorageUtil.GetIntValue(self, GetDebtKey(debtIndex, "Amount"), 0)
-        SkyrimNetApi.RegisterEvent("debt_increased", aiAmount + " gold added to " + debtor.GetDisplayName() + "'s debt with " + creditor.GetDisplayName() + " for " + reason + " (now " + newAmount + "g)", creditor, debtor)
-        DebugMsg("AddToDebt: +" + aiAmount + "g on debt #" + debtIndex + " (" + reason + "), now " + newAmount + "g")
-    Else
-        DebugMsg("AddToDebt: ModifyDebtAmount returned false for debt #" + debtIndex)
+        Int newAmount = SeverActionsNativeExt.Native_Debt_GetAmount(debtId)
+        ; PR #175 review fix (M2): report the amount actually added, not the
+        ; requested aiAmount — ModifyDebtAmount clamps to the credit limit, so
+        ; "added X" would overstate when the charge was partially absorbed.
+        Int actualAdded = newAmount - currentAmount
+        SkyrimNetApi.RegisterEvent("debt_increased", actualAdded + " gold added to " + akTarget.GetDisplayName() + "'s debt with " + akSpeaker.GetDisplayName() + " for " + reason + " (now " + newAmount + "g)", akSpeaker, akTarget)
+        DebugMsg("AddToDebt: +" + actualAdded + "g on debt #" + debtId + " (" + reason + "), now " + newAmount + "g")
     EndIf
 EndFunction
 
@@ -1456,57 +959,29 @@ Function AutoAddToDebt(Actor akGiver, Actor akReceiver, Int goldValue)
         Return
     EndIf
 
-    ; Find a debt where the giver is the creditor and receiver is the debtor
-    ; This is the "tab" pattern: innkeeper (creditor) gives item to player (debtor)
-    Int count = GetDebtCount()
-    Int bestIndex = -1
-    Int i = 0
-    While i < count
-        Actor c = StorageUtil.GetFormValue(self, GetDebtKey(i, "Creditor"), None) as Actor
-        Actor d = StorageUtil.GetFormValue(self, GetDebtKey(i, "Debtor"), None) as Actor
-
-        If c == akGiver && d == akReceiver
-            ; Prefer non-recurring debts (one-time tabs) over recurring arrangements
-            Int isRecurring = StorageUtil.GetIntValue(self, GetDebtKey(i, "IsRecurring"), 0)
-            If isRecurring == 0
-                bestIndex = i
-                i = count ; Break — found a non-recurring match
-            ElseIf bestIndex < 0
-                bestIndex = i ; Use recurring as fallback
-            EndIf
-        EndIf
-
-        i += 1
-    EndWhile
-
-    If bestIndex < 0
-        ; No matching debt — giver isn't a creditor to receiver, nothing to do
-        Return
+    Int debtId = SeverActionsNativeExt.Native_Debt_FindBestForGiveItem(akGiver, akReceiver)
+    If debtId <= 0
+        Return ; No matching debt
     EndIf
 
-    ; Check credit limit before adding
-    Int currentAmount = StorageUtil.GetIntValue(self, GetDebtKey(bestIndex, "Amount"), 0)
-    Int creditLimit = StorageUtil.GetIntValue(self, GetDebtKey(bestIndex, "CreditLimit"), 0)
+    Int currentAmount = SeverActionsNativeExt.Native_Debt_GetAmount(debtId)
+    Int creditLimit   = SeverActionsNativeExt.Native_Debt_GetCreditLimit(debtId)
 
     If creditLimit > 0 && currentAmount >= creditLimit
-        ; Already at limit — don't auto-add
         DebugMsg("AutoAddToDebt: Credit limit already reached, skipping auto-charge of " + goldValue + "g")
         Return
     EndIf
 
-    ; Apply the increase (ModifyDebtAmount handles clamping)
-    Bool success = ModifyDebtAmount(bestIndex, goldValue)
-
+    Bool success = ModifyDebtAmount(debtId, goldValue)
     If success
-        String reason = StorageUtil.GetStringValue(self, GetDebtKey(bestIndex, "Reason"), "")
-        Int newAmount = StorageUtil.GetIntValue(self, GetDebtKey(bestIndex, "Amount"), 0)
+        String reason = SeverActionsNativeExt.Native_Debt_GetReason(debtId)
+        Int newAmount = SeverActionsNativeExt.Native_Debt_GetAmount(debtId)
 
-        ; Short-lived event so the NPC knows the tab grew
         SkyrimNetApi.RegisterShortLivedEvent( \
-            "debt_autocharge_" + bestIndex, "debt_auto_charged", \
+            "debt_" + debtId + "_autocharge", "debt_auto_charged", \
             goldValue + " gold added to " + akReceiver.GetDisplayName() + "'s " + reason + " with " + akGiver.GetDisplayName() + " (now " + newAmount + "g)", \
             "", 300000, akGiver, akReceiver)
-        DebugMsg("AutoAddToDebt: +" + goldValue + "g on debt #" + bestIndex + " (" + reason + "), now " + newAmount + "g")
+        DebugMsg("AutoAddToDebt: +" + goldValue + "g on debt #" + debtId + " (" + reason + "), now " + newAmount + "g")
     EndIf
 EndFunction
 
@@ -1529,7 +1004,7 @@ Bool Function ForgiveDebt_IsEligible(Actor akSpeaker)
 EndFunction
 
 ; =============================================================================
-; UTILITY — GetInstance for Global access from YAML action scripts
+; UTILITY — GetInstance for Global access from other scripts
 ; =============================================================================
 
 SeverActions_Debt Function GetInstance() Global

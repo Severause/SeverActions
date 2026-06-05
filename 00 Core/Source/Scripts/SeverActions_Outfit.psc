@@ -28,6 +28,8 @@ Bool Property AnimationSceneActive = false Auto Hidden
 {Global flag — true when a SexLab/OStim scene is active. Blocks all outfit lock
 re-equips system-wide. Set by ModEvent hooks, read by OutfitAlias.}
 
+; Phase 1 ParityCheckIntervalSeconds removed in Phase 4 along with the sweep.
+
 ; =============================================================================
 ; ANIMATION EVENT NAMES
 ; These match Immersive Equipping Animations by default
@@ -194,30 +196,42 @@ Function Undress_Execute(Actor akActor)
         return
     endif
 
-    ; Ad-hoc action takes priority over any active slot preset. Without this,
-    ; the alias's slot-preset enforcement would re-equip the preset after this
-    ; undress completes, silently undoing the change.
-    SeverActions_OutfitSlot slotSys = GetSlotScript()
-    if slotSys
-        slotSys.ClearActivePresetForAdHoc(akActor)
-    endif
-
-    SuspendOutfitLock(akActor)
-
     Debug.Trace("[SeverActions_Outfit] Undress: " + akActor.GetDisplayName())
 
-    String storageKey = "SeverActions_RemovedArmor_" + (akActor.GetFormID() as String)
-    StorageUtil.FormListClear(None, storageKey)
+    ; Stash worn armor BEFORE BeginAdHocOutfitOp runs. The op's
+    ; ClearActivePresetForAdHoc path strips preset items via
+    ; RemovePresetItemsFromActor — once that runs, GetWornForm finds nothing
+    ; and the slot-loop below has nothing to stash. Symptom: preset-applied
+    ; outfit "comes off all at once" with no animations, then Dress reports
+    ; "no stash". Pre-stash here, then the slot loop becomes the
+    ; animation-and-unequip-the-rest pass for any items that survived.
+    ;
+    ; Mirrors the same blacklist + slot-exclusion filter the main loop
+    ; applies, so stashed items match what we expect Dress to re-equip.
+    SeverActionsNativeExt.Native_Outfit_DressStashClear(akActor)
+    Form[] preWornArmor = SeverActionsNative.Native_Outfit_GetWornArmor(akActor)
+    If preWornArmor
+        Int pwi = 0
+        While pwi < preWornArmor.Length
+            Armor pwItem = preWornArmor[pwi] as Armor
+            if pwItem && !SeverActionsNative.Native_Blacklist_IsBlacklisted(pwItem)
+                SeverActionsNativeExt.Native_Outfit_DressStashAdd(akActor, pwItem)
+            endif
+            pwi += 1
+        EndWhile
+    EndIf
 
-    ; Store the NPC's DefaultOutfit as a fallback for Dress.
-    ; If individual item re-equip fails (engine manages defaults differently),
-    ; we can restore via SetOutfit instead.
-    String outfitKey = "SeverActions_DefaultOutfit_" + (akActor.GetFormID() as String)
+    BeginAdHocOutfitOp(akActor)
+
+    ; Snapshot the actor's DefaultOutfit as a Dress fallback (e.g. Lydia's
+    ; base armor where the gear comes from DefaultOutfit, not individual
+    ; equips). Done AFTER BeginAdHocOutfitOp so any preset cleanup that
+    ; restored the original DefaultOutfit is reflected in what we snapshot.
     ActorBase npcBase = akActor.GetActorBase()
     If npcBase
         Outfit baseOutfit = npcBase.GetOutfit(false)
         If baseOutfit
-            StorageUtil.SetFormValue(None, outfitKey, baseOutfit)
+            SeverActionsNativeExt.Native_Outfit_DressStashSetDefaultOutfit(akActor, baseOutfit)
         EndIf
     EndIf
 
@@ -281,24 +295,27 @@ Function Undress_Execute(Actor akActor)
     slotNames[24] = "hands"    ; Arm 2
     slotNames[25] = "cloak"    ; FX01
     
+    ; Slot-loop pass: animations + unequip for items still equipped after
+    ; BeginAdHocOutfitOp. Stash was already populated by the pre-stash above,
+    ; so no DressStashAdd here (would create duplicates for non-preset items
+    ; that survived BeginAdHocOutfitOp). The 26-slot inclusion list deliberately
+    ; skips wigs (slot 31/41) and decap FX — those stay equipped through
+    ; Undress AND remain in the stash, so Dress's re-equip on them is a no-op
+    ; (already worn).
     int i = 0
     int removedCount = 0
     while i < slots.Length
         Armor equippedItem = akActor.GetWornForm(slots[i]) as Armor
         if equippedItem
-            if StorageUtil.FormListFind(None, storageKey, equippedItem) < 0
-                ; Check blacklist — skip items the user wants to keep
-                If SeverActionsNative.Native_Blacklist_IsBlacklisted(equippedItem)
-                    Debug.Trace("[SeverActions_Outfit] Undress: Skipping blacklisted " + equippedItem.GetName())
-                Else
-                    StorageUtil.FormListAdd(None, storageKey, equippedItem)
-                    PlayUnequipAnimation(akActor, slotNames[i])
-                    ; preventEquip = true — stops the engine's DefaultOutfit system
-                    ; from re-equipping this item on the next AI tick
-                    akActor.UnequipItem(equippedItem, true, true)
-                    removedCount += 1
-                EndIf
-            endif
+            If SeverActionsNative.Native_Blacklist_IsBlacklisted(equippedItem)
+                Debug.Trace("[SeverActions_Outfit] Undress: Skipping blacklisted " + equippedItem.GetName())
+            Else
+                PlayUnequipAnimation(akActor, slotNames[i])
+                ; preventEquip = true — stops the engine's DefaultOutfit system
+                ; from re-equipping this item on the next AI tick
+                akActor.UnequipItem(equippedItem, true, true)
+                removedCount += 1
+            EndIf
         endif
         i += 1
     endwhile
@@ -308,7 +325,6 @@ Function Undress_Execute(Actor akActor)
 
     ; Clear active preset — manual change
     SeverActionsNative.Native_Outfit_SetActivePreset(akActor, "")
-    StorageUtil.SetStringValue(akActor, "SeverOutfit_ActivePreset", "")
 
     ResumeOutfitLock(akActor)
 
@@ -337,45 +353,38 @@ Function Dress_Execute(Actor akActor)
         return
     endif
 
-    ; Ad-hoc dress takes priority over any active slot preset.
-    SeverActions_OutfitSlot slotSysDress = GetSlotScript()
-    if slotSysDress
-        slotSysDress.ClearActivePresetForAdHoc(akActor)
-    endif
-
-    SuspendOutfitLock(akActor)
-
+    BeginAdHocOutfitOp(akActor)
     Debug.Trace("[SeverActions_Outfit] Dress: " + akActor.GetDisplayName())
 
-    String storageKey = "SeverActions_RemovedArmor_" + (akActor.GetFormID() as String)
-    int count = StorageUtil.FormListCount(None, storageKey)
+    ; Phase 5: read from native transient stash (replaces the
+    ; SeverActions_RemovedArmor_* StorageUtil FormList + DefaultOutfit Form).
+    Form[] stashed = SeverActionsNativeExt.Native_Outfit_DressStashGet(akActor)
+    Int count = 0
+    if stashed
+        count = stashed.Length
+    endif
 
     if count == 0
-        ; No individual items stored — try restoring via DefaultOutfit fallback.
-        ; This handles NPCs whose gear came entirely from the engine's DefaultOutfit
-        ; system (e.g. Lydia's base armor), where individual items aren't tracked.
-        String outfitKey = "SeverActions_DefaultOutfit_" + (akActor.GetFormID() as String)
-        Form storedOutfit = StorageUtil.GetFormValue(None, outfitKey, None)
-        Outfit baseOutfit = storedOutfit as Outfit
+        ; No individual items stashed — try restoring the snapshotted DefaultOutfit.
+        Outfit baseOutfit = SeverActionsNativeExt.Native_Outfit_DressStashGetDefaultOutfit(akActor)
         If baseOutfit
             ActorBase npcBase = akActor.GetActorBase()
             If npcBase
                 Debug.Trace("[SeverActions_Outfit] Dress: Restoring DefaultOutfit for " + akActor.GetDisplayName())
                 npcBase.SetOutfit(baseOutfit, false)
                 akActor.SetOutfit(baseOutfit, false)
-                StorageUtil.UnsetFormValue(None, outfitKey)
+                SeverActionsNativeExt.Native_Outfit_DressStashSetDefaultOutfit(akActor, None)
                 ; Don't SnapshotLockedOutfit here — SetOutfit is async and GetWornForm
                 ; returns stale data. The restored DefaultOutfit handles equipping on
-                ; the next AI tick/cell transition. Undress already cleared the lock,
-                ; so there's nothing to snapshot or clear.
+                ; the next AI tick/cell transition.
                 ResumeOutfitLock(akActor)
                 return
             EndIf
         EndIf
-        ; No stored clothing and no DefaultOutfit — try re-equipping locked outfit items
+        ; No stash, no DefaultOutfit — try re-equipping locked outfit items.
         Form[] lockedItems = SeverActionsNative.Native_Outfit_GetLockedItems(akActor)
         If lockedItems && lockedItems.Length > 0
-            Debug.Trace("[SeverActions_Outfit] Dress: No stored items, re-equipping " + lockedItems.Length + " locked outfit items")
+            Debug.Trace("[SeverActions_Outfit] Dress: No stash, re-equipping " + lockedItems.Length + " locked outfit items")
             Int li = 0
             While li < lockedItems.Length
                 If lockedItems[li]
@@ -392,18 +401,18 @@ Function Dress_Execute(Actor akActor)
             return
         EndIf
 
-        Debug.Trace("[SeverActions_Outfit] No stored clothing or locked outfit to put on")
+        Debug.Trace("[SeverActions_Outfit] No stash or locked outfit to put on")
         ResumeOutfitLock(akActor)
         return
     endif
 
-    ; Collect forms as we equip them
+    ; Re-equip every stashed item.
     Form[] equippedForms = new Form[32]
     Int equippedCount = 0
 
     int i = 0
     while i < count
-        Form item = StorageUtil.FormListGet(None, storageKey, i)
+        Form item = stashed[i]
         if item
             Armor armorItem = item as Armor
             if armorItem
@@ -419,20 +428,16 @@ Function Dress_Execute(Actor akActor)
         i += 1
     endwhile
 
-    StorageUtil.FormListClear(None, storageKey)
+    ; Clear the transient stash now that we've consumed it.
+    SeverActionsNativeExt.Native_Outfit_DressStashClear(akActor)
+    SeverActionsNativeExt.Native_Outfit_DressStashSetDefaultOutfit(akActor, None)
 
-    ; Clean up DefaultOutfit key since individual items were used
-    String outfitKey = "SeverActions_DefaultOutfit_" + (akActor.GetFormID() as String)
-    StorageUtil.UnsetFormValue(None, outfitKey)
-
-    ; Lock from items we KNOW we equipped + GetWornForm for unchanged slots
     if equippedCount > 0
         LockEquippedOutfit(akActor, equippedForms, equippedCount)
     endif
 
-    ; Clear active preset — dressing from stored items is a manual action
+    ; Clear active preset — dressing from stashed items is a manual action.
     SeverActionsNative.Native_Outfit_SetActivePreset(akActor, "")
-    StorageUtil.SetStringValue(akActor, "SeverOutfit_ActivePreset", "")
 
     ResumeOutfitLock(akActor)
 
@@ -447,148 +452,13 @@ Bool Function Dress_IsEligible(Actor akActor)
     if akActor.IsDead()
         return false
     endif
-    ; Check if they have stored individual items to put back on
-    String storageKey = "SeverActions_RemovedArmor_" + (akActor.GetFormID() as String)
-    if StorageUtil.FormListCount(None, storageKey) > 0
+    ; Phase 5: read from native transient stash.
+    Form[] stashed = SeverActionsNativeExt.Native_Outfit_DressStashGet(akActor)
+    if stashed && stashed.Length > 0
         return true
     endif
-    ; Also eligible if we stored their DefaultOutfit (NPCs with only base gear)
-    String outfitKey = "SeverActions_DefaultOutfit_" + (akActor.GetFormID() as String)
-    Form storedOutfit = StorageUtil.GetFormValue(None, outfitKey, None)
-    return storedOutfit as Outfit != None
-EndFunction
-
-; =============================================================================
-; ACTION: EquipItemByName
-; YAML parameterMapping: [speaker, itemName]
-; Equips any item from actor's inventory by name (case-insensitive substring)
-; =============================================================================
-
-Function EquipItemByName_Execute(Actor akActor, String itemName)
-    if !akActor
-        return
-    endif
-
-    if itemName == ""
-        Debug.Trace("[SeverActions_Outfit] EquipItemByName: No item name specified")
-        return
-    endif
-
-    ; Ad-hoc equip takes priority over any active slot preset.
-    SeverActions_OutfitSlot slotSysEq = GetSlotScript()
-    if slotSysEq
-        slotSysEq.ClearActivePresetForAdHoc(akActor)
-    endif
-
-    SuspendOutfitLock(akActor)
-
-    Debug.Trace("[SeverActions_Outfit] EquipItemByName: " + akActor.GetDisplayName() + " equipping '" + itemName + "'")
-
-    ; Use native C++ for fast inventory search (resolve OmniSight names)
-    String searchName = ResolveItemName(itemName)
-    Form foundForm = SeverActionsNative.FindItemByName(akActor, searchName)
-    if !foundForm && searchName != itemName
-        foundForm = SeverActionsNative.FindItemByName(akActor, itemName)
-    endif
-
-    if !foundForm
-        Debug.Trace("[SeverActions_Outfit] EquipItemByName: Item '" + itemName + "' not found in inventory")
-        ResumeOutfitLock(akActor)
-        return
-    endif
-
-    ; Handle armor
-    Armor armorItem = foundForm as Armor
-    if armorItem
-        String slotName = GetSlotNameFromMask(armorItem.GetSlotMask())
-        PlayEquipAnimation(akActor, slotName)
-        akActor.EquipItem(armorItem, false, true)
-        Form[] items = new Form[1]
-        items[0] = armorItem as Form
-        LockEquippedOutfit(akActor, items, 1)
-        ResumeOutfitLock(akActor)
-        Debug.Trace("[SeverActions_Outfit] Equipped armor: " + armorItem.GetName())
-        return
-    endif
-
-    ; Handle weapons
-    Weapon weaponItem = foundForm as Weapon
-    if weaponItem
-        akActor.EquipItem(weaponItem, false, true)
-        ResumeOutfitLock(akActor)
-        Debug.Trace("[SeverActions_Outfit] Equipped weapon: " + weaponItem.GetName())
-        return
-    endif
-
-    ; Generic fallback for other equippable items (ammo, etc.)
-    akActor.EquipItem(foundForm, false, true)
-    ResumeOutfitLock(akActor)
-    Debug.Trace("[SeverActions_Outfit] Equipped item: " + foundForm.GetName())
-EndFunction
-
-; =============================================================================
-; ACTION: UnequipItemByName
-; YAML parameterMapping: [speaker, itemName]
-; Unequips a currently worn/equipped item by name (case-insensitive substring)
-; =============================================================================
-
-Function UnequipItemByName_Execute(Actor akActor, String itemName)
-    if !akActor
-        return
-    endif
-
-    if itemName == ""
-        Debug.Trace("[SeverActions_Outfit] UnequipItemByName: No item name specified")
-        return
-    endif
-
-    ; Ad-hoc unequip takes priority over any active slot preset.
-    SeverActions_OutfitSlot slotSysUneq = GetSlotScript()
-    if slotSysUneq
-        slotSysUneq.ClearActivePresetForAdHoc(akActor)
-    endif
-
-    SuspendOutfitLock(akActor)
-
-    Debug.Trace("[SeverActions_Outfit] UnequipItemByName: " + akActor.GetDisplayName() + " removing '" + itemName + "'")
-
-    ; Use native C++ for fast worn item search (resolve OmniSight names)
-    String searchName = ResolveItemName(itemName)
-    Form foundForm = SeverActionsNative.FindWornItemByName(akActor, searchName)
-    if !foundForm && searchName != itemName
-        foundForm = SeverActionsNative.FindWornItemByName(akActor, itemName)
-    endif
-
-    if !foundForm
-        Debug.Trace("[SeverActions_Outfit] UnequipItemByName: '" + itemName + "' not found on " + akActor.GetDisplayName())
-        ResumeOutfitLock(akActor)
-        return
-    endif
-
-    ; Handle armor - store for Dress re-equip, play animation
-    Armor armorItem = foundForm as Armor
-    if armorItem
-        String storageKey = "SeverActions_RemovedArmor_" + (akActor.GetFormID() as String)
-        if StorageUtil.FormListFind(None, storageKey, armorItem) < 0
-            StorageUtil.FormListAdd(None, storageKey, armorItem)
-        endif
-
-        String slotName = GetSlotNameFromMask(armorItem.GetSlotMask())
-        PlayUnequipAnimation(akActor, slotName)
-        akActor.UnequipItem(armorItem, true, true)
-        ; Remove directly from lock list instead of re-snapshotting (GetWornForm is stale)
-        Form[] removedForms = new Form[1]
-        removedForms[0] = armorItem
-        RemoveFromLockedOutfit(akActor, removedForms, 1)
-        ResumeOutfitLock(akActor)
-        Debug.Trace("[SeverActions_Outfit] Unequipped armor: " + armorItem.GetName())
-        return
-    endif
-
-    ; Handle weapons - just unequip (no storage for Dress)
-    akActor.UnequipItem(foundForm, true, true)
-    ResumeOutfitLock(akActor)
-    Debug.Trace("[SeverActions_Outfit] Unequipped item: " + foundForm.GetName())
+    ; Also eligible if the actor's DefaultOutfit was snapshotted.
+    return SeverActionsNativeExt.Native_Outfit_DressStashGetDefaultOutfit(akActor) != None
 EndFunction
 
 ; =============================================================================
@@ -603,41 +473,20 @@ Function EquipMultipleItems_Execute(Actor akActor, String itemNames)
         return
     endif
 
-    ; Ad-hoc multi-equip takes priority over any active slot preset.
-    SeverActions_OutfitSlot slotSysMulti = GetSlotScript()
-    if slotSysMulti
-        slotSysMulti.ClearActivePresetForAdHoc(akActor)
-    endif
-
-    SuspendOutfitLock(akActor)
-
+    BeginAdHocOutfitOp(akActor)
     Debug.Trace("[SeverActions_Outfit] EquipMultipleItems: " + akActor.GetDisplayName() + " equipping '" + itemNames + "'")
 
     Form[] equippedForms = new Form[32]
     Int count = 0
-    Int startPos = 0
-    Int commaPos = StringUtil.Find(itemNames, ",", startPos)
-
-    while startPos < StringUtil.GetLength(itemNames)
-        String itemName
-        if commaPos >= 0
-            itemName = StringUtil.Substring(itemNames, startPos, commaPos - startPos)
-            startPos = commaPos + 1
-            commaPos = StringUtil.Find(itemNames, ",", startPos)
-        else
-            itemName = StringUtil.Substring(itemNames, startPos)
-            startPos = StringUtil.GetLength(itemNames)
+    String[] tokens = ParseCSVTrim(itemNames)
+    Int ti = 0
+    while ti < tokens.Length && count < 32
+        Form equipped = EquipSingleItemAndReturn(akActor, tokens[ti])
+        if equipped
+            equippedForms[count] = equipped
+            count += 1
         endif
-
-        ; Trim leading/trailing spaces
-        itemName = TrimString(itemName)
-        if itemName != "" && count < 32
-            Form equipped = EquipSingleItemAndReturn(akActor, itemName)
-            if equipped
-                equippedForms[count] = equipped
-                count += 1
-            endif
-        endif
+        ti += 1
     endwhile
 
     ; Lock from items we KNOW we equipped + GetWornForm for unchanged slots
@@ -647,7 +496,6 @@ Function EquipMultipleItems_Execute(Actor akActor, String itemNames)
 
     ; Clear active preset — manual equip overrides any preset
     SeverActionsNative.Native_Outfit_SetActivePreset(akActor, "")
-    StorageUtil.SetStringValue(akActor, "SeverOutfit_ActivePreset", "")
 
     ResumeOutfitLock(akActor)
 
@@ -666,42 +514,21 @@ Function UnequipMultipleItems_Execute(Actor akActor, String itemNames)
         return
     endif
 
-    ; Ad-hoc multi-unequip takes priority over any active slot preset.
-    SeverActions_OutfitSlot slotSysMultiUneq = GetSlotScript()
-    if slotSysMultiUneq
-        slotSysMultiUneq.ClearActivePresetForAdHoc(akActor)
-    endif
-
-    SuspendOutfitLock(akActor)
-
+    BeginAdHocOutfitOp(akActor)
     Debug.Trace("[SeverActions_Outfit] UnequipMultipleItems: " + akActor.GetDisplayName() + " removing '" + itemNames + "'")
 
     ; Collect Forms we actually unequip so we can remove them from the lock list
     Form[] removedForms = new Form[32]
     Int removedCount = 0
-
-    Int startPos = 0
-    Int commaPos = StringUtil.Find(itemNames, ",", startPos)
-
-    while startPos < StringUtil.GetLength(itemNames)
-        String itemName
-        if commaPos >= 0
-            itemName = StringUtil.Substring(itemNames, startPos, commaPos - startPos)
-            startPos = commaPos + 1
-            commaPos = StringUtil.Find(itemNames, ",", startPos)
-        else
-            itemName = StringUtil.Substring(itemNames, startPos)
-            startPos = StringUtil.GetLength(itemNames)
+    String[] tokens = ParseCSVTrim(itemNames)
+    Int ti = 0
+    while ti < tokens.Length && removedCount < 32
+        Form removed = UnequipSingleItemInternal2(akActor, tokens[ti])
+        if removed
+            removedForms[removedCount] = removed
+            removedCount += 1
         endif
-
-        itemName = TrimString(itemName)
-        if itemName != ""
-            Form removed = UnequipSingleItemInternal2(akActor, itemName)
-            if removed && removedCount < 32
-                removedForms[removedCount] = removed
-                removedCount += 1
-            endif
-        endif
+        ti += 1
     endwhile
 
     ; Remove unequipped items directly from the lock list instead of
@@ -746,53 +573,22 @@ Function SaveOutfitPreset_Execute(Actor akActor, String presetName)
                     Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset(slot): Actor not wearing armor, refusing empty preset")
                     return
                 EndIf
-                ; Continue below to ALSO dual-write to StorageUtil/OutfitDataStore
-                ; for backward-compat during transition. Remove legacy block in v1.1.
             Else
                 Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset(slot): All 8 slots full for " + akActor.GetDisplayName() + " — legacy path only")
             EndIf
         EndIf
     EndIf
 
-    String presetKey = "SeverOutfit_" + presetName + "_" + (akActor.GetFormID() as String)
-
+    ; Phase 4: native-only legacy preset write. Snapshots worn armor into
+    ; OutfitDataStore.presets via Begin/Add/Commit then locks via the
+    ; native single-write path.
     Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset: Saving '" + presetName + "' for " + akActor.GetDisplayName())
-
-    ; Clear any existing preset with this name
-    StorageUtil.FormListClear(None, presetKey)
-
-    ; Store the preset name in a list of known presets for this actor
-    String presetsListKey = "SeverOutfit_Presets_" + (akActor.GetFormID() as String)
-    if StorageUtil.StringListFind(None, presetsListKey, presetName) < 0
-        StorageUtil.StringListAdd(None, presetsListKey, presetName)
-    endif
-
-    ; Track this actor in the global preset actors list (for MCM Outfits page)
-    String presetActorsKey = "SeverOutfit_PresetActors"
-    if StorageUtil.FormListFind(None, presetActorsKey, akActor as Form) < 0
-        StorageUtil.FormListAdd(None, presetActorsKey, akActor as Form)
-    endif
-
-    ; Get all worn armor via native C++ call (replaces 18-slot GetWornForm loop)
     Form[] wornForms = SeverActionsNative.Native_Outfit_GetWornArmor(akActor)
     Int savedCount = 0
     If wornForms
         savedCount = wornForms.Length
-        Int i = 0
-        While i < savedCount
-            If wornForms[i]
-                StorageUtil.FormListAdd(None, presetKey, wornForms[i])
-            EndIf
-            i += 1
-        EndWhile
     EndIf
 
-    ; Lock the outfit so it persists across cell changes
-    SuspendOutfitLock(akActor)
-    LockEquippedOutfit(akActor, wornForms, savedCount)
-    ResumeOutfitLock(akActor)
-
-    ; Dual-write preset to native OutfitDataStore for PrismaUI
     SeverActionsNative.Native_Outfit_BeginPreset(akActor, presetName)
     Int npi = 0
     While npi < savedCount && npi < 32
@@ -802,6 +598,11 @@ Function SaveOutfitPreset_Execute(Actor akActor, String presetName)
         npi += 1
     EndWhile
     SeverActionsNative.Native_Outfit_CommitPreset(akActor)
+
+    ; Lock the outfit so it persists across cell changes (also native-only now).
+    SuspendOutfitLock(akActor)
+    LockEquippedOutfit(akActor, wornForms, savedCount)
+    ResumeOutfitLock(akActor)
 
     Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset: Saved and locked " + savedCount + " items as '" + presetName + "'")
 EndFunction
@@ -836,87 +637,50 @@ Function ApplyOutfitPreset_Execute(Actor akActor, String presetName)
 
     SeverActionsNative.Native_OutfitSlot_Log("ApplyOutfitPreset_Execute: Falling back to legacy path for " + akActor.GetDisplayName() + " preset='" + presetName + "'")
 
-    ; ── Legacy StorageUtil path (fallback for unmigrated presets) ──
-    String presetKey = "SeverOutfit_" + presetName + "_" + (akActor.GetFormID() as String)
-
-    Int count = StorageUtil.FormListCount(None, presetKey)
-
-    ; If StorageUtil is empty, try native store as fallback and sync
-    ; (handles cases where the ModEvent sync hasn't processed yet)
-    If count == 0
-        Form[] nativeItems = SeverActionsNative.Native_Outfit_GetPresetItems(akActor, presetName)
-        If nativeItems && nativeItems.Length > 0
-            Int ni = 0
-            While ni < nativeItems.Length
-                If nativeItems[ni]
-                    StorageUtil.FormListAdd(None, presetKey, nativeItems[ni])
-                EndIf
-                ni += 1
-            EndWhile
-            count = StorageUtil.FormListCount(None, presetKey)
-            Debug.Trace("[SeverActions_Outfit] ApplyOutfitPreset: Synced " + count + " items from native store for '" + presetName + "'")
-        EndIf
-    EndIf
-
+    ; Phase 4: native-only legacy fallback. Read preset items from
+    ; OutfitDataStore; the StorageUtil presetKey mirror is gone.
+    Form[] presetItems = SeverActionsNative.Native_Outfit_GetPresetItems(akActor, presetName)
+    Int count = 0
+    if presetItems
+        count = presetItems.Length
+    endif
     if count == 0
         Debug.Trace("[SeverActions_Outfit] ApplyOutfitPreset: No preset '" + presetName + "' found for " + akActor.GetDisplayName())
         return
     endif
 
-    SuspendOutfitLock(akActor)
+    ; Legacy apply is an ad-hoc gear change relative to any active slot preset
+    ; — the requested preset only exists in legacy storage, otherwise the slot
+    ; path above would have returned. Without the BeginAdHocOutfitOp call, the
+    ; slot alias's OnUpdate would re-enforce the previously-active slot preset
+    ; over the legacy outfit we're about to apply.
+    BeginAdHocOutfitOp(akActor)
 
     Debug.Trace("[SeverActions_Outfit] ApplyOutfitPreset: Applying '" + presetName + "' (" + count + " items) to " + akActor.GetDisplayName())
 
-    ; First undress — remove all currently worn items
-    ; We use the RemovedArmor storage so Dress can still work as a fallback
-    String storageKey = "SeverActions_RemovedArmor_" + (akActor.GetFormID() as String)
-    StorageUtil.FormListClear(None, storageKey)
-
-    int[] slots = new int[18]
-    slots[0] = 0x00000001
-    slots[1] = 0x00000004
-    slots[2] = 0x00000008
-    slots[3] = 0x00000010
-    slots[4] = 0x00000020
-    slots[5] = 0x00000040
-    slots[6] = 0x00000080
-    slots[7] = 0x00000200
-    slots[8] = 0x00000400
-    slots[9] = 0x00001000
-    slots[10] = 0x00002000
-    slots[11] = 0x00008000
-    slots[12] = 0x00010000
-    slots[13] = 0x00020000
-    slots[14] = 0x00080000
-    slots[15] = 0x00400000
-    slots[16] = 0x02000000
-    slots[17] = 0x08000000
-
-    int s = 0
-    while s < slots.Length
-        Armor equippedItem = akActor.GetWornForm(slots[s]) as Armor
-        if equippedItem
-            ; Skip blacklisted items the user wants to always keep
-            If !SeverActionsNative.Native_Blacklist_IsBlacklisted(equippedItem)
-                if StorageUtil.FormListFind(None, storageKey, equippedItem) < 0
-                    StorageUtil.FormListAdd(None, storageKey, equippedItem)
-                endif
+    ; First undress — remove all currently worn items, stashing them in
+    ; the native Dress session map so a follow-up Dress could re-equip.
+    SeverActionsNativeExt.Native_Outfit_DressStashClear(akActor)
+    Form[] wornArmor = SeverActionsNative.Native_Outfit_GetWornArmor(akActor)
+    If wornArmor
+        Int wi = 0
+        While wi < wornArmor.Length
+            Armor equippedItem = wornArmor[wi] as Armor
+            if equippedItem && !SeverActionsNative.Native_Blacklist_IsBlacklisted(equippedItem)
+                SeverActionsNativeExt.Native_Outfit_DressStashAdd(akActor, equippedItem)
                 akActor.UnequipItem(equippedItem, true, true)
-            EndIf
-        endif
-        s += 1
-    endwhile
+            endif
+            wi += 1
+        EndWhile
+    EndIf
 
-    ; Now equip every item from the preset, collecting forms for lock.
-    ; Add to inventory first if not present — preset items may have been
-    ; from the catalog and not originally in the NPC's inventory.
+    ; Equip every item from the preset (read from native, no StorageUtil mirror).
     Form[] presetForms = new Form[32]
     Int equippedCount = 0
     int i = 0
     while i < count
-        Form item = StorageUtil.FormListGet(None, presetKey, i)
+        Form item = presetItems[i]
         if item
-            ; Ensure item is in inventory before equipping
             If akActor.GetItemCount(item) == 0
                 akActor.AddItem(item, 1, true)
             EndIf
@@ -934,12 +698,23 @@ Function ApplyOutfitPreset_Execute(Actor akActor, String presetName)
         i += 1
     endwhile
 
-    ; Lock from known equipped items (avoids GetWornForm race condition)
-    LockEquippedOutfit(akActor, presetForms, equippedCount)
+    ; Lock-after-apply gating (post-tester-audit fix): only lock if the actor
+    ; was ALREADY locked before this call. This used to be unconditional,
+    ; which caused two user-facing bugs: (1) `applyoutfitpreset` LLM action
+    ; locked previously-unlocked actors, breaking "sequence of dress changes"
+    ; workflows; (2) Apply button in PrismaUI did the same. Now: applying
+    ; preserves whatever lock state the actor was already in. If they were
+    ; locked, the new preset items become the new lock list. If they were
+    ; unlocked, they stay unlocked. Locking is a separate user gesture.
+    ; Phase 3: read lock state from native.
+    Bool wasLocked = SeverActionsNativeExt.Native_Outfit_IsLockActive(akActor)
+    If wasLocked
+        ; Lock from known equipped items (avoids GetWornForm race condition)
+        LockEquippedOutfit(akActor, presetForms, equippedCount)
+    EndIf
 
     ; Track active preset for prompt context and situation system
     SeverActionsNative.Native_Outfit_SetActivePreset(akActor, presetName)
-    StorageUtil.SetStringValue(akActor, "SeverOutfit_ActivePreset", presetName)
 
     ResumeOutfitLock(akActor)
 
@@ -947,7 +722,7 @@ Function ApplyOutfitPreset_Execute(Actor akActor, String presetName)
     ; while Suspended was set, it was correctly dropped — but SituationMonitor's
     ; C++ state already updated. Re-evaluating syncs the two sides and fires
     ; a new event if the situation actually changed during the apply.
-    SeverActionsNative.SituationMonitor_ForceEvaluate(akActor)
+    SeverActionsNativeExt.SituationMonitor_ForceEvaluate(akActor)
 
     Debug.Trace("[SeverActions_Outfit] ApplyOutfitPreset: Equipped " + equippedCount + " items from '" + presetName + "'")
 EndFunction
@@ -1004,13 +779,10 @@ Form Function UnequipSingleItemInternal2(Actor akActor, String itemName)
         return None
     endif
 
-    ; Store armor for Dress re-equip
+    ; Phase 5: stash unequipped armor in the native Dress session map.
     Armor armorItem = foundForm as Armor
     if armorItem
-        String storageKey = "SeverActions_RemovedArmor_" + (akActor.GetFormID() as String)
-        if StorageUtil.FormListFind(None, storageKey, armorItem) < 0
-            StorageUtil.FormListAdd(None, storageKey, armorItem)
-        endif
+        SeverActionsNativeExt.Native_Outfit_DressStashAdd(akActor, armorItem)
     endif
 
     akActor.UnequipItem(foundForm, true, true)
@@ -1019,36 +791,25 @@ Form Function UnequipSingleItemInternal2(Actor akActor, String itemName)
 EndFunction
 
 Function RemoveFromLockedOutfit(Actor akActor, Form[] removedForms, Int count)
-{Remove specific items from the locked outfit FormList instead of re-snapshotting.
- This avoids the GetWornForm race condition where UnequipItem is async and the
- item still appears worn when SnapshotLockedOutfit scans slots.}
+{Phase 4: native-only. Drop specific items from the locked outfit without
+ re-snapshotting (avoids the GetWornForm race after async UnequipItem).}
     if !akActor || count == 0
         return
     endif
-
-    if StorageUtil.GetIntValue(akActor, "SeverOutfit_LockActive", 0) != 1
+    if !SeverActionsNativeExt.Native_Outfit_IsLockActive(akActor)
         return
     endif
-
-    String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
     Int removed = 0
     Int i = 0
     while i < count
         if removedForms[i]
-            Int idx = StorageUtil.FormListFind(None, lockKey, removedForms[i])
-            if idx >= 0
-                StorageUtil.FormListRemoveAt(None, lockKey, idx)
-                ; Dual-write to native OutfitDataStore
-                SeverActionsNative.Native_Outfit_RemoveLockedItem(akActor, removedForms[i])
-                removed += 1
-            endif
+            SeverActionsNative.Native_Outfit_RemoveLockedItem(akActor, removedForms[i])
+            removed += 1
         endif
         i += 1
     endwhile
-
     if removed > 0
-        Int remaining = StorageUtil.FormListCount(None, lockKey)
-        Debug.Trace("[SeverActions_Outfit] Removed " + removed + " items from outfit lock (" + remaining + " remaining)")
+        Debug.Trace("[SeverActions_Outfit] Removed " + removed + " items from outfit lock")
     endif
 EndFunction
 
@@ -1064,18 +825,61 @@ EndFunction
 ; Only affects OnObjectUnequipped — OnLoad/OnCellLoad/OnEnable always re-equip.
 ; =============================================================================
 
+; Phase 5: SuspendWatchdogSeconds is now informational only — the actual
+; watchdog (5 min auto-clear via SuspendUntil deadline) lives in
+; OutfitDataStore.h. Kept here so old saves with this property don't fail
+; to load; setting it from Papyrus no longer affects behaviour.
+Float Property SuspendWatchdogSeconds = 300.0 Auto Hidden
+
 Function SuspendOutfitLock(Actor akActor)
+    {Phase 5: native-backed. The thread-safe SuspendUntil deadline replaces
+     the StorageUtil mirror — instant (no Papyrus VM hop), survives the
+     game's async lifecycle correctly, and the 5-minute watchdog now
+     self-cleans without Papyrus ever having to check the timestamp.}
     if akActor
-        StorageUtil.SetIntValue(akActor, "SeverOutfit_Suspended", 1)
+        SeverActionsNativeExt.Native_Outfit_SuspendLock(akActor)
     endif
 EndFunction
 
+Function BeginAdHocOutfitOp(Actor akActor)
+    {Standard entry for any ad-hoc gear change (Undress/Dress/EquipMultiple/
+     UnequipMultiple/legacy ApplyOutfitPreset/etc.). Combines the two-step
+     ritual every _Execute used to inline: deactivate any active slot preset
+     (so the alias's slot enforcement doesn't undo our change), then suspend
+     the outfit lock for the duration of the op. Caller pairs with
+     ResumeOutfitLock(akActor) on exit.}
+    if !akActor
+        return
+    endif
+    SeverActions_OutfitSlot slotSys = GetSlotScript()
+    if slotSys
+        slotSys.ClearActivePresetForAdHoc(akActor)
+    endif
+    SuspendOutfitLock(akActor)
+EndFunction
+
 Function ResumeOutfitLock(Actor akActor)
+    {Phase 5: native-backed. ClearSuspend wipes both the hard flag and any
+     pending deadline in a single mutex acquisition — used to be a no-op
+     when SetSuspended(false) ran while a SuspendUntil deadline was live.
+     Still calls ClearBurstSuppression since that's a separate native flag
+     (the burst-strip detector tracks rapid external unequips).}
     if akActor
-        StorageUtil.UnsetIntValue(akActor, "SeverOutfit_Suspended")
-        ; Clear any burst suppression — our outfit system is back in control
+        SeverActionsNativeExt.Native_Outfit_ResumeLock(akActor)
         SeverActionsNative.Native_Outfit_ClearBurstSuppression(akActor)
     endif
+EndFunction
+
+Bool Function IsOutfitOpSuspended(Actor akActor)
+    {Phase 5: native-backed. Native_Outfit_IsNativeSuspended already exposed
+     the IsSuspended check; we route through it. The watchdog (5 min auto-
+     clear) is enforced inside SuspendUntil's deadline, so stale suspends
+     can't permanently disable an actor — IsSuspended self-cleans expired
+     deadlines on read.}
+    if !akActor
+        return false
+    endif
+    return SeverActionsNative.Native_Outfit_IsNativeSuspended(akActor)
 EndFunction
 
 ; =============================================================================
@@ -1094,59 +898,23 @@ Function SnapshotLockedOutfit(Actor akActor)
         return
     endif
 
-    String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
-    StorageUtil.FormListClear(None, lockKey)
-
-    ; Snapshot all 18 armor slots
-    int[] slots = new int[18]
-    slots[0] = 0x00000001   ; Head (30)
-    slots[1] = 0x00000004   ; Body (32)
-    slots[2] = 0x00000008   ; Hands (33)
-    slots[3] = 0x00000010   ; Forearms (34)
-    slots[4] = 0x00000020   ; Amulet (35)
-    slots[5] = 0x00000040   ; Ring (36)
-    slots[6] = 0x00000080   ; Feet (37)
-    slots[7] = 0x00000200   ; Shield (39)
-    slots[8] = 0x00000400   ; Tail/Cloak (40)
-    slots[9] = 0x00001000   ; Circlet (42)
-    slots[10] = 0x00002000  ; Ears (43)
-    slots[11] = 0x00008000  ; Neck/Scarf (45)
-    slots[12] = 0x00010000  ; Cloak (46)
-    slots[13] = 0x00020000  ; Back/Cloak (47)
-    slots[14] = 0x00080000  ; Pelvis outer (49)
-    slots[15] = 0x00400000  ; Underwear (52)
-    slots[16] = 0x02000000  ; Face (55)
-    slots[17] = 0x08000000  ; Cloak (57)
-
-    Int count = 0
-    int i = 0
-    while i < slots.Length
-        Armor equippedItem = akActor.GetWornForm(slots[i]) as Armor
-        if equippedItem
-            if StorageUtil.FormListFind(None, lockKey, equippedItem) < 0
-                StorageUtil.FormListAdd(None, lockKey, equippedItem)
-                count += 1
-            endif
-        endif
-        i += 1
-    endwhile
-
-    StorageUtil.SetIntValue(akActor, "SeverOutfit_LockActive", 1)
-
-    ; Track this actor in the global outfit-locked list for alias reassignment after load
-    TrackOutfitLockedActor(akActor)
-
-    ; Dual-write to native OutfitDataStore for PrismaUI
+    ; Phase 4: native-only write path. SnapshotLockedOutfit walks worn armor
+    ; via Native_Outfit_GetWornArmor and pushes directly into OutfitDataStore
+    ; via Begin/Add/CommitLock. No StorageUtil mirror — phase 3 readers
+    ; already consume from native.
+    Form[] wornArmor = SeverActionsNative.Native_Outfit_GetWornArmor(akActor)
     SeverActionsNative.Native_Outfit_BeginLock(akActor)
-    Int nlCount = StorageUtil.FormListCount(None, lockKey)
-    Int nli = 0
-    While nli < nlCount
-        Form nlItem = StorageUtil.FormListGet(None, lockKey, nli)
-        if nlItem
-            SeverActionsNative.Native_Outfit_AddLockedItem(akActor, nlItem)
-        endif
-        nli += 1
-    EndWhile
+    Int count = 0
+    If wornArmor
+        Int wi = 0
+        While wi < wornArmor.Length
+            If wornArmor[wi]
+                SeverActionsNative.Native_Outfit_AddLockedItem(akActor, wornArmor[wi])
+                count += 1
+            EndIf
+            wi += 1
+        EndWhile
+    EndIf
     SeverActionsNative.Native_Outfit_CommitLock(akActor)
 
     Debug.Trace("[SeverActions_Outfit] Locked outfit for " + akActor.GetDisplayName() + " (" + count + " items)")
@@ -1167,7 +935,8 @@ Function ReapplyLockedOutfit(Actor akActor)
         return
     endif
 
-    if StorageUtil.GetIntValue(akActor, "SeverOutfit_LockActive", 0) != 1
+    ; Phase 3: native is source of truth for lock state.
+    if !SeverActionsNativeExt.Native_Outfit_IsLockActive(akActor)
         return
     endif
 
@@ -1176,33 +945,34 @@ Function ReapplyLockedOutfit(Actor akActor)
         return
     EndIf
 
-    ; Already mid-operation — don't re-enter
-    if StorageUtil.GetIntValue(akActor, "SeverOutfit_Suspended", 0) == 1
+    ; Already mid-operation — don't re-enter. Uses the watchdog-aware check
+    ; so a dropped resume ModEvent can't permanently disable reapply.
+    if IsOutfitOpSuspended(akActor)
         return
     endif
 
-    String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
-    Int count = StorageUtil.FormListCount(None, lockKey)
-
+    ; Phase 4: read locked items from native instead of the StorageUtil mirror.
+    Form[] lockedItems = SeverActionsNative.Native_Outfit_GetLockedItems(akActor)
+    Int count = 0
+    if lockedItems
+        count = lockedItems.Length
+    endif
     if count == 0
         return
     endif
 
     ; Bulk strip detection: if NONE of the locked items are currently worn,
-    ; another mod stripped everything at once (native DLL, bathing mod, etc.).
-    ; Don't fight it — yield until the next cell transition re-asserts the lock.
-    ; Single-item unequips (engine "equip best") will have most items still worn.
+    ; another mod stripped everything at once. Yield — don't fight it.
     Int wornCount = 0
     Int checkIdx = 0
     While checkIdx < count
-        Form checkItem = StorageUtil.FormListGet(None, lockKey, checkIdx)
-        If checkItem && akActor.IsEquipped(checkItem)
+        If lockedItems[checkIdx] && akActor.IsEquipped(lockedItems[checkIdx])
             wornCount += 1
         EndIf
         checkIdx += 1
     EndWhile
 
-    If wornCount == 0 && count >= 2
+    If wornCount == 0 && count >= 1
         Debug.Trace("[SeverActions_Outfit] Bulk strip detected for " + akActor.GetDisplayName() + " — all " + count + " locked items removed. Yielding.")
         return
     EndIf
@@ -1212,9 +982,8 @@ Function ReapplyLockedOutfit(Actor akActor)
     Int equipped = 0
     int i = 0
     while i < count
-        Form item = StorageUtil.FormListGet(None, lockKey, i)
-        if item
-            akActor.EquipItem(item, false, true)
+        if lockedItems[i]
+            akActor.EquipItem(lockedItems[i], false, true)
             equipped += 1
         endif
         i += 1
@@ -1226,63 +995,35 @@ Function ReapplyLockedOutfit(Actor akActor)
 EndFunction
 
 Function ClearLockedOutfit(Actor akActor)
-    {Remove the outfit lock — follower will revert to engine-default behavior.}
+    {Phase 4: native-only. Follower reverts to engine-default behavior.}
     if !akActor
         return
     endif
-
-    String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
-    StorageUtil.FormListClear(None, lockKey)
-    StorageUtil.SetIntValue(akActor, "SeverOutfit_LockActive", 0)
-
-    ; Remove from the global outfit-locked tracking list
-    UntrackOutfitLockedActor(akActor)
-
-    ; Dual-write to native OutfitDataStore
     SeverActionsNative.Native_Outfit_ClearLock(akActor)
-
     Debug.Trace("[SeverActions_Outfit] Cleared outfit lock for " + akActor.GetDisplayName())
 EndFunction
 
 Function LockEquippedOutfit(Actor akActor, Form[] equippedItems, Int equippedCount)
-    {Lock outfit using ONLY the items we just equipped. No scanning GetWornForm
-     for other slots — presets and builder outfits are exclusive (only preset items
-     are worn, everything else stays off).}
+    {Phase 4: native-only. Lock outfit using ONLY the items we just equipped
+     (preset/builder semantics — non-preset gear isn't locked). Writes go
+     straight to OutfitDataStore via Begin/Add/CommitLock.}
     if !akActor || !OutfitLockEnabled
         return
     endif
 
-    String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
-    StorageUtil.FormListClear(None, lockKey)
-
-    ; Add only the items we explicitly equipped
+    SeverActionsNative.Native_Outfit_BeginLock(akActor)
+    Int written = 0
     Int i = 0
     While i < equippedCount
         if equippedItems[i]
-            if StorageUtil.FormListFind(None, lockKey, equippedItems[i]) < 0
-                StorageUtil.FormListAdd(None, lockKey, equippedItems[i])
-            endif
+            SeverActionsNative.Native_Outfit_AddLockedItem(akActor, equippedItems[i])
+            written += 1
         endif
         i += 1
     EndWhile
-
-    Int totalCount = StorageUtil.FormListCount(None, lockKey)
-    StorageUtil.SetIntValue(akActor, "SeverOutfit_LockActive", 1)
-    TrackOutfitLockedActor(akActor)
-
-    ; Dual-write to native OutfitDataStore for PrismaUI
-    SeverActionsNative.Native_Outfit_BeginLock(akActor)
-    Int nli = 0
-    While nli < totalCount
-        Form nlItem = StorageUtil.FormListGet(None, lockKey, nli)
-        if nlItem
-            SeverActionsNative.Native_Outfit_AddLockedItem(akActor, nlItem)
-        endif
-        nli += 1
-    EndWhile
     SeverActionsNative.Native_Outfit_CommitLock(akActor)
 
-    Debug.Trace("[SeverActions_Outfit] Locked outfit for " + akActor.GetDisplayName() + " (" + totalCount + " items)")
+    Debug.Trace("[SeverActions_Outfit] Locked outfit for " + akActor.GetDisplayName() + " (" + written + " items)")
 EndFunction
 
 ; =============================================================================
@@ -1292,45 +1033,48 @@ EndFunction
 ; =============================================================================
 
 Bool Function IsOutfitLockEligible(Actor akActor)
-    {Returns true if this actor can have outfit lock applied.
-     Either a registered follower (SeverFollower_IsFollower == 1) or
-     a non-follower with explicit lock enabled (SeverOutfit_NonFollowerLock == 1).}
+    {Phase 5: native is source of truth for non-follower lock state.
+     Eligible if registered follower OR an actor with a non-follower lock
+     active in native (isFollowerLock=false AND lockActive=true).}
     if !akActor
         return false
     endif
-    if StorageUtil.GetIntValue(akActor, "SeverFollower_IsFollower", 0) == 1
+    if SeverActionsNativeExt.Native_GetIsFollower(akActor)
         return true
     endif
-    if StorageUtil.GetIntValue(akActor, "SeverOutfit_NonFollowerLock", 0) == 1
+    if HasNonFollowerOutfitLock(akActor)
         return true
     endif
     return false
 EndFunction
 
 Function SetNonFollowerOutfitLock(Actor akActor, Bool enable)
-    {Enable or disable outfit lock for a non-follower NPC.
-     When enabling: sets the flag and snapshots current outfit.
-     When disabling: clears the flag and removes the lock.}
+    {Phase 5: native-backed. Enable snapshots the worn outfit AND marks
+     the actor as non-follower-locked; disable clears the lock entirely.}
     if !akActor
         return
     endif
     if enable
-        StorageUtil.SetIntValue(akActor, "SeverOutfit_NonFollowerLock", 1)
-        SnapshotLockedOutfit(akActor)
+        SnapshotLockedOutfit(akActor)  ; phase 4: native-only write path
+        SeverActionsNativeExt.Native_Outfit_SetIsFollowerLock(akActor, false)
         Debug.Trace("[SeverActions_Outfit] Non-follower outfit lock ENABLED for " + akActor.GetDisplayName())
     else
-        StorageUtil.UnsetIntValue(akActor, "SeverOutfit_NonFollowerLock")
         ClearLockedOutfit(akActor)
+        ; ClearLock erases the m_data entry when no presets/situations remain,
+        ; so isFollowerLock=false isn't reachable here unless re-enabled.
         Debug.Trace("[SeverActions_Outfit] Non-follower outfit lock DISABLED for " + akActor.GetDisplayName())
     endif
 EndFunction
 
 Bool Function HasNonFollowerOutfitLock(Actor akActor)
-    {Check if a non-follower NPC has outfit lock explicitly enabled.}
+    {Phase 5: native-backed. True only if lockActive AND not follower-locked.}
     if !akActor
         return false
     endif
-    return StorageUtil.GetIntValue(akActor, "SeverOutfit_NonFollowerLock", 0) == 1
+    if !SeverActionsNativeExt.Native_Outfit_IsLockActive(akActor)
+        return false
+    endif
+    return !SeverActionsNativeExt.Native_Outfit_IsFollowerLock(akActor)
 EndFunction
 
 ; =============================================================================
@@ -1340,56 +1084,27 @@ EndFunction
 ; after save/load, including dismissed followers who still have locked outfits.
 ; =============================================================================
 
+; OUTFIT_TRACKED_KEY constant retained — used by Phase 2 importer + nuke
+; handler to clear the legacy StorageUtil FormList from old saves. New
+; writes go to native exclusively.
 String Property OUTFIT_TRACKED_KEY = "SeverOutfit_TrackedActors" AutoReadOnly Hidden
 
 Function TrackOutfitLockedActor(Actor akActor)
-    {Add actor to the tracked outfit-locked list if not already present.}
-    if !akActor
-        return
-    endif
-    if StorageUtil.FormListFind(None, OUTFIT_TRACKED_KEY, akActor as Form) < 0
-        StorageUtil.FormListAdd(None, OUTFIT_TRACKED_KEY, akActor as Form)
-        Debug.Trace("[SeverActions_Outfit] Tracking outfit-locked actor: " + akActor.GetDisplayName())
-    endif
+    {Phase 4: no-op. Native OutfitDataStore is the source of truth for which
+     actors have active locks. Function kept callable so existing internal
+     callers (LockEquippedOutfit, SnapshotLockedOutfit) compile unchanged
+     while Phase 4 lands; subsequent phases delete the call sites.}
 EndFunction
 
 Function UntrackOutfitLockedActor(Actor akActor)
-    {Remove actor from the tracked outfit-locked list.}
-    if !akActor
-        return
-    endif
-    StorageUtil.FormListRemove(None, OUTFIT_TRACKED_KEY, akActor as Form, true)
-    Debug.Trace("[SeverActions_Outfit] Untracked outfit-locked actor: " + akActor.GetDisplayName())
+    {Phase 4: no-op. See TrackOutfitLockedActor.}
 EndFunction
 
 Actor[] Function GetOutfitLockedActors()
-    {Return all actors with active outfit locks. Used by FollowerManager
-     to reassign alias slots after save/load.}
-    Int count = StorageUtil.FormListCount(None, OUTFIT_TRACKED_KEY)
-    Actor[] result = PapyrusUtil.ActorArray(0)
-
-    ; Iterate in reverse so removals don't skip entries
-    Int i = count - 1
-    While i >= 0
-        Form entry = StorageUtil.FormListGet(None, OUTFIT_TRACKED_KEY, i)
-        Actor akActor = entry as Actor
-        if akActor && !akActor.IsDead()
-            ; Verify the lock is still active (in case of stale entries)
-            if StorageUtil.GetIntValue(akActor, "SeverOutfit_LockActive", 0) == 1
-                result = PapyrusUtil.PushActor(result, akActor)
-            else
-                ; Stale entry — lock was cleared without going through ClearLockedOutfit
-                StorageUtil.FormListRemoveAt(None, OUTFIT_TRACKED_KEY, i)
-                Debug.Trace("[SeverActions_Outfit] Removed stale tracked actor: " + akActor.GetDisplayName())
-            endif
-        elseif !akActor
-            ; Invalid form reference — remove it
-            StorageUtil.FormListRemoveAt(None, OUTFIT_TRACKED_KEY, i)
-        endif
-        i -= 1
-    EndWhile
-
-    return result
+    {Phase 4: native is source of truth. Returns every actor in
+     OutfitDataStore with lockActive=true. Used by FollowerManager's slot
+     reassignment after save/load.}
+    return SeverActionsNativeExt.Native_Outfit_GetActorsWithLocks()
 EndFunction
 
 ; =============================================================================
@@ -1398,33 +1113,32 @@ EndFunction
 ; =============================================================================
 
 String[] Function GetPresetNames(Actor akActor)
-    {Returns all saved outfit preset names for the given actor.
-     Filters out internal presets (names starting with _).}
+    {Phase 4: native-only. Returns user-visible preset names (skips internal
+     "_"-prefixed entries like "_default" that the situation system uses as
+     an auto-saved baseline).}
     if !akActor
         return PapyrusUtil.StringArray(0)
     endif
-    String presetsListKey = "SeverOutfit_Presets_" + (akActor.GetFormID() as String)
-    Int count = StorageUtil.StringListCount(None, presetsListKey)
+    Int count = SeverActionsNative.Native_Outfit_GetPresetCount(akActor)
     if count <= 0
         return PapyrusUtil.StringArray(0)
     endif
-    ; First pass: count visible presets (skip internal _default etc.)
+    ; First pass: count visible names so we can size the result.
     Int visibleCount = 0
     Int i = 0
     While i < count
-        String name = StorageUtil.StringListGet(None, presetsListKey, i)
-        If StringUtil.GetNthChar(name, 0) != "_"
+        String name = SeverActionsNative.Native_Outfit_GetPresetNameAt(akActor, i)
+        If name != "" && StringUtil.GetNthChar(name, 0) != "_"
             visibleCount += 1
         EndIf
         i += 1
     EndWhile
-    ; Second pass: collect visible presets
     String[] result = PapyrusUtil.StringArray(visibleCount)
     Int ri = 0
     i = 0
     While i < count
-        String name = StorageUtil.StringListGet(None, presetsListKey, i)
-        If StringUtil.GetNthChar(name, 0) != "_"
+        String name = SeverActionsNative.Native_Outfit_GetPresetNameAt(akActor, i)
+        If name != "" && StringUtil.GetNthChar(name, 0) != "_"
             result[ri] = name
             ri += 1
         EndIf
@@ -1434,54 +1148,40 @@ String[] Function GetPresetNames(Actor akActor)
 EndFunction
 
 Int Function GetPresetItemCount(Actor akActor, String presetName)
-    {Returns the number of items in a saved preset, or 0 if not found.}
+    {Phase 4: native-only. Returns the number of items in a saved preset, 0
+     if not found.}
     if !akActor || presetName == ""
         return 0
     endif
-    String presetKey = "SeverOutfit_" + presetName + "_" + (akActor.GetFormID() as String)
-    return StorageUtil.FormListCount(None, presetKey)
+    Form[] items = SeverActionsNative.Native_Outfit_GetPresetItems(akActor, presetName)
+    if items
+        return items.Length
+    endif
+    return 0
 EndFunction
 
 Function DeletePreset(Actor akActor, String presetName)
-    {Deletes a saved outfit preset by name across ALL stores: legacy StorageUtil,
-     native OutfitDataStore, AND the slot system. If no presets remain, removes
-     actor from the global preset tracking list.
-
-     Normalizes the preset name first so the user-facing name from any source
-     (LLM, MCM, PrismaUI) reaches the same key the save path used.}
+    {Phase 4: native-only. Deletes from OutfitDataStore (which also sweeps
+     stale activePresetName + situationPresets pointing at the deleted name —
+     see Phase 1 B-NEW-7 fix) and from the slot system. Drops the legacy
+     StorageUtil preset/presetActors writes.}
     if !akActor || presetName == ""
         return
     endif
-
-    ; Normalize identically to the save path so we hit the same key
     presetName = NormalizePresetName(presetName)
     if presetName == ""
         return
     endif
 
-    String formID = akActor.GetFormID() as String
-    String presetKey = "SeverOutfit_" + presetName + "_" + formID
-    String presetsListKey = "SeverOutfit_Presets_" + formID
-
-    ; 1. Clear the item FormList (StorageUtil)
-    StorageUtil.FormListClear(None, presetKey)
-
-    ; 2. Remove from the names list (StorageUtil)
-    StorageUtil.StringListRemove(None, presetsListKey, presetName, true)
-
-    ; 3. Native OutfitDataStore (now case-insensitive on its side)
     SeverActionsNative.Native_Outfit_DeletePreset(akActor, presetName)
 
-    ; 4. Slot system — clear container + LvlItem + name + situation mappings
     SeverActions_OutfitSlot slotSys = GetSlotScript()
     if slotSys
         slotSys.DeletePresetFromSlot(akActor, presetName)
     endif
 
-    ; 5. If no presets remain, remove from global tracking list
-    if StorageUtil.StringListCount(None, presetsListKey) <= 0
-        StorageUtil.FormListRemove(None, "SeverOutfit_PresetActors", akActor as Form, true)
-        ; Also clear non-follower lock if they have one and no presets remain
+    ; If no presets remain natively, also drop non-follower lock if any.
+    if SeverActionsNative.Native_Outfit_GetPresetCount(akActor) <= 0
         if HasNonFollowerOutfitLock(akActor)
             SetNonFollowerOutfitLock(akActor, false)
         endif
@@ -1521,63 +1221,123 @@ EndFunction
 ; =============================================================================
 
 Function MigrateOutfitDataToNative()
-    {Reads existing outfit data from StorageUtil and pushes to native OutfitDataStore.
-     Covers both locked outfits and saved presets for all tracked actors.
-     One-time migration — skips if already done (native cosave persists across loads).}
+    {Phase 2 versioned importer. Reads outfit state from legacy StorageUtil and
+     pushes into native OutfitDataStore where native is empty. Native always
+     wins on conflict — every disagreement logs an [OutfitMigration] line so
+     we have evidence of what differed before the legacy store goes away in
+     Phase 6.
 
-    ; Fix #2: Skip if already migrated. Native OutfitDataStore persists via cosave,
-    ; so re-pushing every load is redundant. Version 1 = initial migration done.
-    Int migrationVersion = StorageUtil.GetIntValue(None, "SeverOutfit_MigrationVersion", 0)
-    if migrationVersion >= 1
-        Debug.Trace("[SeverActions_Outfit] MigrateOutfitDataToNative: Already migrated (v" + migrationVersion + "), skipping")
+     Gated on the native cosave schemaVersion (NOT the old
+     SeverOutfit_MigrationVersion StorageUtil flag, which couldn't survive a
+     wipe of the legacy store). schemaVersion=0 → run. >=1 → skip.}
+
+    ; Phase 5 bumps to v3 — also imports SeverOutfit_NonFollowerLock into the
+    ; new native isFollowerLock field (default true; set false where the
+    ; legacy flag was 1).
+    Int schemaVer = SeverActionsNativeExt.Native_Outfit_GetSchemaVersion()
+    if schemaVer >= 3
+        Debug.Trace("[OutfitMigration] schemaVersion=" + schemaVer + " — already imported, skipping")
         return
     endif
 
-    Debug.Trace("[SeverActions_Outfit] MigrateOutfitDataToNative: Starting migration...")
-    Int migratedLocks = 0
-    Int migratedPresets = 0
+    Debug.Trace("[OutfitMigration] schemaVersion=0 — starting native-wins import")
+    Int importedLocks = 0
+    Int skippedLocks = 0
+    Int importedPresets = 0
+    Int skippedPresets = 0
+    Int importedSituations = 0
+    Int skippedSituations = 0
 
-    ; Migrate locked outfit actors
-    Actor[] lockedActors = GetOutfitLockedActors()
+    ; --- Locked outfits ---
+    ; Phase 4: must read directly from the legacy StorageUtil FormList rather
+    ; than GetOutfitLockedActors() (which now returns native). The whole point
+    ; of the importer is to surface actors that exist in legacy storage but
+    ; not yet in native.
+    Int trackedCount = StorageUtil.FormListCount(None, OUTFIT_TRACKED_KEY)
+    Actor[] lockedActors = PapyrusUtil.ActorArray(0)
+    Int ti = 0
+    While ti < trackedCount
+        Actor trackedA = StorageUtil.FormListGet(None, OUTFIT_TRACKED_KEY, ti) as Actor
+        if trackedA && !trackedA.IsDead()
+            lockedActors = PapyrusUtil.PushActor(lockedActors, trackedA)
+        endif
+        ti += 1
+    EndWhile
     Int i = 0
     While i < lockedActors.Length
         Actor akActor = lockedActors[i]
         if akActor
-            String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
-            Int lockCount = StorageUtil.FormListCount(None, lockKey)
-            if lockCount > 0
-                SeverActionsNative.Native_Outfit_BeginLock(akActor)
-                Int k = 0
-                While k < lockCount
-                    Form item = StorageUtil.FormListGet(None, lockKey, k)
-                    if item
-                        SeverActionsNative.Native_Outfit_AddLockedItem(akActor, item)
-                    endif
-                    k += 1
-                EndWhile
-                SeverActionsNative.Native_Outfit_CommitLock(akActor)
-                migratedLocks += 1
+            if SeverActionsNativeExt.Native_Outfit_IsLockActive(akActor)
+                ; Native already has a lock for this actor. Skip — native wins.
+                ; Log the size delta so we have evidence of what we left behind.
+                String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
+                Int storageLockCount = StorageUtil.FormListCount(None, lockKey)
+                Form[] nativeLocked = SeverActionsNative.Native_Outfit_GetLockedItems(akActor)
+                Int nativeLockCount = 0
+                if nativeLocked
+                    nativeLockCount = nativeLocked.Length
+                endif
+                if storageLockCount != nativeLockCount
+                    Debug.Trace("[OutfitMigration] " + akActor.GetDisplayName() + " lock: native wins (storage=" + storageLockCount + " items, native=" + nativeLockCount + " items)")
+                endif
+                skippedLocks += 1
+            else
+                ; Native is empty — import from StorageUtil.
+                String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
+                Int lockCount = StorageUtil.FormListCount(None, lockKey)
+                if lockCount > 0
+                    SeverActionsNative.Native_Outfit_BeginLock(akActor)
+                    Int k = 0
+                    While k < lockCount
+                        Form item = StorageUtil.FormListGet(None, lockKey, k)
+                        if item
+                            SeverActionsNative.Native_Outfit_AddLockedItem(akActor, item)
+                        endif
+                        k += 1
+                    EndWhile
+                    SeverActionsNative.Native_Outfit_CommitLock(akActor)
+                    importedLocks += 1
+                    Debug.Trace("[OutfitMigration] " + akActor.GetDisplayName() + " lock imported: " + lockCount + " items")
+                endif
             endif
 
-            ; Migrate presets for this actor
-            String[] presetNames = GetPresetNames(akActor)
+            ; --- Presets for this actor ---
+            ; Phase 4: GetPresetNames now returns native. Read legacy StorageUtil
+            ; StringList directly so the importer surfaces any presets that
+            ; exist ONLY in the mirror.
+            String _legacyPresetsListKey = "SeverOutfit_Presets_" + (akActor.GetFormID() as String)
+            Int _legacyNameCount = StorageUtil.StringListCount(None, _legacyPresetsListKey)
+            String[] presetNames = PapyrusUtil.StringArray(_legacyNameCount)
+            Int _lpi = 0
+            While _lpi < _legacyNameCount
+                presetNames[_lpi] = StorageUtil.StringListGet(None, _legacyPresetsListKey, _lpi)
+                _lpi += 1
+            EndWhile
             Int p = 0
             While p < presetNames.Length
                 if presetNames[p] != ""
-                    String presetKey = "SeverOutfit_" + presetNames[p] + "_" + (akActor.GetFormID() as String)
-                    Int pCount = StorageUtil.FormListCount(None, presetKey)
-                    if pCount > 0
-                        SeverActionsNative.Native_Outfit_BeginPreset(akActor, presetNames[p])
-                        Int pk = 0
-                        While pk < pCount
-                            Form pItem = StorageUtil.FormListGet(None, presetKey, pk)
-                            if pItem
-                                SeverActionsNative.Native_Outfit_AddPresetItem(akActor, pItem)
-                            endif
-                            pk += 1
-                        EndWhile
-                        SeverActionsNative.Native_Outfit_CommitPreset(akActor)
-                        migratedPresets += 1
+                    Form[] nativePreset = SeverActionsNative.Native_Outfit_GetPresetItems(akActor, presetNames[p])
+                    Bool nativeHasIt = nativePreset && nativePreset.Length > 0
+                    if nativeHasIt
+                        skippedPresets += 1
+                        Debug.Trace("[OutfitMigration] " + akActor.GetDisplayName() + " preset '" + presetNames[p] + "': native wins (" + nativePreset.Length + " items, storage had " + StorageUtil.FormListCount(None, "SeverOutfit_" + presetNames[p] + "_" + (akActor.GetFormID() as String)) + ")")
+                    else
+                        String presetKey = "SeverOutfit_" + presetNames[p] + "_" + (akActor.GetFormID() as String)
+                        Int pCount = StorageUtil.FormListCount(None, presetKey)
+                        if pCount > 0
+                            SeverActionsNative.Native_Outfit_BeginPreset(akActor, presetNames[p])
+                            Int pk = 0
+                            While pk < pCount
+                                Form pItem = StorageUtil.FormListGet(None, presetKey, pk)
+                                if pItem
+                                    SeverActionsNative.Native_Outfit_AddPresetItem(akActor, pItem)
+                                endif
+                                pk += 1
+                            EndWhile
+                            SeverActionsNative.Native_Outfit_CommitPreset(akActor)
+                            importedPresets += 1
+                            Debug.Trace("[OutfitMigration] " + akActor.GetDisplayName() + " preset '" + presetNames[p] + "' imported: " + pCount + " items")
+                        endif
                     endif
                 endif
                 p += 1
@@ -1586,41 +1346,68 @@ Function MigrateOutfitDataToNative()
         i += 1
     EndWhile
 
-    ; Also migrate preset-only actors (not locked, but have presets)
-    Actor[] presetActors = GetPresetActors()
+    ; --- Preset-only actors (not locked but have presets) ---
+    ; Phase 4: read legacy StorageUtil PresetActors directly (GetPresetActors
+    ; now returns native, which would miss any actors that exist only in the
+    ; legacy mirror).
+    Int presetActorsCount = StorageUtil.FormListCount(None, "SeverOutfit_PresetActors")
+    Actor[] presetActors = PapyrusUtil.ActorArray(0)
+    Int pai = 0
+    While pai < presetActorsCount
+        Actor paA = StorageUtil.FormListGet(None, "SeverOutfit_PresetActors", pai) as Actor
+        if paA && !paA.IsDead()
+            presetActors = PapyrusUtil.PushActor(presetActors, paA)
+        endif
+        pai += 1
+    EndWhile
     Int j = 0
     While j < presetActors.Length
         Actor pActor = presetActors[j]
         if pActor
-            ; Skip if already migrated above (they have locks too)
-            Bool alreadyMigrated = false
+            Bool alreadyVisited = false
             Int li = 0
-            While li < lockedActors.Length && !alreadyMigrated
+            While li < lockedActors.Length && !alreadyVisited
                 if lockedActors[li] == pActor
-                    alreadyMigrated = true
+                    alreadyVisited = true
                 endif
                 li += 1
             EndWhile
 
-            if !alreadyMigrated
-                String[] presetNames = GetPresetNames(pActor)
+            if !alreadyVisited
+                ; Phase 4: read legacy StorageUtil StringList directly (same
+                ; reasoning as the sibling loop above).
+                String _legacyPresetsListKeyP = "SeverOutfit_Presets_" + (pActor.GetFormID() as String)
+                Int _legacyNameCountP = StorageUtil.StringListCount(None, _legacyPresetsListKeyP)
+                String[] presetNames = PapyrusUtil.StringArray(_legacyNameCountP)
+                Int _lpiP = 0
+                While _lpiP < _legacyNameCountP
+                    presetNames[_lpiP] = StorageUtil.StringListGet(None, _legacyPresetsListKeyP, _lpiP)
+                    _lpiP += 1
+                EndWhile
                 Int p = 0
                 While p < presetNames.Length
                     if presetNames[p] != ""
-                        String presetKey = "SeverOutfit_" + presetNames[p] + "_" + (pActor.GetFormID() as String)
-                        Int pCount = StorageUtil.FormListCount(None, presetKey)
-                        if pCount > 0
-                            SeverActionsNative.Native_Outfit_BeginPreset(pActor, presetNames[p])
-                            Int pk = 0
-                            While pk < pCount
-                                Form pItem = StorageUtil.FormListGet(None, presetKey, pk)
-                                if pItem
-                                    SeverActionsNative.Native_Outfit_AddPresetItem(pActor, pItem)
-                                endif
-                                pk += 1
-                            EndWhile
-                            SeverActionsNative.Native_Outfit_CommitPreset(pActor)
-                            migratedPresets += 1
+                        Form[] nativePreset = SeverActionsNative.Native_Outfit_GetPresetItems(pActor, presetNames[p])
+                        Bool nativeHasIt = nativePreset && nativePreset.Length > 0
+                        if nativeHasIt
+                            skippedPresets += 1
+                        else
+                            String presetKey = "SeverOutfit_" + presetNames[p] + "_" + (pActor.GetFormID() as String)
+                            Int pCount = StorageUtil.FormListCount(None, presetKey)
+                            if pCount > 0
+                                SeverActionsNative.Native_Outfit_BeginPreset(pActor, presetNames[p])
+                                Int pk = 0
+                                While pk < pCount
+                                    Form pItem = StorageUtil.FormListGet(None, presetKey, pk)
+                                    if pItem
+                                        SeverActionsNative.Native_Outfit_AddPresetItem(pActor, pItem)
+                                    endif
+                                    pk += 1
+                                EndWhile
+                                SeverActionsNative.Native_Outfit_CommitPreset(pActor)
+                                importedPresets += 1
+                                Debug.Trace("[OutfitMigration] " + pActor.GetDisplayName() + " preset '" + presetNames[p] + "' imported (preset-only actor): " + pCount + " items")
+                            endif
                         endif
                     endif
                     p += 1
@@ -1630,9 +1417,8 @@ Function MigrateOutfitDataToNative()
         j += 1
     EndWhile
 
-    ; Migrate situation data for all known actors (locked + preset actors)
-    ; Combine both lists into one pass
-    Int migratedSituations = 0
+    ; --- Situation data + active preset name + auto-switch (per-actor) ---
+    ; Build the union of locked + preset actors so we cover every actor with state.
     Actor[] allActors = PapyrusUtil.ActorArray(0)
     Int ai = 0
     While ai < lockedActors.Length
@@ -1644,7 +1430,6 @@ Function MigrateOutfitDataToNative()
     ai = 0
     While ai < presetActors.Length
         if presetActors[ai]
-            ; Avoid duplicates
             Bool found = false
             Int ci = 0
             While ci < allActors.Length && !found
@@ -1660,226 +1445,111 @@ Function MigrateOutfitDataToNative()
         ai += 1
     EndWhile
 
-    String[] situations = new String[4]
+    ; Must match the 7 canonical keys in NormalizeSituation.
+    String[] situations = new String[7]
     situations[0] = "adventure"
     situations[1] = "town"
     situations[2] = "home"
     situations[3] = "sleep"
+    situations[4] = "combat"
+    situations[5] = "rain"
+    situations[6] = "snow"
 
     ai = 0
     While ai < allActors.Length
         Actor akActor = allActors[ai]
         if akActor
-            ; Migrate active preset name
-            String activePreset = StorageUtil.GetStringValue(akActor, "SeverOutfit_ActivePreset", "")
-            if activePreset != ""
-                SeverActionsNative.Native_Outfit_SetActivePreset(akActor, activePreset)
+            ; Active preset name — only import if native is empty.
+            String nativeActive = SeverActionsNative.Native_Outfit_GetActivePreset(akActor)
+            String storageActive = StorageUtil.GetStringValue(akActor, "SeverOutfit_ActivePreset", "")
+            if nativeActive == "" && storageActive != ""
+                SeverActionsNative.Native_Outfit_SetActivePreset(akActor, storageActive)
+                Debug.Trace("[OutfitMigration] " + akActor.GetDisplayName() + " activePreset imported: '" + storageActive + "'")
+            elseif nativeActive != "" && storageActive != "" && nativeActive != storageActive
+                Debug.Trace("[OutfitMigration] " + akActor.GetDisplayName() + " activePreset: native wins (native='" + nativeActive + "' storage='" + storageActive + "')")
             endif
 
-            ; Migrate current situation
-            String curSit = StorageUtil.GetStringValue(akActor, "SeverOutfit_CurrentSituation", "")
-            if curSit != ""
-                SeverActionsNative.Native_Outfit_SetCurrentSituation(akActor, curSit)
+            ; Current situation
+            String nativeSit = SeverActionsNative.Native_Outfit_GetCurrentSituation(akActor)
+            String storageSit = StorageUtil.GetStringValue(akActor, "SeverOutfit_CurrentSituation", "")
+            if nativeSit == "" && storageSit != ""
+                SeverActionsNative.Native_Outfit_SetCurrentSituation(akActor, storageSit)
+                Debug.Trace("[OutfitMigration] " + akActor.GetDisplayName() + " currentSituation imported: '" + storageSit + "'")
+            elseif nativeSit != "" && storageSit != "" && nativeSit != storageSit
+                Debug.Trace("[OutfitMigration] " + akActor.GetDisplayName() + " currentSituation: native wins (native='" + nativeSit + "' storage='" + storageSit + "')")
             endif
 
-            ; Migrate situation preset assignments
+            ; Per-situation preset mappings (all 7 canonical keys)
             Int si = 0
             While si < situations.Length
-                String sitPreset = StorageUtil.GetStringValue(akActor, "SeverOutfit_Sit_" + situations[si], "")
-                if sitPreset != ""
-                    SeverActionsNative.Native_Outfit_SetSituationPreset(akActor, situations[si], sitPreset)
-                    migratedSituations += 1
+                String storageMap = StorageUtil.GetStringValue(akActor, "SeverOutfit_Sit_" + situations[si], "")
+                if storageMap != ""
+                    if SeverActionsNativeExt.Native_Outfit_HasSituationPreset(akActor, situations[si])
+                        skippedSituations += 1
+                        String nativeMap = SeverActionsNative.Native_Outfit_GetSituationPreset(akActor, situations[si])
+                        if nativeMap != storageMap
+                            Debug.Trace("[OutfitMigration] " + akActor.GetDisplayName() + " sit_" + situations[si] + ": native wins (native='" + nativeMap + "' storage='" + storageMap + "')")
+                        endif
+                    else
+                        SeverActionsNative.Native_Outfit_SetSituationPreset(akActor, situations[si], storageMap)
+                        importedSituations += 1
+                    endif
                 endif
                 si += 1
             EndWhile
 
-            ; Migrate auto-switch per-actor setting (default true, so only migrate if explicitly disabled)
-            Int autoSwitchVal = StorageUtil.GetIntValue(akActor, "SeverOutfit_AutoSwitch", 1)
+            ; Per-actor auto-switch. Default is true on native; only flip if
+            ; StorageUtil explicitly recorded false. We can't distinguish "user
+            ; turned auto-switch off" from "never set" beyond the StorageUtil
+            ; presence check; this conservative path only writes when StorageUtil
+            ; carries a definite 0.
+            Int autoSwitchVal = StorageUtil.GetIntValue(akActor, "SeverOutfit_AutoSwitch", -1)
             if autoSwitchVal == 0
-                SeverActionsNative.Native_Outfit_SetAutoSwitchEnabled(akActor, false)
+                if SeverActionsNative.Native_Outfit_GetAutoSwitchEnabled(akActor)
+                    SeverActionsNative.Native_Outfit_SetAutoSwitchEnabled(akActor, false)
+                    Debug.Trace("[OutfitMigration] " + akActor.GetDisplayName() + " autoSwitch imported: false")
+                endif
             endif
         endif
         ai += 1
     EndWhile
 
-    ; Mark migration as complete so we skip on future loads
-    StorageUtil.SetIntValue(None, "SeverOutfit_MigrationVersion", 1)
+    ; Phase 5: import legacy SeverOutfit_NonFollowerLock for every actor we
+    ; touched above (locked + preset-owning union). Only writes where the
+    ; legacy flag was set — default isFollowerLock=true otherwise.
+    Int nflImported = 0
+    Int nfi = 0
+    While nfi < allActors.Length
+        Actor nfActor = allActors[nfi]
+        if nfActor
+            Int legacyNFL = StorageUtil.GetIntValue(nfActor, "SeverOutfit_NonFollowerLock", 0)
+            if legacyNFL == 1
+                SeverActionsNativeExt.Native_Outfit_SetIsFollowerLock(nfActor, false)
+                nflImported += 1
+                Debug.Trace("[OutfitMigration] " + nfActor.GetDisplayName() + " isFollowerLock=false (legacy non-follower lock)")
+            endif
+        endif
+        nfi += 1
+    EndWhile
 
-    Debug.Trace("[SeverActions_Outfit] MigrateOutfitDataToNative: Done — " + migratedLocks + " locks, " + migratedPresets + " presets, " + migratedSituations + " situation mappings migrated")
+    ; Bump native schema version to 3 (Phase 5). Cosave persists this;
+    ; subsequent loads short-circuit at the top.
+    SeverActionsNativeExt.Native_Outfit_SetSchemaVersion(3)
+
+    ; Don't bother clearing the old StorageUtil version key — Phase 6 nukes
+    ; the entire SeverOutfit_* keyspace anyway. Leaving it in place keeps
+    ; downgrade safety: an older DLL would still see the old gate and skip
+    ; (though we have no intention of downgrading).
+
+    Debug.Trace("[OutfitMigration] Done. imported=[locks:" + importedLocks + ", presets:" + importedPresets + ", situations:" + importedSituations + ", non-follower-locks:" + nflImported + "] native-wins-skipped=[locks:" + skippedLocks + ", presets:" + skippedPresets + ", situations:" + skippedSituations + "]")
 EndFunction
 
 Actor[] Function GetPresetActors()
-    {Return all actors with saved outfit presets. Used by MCM Outfits page.
-     Cleans up stale entries (dead or invalid actors) as it iterates.}
-    Int count = StorageUtil.FormListCount(None, "SeverOutfit_PresetActors")
-    Actor[] result = PapyrusUtil.ActorArray(0)
-
-    ; Iterate in reverse so removals don't skip entries
-    Int i = count - 1
-    While i >= 0
-        Form entry = StorageUtil.FormListGet(None, "SeverOutfit_PresetActors", i)
-        Actor akActor = entry as Actor
-        if akActor && !akActor.IsDead()
-            ; Verify they still have presets
-            String presetsListKey = "SeverOutfit_Presets_" + (akActor.GetFormID() as String)
-            if StorageUtil.StringListCount(None, presetsListKey) > 0
-                result = PapyrusUtil.PushActor(result, akActor)
-            else
-                ; No presets left — remove stale entry
-                StorageUtil.FormListRemoveAt(None, "SeverOutfit_PresetActors", i)
-            endif
-        elseif !akActor
-            ; Invalid form reference — remove
-            StorageUtil.FormListRemoveAt(None, "SeverOutfit_PresetActors", i)
-        endif
-        i -= 1
-    EndWhile
-
-    return result
+    {Phase 4: native-only. Returns every actor with at least one user-visible
+     preset in OutfitDataStore. Used by MCM Outfits page.}
+    return SeverActionsNative.Native_Outfit_GetActorsWithPresets()
 EndFunction
 
-; =============================================================================
-; ACTION: RemoveClothingPiece (LEGACY - kept for compatibility)
-; YAML parameterMapping: [speaker, slot]
-; =============================================================================
-
-Function RemoveClothingPiece_Execute(Actor akActor, String slot)
-    if !akActor
-        return
-    endif
-
-    if slot == ""
-        Debug.Trace("[SeverActions_Outfit] RemoveClothingPiece: No slot specified")
-        return
-    endif
-
-    SuspendOutfitLock(akActor)
-
-    Debug.Trace("[SeverActions_Outfit] RemoveClothingPiece: " + akActor.GetDisplayName() + " removing " + slot)
-    
-    ; Get all slots that match this slot name (e.g., helmet returns slots 30 and 31)
-    int[] slotsToCheck = GetSlotsFromName(slot)
-    String storageKey = "SeverActions_RemovedArmor_" + (akActor.GetFormID() as String)
-    bool playedAnimation = false
-    Form[] removedForms = new Form[10]
-    Int removedCount = 0
-
-    ; Try to remove items from all matching slots
-    int s = 0
-    while s < slotsToCheck.Length
-        if slotsToCheck[s] != 0
-            Armor equippedItem = akActor.GetWornForm(slotsToCheck[s]) as Armor
-            if equippedItem
-                String itemName = equippedItem.GetName()
-
-                ; Store for later re-equipping
-                if StorageUtil.FormListFind(None, storageKey, equippedItem) < 0
-                    StorageUtil.FormListAdd(None, storageKey, equippedItem)
-                endif
-
-                ; Only play animation once
-                if !playedAnimation
-                    PlayUnequipAnimation(akActor, slot)
-                    playedAnimation = true
-                endif
-
-                akActor.UnequipItem(equippedItem, true, true)
-                ; Track for lock list removal
-                if removedCount < 10
-                    removedForms[removedCount] = equippedItem
-                    removedCount += 1
-                endif
-                Debug.Trace("[SeverActions_Outfit] Removed: " + itemName)
-            endif
-        endif
-        s += 1
-    endwhile
-
-    if removedCount == 0
-        Debug.Trace("[SeverActions_Outfit] Nothing equipped in slot: " + slot)
-    endif
-
-    ; Remove unequipped items directly from the lock list instead of re-snapshotting.
-    ; SnapshotLockedOutfit after UnequipItem is the documented anti-pattern — UnequipItem
-    ; is async and GetWornForm returns stale data including the item just removed.
-    if removedCount > 0
-        RemoveFromLockedOutfit(akActor, removedForms, removedCount)
-    endif
-
-    ResumeOutfitLock(akActor)
-EndFunction
-
-; =============================================================================
-; ACTION: EquipClothingPiece
-; YAML parameterMapping: [speaker, slot]
-; =============================================================================
-
-Function EquipClothingPiece_Execute(Actor akActor, String slot)
-    if !akActor
-        return
-    endif
-    
-    if slot == ""
-        Debug.Trace("[SeverActions_Outfit] EquipClothingPiece: No slot specified")
-        return
-    endif
-    
-    Debug.Trace("[SeverActions_Outfit] EquipClothingPiece: " + akActor.GetDisplayName() + " putting on " + slot)
-    
-    String storageKey = "SeverActions_RemovedArmor_" + (akActor.GetFormID() as String)
-    int count = StorageUtil.FormListCount(None, storageKey)
-    
-    int[] slotsToCheck = GetSlotsFromName(slot)
-    
-    ; Find stored item matching slot - check each slot in order of priority
-    Armor itemToEquip = None
-    int itemIndex = -1
-    
-    ; Go through each slot we should check for this slot name
-    int s = 0
-    while s < slotsToCheck.Length && !itemToEquip
-        if slotsToCheck[s] != 0
-            ; Search stored items for one matching this specific slot
-            int i = 0
-            while i < count && !itemToEquip
-                Armor storedItem = StorageUtil.FormListGet(None, storageKey, i) as Armor
-                if storedItem
-                    int itemSlotMask = storedItem.GetSlotMask()
-                    if Math.LogicalAnd(itemSlotMask, slotsToCheck[s]) > 0
-                        itemToEquip = storedItem
-                        itemIndex = i
-                    endif
-                endif
-                i += 1
-            endwhile
-        endif
-        s += 1
-    endwhile
-    
-    if !itemToEquip
-        Debug.Trace("[SeverActions_Outfit] No stored item for slot: " + slot)
-        return
-    endif
-    
-    String itemName = itemToEquip.GetName()
-
-    SuspendOutfitLock(akActor)
-    PlayEquipAnimation(akActor, slot)
-    akActor.EquipItem(itemToEquip, false, true)
-    StorageUtil.FormListRemoveAt(None, storageKey, itemIndex)
-
-    ; Add to outfit lock so the item persists on cell load
-    if StorageUtil.GetIntValue(akActor, "SeverOutfit_LockActive", 0) == 1
-        String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
-        if StorageUtil.FormListFind(None, lockKey, itemToEquip) < 0
-            StorageUtil.FormListAdd(None, lockKey, itemToEquip)
-            SeverActionsNative.Native_Outfit_AddLockedItem(akActor, itemToEquip)
-        endif
-    endif
-
-    ResumeOutfitLock(akActor)
-    Debug.Trace("[SeverActions_Outfit] Equipped: " + itemName)
-EndFunction
 
 ; =============================================================================
 ; HELPER FUNCTIONS
@@ -1904,71 +1574,47 @@ String Function GetSlotNameFromMask(int slotMask)
     return "body"
 EndFunction
 
-int Function GetSlotFromName(String slotName)
-    String slot = StringToLower(slotName)
-    
-    if slot == "head" || slot == "helmet" || slot == "hat" || slot == "hood" || slot == "mask"
-        return 0x00000001
-    elseif slot == "body" || slot == "chest" || slot == "armor" || slot == "cuirass" || slot == "shirt" || slot == "robes" || slot == "dress"
-        return 0x00000004
-    elseif slot == "hands" || slot == "gloves" || slot == "gauntlets"
-        return 0x00000008
-    elseif slot == "forearms" || slot == "bracers"
-        return 0x00000010
-    elseif slot == "amulet" || slot == "necklace" || slot == "pendant"
-        return 0x00000020
-    elseif slot == "ring" || slot == "rings"
-        return 0x00000040
-    elseif slot == "feet" || slot == "boots" || slot == "shoes"
-        return 0x00000080
-    elseif slot == "calves" || slot == "greaves" || slot == "legs"
-        return 0x00000100
-    elseif slot == "shield"
-        return 0x00000200
-    elseif slot == "circlet" || slot == "crown"
-        return 0x00001000
-    elseif slot == "neck" || slot == "scarf"
-        return 0x00008000
-    elseif slot == "cloak" || slot == "cape" || slot == "mantle"
-        return 0x00010000
-    elseif slot == "back" || slot == "backpack"
-        return 0x00020000
-    elseif slot == "underwear" || slot == "smallclothes"
-        return 0x00400000
+String[] Function ParseCSVTrim(String csv)
+{Split a comma-separated string into trimmed non-empty tokens. Caps at 32
+ to match the storage limits used by callers (preset/lock FormLists).
+ Extracted from a loop that used to be inlined identically in both
+ EquipMultipleItems_Execute and UnequipMultipleItems_Execute.}
+    String[] tmp = PapyrusUtil.StringArray(32)
+    Int outCount = 0
+    if csv == ""
+        return PapyrusUtil.StringArray(0)
     endif
-    
-    return 0
-EndFunction
 
-int[] Function GetSlotsFromName(String slotName)
-    String slot = StringToLower(slotName)
-    int[] results
-    
-    ; For head items, return both slots but ordered by priority based on what was requested
-    if slot == "wig" || slot == "hair"
-        ; Wig/hair requested - check slot 31 (Hair) first, then slot 30 (Head)
-        results = new int[2]
-        results[0] = 0x00000002  ; Slot 31 (Hair) - priority for wigs
-        results[1] = 0x00000001  ; Slot 30 (Head) - fallback
-        return results
-    elseif slot == "head" || slot == "helmet" || slot == "hat" || slot == "hood" || slot == "mask"
-        ; Helmet/hood requested - check slot 30 (Head) first, then slot 31 (Hair)
-        results = new int[2]
-        results[0] = 0x00000001  ; Slot 30 (Head) - priority for helmets
-        results[1] = 0x00000002  ; Slot 31 (Hair) - fallback for some hoods
-        return results
-    elseif slot == "cloak" || slot == "cape" || slot == "mantle"
-        results = new int[4]
-        results[0] = 0x00000400  ; Slot 40 (Tail/Cloak)
-        results[1] = 0x00010000  ; Slot 46
-        results[2] = 0x00020000  ; Slot 47
-        results[3] = 0x08000000  ; Slot 57
-        return results
+    Int len = StringUtil.GetLength(csv)
+    Int startPos = 0
+    Int commaPos = StringUtil.Find(csv, ",", startPos)
+    while startPos < len && outCount < 32
+        String token
+        if commaPos >= 0
+            token = StringUtil.Substring(csv, startPos, commaPos - startPos)
+            startPos = commaPos + 1
+            commaPos = StringUtil.Find(csv, ",", startPos)
+        else
+            token = StringUtil.Substring(csv, startPos)
+            startPos = len
+        endif
+        token = TrimString(token)
+        if token != ""
+            tmp[outCount] = token
+            outCount += 1
+        endif
+    endwhile
+
+    if outCount == 0
+        return PapyrusUtil.StringArray(0)
     endif
-    
-    results = new int[1]
-    results[0] = GetSlotFromName(slotName)
-    return results
+    String[] result = PapyrusUtil.StringArray(outCount)
+    Int ci = 0
+    while ci < outCount
+        result[ci] = tmp[ci]
+        ci += 1
+    endwhile
+    return result
 EndFunction
 
 String Function TrimString(String text)
@@ -2077,19 +1723,21 @@ Function SetSituationPreset_Execute(Actor akActor, String situation, String pres
         EndIf
     EndIf
 
-    ; ── Legacy path (still validate + dual-write for backwards compat) ──
-    ; Verify the preset exists in legacy storage too
-    String presetKey = "SeverOutfit_" + presetName + "_" + (akActor.GetFormID() as String)
-    if StorageUtil.FormListCount(None, presetKey) == 0
-        ; Slot system handled it; legacy doesn't have it. That's fine.
-        Debug.Trace("[SeverActions_Outfit] SetSituationPreset: '" + presetName + "' only in slot system (legacy entry absent)")
+    ; ── Legacy native preset path (OutfitDataStore situation→preset map) ──
+    ; C2 fix: the legacy "preset exists" gate previously read a StorageUtil
+    ; key that Phase 4 stopped writing — meaning new situation assignments
+    ; for legacy-store presets silently never persisted. Switch to the
+    ; native source of truth: Native_Outfit_GetPresetItems returns the
+    ; preset's form list (zero-length array if absent).
+    Form[] legacyItems = SeverActionsNative.Native_Outfit_GetPresetItems(akActor, presetName)
+    if legacyItems.Length == 0
+        ; Slot system handled it (if slotSys branch fired) or preset doesn't
+        ; exist in either store. Either way, nothing for the legacy path.
+        Debug.Trace("[SeverActions_Outfit] SetSituationPreset: '" + presetName + "' not in legacy native store (slot system path applies, or preset unknown)")
         return
     endif
 
-    ; Dual-write to native + StorageUtil
     SeverActionsNative.Native_Outfit_SetSituationPreset(akActor, situation, presetName)
-    StorageUtil.SetStringValue(akActor, "SeverOutfit_Sit_" + situation, presetName)
-
     Debug.Trace("[SeverActions_Outfit] SetSituationPreset: " + akActor.GetDisplayName() + " — " + situation + " → " + presetName)
 EndFunction
 
@@ -2103,12 +1751,13 @@ Function ClearSituationPreset_Execute(Actor akActor, String situation)
     ; ── Slot system ──
     SeverActionsNative.Native_OutfitSlot_SetSituationPreset(akActor, situation, -1)
 
-    ; ── Legacy ──
+    ; Phase 4: native-only.
     SeverActionsNative.Native_Outfit_ClearSituationPreset(akActor, situation)
-    StorageUtil.UnsetStringValue(akActor, "SeverOutfit_Sit_" + situation)
-
     Debug.Trace("[SeverActions_Outfit] ClearSituationPreset: " + akActor.GetDisplayName() + " — cleared " + situation)
 EndFunction
+
+; Phase 1 parity sweep removed in Phase 4. With native as the single source
+; of truth, there is no second store to compare against.
 
 ; =============================================================================
 ; MAINTENANCE — called from SeverActions_Init on every game load
@@ -2127,6 +1776,7 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_PrismaApplyPresetV2", "OnPrismaApplyPresetV2")
     RegisterForModEvent("SeverActions_PrismaDeletePreset", "OnPrismaDeletePreset")
     RegisterForModEvent("SeverActions_PrismaSavePreset", "OnPrismaSavePreset")
+    RegisterForModEvent("SeverActions_PrismaNukeOutfit", "OnPrismaNukeOutfit")
     RegisterForModEvent("SeverActions_PrismaSetSitPreset", "OnPrismaSetSitPreset")
     RegisterForModEvent("SeverActions_PrismaClearSitPreset", "OnPrismaClearSitPreset")
     ; PrismaUI auto-switch sync — fires when PrismaUI toggles global or per-actor setting
@@ -2152,6 +1802,11 @@ Function Maintenance()
     ; Unequip paths so the alias's slot-preset enforcement doesn't fight an
     ; ad-hoc change. Mirrors Papyrus ClearActivePresetForAdHoc.
     RegisterForModEvent("SeverActions_PrismaAdHocClearSlotPreset", "OnPrismaAdHocClearSlotPreset")
+    ; Fired by PrismaUISettingsHandler when a user marks an actor outfit-excluded.
+    ; C++ has already cleared the native lock; we need to clear the StorageUtil
+    ; mirror so the alias short-circuit (which reads LockActive) sees consistent
+    ; state. Previously this event was emitted with no handler — silent drift.
+    RegisterForModEvent("SeverActions_OutfitExcluded", "OnOutfitExcluded")
 
     ; Animation framework hooks — suspend outfit lock during scenes
     ; SexLab: global hooks fire for ALL scenes (no local hook suffix needed)
@@ -2165,9 +1820,53 @@ Function Maintenance()
     ; SituationMonitor.m_enabled is RAM-only — resets to true on DLL load.
     ; StorageUtil is our persistence layer: 1 = enabled, 0 = disabled, default = 1
     Bool savedAutoSwitch = StorageUtil.GetIntValue(None, "SeverOutfit_GlobalAutoSwitch", 1) as Bool
-    SeverActionsNative.SituationMonitor_SetEnabled(savedAutoSwitch)
+    SeverActionsNativeExt.SituationMonitor_SetEnabled(savedAutoSwitch)
 
-    Debug.Trace("[SeverActions_Outfit] Maintenance: Registered for SituationChanged, CatalogEquipLock, 7 PrismaUI outfit events, and global auto-switch sync. AutoSwitch restored: " + savedAutoSwitch)
+    ; Phase 4: Parity sweep retired. With native as the sole source of truth
+    ; for lock/preset/situation state and the dual-write writers gone, there's
+    ; no second store to compare against. ParityCheck_Sweep + ParityCheck_Actor
+    ; + ParityCheckIntervalSeconds + OnUpdate event are all gone with this
+    ; phase. If post-migration drift surfaces, it now means a single-source
+    ; bug — easier to localize.
+
+    Debug.Trace("[SeverActions_Outfit] Maintenance: Registered for SituationChanged, CatalogEquipLock, PrismaUI outfit events, and global auto-switch sync. AutoSwitch restored: " + savedAutoSwitch)
+
+    ; Phase 5: one-time cleanup of stale StorageUtil suspend keys. Old saves
+    ; may have SeverOutfit_Suspended / SeverOutfit_SuspendedAt left over from
+    ; the StorageUtil-mirrored era — if a player crashed mid-builder before
+    ; this migration shipped, those keys are still set on whichever actor
+    ; the session was for. The new native-backed Suspend/Resume doesn't read
+    ; them, but they'd persist in the cosave forever otherwise. Sweep them
+    ; out here. Idempotent — no-op once cleared. Gated by a one-shot per-save
+    ; marker so we don't iterate the actor list on every save load.
+    ;
+    ; Iterates Native_Outfit_GetAllTrackedActors (NOT GetActorsWithLocks) —
+    ; we want to clean stale keys even on actors whose locks have since been
+    ; cleared (e.g. dismissed followers, NPCs the user explicitly unlocked).
+    ; That set is a strict superset and includes every actor the outfit
+    ; system has ever tracked.
+    Int cleanupDone = StorageUtil.GetIntValue(None, "SeverActions_OutfitSuspendCleanupDone", 0)
+    if cleanupDone == 0
+        Actor[] tracked = SeverActionsNativeExt.Native_Outfit_GetAllTrackedActors()
+        Int cleared = 0
+        if tracked
+            Int ti = 0
+            While ti < tracked.Length
+                if tracked[ti]
+                    if StorageUtil.GetIntValue(tracked[ti], "SeverOutfit_Suspended", 0) != 0
+                        StorageUtil.UnsetIntValue(tracked[ti], "SeverOutfit_Suspended")
+                        cleared += 1
+                    endif
+                    if StorageUtil.GetFloatValue(tracked[ti], "SeverOutfit_SuspendedAt", 0.0) != 0.0
+                        StorageUtil.UnsetFloatValue(tracked[ti], "SeverOutfit_SuspendedAt")
+                    endif
+                endif
+                ti += 1
+            EndWhile
+        endif
+        StorageUtil.SetIntValue(None, "SeverActions_OutfitSuspendCleanupDone", 1)
+        Debug.Trace("[SeverActions_Outfit] Phase 5: cleaned " + cleared + " stale StorageUtil suspend key(s) — now using native SuspendUntil")
+    endif
 EndFunction
 
 ; =============================================================================
@@ -2192,7 +1891,7 @@ Event OnSituationChanged(String eventName, String strArg, Float numArg, Form sen
     endif
 
     ; Don't fight builder or other outfit operations in progress
-    If StorageUtil.GetIntValue(akActor, "SeverOutfit_Suspended", 0) == 1
+    If IsOutfitOpSuspended(akActor)
         Return
     EndIf
 
@@ -2242,9 +1941,8 @@ Event OnSituationChanged(String eventName, String strArg, Float numArg, Form sen
         SaveOutfitPreset_Execute(akActor, "_default")
     EndIf
 
-    ; Update current situation tracking
+    ; Update current situation tracking (phase 4: native-only)
     SeverActionsNative.Native_Outfit_SetCurrentSituation(akActor, situation)
-    StorageUtil.SetStringValue(akActor, "SeverOutfit_CurrentSituation", situation)
 
     ; Apply the mapped preset
     Debug.Trace("[SeverActions_Outfit] Auto-switching " + akActor.GetDisplayName() + " to '" + presetName + "' for " + situation + " situation")
@@ -2256,7 +1954,9 @@ EndEvent
 ; Fired by PrismaUI catalog "Equip & Lock" mode (native C++).
 ; Syncs the Papyrus FormList outfit lock with the armor piece that C++ just
 ; equipped and added to OutfitDataStore.
-; numArg = actor FormID, strArg = armor FormID as string
+; strArg format: "actorFormIDHex|armorFormIDHex" (pipe-delimited). numArg
+; is unused — both IDs ride in strArg to avoid float precision loss for
+; FormIDs above 0x80000000.
 ; =============================================================================
 
 Event OnCatalogEquipLock(String eventName, String strArg, Float numArg, Form sender)
@@ -2387,7 +2087,6 @@ Event OnPrismaBuilderEquip(String eventName, String strArg, Float numArg, Form s
     ; Clear active preset — builder equip is a manual outfit, not a preset apply.
     ; Without this, OnSituationChanged thinks the NPC is already wearing the
     ; mapped preset and skips the auto-switch.
-    StorageUtil.SetStringValue(akActor, "SeverOutfit_ActivePreset", "")
 
     ; Delete the _default preset — the manual outfit IS the new normal.
     ; Next situation switch will re-capture from this outfit.
@@ -2451,7 +2150,6 @@ Event OnPrismaBuilderSaveAndApply(String eventName, String strArg, Float numArg,
     ; does). This keeps StorageUtil aligned with the native store's activePresetName
     ; that ApplyPresetNative just set, so SituationMonitor's auto-switch sees
     ; "already wearing X" correctly and the legacy MCM read sees a meaningful value.
-    StorageUtil.SetStringValue(akActor, "SeverOutfit_ActivePreset", presetName)
 
     ; Resume the suspend that suspendOutfitLock set when the builder opened.
     ; This MUST happen after StorageUtil is synced — otherwise the alias
@@ -2633,7 +2331,11 @@ Event OnPrismaClearLockForBuilder(String eventName, String strArg, Float numArg,
     String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
     StorageUtil.FormListClear(None, lockKey)
     StorageUtil.SetIntValue(akActor, "SeverOutfit_LockActive", 0)
-    StorageUtil.SetIntValue(akActor, "SeverOutfit_Suspended", 1)
+    ; Route through SuspendOutfitLock so the watchdog timestamp is set —
+    ; if the builder is closed without firing OnPrismaResumeLock (crash,
+    ; alt-F4, dropped ModEvent), the alias will auto-resume after the
+    ; watchdog window instead of permanently skipping the actor.
+    SuspendOutfitLock(akActor)
     Debug.Trace("[SeverActions_Outfit] PrismaClearLockForBuilder: Cleared lock for " + akActor.GetDisplayName())
 EndEvent
 
@@ -2653,6 +2355,30 @@ Event OnPrismaResumeLock(String eventName, String strArg, Float numArg, Form sen
     SeverActionsNative.Native_Outfit_ClearBurstSuppression(akActor)
     ResumeOutfitLock(akActor)
     Debug.Trace("[SeverActions_Outfit] PrismaResumeLock: Resumed for " + akActor.GetDisplayName())
+EndEvent
+
+Event OnOutfitExcluded(String eventName, String strArg, Float numArg, Form sender)
+    {Fired by PrismaUISettingsHandler when an actor is marked outfit-excluded.
+     Native lock already cleared by C++; this handler clears the StorageUtil
+     mirror so the legacy LockActive flag doesn't survive the exclusion.
+     strArg format: "<actorFormIDDecimal>|"}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    String actorIdStr
+    if pipePos >= 0
+        actorIdStr = StringUtil.Substring(strArg, 0, pipePos)
+    else
+        actorIdStr = strArg
+    endif
+    Int actorFid = actorIdStr as Int
+    Actor akActor = Game.GetForm(actorFid) as Actor
+    if !akActor
+        return
+    endif
+    String lockKey = "SeverOutfit_Locked_" + (akActor.GetFormID() as String)
+    StorageUtil.FormListClear(None, lockKey)
+    StorageUtil.UnsetIntValue(akActor, "SeverOutfit_LockActive")
+    UntrackOutfitLockedActor(akActor)
+    Debug.Trace("[SeverActions_Outfit] OnOutfitExcluded: cleared StorageUtil lock for " + akActor.GetDisplayName())
 EndEvent
 
 Event OnPrismaAdHocClearSlotPreset(String eventName, String strArg, Float numArg, Form sender)
@@ -2772,6 +2498,90 @@ Event OnPrismaSavePreset(String eventName, String strArg, Float numArg, Form sen
     EndIf
     SaveOutfitPreset_Execute(akActor, presetName)
     Debug.Trace("[SeverActions_Outfit] PrismaSavePreset: Saved '" + presetName + "' for " + akActor.GetDisplayName())
+EndEvent
+
+Event OnPrismaNukeOutfit(String eventName, String strArg, Float numArg, Form sender)
+    {Wholesale outfit-data wipe for one NPC. Fired by PrismaUI's "Reset Outfit
+     Data" button. The native side (OutfitDataStore::RemoveActor +
+     OutfitSlotStore::EraseActor) has already restored DefaultOutfit and
+     erased the cosaved entries by the time this fires. This handler is
+     responsible for the StorageUtil mirror — every SeverOutfit_* per-actor
+     key, the per-preset FormLists, and the global tracker FormLists.
+
+     numArg = actor FormID (cast to Int).
+     strArg = actor display name (informational, not required for cleanup).}
+
+    Int actorFid = numArg as Int
+    If actorFid == 0
+        Debug.Trace("[SeverActions_Outfit] OnPrismaNukeOutfit: actorFid=0, aborting")
+        Return
+    EndIf
+    String actorFidStr = actorFid as String
+    Form actorForm = Game.GetForm(actorFid)
+    Actor akActor = actorForm as Actor
+
+    Debug.Trace("[SeverActions_Outfit] OnPrismaNukeOutfit: wiping all StorageUtil outfit data for FormID " + actorFidStr + " ('" + strArg + "')")
+
+    ; --- 1. Enumerate preset names + clear each per-preset FormList ---
+    String presetListKey = "SeverOutfit_Presets_" + actorFidStr
+    Int presetCount = StorageUtil.StringListCount(None, presetListKey)
+    Int presetIdx = 0
+    While presetIdx < presetCount
+        String pName = StorageUtil.StringListGet(None, presetListKey, presetIdx)
+        If pName != ""
+            String pKey = "SeverOutfit_" + pName + "_" + actorFidStr
+            StorageUtil.FormListClear(None, pKey)
+        EndIf
+        presetIdx += 1
+    EndWhile
+    StorageUtil.StringListClear(None, presetListKey)
+
+    ; --- 2. Clear all known per-actor SeverOutfit_* keys ---
+    ; Most keys are anchored on the actor form (StorageUtil first arg = actor),
+    ; some are global with FormID-suffixed names (first arg = None).
+    If akActor
+        StorageUtil.UnsetIntValue(akActor, "SeverOutfit_LockActive")
+        StorageUtil.UnsetIntValue(akActor, "SeverOutfit_Suspended")
+        StorageUtil.UnsetIntValue(akActor, "SeverOutfit_PresetActive")
+        StorageUtil.UnsetIntValue(akActor, "SeverOutfit_AutoSwitch")
+        StorageUtil.UnsetIntValue(akActor, "SeverOutfit_NonFollowerLock")
+        StorageUtil.UnsetStringValue(akActor, "SeverOutfit_ActivePreset")
+        StorageUtil.UnsetStringValue(akActor, "SeverOutfit_CurrentSituation")
+        ; Situation→preset mapping is per-situation; clear all 7 canonical
+        ; keys defined in NormalizeSituation. Earlier this only cleared 4
+        ; (home/town/adventure/sleep), so combat/rain/snow assignments
+        ; survived "nuke outfit data" and resurfaced after re-save.
+        StorageUtil.UnsetStringValue(akActor, "SeverOutfit_Sit_home")
+        StorageUtil.UnsetStringValue(akActor, "SeverOutfit_Sit_town")
+        StorageUtil.UnsetStringValue(akActor, "SeverOutfit_Sit_adventure")
+        StorageUtil.UnsetStringValue(akActor, "SeverOutfit_Sit_sleep")
+        StorageUtil.UnsetStringValue(akActor, "SeverOutfit_Sit_combat")
+        StorageUtil.UnsetStringValue(akActor, "SeverOutfit_Sit_rain")
+        StorageUtil.UnsetStringValue(akActor, "SeverOutfit_Sit_snow")
+    EndIf
+
+    ; FormID-suffixed legacy global keys (kept clearing old-save residue).
+    StorageUtil.FormListClear(None, "SeverOutfit_Locked_" + actorFidStr)
+    StorageUtil.FormListClear(None, "SeverActions_RemovedArmor_" + actorFidStr)
+
+    ; --- 3. Remove from legacy global tracker FormLists ---
+    If akActor
+        Int trackedIdx = StorageUtil.FormListFind(None, "SeverOutfit_TrackedActors", akActor)
+        If trackedIdx >= 0
+            StorageUtil.FormListRemoveAt(None, "SeverOutfit_TrackedActors", trackedIdx)
+        EndIf
+        Int presetActorsIdx = StorageUtil.FormListFind(None, "SeverOutfit_PresetActors", akActor)
+        If presetActorsIdx >= 0
+            StorageUtil.FormListRemoveAt(None, "SeverOutfit_PresetActors", presetActorsIdx)
+        EndIf
+
+        ; --- 4. Phase 5: clear native dress stash + reset isFollowerLock ---
+        SeverActionsNativeExt.Native_Outfit_DressStashClear(akActor)
+        SeverActionsNativeExt.Native_Outfit_DressStashSetDefaultOutfit(akActor, None)
+        SeverActionsNativeExt.Native_Outfit_SetIsFollowerLock(akActor, true)
+    EndIf
+
+    Debug.Trace("[SeverActions_Outfit] OnPrismaNukeOutfit: complete for " + actorFidStr + " (" + presetCount + " presets cleared)")
 EndEvent
 
 Event OnPrismaSetSitPreset(String eventName, String strArg, Float numArg, Form sender)

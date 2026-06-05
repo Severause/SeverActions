@@ -1,19 +1,19 @@
 customCategory: economy
 name: CollectPayment
-description: "Collect gold owed for goods or services provided."
+description: "Take payment that's owed and ready to be paid — a tab settled at the bar, goods just changing hands, a job finished and the purse coming out."
 questEditorId: SeverActions
 scriptName: SeverActions_Currency
 executionFunctionName: CollectPayment_Execute
 parameterMapping:
   - type: speaker
     name: akCollector
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor receiving payment — the merchant at the counter, the innkeeper at the bar, the worker collecting their fee
   - type: dynamic
     name: akPayer
-    description: The person who owes payment
+    description: the actor settling up — the customer, the patron, the one being charged
   - type: dynamic
     name: aiAmount
-    description: Amount owed
+    description: how many gold coins are being handed over
 enabled: true
 eligibilityRules:
   - conditions:

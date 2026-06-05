@@ -52,7 +52,6 @@ How {{ npc.name }} currently feels about {{ player.name }}:
 
 Quest: {{ questName }} ({{ questType }})
 New Objective (game mechanic — do not quote): {{ newObjective }}
-Awareness Level: {{ awarenessTier }}
 
 {% if previousSummary and previousSummary != "" %}
 What this character already knows about this quest:
@@ -61,10 +60,6 @@ Do NOT repeat what is already known. Write ONLY about this new moment.
 {% endif %}
 
 [ user ]
-{% if awarenessTier == "firsthand" %}
 Write 1-2 sentences from a narrator's perspective about what this character just witnessed. The objective has ALREADY been completed or progressed — write about it as something that just happened, not something about to happen. Let their personality color the description — how they felt, what they noticed, what it meant to them. Do not quote or paraphrase the objective text directly.
-{% else %}
-Write 1 sentence about a vague rumor or whisper this character picked up about something that recently happened. Keep it non-specific — they only caught fragments. Let their personality shape how they react. Do not reference the objective text.
-{% endif %}
 
 Output ONLY the narrative text. No labels, no quotation marks, no explanation.

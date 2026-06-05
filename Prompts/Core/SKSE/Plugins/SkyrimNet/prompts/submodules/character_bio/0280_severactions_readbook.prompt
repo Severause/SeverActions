@@ -1,6 +1,6 @@
 {# SeverActions - Book Reading Mode #}
 {# Uses StorageUtil via papyrus_util for reliable state access #}
-{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "dialog" or render_mode == "action" %}
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
 {% set isReading = papyrus_util("GetIntValue", actorUUID, "SeverActions_ReadingBook", 0) %}
 {% if isReading == 0 %}
 **Book Reading Rule:** If you are asked to read a book, or a narration says you are opening/reading a book, you MUST NOT recite or quote any book contents from memory. You do not know what any book says until its full text appears in this prompt. Simply roleplay the act of opening or preparing to read — never fabricate or recall text.

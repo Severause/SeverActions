@@ -1,0 +1,68 @@
+{% if render_mode == "action" %}
+{# Sibling of 0180_severactions_nearbyref.prompt — render_mode gate kept
+   inside the first 5 lines per SkyrimNet prompt best practice. The main
+   prompt handles "full" / "static" render modes without container
+   contents. This prompt is gated to "action" only, so it surfaces solely
+   in the action-selection drill-down where the LLM is actively deciding
+   what to do with a container and needs the inventory listing to pick
+   the right item parameter. Skip during SexLab/OStim — saves tokens.
+
+   Scaffolding (nearby_refs fetch, user-exclusion read, accumulator loop)
+   is duplicated with the sibling 0180 prompt; keep them in sync when
+   tuning max_items, the 3-per-RefID cap, or the user-exclusion sentinel
+   format. #}
+{% if actorUUID and actorUUID != 0 %}
+{% set _in_sexlab = is_in_faction(actorUUID, "SexLabAnimatingFaction") %}
+{% set _in_ostim = is_in_faction(actorUUID, "OStimExcitementFaction") %}
+{% if not _in_sexlab and not _in_ostim %}
+## Nearby Objects
+{% if actorUUID and isValidActor(actorUUID) %}
+{% set nearby_refs = get_nearby_references_for_entity(actorUUID, 1000) %}
+{% else %}
+{% set nearby_refs = get_nearby_references(1000) %}
+{% endif %}
+{% set excluded_subtypes = ["clutter", "misc"] %}
+{% set user_excluded_raw = papyrus_util("GetStringValue", "", "SeverActions_NearbyExcluded", "") %}
+{% set user_excluded = "," + user_excluded_raw + "," %}
+{% set max_items = 20 %}
+{% set items = [] %}
+{% set seen_refids = [] %}
+{% for ref in nearby_refs %}
+{% set ref_tag = "," + ref.type + ":" + ref.subtype + "," %}
+{% if ref.name != "" and not (ref.subtype in excluded_subtypes) and not contains(user_excluded, ref_tag) and length(items) < max_items %}
+{% if not (ref.type == "furniture" and ref.position.meters == 0.0) %}
+{% set refid_str = to_string(ref.formID) %}
+{% set refid_count = count(seen_refids, refid_str) %}
+{% if refid_count < 3 %}
+{% set items = append(items, ref) %}
+{% set seen_refids = append(seen_refids, refid_str) %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if length(items) > 0 %}
+{% set grouped_items = group_by(items, "type") %}
+{% for type_name, type_items in grouped_items %}
+### {{ type_name | capitalize }}
+{% for ref in type_items %}
+- {{ ref.name }} ({{ ref.position.meters }}m) RefID: {{ ref.formID }}{% if ref.type == "container" and ref.locked %} [locked]{% endif %}
+{% endfor %}
+{% endfor %}
+{% endif %}
+## Container Contents
+{% for ref in items %}
+{% if ref.type == "container" %}
+{% set contents = get_container_contents(ref.formID) %}
+{% if contents.itemCount > 0 and contents.itemCount <= 30 %}
+**{{ contents.name }}** ({{ ref.position.meters }}m, RefID: {{ ref.formID }}):{% if ref.locked %} [locked]{% endif %}
+{% for item in contents.items %}
+{% if item.name and length(item.name) > 0 %}
+- {{ item.name }}{% if item.count > 1 %} x{{ item.count }}{% endif %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endif %}

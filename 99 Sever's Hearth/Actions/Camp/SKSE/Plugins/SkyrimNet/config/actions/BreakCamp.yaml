@@ -1,0 +1,22 @@
+customCategory: camp
+name: BreakCamp
+description: "Break down the active camp. Snuffs the fire, packs up the tent and bedroll, and stows gear back in the Camp Kit. Use when the player or companions want to move on from a campsite, or when the camp must be abandoned. Only valid outside combat."
+questEditorId: SeversHearth
+scriptName: SeversHearth_Camp
+executionFunctionName: BreakCamp
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The actor breaking down the camp (player or companion).
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "The camp is broken down."
+isShortLived: true

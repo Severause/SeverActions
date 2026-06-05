@@ -1,19 +1,19 @@
 customCategory: economy
 name: ExtortGold
-description: "Forcibly take gold through threats or intimidation."
+description: "Squeeze coin out of someone through threat or intimidation — a shakedown, protection money, a stick-up at knifepoint. The victim is not being asked."
 questEditorId: SeverActions
 scriptName: SeverActions_Currency
 executionFunctionName: ExtortGold_Execute
 parameterMapping:
   - type: speaker
     name: akExtorter
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor making the threat
   - type: dynamic
     name: akVictim
-    description: The person being extorted
+    description: the actor being shaken down
   - type: dynamic
     name: aiAmount
-    description: Amount of gold demanded
+    description: how many gold coins are being demanded under threat
 tags:
   - Currency
   - Hostile

@@ -1,12 +1,12 @@
 name: StopFollowing
-description: "Stop following {{ player.name }}."
+description: "The speaker stops trailing after {{ player.name }} — pulls up short at the city gate, parts ways at a crossroads, decides they've gone far enough. They go back to their own business."
 questEditorId: SeverActions
 scriptName: SeverActions_Follow
-executionFunctionName: stopFollowing
+executionFunctionName: StopFollowing
 parameterMapping:
   - type: speaker
     name: akActor
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor breaking off from {{ player.name }}
 enabled: true
 eligibilityRules:
   - conditions:

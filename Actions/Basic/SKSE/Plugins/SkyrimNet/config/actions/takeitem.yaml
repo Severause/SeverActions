@@ -1,0 +1,44 @@
+customCategory: items
+name: TakeItem
+description: "The speaker accepts something out of another's hands — coin counted at the bar, a key surrendered, an heirloom pressed into theirs as a gift, a borrowed sword returned. The item moves from the giver's pack into the speaker's."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: TakeItem_Execute
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: the actor reaching out to take the item
+  - type: dynamic
+    name: akTarget
+    description: the actor whose hands the item is leaving — the player, a merchant at the counter, a relative passing something down
+  - type: dynamic
+    name: itemName
+    description: the name of the item being taken (e.g. "Iron Sword", "Health Potion", "Family Heirloom")
+  - type: dynamic
+    name: aiCount
+    description: how many units to take (default 1)
+    optional: true
+    default: 1
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

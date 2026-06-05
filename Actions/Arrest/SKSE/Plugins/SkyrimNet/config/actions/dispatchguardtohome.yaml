@@ -1,22 +1,22 @@
 customCategory: arrest
 name: DispatchGuardToHome
-description: "Guard investigates an NPC's home for evidence of crime. Use this instead of travel actions when a guard wants to search, investigate, or look for evidence at someone's home. The guard travels there, searches containers for contraband/evidence (skooma, stolen goods, dark magic items, forged documents, etc.), and returns with findings. Covers: home search, house investigation, evidence gathering, contraband sweep, crime scene investigation."
+description: "The guard sets out to toss a suspect's home for evidence — rifling drawers and chests for skooma vials, forged papers, stolen silverware, a Talos shrine in the cellar, necromancer's tools tucked under a floorboard. They walk there, search the containers inside, then come back to the one who sent them with whatever they turned up. Use this rather than a travel action whenever the guard's purpose is to search, investigate, or sweep a home for contraband."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: DispatchGuardToHome_Execute
 parameterMapping:
   - type: speaker
     name: akGuard
-    description: The guard being dispatched
+    description: the guard heading out on the search
   - type: dynamic
     name: targetName
-    description: "Full display name of the NPC whose home to search"
+    description: "the full display name of the suspect whose home is being tossed"
   - type: dynamic
     name: senderName
-    description: "Who ordered the search — guard returns to them with evidence"
+    description: "who ordered the search — the guard reports back to them with whatever they found"
   - type: dynamic
     name: reason
-    description: "What to investigate (e.g. 'skooma dealing', 'necromancy', 'talos worship', 'thieving')"
+    description: "what they're looking for (e.g. 'skooma dealing', 'necromancy', 'talos worship', 'thieving')"
     optional: true
     default: "suspicious activity"
 enabled: true
@@ -36,52 +36,16 @@ eligibilityRules:
         expectedValue: false
     logicalOperator: "AND"
     required: true
+  # Replaced an 11-condition OR ladder (9 GuardFactionX + JobJarlFaction
+  # + JobHousecarlFaction) with the single native is_guard_or_authority
+  # decorator. Same semantics — see SkyrimNetBridge.h for the cached
+  # faction-pointer set, plus mod-added holds via HoldResolver.
   - conditions:
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWhiterun"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionRiften"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionSolitude"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionHaafingar"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWindhelm"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionMarkarth"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionFalkreath"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionDawnstar"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWinterhold"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "JobJarlFaction"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "JobHousecarlFaction"]
-        comparisonOperator: "=="
-        expectedValue: true
-    logicalOperator: "OR"
+      - decoratorName: "is_guard_or_authority"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
     required: true
   - conditions:
       - decoratorName: "get_faction_rank"

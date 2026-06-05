@@ -1,0 +1,27 @@
+customCategory: brawl
+name: ForfeitBrawl
+description: "The speaker spits blood, lifts a hand, and yields the brawl — pride dented but pride intact, knowing when they're beat. The other fighter wins; both stand down, no weapons drawn, no real harm done."
+questEditorId: SeverActions
+scriptName: SeverActions_Brawl
+executionFunctionName: ForfeitBrawl_Execute
+parameterMapping:
+  - type: speaker
+    name: akForfeiter
+    description: the actor giving up the brawl
+enabled: true
+defaultPriority: 8
+eligibilityRules:
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

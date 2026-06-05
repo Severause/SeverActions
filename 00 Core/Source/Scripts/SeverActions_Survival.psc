@@ -7,11 +7,19 @@ Scriptname SeverActions_Survival extends Quest
     similar to vanilla Survival Mode. Integrates with player sleep events
     and allows followers to auto-eat from their inventory.
 
-    Data is stored per-follower via StorageUtil:
-    - SeverActions_Survival_Hunger (0-100, 0=full, 100=starving)
-    - SeverActions_Survival_Fatigue (0-100, 0=rested, 100=exhausted)
-    - SeverActions_Survival_Cold (0-100, 0=warm, 100=freezing)
-    - SeverActions_Survival_LastUpdate (game time of last update)
+    Data is stored per-follower in native SurvivalDataStore (cosave record
+    'SURV' v3) via Native_Survival_Get/SetNeeds and the accessor pair
+    Native_Survival_Get/SetLastEatAttempt on SeverActionsNativeExt:
+    - hunger (0-100, 0=full, 100=starving)
+    - fatigue (0-100, 0=rested, 100=exhausted)
+    - cold (0-100, 0=warm, 100=freezing)
+    - lastUpdateGameTime (game time of last update)
+    - lastEatAttempt (hour bracket of last auto-eat attempt)
+
+    Prompt templates read needs via the sever_hunger / sever_fatigue /
+    sever_cold SkyrimNet decorators which hit SurvivalDataStore directly.
+    The legacy SeverActions_Survival_Hunger / _Fatigue / _Cold /
+    _LastEatAttempt StorageUtil keys were retired in T3-A.
 }
 
 ; =============================================================================
@@ -137,13 +145,21 @@ Function Maintenance()
     ; Register for game load (always needed)
     RegisterForModEvent("OnPlayerLoadGame", "OnPlayerLoadGame")
 
+    ; Check if native functions are available
+    NativeAvailable = CheckNativeAvailable()
+
+    ; Push the master-switch state to native BEFORE the disabled early-out, so the
+    ; survival decorators (sever_hunger/fatigue/cold) gate correctly even when off
+    ; — they report 0 for every actor while disabled, which stops the survival
+    ; prompt from rendering. Stored needs are untouched and resume on re-enable.
+    If NativeAvailable
+        SeverActionsNativeExt.Native_Survival_SetEnabled(Enabled)
+    EndIf
+
     If !Enabled
         Debug.Trace("[SeverActions_Survival] System disabled, skipping maintenance")
         Return
     EndIf
-
-    ; Check if native functions are available
-    NativeAvailable = CheckNativeAvailable()
     If NativeAvailable
         Debug.Trace("[SeverActions_Survival] Native SKSE functions available")
         ; Register for native food consumption events
@@ -151,7 +167,8 @@ Function Maintenance()
         ; Register for PrismaUI survival toggle events (per-follower exclude/include)
         RegisterForModEvent("SeverActions_SurvivalInclude", "OnPrismaIncludeFollower")
         RegisterForModEvent("SeverActions_SurvivalExclude", "OnPrismaExcludeFollower")
-        RegisterForModEvent("SeverActions_PrismaToggleSurvivalExclude", "OnPrismaToggleSurvivalExclude")
+        ; PrismaUI Survival care-sheet "Feed" quick-action chip
+        RegisterForModEvent("SeverActions_SurvivalFeed", "OnPrismaFeedFollower")
     Else
         Debug.Trace("[SeverActions_Survival] Native SKSE functions not available, using Papyrus fallback")
     EndIf
@@ -211,14 +228,19 @@ EndEvent
 
 Event OnPrismaIncludeFollower(String eventName, String strArg, Float numArg, Form sender)
     {Called by native SKSE when PrismaUI includes a follower in survival tracking.
-     strArg = "formID|" (signed int string).}
+     strArg = "formID|" (signed int string from C++ static_cast<int32_t>).
+     MUST use Game.GetFormEx (not GetForm) — bare GetForm fails to resolve
+     negative ints back to high-mod-index FormIDs (e.g. Daegon's 0xFA005902
+     comes through as -100640510 and silently returns None). GetFormEx is
+     the SKSE-extended version that reinterprets the signed int as the
+     unsigned FormID bytes correctly.}
     Int pipePos = StringUtil.Find(strArg, "|")
     String formIdStr = strArg
     If pipePos >= 0
         formIdStr = StringUtil.Substring(strArg, 0, pipePos)
     EndIf
     Int formId = formIdStr as Int
-    Actor follower = Game.GetForm(formId) as Actor
+    Actor follower = Game.GetFormEx(formId) as Actor
     If follower
         Debug.Trace("[SeverActions_Survival] PrismaUI including " + follower.GetDisplayName())
         SetFollowerExcluded(follower, false)
@@ -227,29 +249,38 @@ EndEvent
 
 Event OnPrismaExcludeFollower(String eventName, String strArg, Float numArg, Form sender)
     {Called by native SKSE when PrismaUI excludes a follower from survival tracking.
-     strArg = "formID|" (signed int string).}
+     strArg = "formID|" (signed int string). See OnPrismaIncludeFollower for
+     why GetFormEx is required over bare GetForm.}
     Int pipePos = StringUtil.Find(strArg, "|")
     String formIdStr = strArg
     If pipePos >= 0
         formIdStr = StringUtil.Substring(strArg, 0, pipePos)
     EndIf
     Int formId = formIdStr as Int
-    Actor follower = Game.GetForm(formId) as Actor
+    Actor follower = Game.GetFormEx(formId) as Actor
     If follower
         Debug.Trace("[SeverActions_Survival] PrismaUI excluding " + follower.GetDisplayName())
         SetFollowerExcluded(follower, true)
     EndIf
 EndEvent
 
-Event OnPrismaToggleSurvivalExclude(String eventName, String strArg, Float numArg, Form sender)
-    {PrismaUI: Toggle a follower's survival tracking exclusion. numArg = actor FormID.}
-    Int actorFormId = numArg as Int
-    Actor follower = Game.GetForm(actorFormId) as Actor
+Event OnPrismaFeedFollower(String eventName, String strArg, Float numArg, Form sender)
+    {Care-sheet "Feed" quick-action chip: try to feed a specific follower.
+     strArg = "formID|" (signed int string). Routes through TryAutoEat so the
+     real food-consumption pipe runs (eats from inventory, fires animation,
+     stamps lastFedGameTime via MarkFed in EatFood/OnFollowerAteFood).
+     Uses GetFormEx — see OnPrismaIncludeFollower note re: high-mod-index
+     FormIDs and signed-int round-tripping.}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    String formIdStr = strArg
+    If pipePos >= 0
+        formIdStr = StringUtil.Substring(strArg, 0, pipePos)
+    EndIf
+    Int formId = formIdStr as Int
+    Actor follower = Game.GetFormEx(formId) as Actor
     If follower
-        Debug.Trace("[SeverActions_Survival] PrismaUI toggling exclusion for " + follower.GetDisplayName())
-        ToggleFollowerExcluded(follower)
-    Else
-        Debug.Trace("[SeverActions_Survival] PrismaUI toggle: actor not found for FormID " + actorFormId)
+        Debug.Trace("[SeverActions_Survival] PrismaUI Feed: " + follower.GetDisplayName())
+        TryAutoEat(follower)
     EndIf
 EndEvent
 
@@ -342,37 +373,14 @@ Function UpdateAllFollowers(Float hoursPassed)
 EndFunction
 
 Function UpdateNearbyNPCs(Actor player, Float hoursPassed)
-    {Sync nearby NPC survival from native C++ store to StorageUtil for prompt access.
-     C++ handles all randomization (InitNearbyNPC/RandomizeFresh/RandomizeDrift).
-     Papyrus just reads native values and writes to StorageUtil so prompts can see them.}
+    {Seed nearby NPC survival in the native C++ store. C++ handles all
+     randomization (InitNearbyNPC/RandomizeFresh/RandomizeDrift) and prompts
+     read it back through the sever_hunger / sever_fatigue / sever_cold
+     decorators (SurvivalDataStore), so Papyrus no longer reads anything back.
+     The whole cell scan + filter + InitNearby loop now lives in C++ —
+     maxCount=25 mirrors the old `i < 25` budget, maxDist=4096.0 the old radius.}
 
-    Cell playerCell = player.GetParentCell()
-    If !playerCell
-        Return
-    EndIf
-
-    Int numRefs = playerCell.GetNumRefs(43) ; 43 = kNPC
-    Int i = 0
-    While i < numRefs && i < 25 ; Cap at 25 to avoid excessive processing
-        ObjectReference ref = playerCell.GetNthRef(i, 43)
-        Actor actorRef = ref as Actor
-        If actorRef && actorRef != player && !actorRef.IsDead() && !actorRef.IsPlayerTeammate()
-            If actorRef.GetDistance(player) < 4096.0
-                ; Let C++ handle init/drift (weather-aware, time-aware randomization)
-                SeverActionsNative.Native_Survival_InitNearby(actorRef)
-
-                ; Read from C++ native store and sync to StorageUtil for prompt access
-                Int hunger = SeverActionsNative.Native_Survival_GetNearbyHunger(actorRef) as Int
-                Int fatigue = SeverActionsNative.Native_Survival_GetNearbyFatigue(actorRef) as Int
-                Int cold = SeverActionsNative.Native_Survival_GetNearbyCold(actorRef) as Int
-
-                StorageUtil.SetIntValue(actorRef, "SeverActions_Survival_Hunger", hunger)
-                StorageUtil.SetIntValue(actorRef, "SeverActions_Survival_Fatigue", fatigue)
-                StorageUtil.SetIntValue(actorRef, "SeverActions_Survival_Cold", cold)
-            EndIf
-        EndIf
-        i += 1
-    EndWhile
+    SeverActionsNativeExt.Native_Survival_UpdateNearby(25, 4096.0)
 EndFunction
 
 Function UpdateFollowerSurvival(Actor akFollower, Float hoursPassed)
@@ -398,7 +406,8 @@ Function UpdateFollowerSurvival(Actor akFollower, Float hoursPassed)
         ; First attempt at AutoEatThreshold (default 50), then retry every 10 points
         ; (60, 70, 80, 90, 100) if previous attempts found no food.
         If currentHunger >= AutoEatThreshold
-            Int lastAttemptThreshold = StorageUtil.GetIntValue(akFollower, "SeverActions_Survival_LastEatAttempt", 0)
+            ; T3-A: lastEatAttempt lives on SurvivalDataStore (v3) now.
+            Int lastAttemptThreshold = SeverActionsNativeExt.Native_Survival_GetLastEatAttempt(akFollower)
             ; Calculate which threshold bracket we're in (50, 60, 70, 80, 90, 100)
             Int currentBracket = (currentHunger / 10) * 10
             If currentBracket < AutoEatThreshold
@@ -406,17 +415,17 @@ Function UpdateFollowerSurvival(Actor akFollower, Float hoursPassed)
             EndIf
             ; Only attempt if we've crossed into a new bracket since last attempt
             If currentBracket > lastAttemptThreshold
-                StorageUtil.SetIntValue(akFollower, "SeverActions_Survival_LastEatAttempt", currentBracket)
+                SeverActionsNativeExt.Native_Survival_SetLastEatAttempt(akFollower, currentBracket)
                 TryAutoEat(akFollower)
                 currentHunger = GetFollowerHunger(akFollower) ; Re-get after eating
                 ; If eating succeeded, reset the attempt tracker so it works fresh next time
                 If currentHunger < AutoEatThreshold
-                    StorageUtil.SetIntValue(akFollower, "SeverActions_Survival_LastEatAttempt", 0)
+                    SeverActionsNativeExt.Native_Survival_SetLastEatAttempt(akFollower, 0)
                 EndIf
             EndIf
         Else
             ; Below threshold, reset the attempt tracker
-            StorageUtil.SetIntValue(akFollower, "SeverActions_Survival_LastEatAttempt", 0)
+            SeverActionsNativeExt.Native_Survival_SetLastEatAttempt(akFollower, 0)
         EndIf
 
         ; Notification on level change
@@ -586,6 +595,12 @@ Function EatFood(Actor akFollower, Form akFood, Int hungerRestore)
     Int currentHunger = GetFollowerHunger(akFollower)
     Int newHunger = ClampInt(currentHunger - hungerRestore, 0, 100)
     SetFollowerHunger(akFollower, newHunger)
+
+    ; Stamp lastFedGameTime in the native store so the PrismaUI Survival page
+    ; can show "fed N hours ago" in the care sheet drawer.
+    If NativeAvailable
+        SeverActionsNative.Native_Survival_MarkFed(akFollower)
+    EndIf
 
     ; Stamina recovers naturally, no penalties to update
     ; (we no longer reduce max stamina, just drain it over time)
@@ -1253,35 +1268,34 @@ EndFunction
 ; STORAGE UTIL WRAPPERS
 ; =============================================================================
 
+; T3-A: follower survival needs read/write through SurvivalDataStore
+; directly. The StorageUtil dual-write is retired (mirror was for
+; papyrus_util in the 0170 prompt, which now uses the sever_hunger /
+; sever_fatigue / sever_cold SkyrimNet decorators).
+
 Int Function GetFollowerHunger(Actor akFollower)
-    Return StorageUtil.GetIntValue(akFollower, "SeverActions_Survival_Hunger", 0)
+    Return SeverActionsNative.Native_Survival_GetHunger(akFollower) as Int
 EndFunction
 
 Function SetFollowerHunger(Actor akFollower, Int value)
-    StorageUtil.SetIntValue(akFollower, "SeverActions_Survival_Hunger", value)
-    ; Dual-write to native SurvivalDataStore for PrismaUI
     SeverActionsNative.Native_Survival_SetNeeds(akFollower, value as Float, \
         GetFollowerFatigue(akFollower) as Float, GetFollowerCold(akFollower) as Float)
 EndFunction
 
 Int Function GetFollowerFatigue(Actor akFollower)
-    Return StorageUtil.GetIntValue(akFollower, "SeverActions_Survival_Fatigue", 0)
+    Return SeverActionsNative.Native_Survival_GetFatigue(akFollower) as Int
 EndFunction
 
 Function SetFollowerFatigue(Actor akFollower, Int value)
-    StorageUtil.SetIntValue(akFollower, "SeverActions_Survival_Fatigue", value)
-    ; Dual-write to native SurvivalDataStore for PrismaUI
     SeverActionsNative.Native_Survival_SetNeeds(akFollower, \
         GetFollowerHunger(akFollower) as Float, value as Float, GetFollowerCold(akFollower) as Float)
 EndFunction
 
 Int Function GetFollowerCold(Actor akFollower)
-    Return StorageUtil.GetIntValue(akFollower, "SeverActions_Survival_Cold", 0)
+    Return SeverActionsNative.Native_Survival_GetCold(akFollower) as Int
 EndFunction
 
 Function SetFollowerCold(Actor akFollower, Int value)
-    StorageUtil.SetIntValue(akFollower, "SeverActions_Survival_Cold", value)
-    ; Dual-write to native SurvivalDataStore for PrismaUI
     SeverActionsNative.Native_Survival_SetNeeds(akFollower, \
         GetFollowerHunger(akFollower) as Float, GetFollowerFatigue(akFollower) as Float, value as Float)
 EndFunction
@@ -1509,7 +1523,13 @@ Function OnFollowerAteFood(Actor akFollower, Form akFood = None)
     SetFollowerHunger(akFollower, newHunger)
 
     ; Reset auto-eat attempt tracker since they ate
-    StorageUtil.SetIntValue(akFollower, "SeverActions_Survival_LastEatAttempt", 0)
+    SeverActionsNativeExt.Native_Survival_SetLastEatAttempt(akFollower, 0)
+
+    ; Stamp lastFedGameTime so the PrismaUI Survival care sheet can show
+    ; "fed N hours ago". Covers both LootScript-driven and manual paths.
+    If NativeAvailable
+        SeverActionsNative.Native_Survival_MarkFed(akFollower)
+    EndIf
 
     ; Stamina recovers naturally, no penalties to update
     ; (we no longer reduce max stamina, just drain it over time)
@@ -1661,6 +1681,13 @@ Function StopTracking()
     ; Stop the update loop
     UnregisterForUpdate()
     Enabled = false
+
+    ; Tell native the master switch is off — the sever_hunger/fatigue/cold
+    ; decorators now report 0 for every actor, so the survival prompt stops
+    ; rendering. Stored needs are preserved (not zeroed) and resume on re-enable.
+    If NativeAvailable
+        SeverActionsNativeExt.Native_Survival_SetEnabled(false)
+    EndIf
 
     If DebugMode
         Debug.Trace("[SeverActions_Survival] Tracking stopped, penalties cleared")

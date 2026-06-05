@@ -1,13 +1,13 @@
 customCategory: outfit
 name: GetDressed
-description: "Put back on previously removed armor and clothing."
+description: "The speaker reaches for the clothes folded over a chair, the armor stacked by the bedroll, the robes hung on a peg — and puts back on what they had removed earlier. Dressed again, ready to move."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: Dress_Execute
 parameterMapping:
   - type: speaker
     name: akActor
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor pulling their clothes back on
 enabled: true
 eligibilityRules:
   - conditions:

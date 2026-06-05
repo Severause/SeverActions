@@ -45,15 +45,6 @@ Bool Function PlayEatingAnimation(Actor akActor, Form foodItem) Global
     return false
 EndFunction
 
-; Stop the eating animation and return to idle
-Function StopEatingAnimation(Actor akActor) Global
-    if !akActor
-        return
-    endif
-    
-    Debug.SendAnimationEvent(akActor, "IdleForceDefaultState")
-EndFunction
-
 ; Check if item is a drink (for duration calculation)
 Bool Function IsDrinkItem(Form foodItem) Global
     if foodItem.HasKeywordString("EASkey_Ale")

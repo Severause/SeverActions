@@ -79,6 +79,40 @@ These are explicit banter topics the candidate NPCs above have already used. **D
 No prior banter topics on record for any of these candidates. Wide-open field.
 {% endif %}
 
+## Rotation Pressure — recent speakers and recent pairs
+
+{% set lastSpeakers = [] %}
+{% set lastPairs = [] %}
+{% for ev in pastTopics %}
+{% if existsIn(ev.data, "speaker") and existsIn(ev.data, "listener") and ev.data.speaker != "" and ev.data.listener != "" %}
+{% set lastSpeakers = append(lastSpeakers, ev.data.speaker) %}
+{% set lastPairs = append(lastPairs, ev.data.speaker + " & " + ev.data.listener) %}
+{% endif %}
+{% endfor %}
+
+{% if length(lastSpeakers) > 0 %}
+**Recent speakers (oldest → newest):**
+{% for s in lastSpeakers %}
+- {{ s }}
+{% endfor %}
+
+**Recent banter pairs (oldest → newest):**
+{% for p in lastPairs %}
+- {{ p }}
+{% endfor %}
+
+**Hard rotation rule:**
+1. The LAST entry in "Recent speakers" cannot be the speaker this turn (swap roles within the pair if needed).
+{% if length(pairs) >= 2 %}
+2. The LAST entry in "Recent banter pairs" cannot banter this turn (either ordering).
+3. If after these filters every candidate pair is excluded, output {"banter":null} — silence beats repetition.
+{% else %}
+2. (Pair rotation skipped — only one candidate pair is eligible right now, so the same pair is the only option. Vary the speaker and topic, and prefer silence more often than usual so this pair isn't trading lines every tick.)
+{% endif %}
+{% else %}
+No recent banters on record — any pair is fair game.
+{% endif %}
+
 ## Scene Context
 
 Current location: {{ player.location }}

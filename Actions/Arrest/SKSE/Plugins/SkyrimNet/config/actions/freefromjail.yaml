@@ -1,16 +1,16 @@
 customCategory: arrest
 name: FreeFromJail
-description: "Free a jailed NPC from prison and return them to normal behavior."
+description: "The guard turns the key in a cell door and lets a prisoner out — sentence served, charges dropped, jarl's pardon, or a quiet favor done. The freed NPC shakes off the cell and returns to their normal life."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: FreeNPC_Internal
 parameterMapping:
   - type: speaker
     name: akGuard
-    description: Speaker Actor parameter (triggering entity)
+    description: the guard turning the key
   - type: dynamic
     name: akTarget
-    description: The prisoner to be freed
+    description: the prisoner walking out of the cell
 enabled: true
 eligibilityRules:
   - conditions:
@@ -27,52 +27,16 @@ eligibilityRules:
         expectedValue: false
     logicalOperator: "AND"
     required: true
+  # Replaced an 11-condition OR ladder (9 GuardFactionX + JobJarlFaction
+  # + JobHousecarlFaction) with the single native is_guard_or_authority
+  # decorator. Same semantics — see SkyrimNetBridge.h for the cached
+  # faction-pointer set, plus mod-added holds via HoldResolver.
   - conditions:
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWhiterun"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionRiften"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionSolitude"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionHaafingar"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWindhelm"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionMarkarth"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionFalkreath"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionDawnstar"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWinterhold"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "JobJarlFaction"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "JobHousecarlFaction"]
-        comparisonOperator: "=="
-        expectedValue: true
-    logicalOperator: "OR"
+      - decoratorName: "is_guard_or_authority"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
     required: true
   - conditions:
       - decoratorName: "get_faction_rank"
@@ -86,5 +50,12 @@ eligibilityRules:
         arguments: ["currentActor", "OStimExcitementFaction"]
         comparisonOperator: "<"
         expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SeverActions_DispatchFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
     logicalOperator: "AND"
     required: true

@@ -1,0 +1,173 @@
+{# SeverActions Arrest — Active cross-cell dispatch (phases 1-5), extracted from 0275 in the prompt-split refactor. #}
+{# Fires for the dispatch guard (home investigation OR arrest dispatch) and for the dispatch prisoner during escort. #}
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{% if player and player.UUID and actorUUID != player.UUID %}
+{% set dispatchPhase = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchPhase") %}
+{# Cross-mode exclusion (PR #71 follow-up): yield to 0276 persuasion when
+   this actor is the confronting guard. Matches the original 0275 monolith's
+   if/elif precedence (persuasion > judgment > dispatch > arrest). The phase
+   range below already excludes judgment (phase 6). #}
+{% set _inPersuasionMode = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "InPersuasionMode") %}
+{% set _confrontingGuard = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "ConfrontingGuard") %}
+{% set _suppressForPersuasion = false %}
+{% if _inPersuasionMode and _confrontingGuard and _confrontingGuard.uuid and _confrontingGuard.uuid == actorUUID %}
+{% set _suppressForPersuasion = true %}
+{% endif %}
+{% if dispatchPhase >= 1 and dispatchPhase <= 5 and not _suppressForPersuasion %}
+{% set dispatchTarget = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchTarget") %}
+{% set dispatchGuard = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchGuard") %}
+{% set dispatchSender = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchSender") %}
+{% set isDispatchGuard = false %}
+{% if dispatchGuard and dispatchGuard.uuid %}
+{% set isDispatchGuard = (dispatchGuard.uuid == actorUUID) %}
+{% endif %}
+{% set isDispatchTarget = false %}
+{% if dispatchTarget and dispatchTarget.uuid %}
+{% set isDispatchTarget = (dispatchTarget.uuid == actorUUID) %}
+{% endif %}
+{% set isHomeInvestigation = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchIsHomeInvestigation") %}
+{% if isDispatchGuard %}
+{% if actorUUID and actorUUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set subj = actor.subjectivePronoun %}
+{% set poss = actor.possessivePronoun %}
+{% if isHomeInvestigation %}
+{% if dispatchPhase <= 2 %}
+## ACTIVE DUTY — HOME INVESTIGATION
+{{ actor.name }} is on {{ poss }} way to investigate a suspect's home. {{ subj | capitalize }} is focused on getting there.
+
+**CRITICAL INSTRUCTIONS:**
+- {{ actor.name }} is on official duty. {{ subj | capitalize }} should NOT be distracted from {{ poss }} mission.
+- DO NOT select any action categories. {{ actor.name }} is traveling and should not take any actions.
+- If someone speaks to {{ actor.name }}, {{ subj }} can respond briefly but should make clear {{ subj }} is busy and on duty.
+{% elif dispatchPhase >= 3 and dispatchPhase <= 4 %}
+{% set evidenceSummary = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchEvidenceSummary") %}
+{% set containersSearched = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchContainersSearched") %}
+{% set evidenceQuality = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchEvidenceQualityScore") %}
+## ACTIVE DUTY — SEARCHING HOME
+{{ actor.name }} is currently conducting a methodical search of a suspect's home for evidence.
+{% if containersSearched and containersSearched > 0 -%}
+{{ subj | capitalize }} has searched {{ containersSearched }} container(s) so far.
+{% endif -%}
+{% if evidenceSummary and evidenceSummary != "" and evidenceSummary != "nothing of note" -%}
+{{ subj | capitalize }} has found: {{ evidenceSummary }}.
+{% if evidenceQuality and evidenceQuality >= 7 -%}
+The evidence is damning — a very strong case.
+{% elif evidenceQuality and evidenceQuality >= 4 -%}
+The evidence is moderately convincing.
+{% elif evidenceQuality and evidenceQuality >= 1 -%}
+The evidence is circumstantial at best.
+{% endif -%}
+{% endif %}
+
+**CRITICAL INSTRUCTIONS:**
+- {{ actor.name }} is busy investigating. {{ subj | capitalize }} should NOT be distracted.
+- DO NOT select any action categories. {{ actor.name }} is conducting a search and should not take any actions.
+- If someone speaks to {{ actor.name }}, {{ subj }} can respond briefly but should make clear {{ subj }} is in the middle of an investigation.
+{% elif dispatchPhase == 5 %}
+{% set evidenceSummary = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchEvidenceSummary") %}
+{% set evidenceQuality = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchEvidenceQualityScore") %}
+{% set containersSearched = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchContainersSearched") %}
+## ACTIVE DUTY — RETURNING WITH EVIDENCE
+{{ actor.name }} has finished searching a home and is returning to report {{ poss }} findings.
+{% if evidenceSummary and evidenceSummary != "" and evidenceSummary != "nothing of note" -%}
+{{ subj | capitalize }} found: {{ evidenceSummary }}.
+{% if containersSearched and containersSearched > 0 -%}
+{{ subj | capitalize }} searched {{ containersSearched }} container(s) during the investigation.
+{% endif -%}
+{% if evidenceQuality and evidenceQuality >= 7 -%}
+Evidence strength: **damning** — an overwhelming case.
+{% elif evidenceQuality and evidenceQuality >= 4 -%}
+Evidence strength: **moderate** — a reasonable case.
+{% elif evidenceQuality and evidenceQuality >= 1 -%}
+Evidence strength: **weak** — circumstantial at best.
+{% else -%}
+Evidence strength: **inconclusive**.
+{% endif -%}
+{% else -%}
+{{ subj | capitalize }} found nothing of note during the search.
+{% endif %}
+
+**CRITICAL INSTRUCTIONS:**
+- {{ actor.name }} is heading back to deliver {{ poss }} report. {{ subj | capitalize }} should NOT be distracted.
+- DO NOT select any action categories. {{ actor.name }} is traveling and should not take any actions.
+- If someone speaks to {{ actor.name }}, {{ subj }} can respond briefly but should make clear {{ subj }} has urgent business to attend to.
+{% endif %}
+{% else %}
+{# Arrest dispatch - guard traveling to arrest or escorting prisoner #}
+{% if dispatchPhase <= 2 %}
+{% set targetName = "" %}
+{% if dispatchTarget and dispatchTarget.uuid and dispatchTarget.uuid != 0 %}
+{% set targetData = decnpc(dispatchTarget.uuid) %}
+{% set targetName = targetData.name %}
+{% endif %}
+## ACTIVE DUTY — EN ROUTE TO ARREST
+{{ actor.name }} has been dispatched to arrest {{ targetName }}. {{ subj | capitalize }} is focused on reaching {{ poss }} target.
+
+**CRITICAL INSTRUCTIONS:**
+- {{ actor.name }} is on official duty to make an arrest. {{ subj | capitalize }} should NOT be distracted from {{ poss }} mission.
+- DO NOT select any action categories. {{ actor.name }} is traveling to {{ poss }} target and should not take any actions.
+- If someone speaks to {{ actor.name }}, {{ subj }} can respond briefly but should make clear {{ subj }} is on urgent guard business and cannot stop.
+{% elif dispatchPhase == 5 %}
+{% set prisonerName = "" %}
+{% if dispatchTarget and dispatchTarget.uuid and dispatchTarget.uuid != 0 %}
+{% set prisonerData = decnpc(dispatchTarget.uuid) %}
+{% set prisonerName = prisonerData.name %}
+{% endif %}
+{% set hasSender = false %}
+{% if dispatchSender and dispatchSender.uuid and dispatchSender.uuid != 0 %}
+{% set hasSender = true %}
+{% set senderData = decnpc(dispatchSender.uuid) %}
+{% set senderName = senderData.name %}
+{% endif %}
+## ACTIVE DUTY — ESCORTING PRISONER
+{% if hasSender -%}
+{{ actor.name }} has {{ prisonerName }} in restraints and is escorting them to {{ senderName }} for judgment.
+{% else -%}
+{{ actor.name }} has {{ prisonerName }} in restraints and is marching them to jail.
+{% endif %}
+
+**CRITICAL INSTRUCTIONS:**
+- {{ actor.name }} is escorting a prisoner. The escort is already underway — {{ subj }} knows exactly where {{ subj }} is going.
+- DO NOT select any **Travel** category actions whatsoever — no `TravelToPlace`, no `CancelTravel`, no fast-travel, no movement actions of any kind. The escort path is already controlled by the arrest pipeline; any travel action would override it and break the escort.
+- DO NOT select any other action categories either. {{ actor.name }} is on official duty.
+- {{ actor.name }} should keep {{ poss }} attention on the prisoner and stay vigilant.
+- If someone speaks to {{ actor.name }}, {{ subj }} can respond briefly but should make clear {{ subj }} is busy transporting a prisoner and cannot stop.
+- {{ actor.name }} may comment on the prisoner, the journey, or warn bystanders to stay clear, but should NOT attempt to go anywhere else.
+{% endif %}
+{% endif %}
+{% endif %}
+{% elif isDispatchTarget and not isHomeInvestigation %}
+{% if actorUUID and actorUUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set subj = actor.subjectivePronoun %}
+{% set poss = actor.possessivePronoun %}
+{% set guardName = "" %}
+{% if dispatchGuard and dispatchGuard.uuid and dispatchGuard.uuid != 0 %}
+{% set escortGuardData = decnpc(dispatchGuard.uuid) %}
+{% set guardName = escortGuardData.name %}
+{% endif %}
+{% set hasSender = false %}
+{% if dispatchSender and dispatchSender.uuid and dispatchSender.uuid != 0 %}
+{% set hasSender = true %}
+{% set senderData = decnpc(dispatchSender.uuid) %}
+{% set senderName = senderData.name %}
+{% endif %}
+## UNDER ARREST — BEING ESCORTED
+{% if hasSender -%}
+{{ actor.name }} has been arrested by {{ guardName }} and is being marched in restraints to face {{ senderName }}.
+{% else -%}
+{{ actor.name }} has been arrested by {{ guardName }} and is being marched to jail in restraints.
+{% endif %}
+
+**CRITICAL INSTRUCTIONS:**
+- {{ actor.name }} is a prisoner being escorted. {{ subj | capitalize }} is restrained and under guard.
+- {{ actor.name }} does NOT have access to any actions right now. {{ subj | capitalize }} can only speak.
+- DO NOT select any action categories whatsoever.
+- {{ actor.name }} may speak — expressing fear, anger, defiance, resignation, pleas for mercy, or threats depending on {{ poss }} personality.
+- {{ actor.name }} cannot run, fight, or resist physically. {{ subj | capitalize }} is being firmly escorted.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

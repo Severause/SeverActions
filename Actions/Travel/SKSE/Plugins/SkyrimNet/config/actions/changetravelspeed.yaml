@@ -1,16 +1,16 @@
 customCategory: travel
 name: ChangeTravelSpeed
-description: "Change travel speed of a currently traveling actor."
+description: "The speaker, already on the road, picks up the pace or slows it down — breaking into a run when news comes that a friend is in trouble, easing to a walk to take in the scenery on the way to High Hrothgar, jogging through a hostile stretch of moor."
 questEditorId: SeverActions
 scriptName: SeverActions_Travel
 executionFunctionName: SetTravelSpeedNatural
 parameterMapping:
   - type: speaker
     name: akNPC
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor changing their stride
   - type: dynamic
     name: speedText
-    description: "Speed: run/hurry (fastest), jog/brisk (medium), walk/slow (slowest)"
+    description: "how fast: run/hurry (fastest), jog/brisk (medium), walk/slow (slowest)"
 enabled: false
 eligibilityRules:
   - conditions:

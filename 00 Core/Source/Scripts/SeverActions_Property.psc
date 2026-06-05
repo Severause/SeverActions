@@ -34,6 +34,24 @@ Function TransferOwnership(Actor akActor, String propertyName)
         cleanName = SeverActionsNative.TrimString(cleanName)
     EndIf
 
+    ; Ownership gate (issue #12 public). The LLM picks this action freely and
+    ; SkyrimNet eligibility decorators can't see the dynamic propertyName
+    ; parameter at filter time, so the only place to enforce "speaker actually
+    ; owns this" is here. Native_IsCellOwner accepts either a direct NPC owner
+    ; or membership in the cell's faction owner (covers Hulda/Bannered Mare via
+    ; BanneredMareInnFaction etc.). Empty cleanName falls back to akActor's
+    ; current cell, matching the transfer fallback.
+    If !SeverActionsNative.Native_IsCellOwner(akActor, cleanName)
+        String rejected = cleanName
+        If rejected == ""
+            rejected = "this property"
+        EndIf
+        Debug.Notification(akActor.GetDisplayName() + " doesn't own " + rejected + ".")
+        Debug.Trace("[SeverActions_Property] REJECTED transfer — " + akActor.GetDisplayName() \
+            + " is not the owner of '" + rejected + "'")
+        Return
+    EndIf
+
     Bool success = SeverActionsNative.Native_TransferCellOwnership(Game.GetPlayer(), cleanName, SeverActions_PropertyFaction)
 
     String displayName = cleanName

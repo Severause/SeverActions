@@ -50,18 +50,19 @@ Package Property SafeInteriorSandboxPackage Auto
 homes, etc.). Lets users visually tell the two flows apart when debugging which
 package is active. Falls back to SandboxPackage if not assigned in CK.}
 
-int Property SandboxPackagePriority = 55 AutoReadOnly
-{Above follow (50) so sandbox overrides the FollowPlayer package immediately.
- SkyrimNet's UnregisterPackage is queued/async in 0.15.4+, so the FollowPlayer
- package may still be active when sandbox is applied. Priority 55 ensures
- sandbox wins without waiting for the queue. All cleanup paths (StopSandbox,
- OnNativeSandboxCleanup, StartFollowing, CompanionStartFollowing) explicitly
- remove the sandbox package override, so orphans are handled properly.}
+int Property SandboxPackagePriority = 100 AutoReadOnly
+{Reliability fix — bumped from 55 (just-above-FollowPlayer's 50) to 100 to
+ match the priority Sever's Hearth uses for its camp sandbox. The lower
+ value would lose ties to any other mod stamping an override in the same
+ narrow band; 100 wins decisively against typical follower-framework
+ overrides. SkyrimNet's UnregisterPackage is still queued/async, so the
+ high priority + explicit AddPackageOverride before clearing FollowPlayer
+ keeps the actor on a valid package across the transition. All cleanup
+ paths (StopSandbox, OnNativeSandboxCleanup, StartFollowing,
+ CompanionStartFollowing) explicitly remove the sandbox override, so
+ orphans stay handled.}
 
-float Property SandboxAutoStandDistance = 2000.0 Auto
-{Distance at which sandboxing actors auto-resume following when player moves away}
-
-int Property SafeInteriorSandboxPriority = 55 AutoReadOnly
+int Property SafeInteriorSandboxPriority = 100 AutoReadOnly
 {Same priority as regular sandbox — overrides follow package.}
 
 ; =============================================================================
@@ -92,6 +93,7 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_SafeInteriorToggle", "OnSafeInteriorToggle")
     RegisterForModEvent("SeverActions_PauseOnOpenToggle",  "OnPauseOnOpenToggle")
     RegisterForModEvent("SeverActions_FriendlyFireToggle", "OnFriendlyFireToggle")
+    RegisterForModEvent("SeverActions_YieldPromptToggle",  "OnYieldPromptToggle")
     ; Phase 5 Fix C — deferred safe-interior re-evaluation: C++ fires this ~500ms
     ; after the initial enter event so the engine picks up our override even if the
     ; first EvaluatePackage raced with a cell transition / AI busy state.
@@ -106,7 +108,7 @@ Function Maintenance()
         ; can enable via PrismaUI. Existing users who had it on keep their
         ; setting — the StorageUtil key persists across game loads.
         Bool savedEnabled = StorageUtil.GetIntValue(SeverActionsQuest, "SeverActions_SafeInteriorEnabled", 0) == 1
-        SeverActionsNative.SituationMonitor_SetSafeInteriorEnabled(savedEnabled)
+        SeverActionsNativeExt.SituationMonitor_SetSafeInteriorEnabled(savedEnabled)
         Debug.Trace("[SeverActions_Follow] Restored safe interior sandbox: " + savedEnabled)
 
         ; Restore PrismaUI pause-on-open setting. Default 1 (paused) preserves legacy
@@ -114,6 +116,13 @@ Function Maintenance()
         Bool savedPauseOnOpen = StorageUtil.GetIntValue(SeverActionsQuest, "SeverActions_PauseOnOpen", 1) == 1
         SeverActionsNative.PrismaUI_SetPauseOnOpen(savedPauseOnOpen)
         Debug.Trace("[SeverActions_Follow] Restored PrismaUI pause on open: " + savedPauseOnOpen)
+
+        ; Restore the yield/surrender prompt-exposure toggle. Stored on None
+        ; (global) because the 0160 combat prompt reads it via papyrus_util
+        ; GetIntValue with actor 0. Default 1 (on) preserves legacy behavior.
+        Bool savedYieldPrompt = StorageUtil.GetIntValue(None, "SeverActions_YieldPromptEnabled", 1) == 1
+        SeverActionsNative.PrismaUI_SetYieldPromptEnabled(savedYieldPrompt)
+        Debug.Trace("[SeverActions_Follow] Restored yield prompt exposure: " + savedYieldPrompt)
 
         ; Restore follower friendly-fire prevention. Default 1 (enabled) —
         ; users who have explicitly disabled it keep their 0 in StorageUtil;
@@ -128,6 +137,21 @@ Function Maintenance()
         EndIf
         Debug.Trace("[SeverActions_Follow] Restored follower friendly-fire prevention: " + savedFriendlyFire)
     EndIf
+
+    ; Phase 11 — reconcile stranded safe-interior sandbox on load. The package
+    ; override + the SeverActions_InSafeInteriorSandbox flag both persist in the
+    ; save, but the native SituationMonitor's inSafeInterior state is transient
+    ; (empty after a fresh launch), so a follower who was auto-sandboxing at save
+    ; time — or whose package never got cleaned up because the feature was later
+    ; disabled — is left stuck with no native transition left to fire the exit.
+    ; Walk the roster and force the exit for anyone still flagged;
+    ; ExitSafeInteriorSandbox self-gates on the flag, so unflagged followers no-op.
+    Actor[] reconFollowers = SeverActionsNative.Native_GetAllTrackedFollowers()
+    Int reconIdx = 0
+    While reconIdx < reconFollowers.Length
+        ExitSafeInteriorSandbox(reconFollowers[reconIdx])
+        reconIdx += 1
+    EndWhile
 EndFunction
 
 ; =============================================================================
@@ -138,16 +162,14 @@ EndFunction
 ; =============================================================================
 
 Bool Function IsSandboxing(Actor akActor)
-    return akActor && StorageUtil.GetIntValue(akActor, "SeverActions_IsSandboxing") == 1
+    {Phase 4B: FollowerDataStore.isSandboxing is the source of truth.}
+    return akActor && SeverActionsNativeExt.Native_GetSandboxing(akActor)
 EndFunction
 
 Function SetSandboxFlag(Actor akActor, Bool active)
-    If active
-        StorageUtil.SetIntValue(akActor, "SeverActions_IsSandboxing", 1)
-    Else
-        StorageUtil.UnsetIntValue(akActor, "SeverActions_IsSandboxing")
+    If akActor
+        SeverActionsNative.Native_SetSandboxing(akActor, active)
     EndIf
-    SeverActionsNative.Native_SetSandboxing(akActor, active)
 EndFunction
 
 ; =============================================================================
@@ -235,7 +257,10 @@ Event OnSafeInteriorChanged(String eventName, String strArg, Float numArg, Form 
             ; the FE/FF fallback when the follower is in a door transition).
             ;
             ; Apply override FIRST so there's always a valid high-priority package.
-            ActorUtil.AddPackageOverride(akActor, interiorPkg, SafeInteriorSandboxPriority, 1)
+            ; 4th arg 0 = no AI reset — gentler transition. Combined with the
+            ; EvaluatePackage at line 260 below, the AI picks up the new
+            ; override without the procedural-state churn that flag=1 caused.
+            ActorUtil.AddPackageOverride(akActor, interiorPkg, SafeInteriorSandboxPriority, 0)
 
             ; Kill the SkyrimNet FollowPlayer registration for casual followers.
             ; Safe no-op for companions (they use CK alias package, not SkyrimNet).
@@ -266,6 +291,17 @@ Event OnSafeInteriorChanged(String eventName, String strArg, Float numArg, Form 
             Debug.Trace("[SeverActions_Follow] Safe interior sandbox: " + akActor.GetDisplayName() + " is relaxing")
         EndIf
     ElseIf changeType == "exit"
+        ExitSafeInteriorSandbox(akActor)
+    EndIf
+EndEvent
+
+Function ExitSafeInteriorSandbox(Actor akActor)
+    {Tear down an active safe-interior auto-sandbox: remove the package
+    override(s), restore follow eligibility, teleport to the player, and
+    re-evaluate. No-op when the actor isn't currently flagged
+    SeverActions_InSafeInteriorSandbox, so it's safe to call speculatively —
+    e.g. the on-load reconcile in Maintenance() that walks the whole roster.}
+    If akActor
         If StorageUtil.GetIntValue(akActor, "SeverActions_InSafeInteriorSandbox", 0) == 1
             StorageUtil.UnsetIntValue(akActor, "SeverActions_InSafeInteriorSandbox")
             SetSandboxFlag(akActor, false)
@@ -344,7 +380,7 @@ Event OnSafeInteriorChanged(String eventName, String strArg, Float numArg, Form 
             Debug.Trace("[SeverActions_Follow] Safe interior sandbox ended: " + akActor.GetDisplayName() + " teleported to player and resumes following")
         EndIf
     EndIf
-EndEvent
+EndFunction
 
 ; Phase 5 Fix C — deferred re-evaluation handler.
 ; C++ SituationMonitor fires SeverActions_SafeInteriorReEval ~500ms after
@@ -399,6 +435,21 @@ Event OnPauseOnOpenToggle(String eventName, String strArg, Float numArg, Form se
         StorageUtil.SetIntValue(SeverActionsQuest, "SeverActions_PauseOnOpen", val)
         Debug.Trace("[SeverActions_Follow] PrismaUI pause-on-open toggle persisted: " + val)
     EndIf
+EndEvent
+
+Event OnYieldPromptToggle(String eventName, String strArg, Float numArg, Form sender)
+    {Fired by PrismaUISettingsHandler when the user toggles "Yield / Surrender
+     Context" in Settings → Prompt Filters. Persists to StorageUtil(None) — the
+     0160 combat prompt reads it via papyrus_util(GetIntValue, 0, ...) and it
+     survives save/load there — and re-syncs the C++ atomic the settings gather
+     reads so the toggle reflects correctly when the menu reopens.}
+    Int val = 0
+    If numArg >= 1.0
+        val = 1
+    EndIf
+    StorageUtil.SetIntValue(None, "SeverActions_YieldPromptEnabled", val)
+    SeverActionsNative.PrismaUI_SetYieldPromptEnabled(val == 1)
+    Debug.Trace("[SeverActions_Follow] Yield prompt exposure toggle persisted: " + val)
 EndEvent
 
 Event OnFriendlyFireToggle(String eventName, String strArg, Float numArg, Form sender)
@@ -564,9 +615,11 @@ Function ReapplyFollowTracking(Actor[] followers)
             EndIf
 
             Bool isWaiting = akActor.GetAV("WaitingForPlayer") > 0
-            ; If they were waiting/sandboxing, re-apply sandbox package + tracking
+            ; If they were waiting/sandboxing, re-apply sandbox package + tracking.
+            ; 4th arg 0 = no AI reset — gentler transition; the EvaluatePackage
+            ; call at line 574 below picks up the new override immediately.
             If isWaiting && SandboxPackage
-                ActorUtil.AddPackageOverride(akActor, SandboxPackage, SandboxPackagePriority, 1)
+                ActorUtil.AddPackageOverride(akActor, SandboxPackage, SandboxPackagePriority, 0)
                 SetSandboxFlag(akActor, true)
             EndIf
 
@@ -594,6 +647,18 @@ Function StartFollowing(Actor akActor)
      Does NOT use alias slots or LinkedRef — purely SkyrimNet managed.}
     if !akActor || akActor.IsDead()
         return
+    endif
+
+    ; Notify downstream listeners that the player has called this actor to
+    ; their side. SeversHearth's camp sandbox layer registers for this and
+    ; uses it to release a camp-pinned follower so they actually walk over
+    ; instead of staying at the fire. strArg = "follow" so handlers can
+    ; differentiate from "recruit" / "wait" if the action verb matters.
+    int followEvt = ModEvent.Create("SeverActions_FollowerCalledByPlayer")
+    if followEvt
+        ModEvent.PushForm(followEvt, akActor)
+        ModEvent.PushString(followEvt, "follow")
+        ModEvent.Send(followEvt)
     endif
 
     ; Clear waiting state FIRST — prevents the engine from creating an FF-prefix
@@ -761,6 +826,13 @@ Function WaitHere(Actor akActor)
     ; No longer actively following (waiting in place)
     SetActivelyFollowing(akActor, false)
 
+    ; Clear hasFollowPkg in the native data store. Without this, the
+    ; FollowerTeleportDistance system in SandboxManager still sees the
+    ; actor as "actively following" and will yank them across cells the
+    ; next time the player gets ~2000 units away — exactly the
+    ; "waiting follower keeps teleporting" complaint.
+    SeverActionsNative.Native_SetPackageState(akActor, false, false, false)
+
     akActor.EvaluatePackage()
 
     Debug.Notification(akActor.GetDisplayName() + " is waiting here.")
@@ -781,12 +853,26 @@ Function Sandbox(Actor akActor)
     ; on the actor. If we set WaitingForPlayer before this, the CK alias follow
     ; package drops and the engine creates a fallback runtime sandbox (FF-prefix)
     ; in the gap before our override is applied.
-    ; Priority 55 > FollowPlayer's 50 — sandbox wins immediately.
-    ActorUtil.AddPackageOverride(akActor, SandboxPackage, SandboxPackagePriority, 1)
+    ; Priority 100 (was 55) wins decisively against typical follower-framework
+    ; overrides; 4th arg 0 (was 1) skips the AI reset for a gentler transition.
+    ActorUtil.AddPackageOverride(akActor, SandboxPackage, SandboxPackagePriority, 0)
 
     ; NOW safe to disable the CK follow package — sandbox is already covering
     SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
     akActor.SetAV("WaitingForPlayer", 1)
+
+    ; Force immediate AI re-evaluation so the transition happens now, not on
+    ; the next vanilla tick (which can be many seconds away). Matches the
+    ; Sever's Hearth camp-sandbox path — the missing EvaluatePackage here
+    ; was the root cause of "I told them to wait but they're still trailing me"
+    ; reports.
+    akActor.EvaluatePackage()
+
+    ; Note: do NOT call Native_SetPackageState(false) here. StopSandbox
+    ; below reads Native_GetHasFollowPkg to detect "SA-managed" vs
+    ; "track-only" — clearing hasFollowPkg would break the resume path.
+    ; SandboxManager's teleport gate already skips this actor via the
+    ; isSandboxing flag set by SetSandboxFlag() below.
 
     ; Track sandbox state via StorageUtil (reliable, immediate).
     ; We skip SkyrimNet's RegisterPackage("Sandbox") entirely — "Sandbox" isn't in
@@ -813,6 +899,14 @@ Function StopSandbox(Actor akActor)
         return
     endif
 
+    ; Snapshot whether the actor was actually relaxing before we tear down. The
+    ; notification + persistent event below are only meaningful when this call
+    ; actually ended a sandbox session — CompanionWait's track-only recovery
+    ; path calls StopSandbox defensively even when nothing was active, and that
+    ; would otherwise produce a misleading "<name> stopped relaxing." message
+    ; followed immediately by "<name> is waiting here for you."
+    Bool wasSandboxing = IsSandboxing(akActor)
+
     ; Clear waiting state FIRST — so the CK alias follow package condition
     ; (WaitingForPlayer == 0) becomes valid BEFORE we remove the sandbox override.
     ; For casual followers, this ensures SkyrimNet's FollowPlayer (re-registered below)
@@ -835,20 +929,45 @@ Function StopSandbox(Actor akActor)
         ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
     endif
 
-    ; Re-apply follow package only for casual followers.
-    ; Companions use CK alias-based packages which auto-reassert when WaitingForPlayer clears.
-    ; Registering SkyrimNet FollowPlayer on a companion creates dual-package AI flicker.
-    If !IsInFollowerSlot(akActor)
+    ; Re-apply follow package only for casual followers SA actually manages.
+    ;
+    ; Three populations come through here:
+    ;   1. SA companions (IsInFollowerSlot=true) — use the CK alias package, which
+    ;      auto-reasserts when WaitingForPlayer clears. Registering SkyrimNet's
+    ;      FollowPlayer on top creates dual-package AI flicker.
+    ;   2. Casual SA followers (StartFollowing'd) — hasFollowPkg=true, not in slot.
+    ;      These genuinely want SkyrimNet's FollowPlayer back.
+    ;   3. Track-only followers (Inigo, Lucien, Kaidan, Daegon-keyword, etc.) being
+    ;      defensively cleaned by CompanionWait's recovery path — they're not in
+    ;      our slot AND hasFollowPkg=false because SA has never put a follow
+    ;      package on them. Their own mods drive AI. Registering FollowPlayer here
+    ;      was the previous bug: it stuck a stray SkyrimNet_FollowPlayerPackage
+    ;      on them that the WaitingForPlayer flag immediately gated off, leaving
+    ;      them standing in place with no active package and the wrong mod's
+    ;      package suppressed.
+    Bool isSAManaged = SeverActionsNative.Native_GetHasFollowPkg(akActor)
+    If !IsInFollowerSlot(akActor) && isSAManaged
         SkyrimNetApi.RegisterPackage(akActor, "FollowPlayer", FollowPackagePriority, 0, true)
-    Else
-        akActor.EvaluatePackage()
     EndIf
+
+    ; Always force immediate AI re-evaluation so the transition happens now,
+    ; not on the next vanilla tick. Mirrors the EvaluatePackage call in
+    ; Sandbox() above. The casual SA-managed branch also benefits — SkyrimNet
+    ; RegisterPackage queues async, so an explicit eval here closes the
+    ; window where the actor could still be sitting on the removed sandbox
+    ; override's previous tick.
+    akActor.EvaluatePackage()
 
     ; Back to actively following
     SetActivelyFollowing(akActor, true)
 
-    Debug.Notification(akActor.GetDisplayName() + " stopped relaxing.")
-    SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " stops relaxing and is ready to move.", akActor, Game.GetPlayer())
+    ; Only surface the "stopped relaxing" feedback when there was actually a
+    ; sandbox session to stop. See wasSandboxing snapshot at the top of the
+    ; function for context.
+    If wasSandboxing
+        Debug.Notification(akActor.GetDisplayName() + " stopped relaxing.")
+        SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " stops relaxing and is ready to move.", akActor, Game.GetPlayer())
+    EndIf
 EndFunction
 
 ; =============================================================================
@@ -856,6 +975,10 @@ EndFunction
 ; =============================================================================
 
 ; --- StartFollowing Action (Casual) ---
+; StartFollowing_IsEligible is reused as a shared eligibility helper by
+; SeverActions_WheelMenu and SeverActions_Hotkeys. The legacy _Execute / other
+; per-action global wrappers were removed — actions bind member functions
+; directly via executionFunctionName.
 
 Bool Function StartFollowing_IsEligible(Actor akActor) Global
     if !akActor || akActor.IsDead() || akActor.IsInCombat()
@@ -873,7 +996,7 @@ Bool Function StartFollowing_IsEligible(Actor akActor) Global
     SeverActions_Follow instance = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
     Bool isCompanion = instance && instance.IsInFollowerSlot(akActor)
     Bool isWaiting = akActor.GetAV("WaitingForPlayer") > 0
-    Bool isSandboxing = StorageUtil.GetIntValue(akActor, "SeverActions_IsSandboxing") == 1
+    Bool isSandboxing = SeverActionsNativeExt.Native_GetSandboxing(akActor)
 
     ; Companions who are waiting/sandboxing — eligible (will route to CompanionStartFollowing)
     If isCompanion
@@ -886,113 +1009,4 @@ Bool Function StartFollowing_IsEligible(Actor akActor) Global
     endif
 
     return true
-EndFunction
-
-Function StartFollowing_Execute(Actor akActor) Global
-    SeverActions_Follow instance = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
-    if instance
-        ; If this actor is a formal companion (in alias slot), route to the companion
-        ; follow path instead of casual. Prevents dual-package AI flicker and ensures
-        ; the CK alias package is used (not SkyrimNet's FollowPlayer).
-        If instance.IsInFollowerSlot(akActor)
-            instance.CompanionStartFollowing(akActor)
-        Else
-            instance.StartFollowing(akActor)
-        EndIf
-    endif
-EndFunction
-
-; --- StopFollowing Action (Casual) ---
-
-Bool Function StopFollowing_IsEligible(Actor akActor) Global
-    if !akActor
-        return false
-    endif
-
-    return SkyrimNetApi.HasPackage(akActor, "FollowPlayer")
-EndFunction
-
-Function StopFollowing_Execute(Actor akActor) Global
-    SeverActions_Follow instance = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
-    if instance
-        If instance.IsInFollowerSlot(akActor)
-            instance.CompanionStopFollowing(akActor)
-        Else
-            instance.StopFollowing(akActor)
-        EndIf
-    endif
-EndFunction
-
-; --- WaitHere Action ---
-
-Bool Function WaitHere_IsEligible(Actor akActor) Global
-    if !akActor
-        return false
-    endif
-
-    ; Must be following (casual or companion) and not already waiting
-    Bool hasPackage = SkyrimNetApi.HasPackage(akActor, "FollowPlayer")
-    If !hasPackage
-        SeverActions_Follow instance = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
-        If !instance || !instance.IsInFollowerSlot(akActor)
-            return false
-        EndIf
-    EndIf
-    Bool isWaiting = akActor.GetAV("WaitingForPlayer") > 0
-
-    return !isWaiting
-EndFunction
-
-Function WaitHere_Execute(Actor akActor) Global
-    SeverActions_Follow instance = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
-    if instance
-        instance.WaitHere(akActor)
-    endif
-EndFunction
-
-; --- Sandbox Action ---
-
-Bool Function Sandbox_IsEligible(Actor akActor) Global
-    if !akActor || akActor.IsDead() || akActor.IsInCombat()
-        return false
-    endif
-
-    ; Must be a follower — check both casual (SkyrimNet package) and companion (alias slot)
-    SeverActions_Follow instance = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
-    Bool hasFollowPkg = SkyrimNetApi.HasPackage(akActor, "FollowPlayer")
-    Bool isCompanion = instance && instance.IsInFollowerSlot(akActor)
-    if !hasFollowPkg && !isCompanion
-        return false
-    endif
-
-    ; Must not already be sandboxing
-    if StorageUtil.GetIntValue(akActor, "SeverActions_IsSandboxing") == 1
-        return false
-    endif
-
-    return true
-EndFunction
-
-Function Sandbox_Execute(Actor akActor) Global
-    SeverActions_Follow instance = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
-    if instance
-        instance.Sandbox(akActor)
-    endif
-EndFunction
-
-; --- StopSandbox Action ---
-
-Bool Function StopSandbox_IsEligible(Actor akActor) Global
-    if !akActor
-        return false
-    endif
-
-    return StorageUtil.GetIntValue(akActor, "SeverActions_IsSandboxing") == 1
-EndFunction
-
-Function StopSandbox_Execute(Actor akActor) Global
-    SeverActions_Follow instance = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
-    if instance
-        instance.StopSandbox(akActor)
-    endif
 EndFunction

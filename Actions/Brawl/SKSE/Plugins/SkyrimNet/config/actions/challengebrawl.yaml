@@ -1,0 +1,37 @@
+customCategory: brawl
+name: ChallengeBrawl
+description: "The speaker steps in close, knuckles loose, and challenges the target to a fist-fight — a tavern argument boiling over, an old grudge settled the honest way, a Companion testing a new recruit. No blades, no spells, just hands. The target can accept, decline, or laugh it off."
+questEditorId: SeverActions
+scriptName: SeverActions_Brawl
+executionFunctionName: ChallengeBrawl_Execute
+parameterMapping:
+  - type: speaker
+    name: akChallenger
+    description: the actor throwing down the gauntlet
+  - type: dynamic
+    name: akTarget
+    description: the actor being challenged
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

@@ -1,0 +1,26 @@
+{# Deferred crafting commissions — tells a blacksmith they can take/collect
+   commissions and surfaces the orders they're currently holding.
+
+   GATED to JobBlacksmithFaction so only smiths see it (a farmer can't forge).
+   The capability intro is ALWAYS shown to a smith (so the LLM knows the actions
+   exist even before any order is placed); the live-order block self-gates on
+   crafting_commission(npc.UUID) returning non-empty. That decorator reads only
+   cosaved strings/scalars under its mutex — no RE:: walk — so it's render-worker
+   safe. Mirrors the debt_context pattern. #}
+{% if is_in_faction(npc.UUID, "JobBlacksmithFaction") %}
+## Your Forge — Commissions
+As a smith you can take **deferred commissions**: forge work the customer collects later, priced by you.
+- **CommissionItem** — accept a new deferred order. You take a deposit now and name a ready date ("a couple days"); the balance is due on pickup. Use this whenever you agree to make something *for later* ("come back tomorrow"). Use **CraftItem** only for work you finish on the spot, right now.
+- **CollectCommission** — hand a finished piece to the customer when they return for it. This one action shows them the balance, takes the gold, AND gives them the item. Do NOT use GiveItem, GiveGold, or CollectPayment for a commission.
+
+{% set _commission_info = crafting_commission(npc.UUID) %}
+{% if _commission_info != "" %}
+{{ _commission_info }}
+
+**Handling your current orders:**
+- **When a piece is marked "finished and ready to collect" and the customer is here for it, you MUST call CollectCommission to hand it over.** Do NOT describe handing the item over, taking the remaining payment, or completing the sale in your own words — the action does all of that for you. If you merely narrate the handover, nothing actually happens and the customer walks away empty-handed with their gold untouched. Say a short line to greet them, then let CollectCommission do the work.
+- If an order is **still being worked on**, tell them to come back later. Don't hand anything over and don't call CollectCommission.
+{% endif %}
+
+**Pricing — you decide it.** Name a fair total for the whole job in your dialogue, then pass that exact number as `quotedTotal` on CommissionItem. The customer pays it — **half up front** as a deposit, **half on pickup** — so the order slip always matches what you said; don't say one figure and pass another. Price by metal and effort (rough scale, not a rule): a steel weapon a few dozen septims, dwarven/elven work a couple hundred, glass or ebony a few hundred to a thousand, daedric or dragon work well over a thousand. Armor and multiples cost more. Quote naturally — "an ebony dagger? About three hundred septims, half now" — and pass 300.
+{% endif %}

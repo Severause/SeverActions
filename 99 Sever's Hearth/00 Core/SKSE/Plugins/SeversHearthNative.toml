@@ -1,0 +1,11 @@
+[Info]
+Name = "SeversHearthNative"
+Author = "Severause"
+Version = "0.1.0"
+
+[Compatibility]
+MinimumSKSEVersion = 131
+MinimumSkyrimVersion = 353
+
+[Features]
+AddressLibrary = true

@@ -19,8 +19,8 @@ Character: {{ npc.name }} ({{ npc.race }}{% if npc.gender %}, {{ npc.gender }}{%
 
 Home Location: {{ homeLocation }}
 
-{% set work_loc = papyrus_util("GetStringValue", npc.UUID, "SeverFollower_WorkLocation", "") %}
-{% set play_loc = papyrus_util("GetStringValue", npc.UUID, "SeverFollower_PlayLocation", "") %}
+{% set work_loc = sever_work_location(npc.UUID) %}
+{% set play_loc = sever_play_location(npc.UUID) %}
 {% if work_loc != "" or play_loc != "" %}
 Daily rhythm (use these as anchor settings — don't invent new ones when these fit):
 {% if work_loc != "" %}
@@ -33,16 +33,16 @@ Daily rhythm (use these as anchor settings — don't invent new ones when these 
 
 {% endif %}
 Relationship with {{ player.name }}:
-{% set rapport = papyrus_util("GetFloatValue", npc.UUID, "SeverFollower_Rapport", 0) %}
-{% set trust = papyrus_util("GetFloatValue", npc.UUID, "SeverFollower_Trust", 25) %}
-{% set loyalty = papyrus_util("GetFloatValue", npc.UUID, "SeverFollower_Loyalty", 50) %}
-{% set mood = papyrus_util("GetFloatValue", npc.UUID, "SeverFollower_Mood", 50) %}
+{% set rapport = to_number(default(sever_rapport(npc.UUID), "0")) %}
+{% set trust   = to_number(default(sever_trust(npc.UUID), "25")) %}
+{% set loyalty = to_number(default(sever_loyalty(npc.UUID), "50")) %}
+{% set mood    = to_number(default(sever_mood(npc.UUID), "50")) %}
 - Rapport: {{ rapport }} (-100 to 100, emotional warmth toward {{ player.name }})
 - Trust: {{ trust }} (0 to 100, faith in {{ player.name }}'s judgment)
 - Loyalty: {{ loyalty }} (0 to 100, commitment to {{ player.name }})
 - Mood: {{ mood }} (-100 to 100, current temperament)
 
-{% set combat_style = papyrus_util("GetStringValue", npc.UUID, "SeverFollower_CombatStyle", "balanced") %}
+{% set combat_style = default(sever_combat_style(npc.UUID), "no combat style") %}
 Combat approach: {{ combat_style }}
 
 {% set isAnimal = existsIn(["Dog", "ManagedDog", "Wolf", "Husky", "Fox", "DLC1HuskyCompanion", "DLC1DeathHound"], npc.race) %}
@@ -80,12 +80,36 @@ Other dismissed companions living nearby:
 {% endif %}
 
 {% if existsIn(activeFollowers, 0) %}
-NPCs currently traveling WITH {{ player.name }} (NOT at home, NOT in this scene):
+⛔ ABSOLUTE EXCLUSION LIST — NPCs currently traveling WITH {{ player.name }} (NOT at home, NOT in this scene):
 {% for name in activeFollowers %}
 - {{ name }}
 {% endfor %}
 
-These NPCs are physically with {{ player.name }} elsewhere right now. They cannot appear in {{ npc.name }}'s daily life event. Do not write events that involve, reference, mention, or imply contact with any of them — they are not at home, not in the local social network, not available for shared activities.
+These NPCs are PHYSICALLY STANDING NEXT TO {{ player.name }} right now. The player can literally see them while reading your event. If you write that {{ npc.name }} shared a meal / trained / talked with / passed by / argued with any of these NPCs, the immersion breaks immediately — the player reads "X and Y met at the inn" while looking at Y across the campfire.
+
+ABSOLUTE RULES:
+  1. Do NOT include any name from the ⛔ list in the summary, the involved array, or the townRumor.
+  2. Even oblique references ("the housecarl who follows the Dragonborn", "the warrior friend", "the same companion from before") are FORBIDDEN if they clearly point at someone on the ⛔ list.
+  3. Indirect mentions ("a letter from X", "thinking of X", "missing X") are also FORBIDDEN — those NPCs are NOT absent from {{ npc.name }}'s life because of the player's adventures; they are simply unavailable as event subjects.
+  4. SELF-CHECK before responding: read your "summary" and "townRumor" fields out loud. If any ⛔ name appears, REWRITE that part without them.
+
+ACCEPTABLE shared-event partners (when a shared event makes sense):
+  - {{ npc.name }} alone (default — most events are solo)
+  - A vanilla NPC who lives in {{ homeLocation }} (innkeepers, guards, merchants, named locals)
+  {% if existsIn(nearbyFollowers, 0) %}
+  - One of these OTHER DISMISSED companions also living near {{ homeLocation }}: {% for name in nearbyFollowers %}{{ name }}{% if not loop.is_last %}, {% endif %}{% endfor %}
+  {% endif %}
+
+FAILURE EXAMPLES (do NOT produce output like these — assume "Aela" is on the ⛔ list):
+  ❌ summary: "Lydia spent the afternoon sparring with Aela behind the Skyforge."
+  ❌ summary: "Lydia thought of her old shield-sister and wondered when she'd return."
+  ❌ involved: ["Aela the Huntress"]
+  ❌ townRumor: "In Whiterun, the Companions' Huntress was seen leaving by the west gate at dawn."
+
+CORRECT (Aela on ⛔ list, Lydia is the subject):
+  ✅ summary: "Lydia spent the afternoon at the practice dummies behind Jorrvaskr, working her shield-arm against Vignar's old drills."
+  ✅ involved: []
+  ✅ townRumor: "In Whiterun, the watchmen turned away a Khajiit caravan again. Hulda says it's the third this season."
 {% endif %}
 
 {% endif %}
@@ -106,8 +130,48 @@ Rules:
 - VARIETY IS CRITICAL: Never start the summary with the same words or structure as the previous event. Vary the opening (action, setting, time of day, who they interact with). Rotate between different activity categories below.
 - The event summary: 1-3 sentences, written as a factual third-person account (not dialogue)
 - "type": "routine" (very ordinary, barely worth mentioning), "notable" (interesting enough to bring up in conversation), "significant" (rare — something that affected them emotionally)
-- "gossip": true if townsfolk would notice and talk about it, false if private/mundane
+- "gossip": legacy field — kept for compatibility but no longer triggers anything. Set false.
 - "diary": true ONLY if the event is emotionally significant enough to journal about (most days, this is false)
+
+{% if includeTownRumor %}
+{% if existsIn(recentRumors, 0) %}
+RECENT RUMORS already circulating in {{ homeLocation }} (do NOT repeat or closely mirror these — the LLM call that produced each of these had no idea the others would also fire; without active variety the rumor pool becomes "three people in a row heard the same dock worker say the same thing about Lake Honrich"):
+{% for r in recentRumors %}
+- {{ r }}
+{% endfor %}
+Pick a FRESH topic, a different setting, a different cast of characters. Rotate to a different category from the list further down (if the recent rumors are all about the docks, write about the market or the keep or the inn).
+{% endif %}
+
+ALSO emit ONE "townRumor" + ONE "rumorLocation" at the ROOT of the JSON (NOT inside the event object). The townRumor is a SEPARATE piece of news from somewhere in {{ holdName }} hold — a fresh piece of gossip, a sighting, a tavern story — that has NOTHING to do with {{ npc.name }} or what they did today. The rumorLocation is the specific townsfolk venue where it would plausibly be overheard.
+
+Critical rules for the townRumor:
+  • NEVER about {{ npc.name }} — don't mention them, don't reference their actions, don't even use their epithets
+  • NOT a reaction to or comment on the events above — it's parallel news happening in the same hold
+  • Do NOT start with "In <hold>, …" — the location is now carried by the separate rumorLocation field
+  • 1-2 sentences max, under 200 characters
+  • The hold this rumor is set in is: {{ holdName }} ({{ homeLocation }} is the follower's specific home; the rumor must be plausibly overheard somewhere in that wider hold)
+  • Sometimes the rumor can SEED a future event for someone else — leave threads dangling
+
+For the rumorLocation field:
+  • Pick a SPECIFIC venue, inn, market, shop, road, shrine, dock, smithy, or street corner inside {{ holdName }} where townsfolk would actually hear this rumor
+  • Match the venue to the rumor's content — a fishing rumor at the docks, a guard story at the barracks, a romance scandal at the tavern, a religious omen at the temple
+  • Be SPECIFIC: "the smelter" not just "Markarth"; "Plankside dock" not just "Riften"; "outside the Bards' College" not just "Solitude"
+  • Vary across calls — do NOT always pick the same flagship inn or marketplace
+  • Use establishments, but also gardens, road stretches, jarl's courts, mine entrances, abandoned houses, fishery, smithy, granary, temple, watchtower, etc.
+
+Rumor topic variety (rotate aggressively across calls — the RECENT RUMORS list above shows what's already in the air, so PICK DIFFERENTLY):
+  • Domestic: marriages, births, deaths, family feuds, household scandals, in-law disputes
+  • Political: jarl's edicts, hold-level appointments, Stormcloak/Imperial whispers, faction grumbles
+  • Criminal: thefts, smuggling, fraud, missing persons, found bodies, bounty postings, vigilante work
+  • Magical: omens, sightings, hedge-witch claims, weather anomalies, College gossip, ancient stories revived
+  • Mercantile: trade disputes, caravan arrivals, supply shortages, new shop openings, prices rising
+  • Religious: shrine miracles, priest disputes, holy day preparations, blasphemy accusations
+  • Animal & nature: escaped livestock, predator attacks, fishing yields, harvest reports, storm damage
+  • Personal: drunken brawls, romantic intrigue overheard, gambling debts, mysterious strangers, public confessions
+  • Historical/mystery: dwarven ruins activity, old-war stories surfacing, suspicious archaeologists, ghosts
+{% else %}
+DO NOT emit a townRumor this call. Omit the "townRumor" field from the JSON entirely (or leave it as an empty string "" if the schema requires the key). This is a quiet tick — no fresh news from {{ homeLocation }} today.
+{% endif %}
 
 Activity categories (rotate between these — don't repeat the same category as the previous event):
 - WORK/TRADE: helping merchants, repairing gear, bartering for supplies, chopping wood, smithing, brewing potions, cooking meals for the inn
@@ -123,16 +187,7 @@ Personality and mood should shape HOW they do things:
 - High rapport with {{ player.name }}: miss the player, do things that remind them of past adventures, keep the player's favorite drink stocked, tell stories about their travels together
 - Low rapport: focus entirely on their own life, avoid mentioning the player, may resent being left behind, build new independent routines
 
-Ground events in {{ homeLocation }} — prefer the daily rhythm locations above when they fit, otherwise use specific landmarks, shops, inns, and local NPCs:
-- Whiterun: the Bannered Mare, Warmaiden's forge, the Gildergreen, watching the Companions train, the market stalls
-- Riften: the Bee and Barb, the canal district, fishing by Lake Honrich, the market under Mistveil Keep, Black-Briar meadery
-- Solitude: the Winking Skeever, the Bard's College, watching ships at the East Empire docks, Castle Dour courtyard
-- Windhelm: Candlehearth Hall, the Gray Quarter, the docks, the Palace of the Kings courtyard, braving the bitter cold
-- Markarth: the Silver-Blood Inn, Cidhna Mine rumors, the Dwemer architecture, dealing with Forsworn tension, the smelter
-- Falkreath: Dead Man's Drink, the cemetery, the surrounding pine forest, hunting in the woods
-- Morthal: the Moorside Inn, the marshes, rumors of vampires, foggy mornings by the swamp
-- Dawnstar: the Windpeak Inn, the mines, nightmare rumors, ice fishing, watching for pirates
-- Winterhold: the Frozen Hearth, College mages passing through, ruins half-buried in snow, surviving the harsh cold
+Ground events in {{ homeLocation }} — prefer the daily rhythm locations from earlier when they fit, otherwise use whatever specific landmarks, shops, inns, roads, or local NPCs make sense for the character. Don't over-rely on the most famous landmark — the back streets, side roads, and quiet corners of a hold are just as legitimate as the headline tavern.
 
 {% if isAnimal %}
 Animal companion behavior:
@@ -172,9 +227,13 @@ An event MAY optionally include a "consequence" object with real game effects. R
 - DO NOT generate consequences for every event. They should feel like rare, meaningful developments.
 {% endif %}
 
-Respond with ONLY this JSON. No explanation. Compact format. Keep total response under 750 characters:
-{% if consequencesEnabled %}
+Respond with ONLY this JSON. No explanation. Compact format. Keep each summary under 750 characters{% if includeTownRumor %} and townRumor under 200 characters. The townRumor + rumorLocation are at the ROOT of the JSON, NOT inside the event object{% endif %}.
+{% if consequencesEnabled and includeTownRumor %}
+{% raw %}{"events":[{"summary":"Event description here.","type":"routine","gossip":false,"consequence":null}],"involved":[],"diary":false,"townRumor":"Separate news, no leading location prefix.","rumorLocation":"Specific venue inside the hold"}{% endraw %}
+{% elif consequencesEnabled %}
 {% raw %}{"events":[{"summary":"Event description here.","type":"routine","gossip":false,"consequence":null}],"involved":[],"diary":false}{% endraw %}
+{% elif includeTownRumor %}
+{% raw %}{"events":[{"summary":"Event description here.","type":"routine","gossip":false}],"involved":[],"diary":false,"townRumor":"Separate news, no leading location prefix.","rumorLocation":"Specific venue inside the hold"}{% endraw %}
 {% else %}
 {% raw %}{"events":[{"summary":"Event description here.","type":"routine","gossip":false}],"involved":[],"diary":false}{% endraw %}
 {% endif %}

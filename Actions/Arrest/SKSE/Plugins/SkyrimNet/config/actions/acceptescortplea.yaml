@@ -1,0 +1,72 @@
+customCategory: arrest
+name: AcceptEscortPlea
+description: "The escorting guard, halfway down the road to the jail, lowers their blade and waves the prisoner off — convinced by the argument, swayed by the coin offered later, or just moved by the plea. The cuffs come off, the bounty in this hold is wiped clean, and the prisoner walks free. Only use after a prisoner has just appealed mid-escort and the guard genuinely accepts."
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: AcceptEscortPlea_Internal
+parameterMapping:
+  - type: speaker
+    name: akGuard
+    description: the escorting guard agreeing to let the prisoner go
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "busy_reason"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "arrest"
+    logicalOperator: "AND"
+    required: true
+  # Authority gate — aligns with the rest of the arrest action set
+  # (arrestnpc, acceptpersuasion, etc.). The previous 9-faction OR ladder
+  # silently dropped Jarl/Housecarl coverage, so an arrest performed by a
+  # Jarl/Housecarl couldn't enter the escort-plea side state. is_guard_or_authority
+  # collapses that ladder + adds the missing two factions in one decorator.
+  - conditions:
+      - decoratorName: "is_guard_or_authority"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  # Mirror the acceptpersuasion / rejectpersuasion guard: a speaker on a
+  # cross-cell dispatch errand should never be eligible for escort-plea
+  # actions (which belong to the same-cell escort flow). Redundant with
+  # busy_reason == "arrest" in practice but matches the rest of the
+  # arrest YAML set so eligibility stays consistent.
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SeverActions_DispatchFaction"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

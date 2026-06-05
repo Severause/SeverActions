@@ -1,12 +1,12 @@
 name: FollowerLeaves
-description: "The companion permanently leaves {{ player.name }}'s service on their own. EXTREMELY RARE — only after severe, sustained mistreatment with very low rapport/trust."
+description: "The companion has had enough — they unbuckle the pack, drop it at {{ player.name }}'s feet, and walk away for good. Maybe a final shouting match outside the inn, maybe a silent departure before dawn. EXTREMELY RARE — only after long, severe mistreatment and rapport / trust ground all the way down."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: FollowerLeaves
 parameterMapping:
   - type: speaker
     name: akActor
-    description: The companion choosing to leave
+    description: the companion walking out for good
 enabled: true
 defaultPriority: 9
 eligibilityRules:

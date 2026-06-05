@@ -67,6 +67,31 @@ Function Initialize(Bool isFirstInit)
         endif
     endif
 
+    ; ── Init order matters: PrismaUI first ──
+    ; Previously PrismaUI ran at step 11 of 15, meaning the C++ DataGatherer
+    ; didn't have its quest references until the entire Maintenance() chain
+    ; had finished (~25s on saves with active followers + outfit slots). The
+    ; user could open the menu but every page showed empty/loading panels.
+    ;
+    ; Front-loading InitializePrismaUI lets the menu work within a couple of
+    ; seconds of save load. RegisterForPrismaEvents is self-contained — it
+    ; only does EnsureScriptReferences (lazy quest casts) + a single native
+    ; call to pass the quest pointers, with no dependency on the other
+    ; subsystems being initialized first.
+    InitializePrismaUI()
+
+    ; Surface the "loaded" notification right after PrismaUI is wired rather
+    ; than at the very end of the chain. From the user's perspective this is
+    ; the moment the mod is interactive — the rest of the Maintenance work
+    ; (follower roster sync, outfit migration, etc.) runs in the background
+    ; without blocking the menu, so showing the notification here matches
+    ; perceived readiness instead of trailing it by ~20 seconds.
+    ; Honest about what's actually online — the rest of Initialize() (decorators,
+    ; bridge, travel/outfit/follower systems) is still chaining below. The
+    ; notification fires here because PrismaUI is what the player most
+    ; immediately interacts with; the trailing systems come up within ~1-2s.
+    Debug.Notification("SeverActions menu ready")
+
     RegisterDecorators()
     InitializeBridge()
     InitializeTravelSystem(isFirstInit)
@@ -76,7 +101,7 @@ Function Initialize(Bool isFirstInit)
     InitializeWheelMenuSystem()
     InitializeFollowerManagerSystem()
     InitializeDebtSystem()
-    InitializePrismaUI()
+    InitializeArrestSystem()
     SyncMCMSettings()
     ; SyncPluginConfig() — disabled: WebUI config clobbers PrismaUI/MCM settings on reload.
     ; Will revisit once SkyrimNet exposes a PluginConfig setter API for bidirectional sync.
@@ -107,8 +132,11 @@ Function Initialize(Bool isFirstInit)
     ; WebUI real-time config sync disabled — see SyncPluginConfig() note above.
     ; RegisterForModEvent("SkyrimNet_OnPluginConfigSaved", "OnPluginConfigSaved")
 
+    ; Debug.Notification fired earlier (right after PrismaUI was wired) so the
+    ; user gets acknowledgement at the point the menu is actually interactive,
+    ; not after every Maintenance() pass completes. The log trace below still
+    ; records the true completion time for diagnostic timing audits.
     Debug.Trace("[SeverActions] Initialization complete!")
-    Debug.Notification("SeverActions loaded")
 EndFunction
 
 ; =============================================================================
@@ -315,6 +343,38 @@ Function InitializeDebtSystem()
         Debug.Trace("[SeverActions] Debt System initialized - " + debtCount + " active debts")
     Else
         Debug.Trace("[SeverActions] Debt System not found (optional)")
+    EndIf
+EndFunction
+
+; =============================================================================
+; ARREST SYSTEM INITIALIZATION
+; The arrest script has an "OnPlayerLoadGame" ModEvent handler internally,
+; but the ModEvent isn't reliably sent on save load, so Maintenance() did
+; not actually run after a save reload. That broke the native HoldResolver
+; table (in-memory only, no cosave), which made GetCrimeFactionForGuard
+; return None and every arrest action bail with
+; "Could not determine guard's crime faction".
+;
+; Chaining Maintenance() from here — the canonical load-time entry point —
+; guarantees it runs on every save load. Maintenance is idempotent:
+; RegisterForModEvent dedups, back-refs are no-op if already filled,
+; Hold_Clear runs at the top of the Hold_Register loop.
+; =============================================================================
+
+Function InitializeArrestSystem()
+    Debug.Trace("[SeverActions] Initializing Arrest System...")
+
+    Quest myQuest = GetOwningQuest()
+    If !myQuest
+        Return
+    EndIf
+
+    SeverActions_Arrest arrest = myQuest as SeverActions_Arrest
+    If arrest
+        arrest.Maintenance()
+        Debug.Trace("[SeverActions] Arrest System initialized")
+    Else
+        Debug.Trace("[SeverActions] Arrest System not found (optional)")
     EndIf
 EndFunction
 

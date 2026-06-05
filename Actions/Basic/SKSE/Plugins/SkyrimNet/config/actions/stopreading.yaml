@@ -1,13 +1,13 @@
 customCategory: items
 name: StopReading
-description: "Stop reading a book or note aloud and put it away."
+description: "The speaker closes the book in their hands, slips it back into their pack, and falls quiet."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: StopReading_Execute
 parameterMapping:
   - type: dynamic
     name: akActor
-    description: The person stopping their reading
+    description: the actor who has been reading and is now closing the book
 enabled: true
 eligibilityRules:
   - conditions:

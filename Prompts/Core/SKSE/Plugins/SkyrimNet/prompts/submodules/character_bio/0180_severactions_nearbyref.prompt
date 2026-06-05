@@ -1,21 +1,34 @@
-{# Skip nearby refs entirely during SexLab/OStim scenes - saves tokens #}
+{% if render_mode == "full" or render_mode == "static" %}
+{# Renders in "full" and "static" only — render_mode gate kept inside the
+   first 5 lines per SkyrimNet prompt best practice. "action" render mode
+   is handled by sibling 0181_severactions_nearbyref_action.prompt, which
+   ALSO lists container contents for the action-selection drill-down. We
+   deliberately omit container contents here to keep the dialogue and
+   general-context payload bounded. Skip during SexLab/OStim — saves tokens. #}
 {% if actorUUID and actorUUID != 0 %}
 {% set _in_sexlab = is_in_faction(actorUUID, "SexLabAnimatingFaction") %}
 {% set _in_ostim = is_in_faction(actorUUID, "OStimExcitementFaction") %}
-{% if (render_mode == "full" or render_mode == "static" or render_mode == "action") and not _in_sexlab and not _in_ostim %}
+{% if not _in_sexlab and not _in_ostim %}
 ## Nearby Objects
-{% set first_person = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
 {% if actorUUID and isValidActor(actorUUID) %}
 {% set nearby_refs = get_nearby_references_for_entity(actorUUID, 1000) %}
 {% else %}
 {% set nearby_refs = get_nearby_references(1000) %}
 {% endif %}
 {% set excluded_subtypes = ["clutter", "misc"] %}
+{# User-configured exclusions from PrismaUI Settings → Prompt Filters.
+   Mirrored from SeverActions_FollowerManager.NearbyExcludedTags property to
+   StorageUtil(None, "SeverActions_NearbyExcluded") on init/load. Format is
+   comma-separated "type:subtype" tags, e.g. "furniture:bed,item:weapon".
+   Wrap with sentinel commas so substring match catches exact tags only. #}
+{% set user_excluded_raw = papyrus_util("GetStringValue", "", "SeverActions_NearbyExcluded", "") %}
+{% set user_excluded = "," + user_excluded_raw + "," %}
 {% set max_items = 20 %}
 {% set items = [] %}
 {% set seen_refids = [] %}
 {% for ref in nearby_refs %}
-{% if ref.name != "" and not (ref.subtype in excluded_subtypes) and length(items) < max_items %}
+{% set ref_tag = "," + ref.type + ":" + ref.subtype + "," %}
+{% if ref.name != "" and not (ref.subtype in excluded_subtypes) and not contains(user_excluded, ref_tag) and length(items) < max_items %}
 {% if not (ref.type == "furniture" and ref.position.meters == 0.0) %}
 {% set refid_str = to_string(ref.formID) %}
 {% set refid_count = count(seen_refids, refid_str) %}
@@ -35,19 +48,6 @@
 {% endfor %}
 {% endfor %}
 {% endif %}
-## Container Contents
-{% for ref in items %}
-{% if ref.type == "container" %}
-{% set contents = get_container_contents(ref.formID) %}
-{% if contents.itemCount > 0 and contents.itemCount <= 30 %}
-**{{ contents.name }}** ({{ ref.position.meters }}m, RefID: {{ ref.formID }}):{% if ref.locked %} [locked]{% endif %}
-{% for item in contents.items %}
-{% if item.name and length(item.name) > 0 %}
-- {{ item.name }}{% if item.count > 1 %} x{{ item.count }}{% endif %}
 {% endif %}
-{% endfor %}
-{% endif %}
-{% endif %}
-{% endfor %}
 {% endif %}
 {% endif %}

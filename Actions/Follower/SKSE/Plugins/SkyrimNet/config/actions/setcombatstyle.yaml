@@ -1,15 +1,15 @@
 name: SetCombatStyle
-description: "Set how this companion fights when given clear tactical instructions."
+description: "{{ player.name }} gives the companion clear marching orders on how to fight from now on — 'hold the line', 'hang back with the bow', 'stick by me and patch wounds'. The companion adjusts their stance, drawn weapon, and discipline to match."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: SetCombatStyle
 parameterMapping:
   - type: speaker
     name: akActor
-    description: The companion whose combat style is being set
+    description: the companion taking the new orders
   - type: dynamic
     name: style
-    description: "Must be one of: aggressive, defensive, ranged, healer, balanced"
+    description: "how they're meant to fight. One of: aggressive, defensive, ranged, healer, balanced, melee, berserker, tank, archer, mage, spellsword, battlemage, champion, brawler, companion. 'healer' makes them a restoration-focused support — adds heal spells, hangs back, force-casts on hurt allies."
 enabled: true
 defaultPriority: 5
 eligibilityRules:

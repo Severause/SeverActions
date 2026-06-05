@@ -65,12 +65,21 @@ Bool Function StartCastTracking(Spell akSpell, ObjectReference akTarget, Bool bD
     targetIsMarker = bMarkerIsTarget
     spellCost = 0
     If useMagicka
-        spellCost = SeverActionsNative.Native_GetEffectiveMagickaCost(caster, akSpell, dualCasting)
+        spellCost = SeverActionsNativeExt.Native_GetEffectiveMagickaCost(caster, akSpell, dualCasting)
     EndIf
+
+    ; Tell SkyrimNet to release this actor's AI for the duration of the cast.
+    ; Without this, an active SkyrimNet PlayerFollowPackage outranks our
+    ; injected SpellCastPackage in package-priority eval and the cast watchdog
+    ; spins for 5s without the engine ever firing the package — symptom: cast
+    ; "sometimes doesn't work" when the follower is actively being driven by
+    ; SkyrimNet (idle/sandbox-driven follows happen to free the actor and
+    ; cast works; SkyrimNet-driven follows don't). Cleared in CleanupCast.
+    SeverActionsNative.Native_SkyrimNet_SetActorBusy(caster, "SeverActions spell cast")
 
     ; One-shot diagnostic dump — what the engine sees right after our
     ; alias fills. Polling will dump again each tick so we get a timeline.
-    SeverActionsNative.Native_DiagnoseCastSetup(caster, spellToCast)
+    SeverActionsNativeExt.Native_DiagnoseCastSetup(caster, spellToCast)
 
     ; Arm the polling state machine (handles cast-start detection, stuck-
     ; charge watchdog, completion).
@@ -93,12 +102,12 @@ Event OnUpdate()
         return
     EndIf
 
-    Bool stillCasting = SeverActionsNative.Native_IsCasterStillCasting(caster)
+    Bool stillCasting = SeverActionsNativeExt.Native_IsCasterStillCasting(caster)
 
     ; Periodic diagnostic dump while polling — shows whether the engine is
     ; actually progressing the cast or just spinning. Each tick gives us a
     ; new snapshot of caster states / equipped slots / current package.
-    SeverActionsNative.Native_DiagnoseCastSetup(caster, spellToCast)
+    SeverActionsNativeExt.Native_DiagnoseCastSetup(caster, spellToCast)
 
     If castPhase == 0
         ; Waiting for the cast animation to start
@@ -124,7 +133,7 @@ Event OnUpdate()
             pollsInFlight += 1
             If pollsInFlight >= MaxPollsInFlight
                 Debug.Trace("[SeverActions_SpellCast] Stuck charge detected — force release")
-                SeverActionsNative.Native_ForceReleaseCast(caster)
+                SeverActionsNativeExt.Native_ForceReleaseCast(caster)
                 CleanupCast()
             Else
                 RegisterForSingleUpdate(PollInterval)
@@ -151,7 +160,7 @@ Function OnCastComplete(Actor caster)
         targetActor = TargetAlias.GetActorRef()
     EndIf
 
-    If healToFull && targetActor && SeverActionsNative.Native_IsHealingSpell(spellToCast)
+    If healToFull && targetActor && SeverActionsNativeExt.Native_IsHealingSpell(spellToCast)
         Float currentHP = targetActor.GetActorValue("Health")
         ; Use GetActorValueMax (SKSE) so Fortify Health and other +Max-HP buffs
         ; are respected. GetBaseActorValue would return only the unbuffed base
@@ -191,8 +200,16 @@ EndFunction
 Function CleanupCast()
     Actor caster = GetActorRef()
 
-    If caster && SeverActionsNative.Native_IsCasterStillCasting(caster)
-        SeverActionsNative.Native_ForceReleaseCast(caster)
+    ; Release SkyrimNet's hold on the actor's AI — pairs with the SetActorBusy
+    ; call in StartCastTracking. Safe to call even if the cast aborted before
+    ; the busy flag was set (the SkyrimNet API treats clear-when-not-busy as
+    ; a no-op).
+    If caster
+        SeverActionsNative.Native_SkyrimNet_ClearActorBusy(caster)
+    EndIf
+
+    If caster && SeverActionsNativeExt.Native_IsCasterStillCasting(caster)
+        SeverActionsNativeExt.Native_ForceReleaseCast(caster)
     EndIf
 
     ; Pull the runtime-cloned SpellItem off the actor.

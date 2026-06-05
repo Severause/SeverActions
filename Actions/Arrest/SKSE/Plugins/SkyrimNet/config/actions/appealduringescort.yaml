@@ -1,0 +1,48 @@
+customCategory: arrest
+name: AppealDuringEscort
+description: "The prisoner, hands bound and being marched toward the cell door, makes one last try — pleading innocence, promising a fat purse the moment they're free, swearing on family, appealing to whatever shred of mercy the guard still has. The escort halts, blade still drawn, and listens. One attempt per arrest, and only valid while the speaker is actively being escorted."
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: AppealDuringEscort_Internal
+parameterMapping:
+  - type: speaker
+    name: akPrisoner
+    description: the prisoner mid-escort making their case
+enabled: true
+defaultPriority: 8
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "busy_reason"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "arrest"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SeverActions_Arrested"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "SeverActions_Jailed"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

@@ -271,43 +271,69 @@ EndFunction
 ; FADE TO BLACK FUNCTIONS
 ; =============================================================================
 
+; v3.5 fade-to-black update — Game.FadeOutGame with long-duration animation.
+;
+; The previous three-IMOD pattern works under stock Skyrim but
+; Community Shaders' replacement post-process drops the IMOD stage —
+; the Apply calls fire but never reach the final tonemap.
+;
+; Game.FadeOutGame routes through Bethesda's high-level fade machinery
+; (sleep / wait / hit-the-bed path) which CS lets through. BUT
+; FadeOutGame doesn't hold black after its animation completes; the
+; screen releases when the animation duration elapses.
+;
+; The trick: make the fade-out animation duration LONG enough to span
+; the whole spell-teach sequence. While the animation is in-flight,
+; the screen is held in its current interpolated state — never reaches
+; completion, never releases. _EndFadeToBlack interrupts with the
+; reverse animation when we want to bring the screen back.
+;
+; Visual: screen progressively darkens over LongFadeOutSeconds rather
+; than snapping at 1s. For a spell-teach lesson this reads as a
+; "scene grows dim while the teacher concentrates" effect. Tune
+; via the property below if a snappier vs slower transition is desired.
+;
+; v3.5a/b iterations attempted: snap-and-hope-it-holds (didn't), and
+; an OnUpdate refresh loop (every refresh re-animated → flicker).
+; Long-duration animation is the simplest path that actually holds.
+;
+; Trade-off: FadeOutGame locks player controls during the transition.
+; For spell-teach that's correct — the player shouldn't be wandering.
+;
+; The IMOD properties stay declared and bindable in CK for a future
+; revert if needed; they're not referenced by the current bodies.
+
+; Long enough to cover the full lesson at default difficulty (~5-15s).
+; If the lesson runs longer than this, the animation will complete and
+; the screen will release mid-lesson — tunable property so we can
+; lengthen for hard-difficulty spells.
+Float Property LongFadeOutSeconds = 30.0 Auto Hidden
+Float Property FadeBackSeconds    = 1.5  Auto Hidden
+
 Function _StartFadeToBlack()
     {Begin the fade to black effect}
     if !UseFadeToBlack
         return
     endif
-    
-    if FadeToBlackImod
-        FadeToBlackImod.Apply()
-    endif
+    ; bFadingOut=true → fade TO black; bBlackFade=true → black (vs white)
+    ; Long animation duration acts as the hold mechanism — the screen
+    ; stays in its in-flight interpolated state until we interrupt
+    ; with _EndFadeToBlack.
+    Game.FadeOutGame(true, true, 0.0, LongFadeOutSeconds)
 EndFunction
 
 Function _HoldFadeToBlack()
-    {Hold at full black}
-    if !UseFadeToBlack
-        return
-    endif
-    
-    if FadeToBlackImod
-        FadeToBlackImod.Remove()
-    endif
-    if FadeToBlackHoldImod
-        FadeToBlackHoldImod.Apply()
-    endif
+    {No-op — the long fade-out duration handles the hold. Kept as a
+     function so the call sites don't need to change shape.}
+    ; intentionally empty
 EndFunction
 
 Function _EndFadeToBlack()
-    {Fade back from black}
+    {Interrupt the in-flight fade-out and reverse direction to clear}
     if !UseFadeToBlack
         return
     endif
-    
-    if FadeToBlackHoldImod
-        FadeToBlackHoldImod.Remove()
-    endif
-    if FadeToBlackBackImod
-        FadeToBlackBackImod.Apply()
-    endif
+    Game.FadeOutGame(false, true, 0.0, FadeBackSeconds)
 EndFunction
 
 ; =============================================================================

@@ -1,16 +1,16 @@
 customCategory: combat
 name: CeaseFighting
-description: "Stop fighting and call for a truce."
+description: "The speaker lowers their weapon and calls for a truce mid-fight — recognizing a misunderstanding, sparing a friend caught on the wrong side, or just deciding the brawl has gone far enough. Both combatants stand down."
 questEditorId: SeverActions
 scriptName: SeverActions_Combat
 executionFunctionName: CeaseFire_Execute
 parameterMapping:
   - type: speaker
     name: akActor1
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor calling the truce
   - type: dynamic
     name: akActor2
-    description: The other combatant
+    description: the other combatant being asked to stand down
 enabled: true
 defaultPriority: 8
 eligibilityRules:

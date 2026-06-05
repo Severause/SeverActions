@@ -1,0 +1,15 @@
+{% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" or render_mode == "target" or render_mode == "action" %}
+{# Brawl Awareness — fist-fight state context for NPC dialogue / action.
+   All composition now happens in the C++ sever_brawl_state decorator
+   (SkyrimNetBridge.h). It queries the authoritative BrawlManager +
+   BrawlChallengeMonitor maps and emits the appropriate context block —
+   or empty string if this actor isn't involved in any brawl right now.
+   Replaces the per-actor StorageUtil reads that fired for every NPC and
+   produced empty-name false positives on stale keys. #}
+{% if actorUUID and actorUUID != 0 %}
+{% set brawl_block = sever_brawl_state(actorUUID) %}
+{% if brawl_block %}
+{{ brawl_block }}
+{% endif %}{# brawl_block #}
+{% endif %}{# actorUUID #}
+{% endif %}{# render_mode #}

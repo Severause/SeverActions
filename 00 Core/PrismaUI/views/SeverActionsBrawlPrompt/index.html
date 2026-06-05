@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SeverActions Brawl Prompt</title>
+    <style>
+      /* Brawl prompt overlay — non-pausing HUD card.
+         Visual tokens copied from PR146's CollectPayment prompt
+         (brass-on-dark, EB Garamond) for consistency with the rest of
+         the SeverActions UI suite. Vanilla HTML/CSS — no React. */
+
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent !important;
+        font-family: 'Trajan Pro', 'EB Garamond', Georgia, serif;
+        font-size: 19px;
+        color: #cba560;
+        overflow: hidden;
+        pointer-events: none;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+      body {
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+      }
+
+      .brawl-overlay {
+        display: none;
+        pointer-events: auto;
+        padding-bottom: 14vh;
+        width: 100%;
+        max-width: 680px;
+        justify-content: center;
+        animation: brawl-rise 220ms ease-out;
+      }
+      .brawl-overlay.visible { display: flex; }
+
+      @keyframes brawl-rise {
+        from { transform: translateY(20px); opacity: 0; }
+        to   { transform: translateY(0);     opacity: 1; }
+      }
+
+      .brawl-card {
+        width: 100%;
+        background:
+          linear-gradient(to bottom,
+            rgba(20, 14, 6, 0.96),
+            rgba(30, 22, 10, 0.96));
+        border: 1px solid rgba(203, 165, 96, 0.6);
+        border-radius: 5px;
+        box-shadow:
+          0 8px 26px rgba(0, 0, 0, 0.8),
+          inset 0 1px 0 rgba(226, 195, 130, 0.18);
+        padding: 18px 22px 0 22px;
+        overflow: hidden;
+      }
+
+      .brawl-header {
+        font-size: 0.85em;
+        letter-spacing: 0.22em;
+        color: rgba(203, 165, 96, 0.78);
+        font-weight: 600;
+        border-bottom: 1px solid rgba(203, 165, 96, 0.22);
+        padding-bottom: 7px;
+        margin-bottom: 12px;
+      }
+
+      .brawl-body {
+        font-size: 1.12em;
+        line-height: 1.5;
+        color: rgba(226, 195, 130, 0.97);
+        margin-bottom: 16px;
+      }
+      .brawl-name {
+        color: #e2c382;
+        font-weight: 600;
+      }
+
+      /* Buttons match PR146 prompt-style.css exactly:
+         - Flat semi-transparent dark background (not gradient)
+         - Green tint on Accept, red tint on Decline (color-coded affordance) */
+      .brawl-actions {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .brawl-btn {
+        flex: 1 1 0;
+        padding: 11px 10px;
+        background: rgba(60, 45, 22, 0.55);
+        color: #cba560;
+        border: 1px solid rgba(203, 165, 96, 0.45);
+        border-radius: 3px;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 1em;
+        letter-spacing: 0.06em;
+        transition: background 80ms ease-out, border-color 80ms ease-out;
+      }
+      .brawl-btn:hover {
+        background: rgba(85, 65, 30, 0.7);
+        border-color: rgba(226, 195, 130, 0.65);
+      }
+
+      .brawl-btn--accept {
+        color: #d8e5b8;
+        border-color: rgba(140, 175, 95, 0.55);
+      }
+      .brawl-btn--accept:hover {
+        background: rgba(55, 75, 30, 0.55);
+        border-color: rgba(170, 200, 120, 0.7);
+      }
+
+      .brawl-btn--decline {
+        color: #e6b69a;
+        border-color: rgba(168, 81, 62, 0.55);
+      }
+      .brawl-btn--decline:hover {
+        background: rgba(80, 35, 25, 0.55);
+        border-color: rgba(200, 110, 90, 0.7);
+      }
+
+      /* Drain bar matches PR146 exactly: 5px high, dark track, gold->lighter-gold
+         fill, breaks out of card padding via negative margin + width:calc. */
+      .brawl-timer {
+        height: 5px;
+        background: rgba(0, 0, 0, 0.6);
+        overflow: hidden;
+        margin: 0 -22px;
+        padding: 0;
+        width: calc(100% + 44px);
+      }
+      .brawl-timer-fill {
+        height: 100%;
+        width: 100%;
+        background: linear-gradient(
+          to right,
+          rgba(203, 165, 96, 0.95),
+          rgba(226, 195, 130, 0.95)
+        );
+        transform-origin: left center;
+        animation-name: brawl-drain;
+        animation-timing-function: linear;
+        animation-fill-mode: forwards;
+      }
+      @keyframes brawl-drain {
+        from { transform: scaleX(1); }
+        to   { transform: scaleX(0); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="overlay" class="brawl-overlay" role="dialog" aria-modal="false" aria-label="Brawl challenge">
+      <div class="brawl-card">
+        <div class="brawl-header">CHALLENGE</div>
+        <div class="brawl-body">
+          <span id="challenger" class="brawl-name">Someone</span> squares up and challenges you to a fist-fight. No weapons, no spells &mdash; just fists.
+        </div>
+        <div class="brawl-actions">
+          <button type="button" class="brawl-btn brawl-btn--accept" id="btn-accept">Accept</button>
+          <button type="button" class="brawl-btn brawl-btn--decline" id="btn-decline">Decline</button>
+        </div>
+        <div class="brawl-timer" aria-hidden="true">
+          <div id="timer-fill" class="brawl-timer-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Brawl prompt frontend script.
+      //
+      // IN  -- C++ calls window.receiveBrawlPromptData({challengerName, timeoutMs})
+      //         after Focus()ing the view.
+      // OUT -- window.brawlPromptChoice("JSON") is C++-bound via
+      //         RegisterJSListener in PrismaUIBrawlPromptBridge::OnDomReady.
+      //         Calling it sends the choice to native. Native then fires
+      //         SeverActions_BrawlChallengeChoice ModEvent.
+      //
+      // No answer within timeoutMs -> auto-DECLINE (opposite of payment
+      // prompt's auto-accept). Brawl semantics: silence == no fight.
+
+      (function () {
+        var overlay     = document.getElementById('overlay');
+        var challengerE = document.getElementById('challenger');
+        var btnAccept   = document.getElementById('btn-accept');
+        var btnDecline  = document.getElementById('btn-decline');
+        var timerFill   = document.getElementById('timer-fill');
+        var autoHandle  = null;
+
+        function postChoice(choice) {
+          var body = JSON.stringify({ choice: choice });
+          var tryCall = function () {
+            var fn = window.brawlPromptChoice;
+            if (typeof fn !== 'function') return false;
+            try { fn(body); return true; }
+            catch (e) { console.warn('[BrawlPrompt] choice send failed:', e); return false; }
+          };
+          if (!tryCall()) {
+            // PrismaUI may not have bound the JS listener on a very early
+            // click -- retry once after a short tick.
+            console.warn('[BrawlPrompt] brawlPromptChoice not bound yet, retrying...');
+            window.setTimeout(function () {
+              if (!tryCall()) {
+                console.error('[BrawlPrompt] brawlPromptChoice still not bound after retry');
+              }
+            }, 200);
+          }
+        }
+
+        function close() {
+          overlay.classList.remove('visible');
+          if (autoHandle !== null) {
+            window.clearTimeout(autoHandle);
+            autoHandle = null;
+          }
+        }
+
+        btnAccept.addEventListener('click', function () {
+          postChoice('accept');
+          close();
+        });
+        btnDecline.addEventListener('click', function () {
+          postChoice('decline');
+          close();
+        });
+
+        // Inbound channel from C++. Replaced on each open call.
+        window.receiveBrawlPromptData = function (payload) {
+          payload = payload || {};
+          var name = payload.challengerName || 'Someone';
+          var ms   = payload.timeoutMs || 60000;
+          if (ms < 1000) ms = 1000;
+
+          challengerE.textContent = name;
+
+          // Restart the drain bar animation by detaching/reattaching the
+          // node -- forces CSS to re-run the keyframes from scratch even
+          // when the same payload reopens back-to-back.
+          var clone = timerFill.cloneNode(true);
+          clone.style.animationDuration = ms + 'ms';
+          timerFill.parentNode.replaceChild(clone, timerFill);
+          timerFill = clone;
+
+          overlay.classList.add('visible');
+
+          if (autoHandle !== null) {
+            window.clearTimeout(autoHandle);
+            autoHandle = null;
+          }
+          autoHandle = window.setTimeout(function () {
+            autoHandle = null;
+            postChoice('decline');
+            close();
+          }, ms);
+        };
+
+        // Signal ready -- C++ optionally logs it on the brawlPromptReady listener.
+        try {
+          if (typeof window.brawlPromptReady === 'function') {
+            window.brawlPromptReady('');
+          }
+        } catch (e) { /* listener not bound yet -- harmless */ }
+      })();
+    </script>
+  </body>
+</html>

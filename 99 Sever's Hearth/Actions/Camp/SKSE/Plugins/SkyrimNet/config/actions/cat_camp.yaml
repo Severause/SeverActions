@@ -1,0 +1,4 @@
+customCategory: camp
+name: Camping
+description: "Anything to do with the player's campsite. Pitch a camp at the current location, break down an active camp to move on, or head back to a camp that's already pitched. When the destination of a travel is the camp specifically, prefer the camp-travel action over a generic travel action — this category knows where the fire is."
+enabled: true

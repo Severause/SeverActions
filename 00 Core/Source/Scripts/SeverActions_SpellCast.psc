@@ -111,7 +111,7 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
     ; here (instead of inside StartCast) so we don't pollute alias state
     ; with a half-set-up cast.
     If bUseMagicka
-        Int spellCost = SeverActionsNative.Native_GetEffectiveMagickaCost(akCaster, akSpell, bDualCasting)
+        Int spellCost = SeverActionsNativeExt.Native_GetEffectiveMagickaCost(akCaster, akSpell, bDualCasting)
         If spellCost > akCaster.GetActorValue("Magicka")
             SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] " + akCaster.GetDisplayName() + " low magicka (" + akCaster.GetActorValue("Magicka") + " < " + spellCost + ") — abort")
             SkyrimNetApi.DirectNarration(akCaster.GetDisplayName() + " doesn't have enough magicka to cast that.", akCaster)
@@ -138,7 +138,7 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
     ; MagicCaster::CastSpell — the procedure runs silently and the magic
     ; casters stay in state=0. The clone has the casting perk dropped and
     ; equipSlot set to EitherHand, mirroring bosn's clonePackageSpell.
-    Spell castSpell = SeverActionsNative.Native_CloneSpellForCast(akCaster, akSpell, bDualCasting)
+    Spell castSpell = SeverActionsNativeExt.Native_CloneSpellForCast(akCaster, akSpell, bDualCasting)
     If !castSpell
         SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] CloneSpellForCast returned None — falling back to original")
         castSpell = akSpell
@@ -146,7 +146,7 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
         SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] cloned spell: " + castSpell)
     EndIf
 
-    If !SeverActionsNative.Native_InjectSpellIntoPackage(livePackage, castSpell)
+    If !SeverActionsNativeExt.Native_InjectSpellIntoPackage(livePackage, castSpell)
         SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] Native_InjectSpellIntoPackage returned false — abort")
         Return false
     EndIf
@@ -236,7 +236,7 @@ EndFunction
 
 ObjectReference Function ResolveTarget(Actor akCaster, Spell spellToCast, String targetName)
     ; Self-delivered spells ignore targetName entirely
-    If SeverActionsNative.Native_IsSelfDeliveredSpell(spellToCast)
+    If SeverActionsNativeExt.Native_IsSelfDeliveredSpell(spellToCast)
         return akCaster as ObjectReference
     EndIf
 

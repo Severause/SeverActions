@@ -1,0 +1,139 @@
+{# SeverActions Arrest — Active judgment hold (Phase 6), extracted from 0275 in the prompt-split refactor. #}
+{# Three sub-cases per actor: presiding sender, dispatch guard (when sender is player), accused prisoner. #}
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{% if player and player.UUID and actorUUID != player.UUID %}
+{% set dispatchPhase = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchPhase") %}
+{# Cross-mode exclusion (PR #71 follow-up): yield to 0276 persuasion when
+   this actor is the confronting guard. Matches the original 0275 monolith's
+   if/elif precedence (persuasion > judgment > dispatch > arrest). #}
+{% set _inPersuasionMode = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "InPersuasionMode") %}
+{% set _confrontingGuard = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "ConfrontingGuard") %}
+{% set _suppressForPersuasion = false %}
+{% if _inPersuasionMode and _confrontingGuard and _confrontingGuard.uuid and _confrontingGuard.uuid == actorUUID %}
+{% set _suppressForPersuasion = true %}
+{% endif %}
+{% if dispatchPhase == 6 and not _suppressForPersuasion %}
+{% set dispatchSender = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchSender") %}
+{% set dispatchTarget = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchTarget") %}
+{% set dispatchGuard = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchGuard") %}
+{% set isSender = false %}
+{% if dispatchSender and dispatchSender.uuid %}
+{% set isSender = (dispatchSender.uuid == actorUUID) %}
+{% endif %}
+{% set isAccused = false %}
+{% if dispatchTarget and dispatchTarget.uuid %}
+{% set isAccused = (dispatchTarget.uuid == actorUUID) %}
+{% endif %}
+{% set isDispatchGuard = false %}
+{% if dispatchGuard and dispatchGuard.uuid %}
+{% set isDispatchGuard = (dispatchGuard.uuid == actorUUID) %}
+{% endif %}
+{% set senderIsPlayer = false %}
+{% if dispatchSender and dispatchSender.uuid %}
+{% set senderIsPlayer = (dispatchSender.uuid == player.UUID) %}
+{% endif %}
+{% if isSender %}
+{% if actorUUID and actorUUID != 0 and dispatchTarget and dispatchTarget.uuid and dispatchTarget.uuid != 0 and dispatchGuard and dispatchGuard.uuid and dispatchGuard.uuid != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set accusedData = decnpc(dispatchTarget.uuid) %}
+{% set accusedName = accusedData.name %}
+{% set guardData = decnpc(dispatchGuard.uuid) %}
+{% set guardName = guardData.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set poss = actor.possessivePronoun %}
+{% set evidenceSummary = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchEvidenceSummary") %}
+{% set evidenceQuality = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchEvidenceQualityScore") %}
+{% set containersSearched = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchContainersSearched") %}
+{% set isHomeInvestigation = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchIsHomeInvestigation") %}
+## ACTIVE JUDGMENT - PRESIDING AUTHORITY
+{% if isHomeInvestigation -%}
+{{ actor.name }} ordered the investigation of {{ accusedName }}. {{ guardName }} has completed a search of {{ accusedName }}'s home and brought {{ accusedName }} in restraints before {{ actor.name }} for judgment. {{ accusedName }} has been given a chance to plead their case.
+{% if evidenceSummary and evidenceSummary != "" and evidenceSummary != "nothing of note" -%}
+
+**Evidence presented by {{ guardName }}:**
+{{ guardName }} searched {% if containersSearched and containersSearched > 0 %}{{ containersSearched }} container(s) in {{ accusedName }}'s home and {% endif %}found: **{{ evidenceSummary }}**.
+{% if evidenceQuality and evidenceQuality >= 7 -%}
+The evidence is **damning** — this is an overwhelming case against {{ accusedName }}.
+{% elif evidenceQuality and evidenceQuality >= 4 -%}
+The evidence is **moderately convincing** — a reasonable case but {{ accusedName }} could potentially explain it.
+{% elif evidenceQuality and evidenceQuality >= 1 -%}
+The evidence is **circumstantial** — weak evidence that could go either way.
+{% else -%}
+The evidence is **inconclusive** — barely enough to justify the search.
+{% endif -%}
+{% else -%}
+
+**Note:** {{ guardName }} searched {{ accusedName }}'s home but found nothing of note. The case rests entirely on the original accusation.
+{% endif %}
+{% else -%}
+{{ actor.name }} ordered the arrest of {{ accusedName }}. {{ guardName }} has tracked them down and brought {{ accusedName }} in restraints before {{ actor.name }} for judgment. {{ accusedName }} has been given a chance to plead their case.
+
+**Note:** No home search was conducted — this was a direct arrest dispatch. The case rests on the original accusation and {{ accusedName }}'s response now.
+{% endif %}
+
+**CRITICAL INSTRUCTIONS FOR THIS JUDGMENT:**
+- {{ actor.name }} MUST listen to {{ accusedName }}'s arguments and decide their fate.
+- {{ actor.name }} is the authority here. {{ subj | capitalize }} holds the power of judgment.
+- **The strength of the evidence should heavily influence the verdict.**
+- {{ actor.name }} MUST select the **Arrest** action category, then choose one of:
+    - **OrderRelease** — If convinced to show mercy and release {{ accusedName }}
+    - **OrderJailed** — If not convinced, {{ accusedName }} will be taken to jail
+- DO NOT use any other action category during this judgment.
+- After deciding, {{ actor.name }} should respond in character, explaining {{ poss }} ruling.
+
+**Consider when judging {{ accusedName }}'s plea:**
+- **What evidence was found?** Is it damning or could it be explained innocently?
+- Is {{ accusedName }}'s argument convincing? Are they showing genuine remorse or just making excuses?
+- {{ actor.name }}'s own values and personality - Is {{ subj }} known for justice? Mercy? Severity?
+- {{ accusedName }}'s reputation and standing - Are they a valued citizen or a troublemaker?
+- The severity of the offense - Could it be overlooked, or does it demand punishment?
+- Would releasing {{ accusedName }} undermine {{ actor.name }}'s authority?
+- Are there witnesses? Would mercy or harshness serve {{ actor.name }}'s interests?
+{% endif %}
+
+{% elif isDispatchGuard and senderIsPlayer %}
+{% if actorUUID and actorUUID != 0 and dispatchTarget and dispatchTarget.uuid and dispatchTarget.uuid != 0 and player and player.UUID and player.UUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set accusedData = decnpc(dispatchTarget.uuid) %}
+{% set accusedName = accusedData.name %}
+{% set playerData = decnpc(player.UUID) %}
+{% set playerName = playerData.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set poss = actor.possessivePronoun %}
+## ACTIVE JUDGMENT - GUARD ACTING ON PLAYER'S BEHALF
+{{ actor.name }} arrested {{ accusedName }} on {{ playerName }}'s orders and has brought them before {{ playerName }} for judgment. {{ accusedName }} is restrained and awaiting their fate. {{ playerName }} is deciding what to do with {{ accusedName }}.
+
+**CRITICAL INSTRUCTIONS FOR THIS JUDGMENT:**
+- {{ actor.name }} is holding {{ accusedName }} and awaiting {{ playerName }}'s decision.
+- {{ actor.name }} should address {{ playerName }} respectfully and await their command.
+- If {{ playerName }} indicates {{ accusedName }} should be released, or if {{ actor.name }} believes {{ playerName }} wants mercy, use **OrderRelease**.
+- If {{ playerName }} indicates {{ accusedName }} should be jailed, or wants them punished, use **OrderJailed**.
+- {{ actor.name }} MUST select the **Arrest** action category, then choose one of:
+    - **OrderRelease** — Release {{ accusedName }} on {{ playerName }}'s orders
+    - **OrderJailed** — Take {{ accusedName }} to jail on {{ playerName }}'s orders
+- DO NOT use any other action category during this judgment.
+- {{ actor.name }} should respond in character, acknowledging {{ playerName }}'s authority and carrying out their wishes.
+{% endif %}
+
+{% elif isAccused %}
+{% if actorUUID and actorUUID != 0 and dispatchSender and dispatchSender.uuid and dispatchSender.uuid != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set senderData = decnpc(dispatchSender.uuid) %}
+{% set senderName = senderData.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set poss = actor.possessivePronoun %}
+## ACTIVE JUDGMENT - ACCUSED
+{{ actor.name }} has been seized by a guard on {{ senderName }}'s orders and is being held in restraints. {{ senderName }} is giving {{ actor.name }} a chance to plead {{ poss }} case before deciding whether to send {{ actor.name }} to jail.
+
+**CRITICAL INSTRUCTIONS:**
+- {{ actor.name }} should plead {{ poss }} case to {{ senderName }}. This is {{ poss }} only chance to avoid jail.
+- {{ actor.name }} should speak directly to {{ senderName }}, addressing them with appropriate respect (or defiance, depending on personality).
+- {{ actor.name }}'s arguments should reflect {{ poss }} personality - are they humble? Defiant? Desperate? Cunning?
+- {{ actor.name }} does NOT have access to any actions right now. {{ subj | capitalize }} can only speak.
+- Time is limited. {{ actor.name }} should make {{ poss }} case clearly and convincingly.
+{% endif %}
+
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

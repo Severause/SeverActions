@@ -1,12 +1,12 @@
 name: CompanionFollow
-description: "Resume following {{ player.name }} after waiting. Use when returning to a waiting companion and asking them to come along."
+description: "The companion was waiting where {{ player.name }} left them — leaning by the inn fire, posted at the city gate, sat on a barrel at the docks — and now shoulders their pack and falls back in step. Use when returning to a waiting companion and asking them to come along."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: CompanionFollow
 parameterMapping:
   - type: speaker
     name: akActor
-    description: The NPC resuming following
+    description: the companion picking up the road again
 enabled: true
 defaultPriority: 7
 eligibilityRules:

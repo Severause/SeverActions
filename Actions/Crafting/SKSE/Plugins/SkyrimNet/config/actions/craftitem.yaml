@@ -1,27 +1,24 @@
 customCategory: crafting
 name: CraftItem
-description: "Craft a weapon or armor at the nearest forge and deliver it to the recipient."
+description: "The speaker works the forge — hammer, tongs, quench — and walks the finished piece across to the one who commissioned it. An iron sword pulled hot off the anvil for a militiaman, a steel cuirass laid out on the workbench, a pair of daggers wrapped in oilcloth for a courier."
 questEditorId: SeverActions
 scriptName: SeverActions_Crafting
 executionFunctionName: CraftItem_Internal
 parameterMapping:
   - type: speaker
     name: akActor
-    description: Speaker Actor parameter (triggering entity)
+    description: the smith at the anvil
   - type: dynamic
     name: itemName
-    description: "Weapon or armor to craft (e.g. 'iron sword', 'steel armor')"
+    description: "what's being forged (e.g. 'iron sword', 'steel armor')"
   - type: dynamic
     name: akRecipient
-    description: Recipient of the crafted item
-  - type: static
-    value: false
-    name: requireMaterials
-    description: Static bool parameter
-  - type: static
-    value: 1
+    description: the actor the finished piece is going to
+  - type: dynamic
     name: itemCount
-    description: Static int parameter
+    description: "how many to forge — leave empty (or 1) for a single piece. Only use > 1 when the request clearly asks for multiples (e.g. 'three iron daggers')."
+    optional: true
+    default: 1
 enabled: true
 eligibilityRules:
   - conditions:

@@ -1,0 +1,54 @@
+customCategory: crafting
+name: CollectCommission
+description: "The speaker hands over a finished commission the player ordered earlier and is now back to collect. Use this ONLY when the smith has completed work waiting for pickup (the 'Workshop Commissions' context will list it as 'finished and ready to collect'). The game handles the rest automatically: it prompts the player to pay any remaining balance, then transfers the item. Do NOT call GiveItem, GiveGold, or CollectPayment for a commission — this single action does the handover and payment. If the order isn't finished yet, just tell the player to come back later; don't call this."
+questEditorId: SeverActions
+scriptName: SeverActions_Crafting
+executionFunctionName: CollectCommission_Internal
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the smith handing over the finished commission
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments: ["currentActor", "JobBlacksmithFaction"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # has_ready_commission returns the STRING "true"/"" — custom decorators are
+      # wrapped as JSON strings, never bools (PublicRegisterDecorator only parses
+      # the return to JSON when it contains '{'). SkyrimNet's EligibilityChecker
+      # does a strict nlohmann compare, so `== true` (a JSON bool) can NEVER match
+      # the JSON string "true" and the action would never be eligible. Gate on
+      # "non-empty" instead: "" = no ready order, any text = a ready order.
+      # DO NOT change this back to `== true`.
+      - decoratorName: "has_ready_commission"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

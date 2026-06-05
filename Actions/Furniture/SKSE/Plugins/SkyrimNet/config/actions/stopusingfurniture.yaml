@@ -1,12 +1,12 @@
 name: StopUsingFurniture
-description: "Stand up and stop using furniture."
+description: "The speaker pushes back from the chair, rolls off the bed, or rises from the shrine — done sitting, done sleeping, done praying — and stands on their own feet again."
 questEditorId: SeverActions
 scriptName: SeverActions_Furniture
 executionFunctionName: StopUsingFurniture_Execute
 parameterMapping:
   - type: speaker
     name: akActor
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor getting back up
 enabled: true
 defaultPriority: 7
 eligibilityRules:

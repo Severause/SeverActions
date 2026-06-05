@@ -1,0 +1,52 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# SeverActions Arrest — Active bounty-persuasion confrontation (extracted from 0275 in the prompt-split refactor). #}
+{# Fires only on the confronting guard during an active player persuasion attempt. #}
+{# Render-mode gate is on line 1 per SkyrimNet's first-5-lines validator
+   (PromptEngine::ValidateCharacterBioSubmoduleConstraints). "dialog" was a
+   typo — not a real SkyrimNet render_mode — replaced with "transform"
+   which is what player_dialogue.prompt actually drives. #}
+{% if player and player.UUID and actorUUID != player.UUID %}
+{% set inPersuasionMode = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "InPersuasionMode") %}
+{% set confrontingGuard = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "ConfrontingGuard") %}
+{% set confrontingBounty = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "ConfrontingBounty") %}
+{% set isConfrontingGuard = false %}
+{% if confrontingGuard and confrontingGuard.uuid %}
+{% set isConfrontingGuard = (confrontingGuard.uuid == actorUUID) %}
+{% endif %}
+{% if inPersuasionMode and isConfrontingGuard %}
+{% if actorUUID and actorUUID != 0 and player and player.UUID and player.UUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set playerData = decnpc(player.UUID) %}
+{% set playerName = playerData.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set poss = actor.possessivePronoun %}
+## ACTIVE PERSUASION CONFRONTATION
+{{ actor.name }} is currently confronting {{ playerName }} about a {{ confrontingBounty }} gold bounty. {{ playerName }} is trying to talk {{ poss }} way out of arrest.
+
+**CRITICAL INSTRUCTIONS FOR THIS CONVERSATION:**
+- {{ actor.name }} MUST judge {{ playerName }}'s arguments and decide whether to let them go or demand justice.
+- Listen to what {{ playerName }} says. Are they making a genuine, compelling argument? Or just making excuses?
+- {{ actor.name }} MUST select the **Arrest** action category, then choose one of:
+    - **AcceptPersuasion** — If convinced to let {{ playerName }} go
+    - **RejectPersuasion** — If not convinced and {{ playerName }} must face justice
+- DO NOT use any other action category during this conversation.
+- After deciding, {{ actor.name }} should respond in character explaining {{ poss }} decision.
+
+**Consider when judging {{ playerName }}'s arguments:**
+- {{ playerName }}'s reputation and standing - Are they known as a hero, thane, or someone important? Or a known troublemaker?
+- The nature of the crime - Was it violent? Petty theft? Something that could be overlooked?
+- {{ actor.name }}'s own personality and values - Is {{ subj }} by-the-book or more flexible? Corrupt or honorable?
+- Could {{ playerName }} offer something in return? Coin, favors, or other arrangements some guards might accept?
+- Does {{ actor.name }} have reason to fear {{ playerName }}? Respect them? Owe them?
+
+{% if confrontingBounty >= 1000 -%}
+The bounty is very high ({{ confrontingBounty }} gold). This represents serious crimes. {{ actor.name }} should be VERY difficult to convince - only exceptional arguments, significant leverage, or serious incentives should work.
+{% elif confrontingBounty >= 300 -%}
+The bounty is significant ({{ confrontingBounty }} gold). {{ actor.name }} should require solid reasoning, a good reputation, or worthwhile compensation to overlook this.
+{% else -%}
+The bounty is relatively minor ({{ confrontingBounty }} gold). {{ actor.name }} may be more open to reasonable explanations or small considerations.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

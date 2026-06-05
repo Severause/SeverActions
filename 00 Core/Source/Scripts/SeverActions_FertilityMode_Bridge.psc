@@ -116,9 +116,8 @@ Event OnFertilityModeAddSperm(Form akTarget, String fatherName, Form father)
     StorageUtil.SetStringValue(targetActor, "SkyrimNet_FM_InsemFather", actualFatherName)
     StorageUtil.SetFloatValue(targetActor, "SkyrimNet_FM_InsemTime", Utility.GetCurrentGameTime())
 
-    ; Send narration
-    String content = "*" + actualFatherName + " releases inside " + targetName + ".*"
-    SkyrimNetApi.DirectNarration(content, targetActor, fatherActor)
+    ; (No narration on insemination — intentionally removed. Data above is still
+    ;  recorded for prompt/decorator access.)
 
     Debug.Trace("[SeverActions_FM] Insemination: " + actualFatherName + " -> " + targetName)
 EndEvent
@@ -257,18 +256,16 @@ Function UpdateNearbyActors()
         UpdateActorFertilityData(PlayerRef)
     endif
 
-    ; Update nearby female NPCs using cell scan
-    Cell currentCell = PlayerRef.GetParentCell()
-    if currentCell
-        int numRefs = currentCell.GetNumRefs(43) ; 43 = kActorCharacter
+    ; Update nearby female NPCs. The cell scan + female + Is3DLoaded filter
+    ; now lives in C++ (Native_ScanPlayerCellFemales3DLoaded) to avoid the
+    ; per-tick GetNumRefs(43) + GetNthRef + GetSex + Is3DLoaded round-trips at
+    ; UpdateInterval=3.0s. UpdateActorFertilityData stays Papyrus — it reads FM's
+    ; external store.
+    Actor[] females = SeverActionsNativeExt.Native_ScanPlayerCellFemales3DLoaded()
+    if females
         int i = 0
-        while i < numRefs
-            Actor npc = currentCell.GetNthRef(i, 43) as Actor
-            if npc && npc != PlayerRef && npc.GetActorBase().GetSex() == 1
-                if npc.Is3DLoaded()
-                    UpdateActorFertilityData(npc)
-                endif
-            endif
+        while i < females.Length
+            UpdateActorFertilityData(females[i])
             i += 1
         endwhile
     endif

@@ -1,22 +1,22 @@
 customCategory: items
 name: GiveItem
-description: "Give a physical item from inventory to another person."
+description: "The speaker takes something out of their own pack and hands it to another. A gift, a borrowed tool, a healing draught pressed into a friend's hand, a token offered with both palms. The item leaves the speaker's pack and lands in the other's."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: GiveItem_Execute
 parameterMapping:
   - type: speaker
     name: akActor
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor parting with the item
   - type: dynamic
     name: akTarget
-    description: The person receiving the item
+    description: the actor whose hands the item is going into
   - type: dynamic
     name: itemName
-    description: The name of the item to give (e.g. "Iron Sword", "Health Potion")
+    description: name of the item being handed over (e.g. "Iron Sword", "Health Potion", "her mother's locket")
   - type: dynamic
     name: aiCount
-    description: Number of items to give (default 1)
+    description: how many units to give (default 1)
     optional: true
     default: 1
 enabled: true

@@ -1,16 +1,16 @@
 customCategory: combat
 name: AttackTarget
-description: "Attack someone and initiate combat."
+description: "The speaker draws steel and lunges — a bandit breaking ambush, a jealous husband going for a rival's throat across a tavern, a Stormcloak charging an Imperial scout in the snow. Blades come out and the fight begins."
 questEditorId: SeverActions
 scriptName: SeverActions_Combat
 executionFunctionName: AttackTarget_Execute
 parameterMapping:
   - type: speaker
     name: akAttacker
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor making the first move
   - type: dynamic
     name: akTarget
-    description: The person being attacked
+    description: the actor on the receiving end of the blade
 enabled: true
 defaultPriority: 7
 eligibilityRules:

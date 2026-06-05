@@ -1,0 +1,48 @@
+customCategory: camp
+name: GoToCamp
+description: >
+  Head back to the campfire that's already pitched. The speaker turns and
+  walks (or jogs, or runs) toward {{ player.name }}'s established camp —
+  whether that's a short stroll from a nearby stream or a long trek back
+  from a hunt. The fire, the bedrolls, the chest — that's where they're
+  going.
+
+  Pick this when someone says "I'll head back to camp", "let's meet at
+  the fire", "go on ahead, I'll catch up", "wait for me by the tents",
+  "make your way back", or any phrasing that points at the *current*
+  camp specifically. Always prefer this over a generic travel action
+  when the destination is camp — the LLM should not try to "travel to
+  camp" using a place-name lookup; this action knows where the camp
+  actually sits.
+
+  Speed should match tone: a wounded scout limps back at 0, a tired
+  companion ambles at 0–1, a normal return is 1, and "hurry, get to
+  camp" or "we need to regroup now" is 2.
+questEditorId: SeversHearth
+scriptName: SeversHearth_Camp
+executionFunctionName: GoToCamp
+parameterMapping:
+  - type: speaker
+    name: akNPC
+    description: The NPC who will travel to the camp.
+  - type: dynamic
+    name: speed
+    description: >
+      Travel speed: 0=walk, 1=jog, 2=run.
+      Casual or unhurried = 0, normal = 1, urgent or asked-to-hurry = 2.
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+      - decoratorName: "current_camp"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ npc.name }} sets off toward the camp."
+isShortLived: false

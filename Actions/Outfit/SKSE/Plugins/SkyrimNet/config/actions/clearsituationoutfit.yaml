@@ -1,16 +1,16 @@
 customCategory: outfit
 name: ClearSituationOutfit
-description: "Clear the outfit preset assignment for a specific situation, stopping automatic outfit changes for that context."
+description: "The speaker decides they no longer want a fixed outfit for one part of their life — no more dressing up automatically for town, no more changing into nightclothes at bedtime. They drop the standing rule for that situation and just wear whatever they happen to have on."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: ClearSituationPreset_Execute
 parameterMapping:
   - type: speaker
     name: akActor
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor dropping a standing wardrobe rule
   - type: dynamic
     name: situation
-    description: "Situation name to clear: 'town', 'adventure', 'home', or 'sleep'"
+    description: "which part of life they're freeing up: 'town', 'adventure', 'home', or 'sleep'"
 enabled: true
 eventString: "{{ actor.name }} clears their outfit assignment for {{ situation }} situations"
 eligibilityRules:

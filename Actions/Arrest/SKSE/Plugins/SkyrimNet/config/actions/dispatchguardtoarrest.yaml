@@ -1,19 +1,19 @@
 customCategory: arrest
 name: DispatchGuardToArrest
-description: "Self-dispatch to find and arrest an NPC anywhere in the game world. The guard walks to the target and arrests them. If a sender is specified, the prisoner is brought back for judgment instead of jail."
+description: "The guard sets off across the hold to track down a named suspect and bring them in — riding out to a bandit hideout, walking down to the docks for a fence, knocking at a farmer's door. If a sender is named, the prisoner is hauled back to them for judgment rather than straight to the jail."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: DispatchGuardToArrest_Execute
 parameterMapping:
   - type: speaker
     name: akGuard
-    description: The guard being dispatched
+    description: the guard heading out on the errand
   - type: dynamic
     name: targetName
-    description: "Full display name of the NPC to arrest"
+    description: "the full display name of the person to be brought in"
   - type: dynamic
     name: senderName
-    description: "Optional. Who ordered the arrest — prisoner is brought to them for judgment. Omit to take prisoner directly to jail."
+    description: "who ordered the arrest — the prisoner is delivered to them for judgment. Leave empty to take the prisoner straight to the cells."
     optional: true
     default: ""
 enabled: true
@@ -33,52 +33,16 @@ eligibilityRules:
         expectedValue: false
     logicalOperator: "AND"
     required: true
+  # Replaced an 11-condition OR ladder (9 GuardFactionX + JobJarlFaction
+  # + JobHousecarlFaction) with the single native is_guard_or_authority
+  # decorator. Same semantics — see SkyrimNetBridge.h for the cached
+  # faction-pointer set, plus mod-added holds via HoldResolver.
   - conditions:
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWhiterun"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionRiften"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionSolitude"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionHaafingar"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWindhelm"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionMarkarth"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionFalkreath"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionDawnstar"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "GuardFactionWinterhold"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "JobJarlFaction"]
-        comparisonOperator: "=="
-        expectedValue: true
-      - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "JobHousecarlFaction"]
-        comparisonOperator: "=="
-        expectedValue: true
-    logicalOperator: "OR"
+      - decoratorName: "is_guard_or_authority"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
     required: true
   - conditions:
       - decoratorName: "get_faction_rank"

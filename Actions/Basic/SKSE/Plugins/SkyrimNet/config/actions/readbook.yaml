@@ -1,16 +1,16 @@
 customCategory: items
 name: ReadBook
-description: "Read a specific book or note aloud from inventory by name. Must know the exact name first - ask if unsure. Must have the book or note in inventory."
+description: "The speaker pulls a book or note out of their pack and reads it aloud — by the fire at camp, leaning against the inn's railing, sitting in a quiet corner of a library. Reading continues until told to stop."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: ReadBook_Execute
 parameterMapping:
   - type: dynamic
     name: akActor
-    description: The person who will read the book
+    description: the actor cracking open the book
   - type: dynamic
     name: bookName
-    description: The exact name of the book or note to read
+    description: the exact title of the book or note (the speaker must already be carrying it)
 enabled: true
 eligibilityRules:
   - conditions:

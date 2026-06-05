@@ -441,7 +441,7 @@ Function HandleDismiss()
     endif
 
     ; Check if the target is a registered companion
-    if StorageUtil.GetIntValue(target, "SeverFollower_IsFollower", 0) != 1
+    if !SeverActionsNativeExt.Native_GetIsFollower(target)
         Debug.Notification(target.GetDisplayName() + " is not your companion")
         return
     endif
@@ -627,6 +627,25 @@ Function HandleCompanionWait()
 
     if target == Game.GetPlayer()
         Debug.Notification("Cannot target yourself")
+        return
+    endif
+
+    ; Custom AI followers (Inigo, Lucien, Kaidan, Daegon-keyworded, etc.) — their
+    ; own mods manage AI packages, so we MUST NOT apply SA's sandbox/follow on
+    ; top. Without this short-circuit they fall into isCasual below, which calls
+    ; FollowScript.Sandbox / StopSandbox directly — that bypasses the track-only
+    ; branch in CompanionWait/CompanionFollow and either traps them in SA's
+    ; sandbox (stand in place) or strips it on resume and lets SkyrimNet's
+    ; FollowPlayer package fill the void. Route them through the FollowerManager
+    ; helpers, which call CompanionStopFollowing + StopSandbox for cleanup and
+    ; toggle the vanilla WaitingForPlayer AV that the custom mod's own package
+    ; respects via standard DialogueFollower hooks.
+    if FollowerManagerScript.IsTrackOnlyFollower(target)
+        if target.GetAV("WaitingForPlayer") > 0
+            FollowerManagerScript.CompanionFollow(target)
+        else
+            FollowerManagerScript.CompanionWait(target)
+        endif
         return
     endif
 

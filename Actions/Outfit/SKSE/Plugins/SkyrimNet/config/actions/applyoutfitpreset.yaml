@@ -1,16 +1,16 @@
 customCategory: outfit
 name: ApplyOutfitPreset
-description: "Change into a previously saved outfit preset by name."
+description: "The speaker ducks behind a screen and emerges in a familiar set of clothes — the leather they always wear into a fight, the wool dress kept for hearth and home, the velvets they don for a Jarl's audience. They change into a previously saved outfit by name."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: ApplyOutfitPreset_Execute
 parameterMapping:
   - type: speaker
     name: akActor
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor changing clothes
   - type: dynamic
     name: presetName
-    description: "Preset name (e.g. 'home', 'combat', 'formal', 'casual')"
+    description: "which saved outfit to put on (e.g. 'home', 'combat', 'formal', 'casual')"
 enabled: true
 eligibilityRules:
   - conditions:

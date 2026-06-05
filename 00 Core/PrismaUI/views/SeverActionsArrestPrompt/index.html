@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SeverActions Arrest Prompt</title>
+    <style>
+      /* Arrest prompt overlay -- non-pausing HUD card.
+         Visual tokens copied from the Brawl + CollectPayment prompts
+         (brass-on-dark, EB Garamond). Vanilla HTML/CSS -- no React.
+
+         Buttons are color-coded by severity:
+           green  -- Pay Fine, Bribe (transactional, ends peacefully)
+           red    -- Resist, Refuse (turns hostile)
+           tan    -- Persuade (speech check, neutral)
+           brass  -- Submit (default / auto-fire on timeout/Escape) */
+
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent !important;
+        font-family: 'Trajan Pro', 'EB Garamond', Georgia, serif;
+        font-size: 19px;
+        color: #cba560;
+        overflow: hidden;
+        pointer-events: none;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+      body {
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+      }
+
+      .arrest-overlay {
+        display: none;
+        pointer-events: auto;
+        padding-bottom: 14vh;
+        width: 100%;
+        max-width: 680px;
+        justify-content: center;
+        animation: arrest-rise 220ms ease-out;
+      }
+      .arrest-overlay.visible { display: flex; }
+
+      @keyframes arrest-rise {
+        from { transform: translateY(20px); opacity: 0; }
+        to   { transform: translateY(0);     opacity: 1; }
+      }
+
+      .arrest-card {
+        width: 100%;
+        background:
+          linear-gradient(to bottom,
+            rgba(20, 14, 6, 0.96),
+            rgba(30, 22, 10, 0.96));
+        border: 1px solid rgba(203, 165, 96, 0.6);
+        border-radius: 5px;
+        box-shadow:
+          0 8px 26px rgba(0, 0, 0, 0.8),
+          inset 0 1px 0 rgba(226, 195, 130, 0.18);
+        padding: 18px 22px 0 22px;
+        overflow: hidden;
+      }
+
+      .arrest-header {
+        font-size: 0.85em;
+        letter-spacing: 0.22em;
+        color: rgba(203, 165, 96, 0.78);
+        font-weight: 600;
+        border-bottom: 1px solid rgba(203, 165, 96, 0.22);
+        padding-bottom: 7px;
+        margin-bottom: 12px;
+      }
+
+      .arrest-body {
+        font-size: 1.12em;
+        line-height: 1.5;
+        color: rgba(226, 195, 130, 0.97);
+        margin-bottom: 16px;
+      }
+      .arrest-name {
+        color: #e2c382;
+        font-weight: 600;
+      }
+      .arrest-bounty {
+        color: #f0d28a;
+        font-weight: 600;
+      }
+
+      .arrest-actions {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 14px;
+        flex-wrap: wrap;
+      }
+
+      .arrest-btn {
+        flex: 1 1 0;
+        min-width: 110px;
+        padding: 11px 10px;
+        background: rgba(60, 45, 22, 0.55);
+        color: #cba560;
+        border: 1px solid rgba(203, 165, 96, 0.45);
+        border-radius: 3px;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 1em;
+        letter-spacing: 0.06em;
+        transition: background 80ms ease-out, border-color 80ms ease-out;
+      }
+      .arrest-btn:hover {
+        background: rgba(85, 65, 30, 0.7);
+        border-color: rgba(226, 195, 130, 0.65);
+      }
+
+      /* Submit -- brass default (matches Accept's brass-on-dark base). */
+      .arrest-btn--submit {
+        color: #e2c382;
+        border-color: rgba(203, 165, 96, 0.7);
+      }
+      .arrest-btn--submit:hover {
+        background: rgba(85, 65, 30, 0.7);
+        border-color: rgba(226, 195, 130, 0.85);
+      }
+
+      /* Pay/Bribe -- green (transactional). */
+      .arrest-btn--pay {
+        color: #d8e5b8;
+        border-color: rgba(140, 175, 95, 0.55);
+      }
+      .arrest-btn--pay:hover {
+        background: rgba(55, 75, 30, 0.55);
+        border-color: rgba(170, 200, 120, 0.7);
+      }
+
+      /* Resist/Refuse -- red (hostile). */
+      .arrest-btn--resist {
+        color: #e6b69a;
+        border-color: rgba(168, 81, 62, 0.55);
+      }
+      .arrest-btn--resist:hover {
+        background: rgba(80, 35, 25, 0.55);
+        border-color: rgba(200, 110, 90, 0.7);
+      }
+
+      /* Persuade -- parchment/tan (speech check). */
+      .arrest-btn--persuade {
+        color: #e8d6a8;
+        border-color: rgba(186, 156, 92, 0.55);
+      }
+      .arrest-btn--persuade:hover {
+        background: rgba(70, 55, 25, 0.55);
+        border-color: rgba(216, 186, 122, 0.75);
+      }
+
+      /* Drain bar -- gold->lighter-gold fill, breaks out of card padding
+         via negative margin + width:calc. Matches Brawl/CollectPayment. */
+      .arrest-timer {
+        height: 5px;
+        background: rgba(0, 0, 0, 0.6);
+        overflow: hidden;
+        margin: 0 -22px;
+        padding: 0;
+        width: calc(100% + 44px);
+      }
+      .arrest-timer-fill {
+        height: 100%;
+        width: 100%;
+        background: linear-gradient(
+          to right,
+          rgba(203, 165, 96, 0.95),
+          rgba(226, 195, 130, 0.95)
+        );
+        transform-origin: left center;
+        animation-name: arrest-drain;
+        animation-timing-function: linear;
+        animation-fill-mode: forwards;
+      }
+      @keyframes arrest-drain {
+        from { transform: scaleX(1); }
+        to   { transform: scaleX(0); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="overlay" class="arrest-overlay" role="dialog" aria-modal="false" aria-label="Arrest">
+      <div class="arrest-card">
+        <div class="arrest-header" id="hdr">ARREST</div>
+        <div class="arrest-body" id="body">
+          <span id="guard" class="arrest-name">A guard</span> stops you. Bounty: <span id="bounty" class="arrest-bounty">0</span> gold.
+        </div>
+        <div class="arrest-actions" id="actions">
+          <!-- buttons injected dynamically -->
+        </div>
+        <div class="arrest-timer" aria-hidden="true">
+          <div id="timer-fill" class="arrest-timer-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Arrest prompt frontend script.
+      //
+      // IN  -- window.receiveArrestPromptData({
+      //          guardName, holdName, bounty, bribeCost,
+      //          paymentFailed, persuadeAttempted, lowBounty, timeoutMs })
+      // OUT -- window.arrestPromptChoice(JSON.stringify({choice}))
+      //         choice in { "submit", "resist", "pay_fine", "bribe", "persuade" }
+      //
+      // Timeout / Escape -> auto-fires "submit". Submit is the safe default;
+      // the player just walks into a cell rather than triggering an
+      // unintended kill-on-sight from a stalled prompt.
+
+      (function () {
+        var overlay   = document.getElementById('overlay');
+        var hdrE      = document.getElementById('hdr');
+        var guardE    = document.getElementById('guard');
+        var bountyE   = document.getElementById('bounty');
+        var bodyE     = document.getElementById('body');
+        var actionsE  = document.getElementById('actions');
+        var timerFill = document.getElementById('timer-fill');
+        var autoHandle = null;
+
+        function postChoice(choice) {
+          var body = JSON.stringify({ choice: choice });
+          var tryCall = function () {
+            var fn = window.arrestPromptChoice;
+            if (typeof fn !== 'function') return false;
+            try { fn(body); return true; }
+            catch (e) { console.warn('[ArrestPrompt] choice send failed:', e); return false; }
+          };
+          if (!tryCall()) {
+            console.warn('[ArrestPrompt] arrestPromptChoice not bound yet, retrying...');
+            window.setTimeout(function () {
+              if (!tryCall()) {
+                console.error('[ArrestPrompt] arrestPromptChoice still not bound after retry');
+              }
+            }, 200);
+          }
+        }
+
+        function close() {
+          overlay.classList.remove('visible');
+          if (autoHandle !== null) {
+            window.clearTimeout(autoHandle);
+            autoHandle = null;
+          }
+        }
+
+        function makeBtn(label, choice, severity) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'arrest-btn arrest-btn--' + severity;
+          b.textContent = label;
+          b.addEventListener('click', function () {
+            postChoice(choice);
+            close();
+          });
+          return b;
+        }
+
+        function renderButtons(p) {
+          // Clear existing buttons.
+          while (actionsE.firstChild) actionsE.removeChild(actionsE.firstChild);
+
+          var bribeLabel = 'Bribe (' + p.bribeCost + ' gold)';
+          var fineLabel  = 'Pay Fine (' + p.bounty + ' gold)';
+
+          if (p.lowBounty) {
+            // Minor offense -- fine or refuse only (no jail).
+            if (p.paymentFailed) {
+              actionsE.appendChild(makeBtn('Submit to Arrest', 'submit', 'submit'));
+              actionsE.appendChild(makeBtn('Refuse',           'resist', 'resist'));
+            } else {
+              actionsE.appendChild(makeBtn(fineLabel, 'pay_fine', 'pay'));
+              actionsE.appendChild(makeBtn('Refuse',  'resist',   'resist'));
+            }
+          } else {
+            // Major offense -- arrest options.
+            if (p.paymentFailed && p.persuadeAttempted) {
+              actionsE.appendChild(makeBtn('Submit to Arrest', 'submit', 'submit'));
+              actionsE.appendChild(makeBtn('Resist Arrest',    'resist', 'resist'));
+            } else if (p.paymentFailed && !p.persuadeAttempted) {
+              actionsE.appendChild(makeBtn('Submit to Arrest', 'submit',   'submit'));
+              actionsE.appendChild(makeBtn('Resist Arrest',    'resist',   'resist'));
+              actionsE.appendChild(makeBtn('Persuade',         'persuade', 'persuade'));
+            } else if (!p.paymentFailed && p.persuadeAttempted) {
+              actionsE.appendChild(makeBtn('Submit to Arrest', 'submit', 'submit'));
+              actionsE.appendChild(makeBtn('Resist Arrest',    'resist', 'resist'));
+              actionsE.appendChild(makeBtn(bribeLabel,         'bribe',  'pay'));
+            } else {
+              actionsE.appendChild(makeBtn('Submit to Arrest', 'submit',   'submit'));
+              actionsE.appendChild(makeBtn('Resist Arrest',    'resist',   'resist'));
+              actionsE.appendChild(makeBtn(bribeLabel,         'bribe',    'pay'));
+              actionsE.appendChild(makeBtn('Persuade',         'persuade', 'persuade'));
+            }
+          }
+        }
+
+        function renderBody(p) {
+          // Header reads "ARREST IN <HOLD>" when we have a hold name.
+          var hold = (p.holdName || '').toString().trim();
+          hdrE.textContent = hold ? ('ARREST IN ' + hold.toUpperCase()) : 'ARREST';
+
+          guardE.textContent  = p.guardName || 'A guard';
+          bountyE.textContent = (p.bounty != null ? p.bounty : 0).toString();
+
+          // Contextual flavor line -- mirrors the SkyMessage text in
+          // SeverActions_ArrestPlayer.psc::ShowPlayerArrestMenu.
+          var holdPhrase = hold ? (' in ' + hold) : '';
+          var lead = '';
+          if (p.lowBounty) {
+            lead = p.paymentFailed
+              ? ' The guard won’t accept payment attempts anymore.'
+              : ' Pay your fine or face the consequences.';
+          } else if (p.paymentFailed && p.persuadeAttempted) {
+            lead = ' The guard has lost all patience. Submit or resist.';
+          } else if (p.paymentFailed) {
+            lead = ' The guard won’t accept payment anymore.';
+          } else if (p.persuadeAttempted) {
+            lead = ' The guard has lost patience. Make your choice now.';
+          } else {
+            lead = ' Submit to arrest or face the consequences.';
+          }
+
+          bodyE.innerHTML =
+            '<span class="arrest-name">' + escapeHtml(p.guardName || 'A guard') + '</span>' +
+            ' stops you. Bounty: <span class="arrest-bounty">' +
+            escapeHtml((p.bounty != null ? p.bounty : 0).toString()) +
+            '</span> gold' + escapeHtml(holdPhrase) + '.' + escapeHtml(lead);
+        }
+
+        function escapeHtml(s) {
+          return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        }
+
+        window.receiveArrestPromptData = function (payload) {
+          payload = payload || {};
+          var ms = payload.timeoutMs || 60000;
+          if (ms < 1000) ms = 1000;
+
+          renderBody(payload);
+          renderButtons(payload);
+
+          // Restart drain bar.
+          var clone = timerFill.cloneNode(true);
+          clone.style.animationDuration = ms + 'ms';
+          timerFill.parentNode.replaceChild(clone, timerFill);
+          timerFill = clone;
+
+          overlay.classList.add('visible');
+
+          if (autoHandle !== null) {
+            window.clearTimeout(autoHandle);
+            autoHandle = null;
+          }
+          autoHandle = window.setTimeout(function () {
+            autoHandle = null;
+            postChoice('submit');
+            close();
+          }, ms);
+        };
+
+        try {
+          if (typeof window.arrestPromptReady === 'function') {
+            window.arrestPromptReady('');
+          }
+        } catch (e) { /* harmless */ }
+      })();
+    </script>
+  </body>
+</html>

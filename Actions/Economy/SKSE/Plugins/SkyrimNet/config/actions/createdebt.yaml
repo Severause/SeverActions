@@ -1,35 +1,35 @@
 customCategory: economy
 name: CreateDebt
-description: "Record a debt between two parties. Creditor = who is owed, debtor = who owes. Optional due date (aiDueDays) and credit limit (aiCreditLimit)."
+description: "Open a tab. One party fronts gold or goods now with the understanding the other will pay it back later — a merchant's slate, a smith fronting steel for repairs, a friend covering tonight's room at the inn."
 questEditorId: SeverActions
 scriptName: SeverActions_Debt
 executionFunctionName: CreateDebt_Execute
 parameterMapping:
   - type: speaker
     name: akSpeaker
-    description: The speaking actor
+    description: the actor opening the tab (typically the one fronting the goods or gold)
   - type: dynamic
     name: akCreditor
-    description: Who is owed the gold
+    description: the actor owed the coin — the merchant, the lender, the one who fronted the goods
   - type: dynamic
     name: akDebtor
-    description: Who owes the gold
+    description: the actor on the hook — the customer, the borrower, the one who took the goods on credit
   - type: dynamic
     name: aiAmount
-    description: Amount of gold owed
+    description: starting balance of the tab in gold coins
   - type: dynamic
     name: asReason
-    description: "Brief reason (e.g. 'tavern tab', 'borrowed gold', 'armor repair')"
+    description: "what the tab is for (e.g. 'tavern tab', 'borrowed gold', 'armor repair')"
     optional: true
     default: "unspecified"
   - type: dynamic
     name: aiDueDays
-    description: Days until due (0 for open-ended)
+    description: days until the tab is due (0 = no deadline)
     optional: true
     default: 0
   - type: dynamic
     name: aiCreditLimit
-    description: Max debt before credit is cut off (0 for unlimited)
+    description: the ceiling on the tab in gold (0 = no ceiling)
     optional: true
     default: 0
 enabled: true

@@ -1,15 +1,15 @@
 name: SitOrLayDown
-description: "Sit, sleep, or use nearby furniture by FormID from the nearby objects list."
+description: "The speaker drops into a chair by the hearth, stretches out on a tavern bench, kneels at a shrine, slumps onto a straw bed at the inn. Pick a piece of furniture from the nearby objects list and they'll use it."
 questEditorId: SeverActions
 scriptName: SeverActions_Furniture
 executionFunctionName: UseFurniture_Execute
 parameterMapping:
   - type: speaker
     name: akActor
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor settling in
   - type: dynamic
     name: furnitureFormId
-    description: The FormID number of the furniture from nearby objects
+    description: the FormID of the chair, bench, bed, or shrine to use (taken from the nearby objects list)
 enabled: true
 eligibilityRules:
   - conditions:

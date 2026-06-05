@@ -13,6 +13,7 @@ SeverActions_Debt Property DebtScript Auto
 SeverActions_Travel Property TravelScript Auto
 SeverActions_Hotkeys Property HotkeyScript Auto
 SeverActions_Arrest Property ArrestScript Auto
+SeverActions_ArrestBounty Property BountyScript Auto
 SeverActions_Survival Property SurvivalScript Auto
 SeverActions_FollowerManager Property FollowerManagerScript Auto
 SeverActions_Loot Property LootScript Auto
@@ -22,6 +23,8 @@ SeverActions_Follow Property FollowScript Auto
 SeverActions_Combat Property CombatScript Auto
 SeverActions_Crafting Property CraftingScript Auto
 SeverActions_Property Property PropertyScript Auto
+SeverActions_SpellCast Property SpellCastScript Auto
+SeverActions_Brawl Property BrawlScript Auto
 
 ; =============================================================================
 ; LIFECYCLE
@@ -59,6 +62,9 @@ Function EnsureScriptReferences()
     If !ArrestScript
         ArrestScript = q as SeverActions_Arrest
     EndIf
+    If !BountyScript
+        BountyScript = q as SeverActions_ArrestBounty
+    EndIf
     If !SurvivalScript
         SurvivalScript = q as SeverActions_Survival
     EndIf
@@ -85,6 +91,12 @@ Function EnsureScriptReferences()
     EndIf
     If !PropertyScript
         PropertyScript = q as SeverActions_Property
+    EndIf
+    If !SpellCastScript
+        SpellCastScript = q as SeverActions_SpellCast
+    EndIf
+    If !BrawlScript
+        BrawlScript = q as SeverActions_Brawl
     EndIf
 
     Debug.Trace("[SeverActions_PrismaUI] Script references resolved — " \
@@ -227,21 +239,21 @@ Function SendCompanionsData()
     {Build unified companions page: framework settings + per-NPC companion array.
      Combines old SendFollowersData() logic under page name "companions".}
     Debug.Trace("[SeverActions_PrismaUI] SendCompanionsData START")
-    SeverActionsNative.PrismaUI_BeginPage("companions")
+    SeverActionsNativeExt.PrismaUI_BeginPage("companions")
 
     ; ── Framework settings ──
     If FollowerManagerScript
-        SeverActionsNative.PrismaUI_AddInt("frameworkMode", FollowerManagerScript.FrameworkMode)
-        SeverActionsNative.PrismaUI_AddInt("maxFollowers", FollowerManagerScript.MaxFollowers)
-        SeverActionsNative.PrismaUI_AddBool("autoDismissHostile", FollowerManagerScript.AllowAutonomousLeaving)
-        SeverActionsNative.PrismaUI_AddBool("trackRelationships", FollowerManagerScript.AutoRelAssessment)
-        SeverActionsNative.PrismaUI_AddFloat("rapportDecay", FollowerManagerScript.RapportDecayRate)
-        SeverActionsNative.PrismaUI_AddInt("leavingThreshold", FollowerManagerScript.LeavingThreshold as Int)
-        SeverActionsNative.PrismaUI_AddInt("relCooldown", FollowerManagerScript.RelationshipCooldown as Int)
+        SeverActionsNativeExt.PrismaUI_AddInt("frameworkMode", FollowerManagerScript.FrameworkMode)
+        SeverActionsNativeExt.PrismaUI_AddInt("maxFollowers", FollowerManagerScript.MaxFollowers)
+        SeverActionsNativeExt.PrismaUI_AddBool("autoDismissHostile", FollowerManagerScript.AllowAutonomousLeaving)
+        SeverActionsNativeExt.PrismaUI_AddBool("trackRelationships", FollowerManagerScript.AutoRelAssessment)
+        SeverActionsNativeExt.PrismaUI_AddFloat("rapportDecay", FollowerManagerScript.RapportDecayRate)
+        SeverActionsNativeExt.PrismaUI_AddInt("leavingThreshold", FollowerManagerScript.LeavingThreshold as Int)
+        SeverActionsNativeExt.PrismaUI_AddInt("relCooldown", FollowerManagerScript.RelationshipCooldown as Int)
     EndIf
 
     ; ── Companion array ──
-    SeverActionsNative.PrismaUI_BeginArray("companions")
+    SeverActionsNativeExt.PrismaUI_BeginArray("companions")
     Actor[] companions = None
     If FollowerManagerScript
         companions = FollowerManagerScript.GetAllFollowers()
@@ -257,9 +269,9 @@ Function SendCompanionsData()
             ci += 1
         EndWhile
     EndIf
-    SeverActionsNative.PrismaUI_EndArray()
+    SeverActionsNativeExt.PrismaUI_EndArray()
 
-    SeverActionsNative.PrismaUI_SendPage()
+    SeverActionsNativeExt.PrismaUI_SendPage()
     Debug.Trace("[SeverActions_PrismaUI] SendCompanionsData DONE")
 EndFunction
 
@@ -267,30 +279,22 @@ Function SendWorldData()
     {Build unified world page: bounties + arrest settings + travel + currency/debt.
      Combines old SendBountyData() + SendTravelData() + SendCurrencyData() under "world".}
     Debug.Trace("[SeverActions_PrismaUI] SendWorldData START")
-    SeverActionsNative.PrismaUI_BeginPage("world")
+    SeverActionsNativeExt.PrismaUI_BeginPage("world")
 
-    ; ── Bounties (from ArrestScript StorageUtil tracking) ──
-    SeverActionsNative.PrismaUI_BeginNamedObject("bounties")
-    If ArrestScript
-        SeverActionsNative.PrismaUI_AddInt("Eastmarch", ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionEastmarch))
-        SeverActionsNative.PrismaUI_AddInt("Falkreath", ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionFalkreath))
-        SeverActionsNative.PrismaUI_AddInt("Haafingar", ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionHaafingar))
-        SeverActionsNative.PrismaUI_AddInt("Hjaalmarch", ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionHjaalmarch))
-        SeverActionsNative.PrismaUI_AddInt("The Pale", ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionPale))
-        SeverActionsNative.PrismaUI_AddInt("The Reach", ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionReach))
-        SeverActionsNative.PrismaUI_AddInt("The Rift", ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionRift))
-        SeverActionsNative.PrismaUI_AddInt("Whiterun", ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionWhiterun))
-        SeverActionsNative.PrismaUI_AddInt("Winterhold", ArrestScript.GetTrackedBounty(ArrestScript.CrimeFactionWinterhold))
-    EndIf
-    SeverActionsNative.PrismaUI_EndObject()
+    ; Phase 5 — bounties (with per-faction event timelines) now ship via
+    ; PrismaUIDataGatherer::BuildWorldSettingsData on the C++ side. Shape
+    ; changed from a hold-name-keyed object to an array of
+    ; {crimeFactionId, amount, hold, events[]} entries — the Papyrus echo
+    ; here would clobber the C++ array on the frontend merge ("last write
+    ; wins"), so it's been removed.
 
     ; ── Arrest settings ──
     If ArrestScript
-        SeverActionsNative.PrismaUI_AddInt("arrestCooldown", ArrestScript.ArrestPlayerCooldown as Int)
-        SeverActionsNative.PrismaUI_AddInt("persuasionTimeLimit", ArrestScript.PersuasionTimeLimit as Int)
+        SeverActionsNativeExt.PrismaUI_AddInt("arrestCooldown", ArrestScript.ArrestPlayerCooldown as Int)
+        SeverActionsNativeExt.PrismaUI_AddInt("persuasionTimeLimit", ArrestScript.PersuasionTimeLimit as Int)
     Else
-        SeverActionsNative.PrismaUI_AddInt("arrestCooldown", 60)
-        SeverActionsNative.PrismaUI_AddInt("persuasionTimeLimit", 90)
+        SeverActionsNativeExt.PrismaUI_AddInt("arrestCooldown", 60)
+        SeverActionsNativeExt.PrismaUI_AddInt("persuasionTimeLimit", 90)
     EndIf
 
     ; ── Travel slots ──
@@ -298,9 +302,9 @@ Function SendWorldData()
     If TravelScript
         activeCount = TravelScript.GetActiveTravelCount()
     EndIf
-    SeverActionsNative.PrismaUI_AddInt("activeSlots", activeCount)
+    SeverActionsNativeExt.PrismaUI_AddInt("activeSlots", activeCount)
 
-    SeverActionsNative.PrismaUI_BeginArray("slots")
+    SeverActionsNativeExt.PrismaUI_BeginArray("slots")
     Int ti = 0
     Int slotState = 0
     ReferenceAlias slotAlias = None
@@ -310,146 +314,56 @@ Function SendWorldData()
         If TravelScript
             slotState = TravelScript.GetSlotState(ti)
         EndIf
-        SeverActionsNative.PrismaUI_BeginObject()
+        SeverActionsNativeExt.PrismaUI_BeginObject()
         If slotState > 0
-            SeverActionsNative.PrismaUI_AddBool("active", True)
+            SeverActionsNativeExt.PrismaUI_AddBool("active", True)
             slotAlias = GetTravelAlias(ti)
             slotNPC = None
             If slotAlias
                 slotNPC = slotAlias.GetActorReference()
             EndIf
             If slotNPC
-                SeverActionsNative.PrismaUI_AddString("npcName", SafeActorName(slotNPC))
+                SeverActionsNativeExt.PrismaUI_AddString("npcName", SafeActorName(slotNPC))
             Else
-                SeverActionsNative.PrismaUI_AddString("npcName", "Unknown")
+                SeverActionsNativeExt.PrismaUI_AddString("npcName", "Unknown")
             EndIf
-            SeverActionsNative.PrismaUI_AddString("destination", TravelScript.GetSlotDestination(ti))
-            SeverActionsNative.PrismaUI_AddString("status", TravelScript.GetSlotStatusText(ti))
+            SeverActionsNativeExt.PrismaUI_AddString("destination", TravelScript.GetSlotDestination(ti))
+            SeverActionsNativeExt.PrismaUI_AddString("status", TravelScript.GetSlotStatusText(ti))
         Else
-            SeverActionsNative.PrismaUI_AddBool("active", False)
+            SeverActionsNativeExt.PrismaUI_AddBool("active", False)
         EndIf
-        SeverActionsNative.PrismaUI_EndObject()
+        SeverActionsNativeExt.PrismaUI_EndObject()
         ti += 1
     EndWhile
-    SeverActionsNative.PrismaUI_EndArray()
+    SeverActionsNativeExt.PrismaUI_EndArray()
 
     ; ── Currency settings ──
     If MCMScript
-        SeverActionsNative.PrismaUI_AddBool("allowConjuredGold", MCMScript.AllowConjuredGold)
+        SeverActionsNativeExt.PrismaUI_AddBool("allowConjuredGold", MCMScript.AllowConjuredGold)
     Else
-        SeverActionsNative.PrismaUI_AddBool("allowConjuredGold", True)
+        SeverActionsNativeExt.PrismaUI_AddBool("allowConjuredGold", True)
     EndIf
 
     ; ── Debt settings ──
     If DebtScript
-        SeverActionsNative.PrismaUI_AddBool("overdueReminders", DebtScript.EnableOverdueReminders)
-        SeverActionsNative.PrismaUI_AddInt("gracePeriod", DebtScript.OverdueGracePeriodHours as Int)
-        SeverActionsNative.PrismaUI_AddInt("reportThreshold", DebtScript.ReportThresholdHours as Int)
+        SeverActionsNativeExt.PrismaUI_AddBool("overdueReminders", DebtScript.EnableOverdueReminders)
+        SeverActionsNativeExt.PrismaUI_AddInt("gracePeriod", DebtScript.OverdueGracePeriodHours as Int)
+        SeverActionsNativeExt.PrismaUI_AddInt("reportThreshold", DebtScript.ReportThresholdHours as Int)
     Else
-        SeverActionsNative.PrismaUI_AddBool("overdueReminders", True)
-        SeverActionsNative.PrismaUI_AddInt("gracePeriod", 24)
-        SeverActionsNative.PrismaUI_AddInt("reportThreshold", 72)
+        SeverActionsNativeExt.PrismaUI_AddBool("overdueReminders", True)
+        SeverActionsNativeExt.PrismaUI_AddInt("gracePeriod", 24)
+        SeverActionsNativeExt.PrismaUI_AddInt("reportThreshold", 72)
     EndIf
 
-    ; ── Debt structured data ──
-    Int debtCount = 0
-    Int totalPlayerOwes = 0
-    Int totalOwedToPlayer = 0
-    Actor thePlayer = Game.GetPlayer()
-    If DebtScript && thePlayer
-        debtCount = DebtScript.GetDebtCount()
-        totalPlayerOwes = DebtScript.GetTotalOwedBy(thePlayer)
-        totalOwedToPlayer = DebtScript.GetTotalOwedTo(thePlayer)
-    EndIf
-    SeverActionsNative.PrismaUI_AddInt("debtCount", debtCount)
-    SeverActionsNative.PrismaUI_AddInt("totalPlayerOwes", totalPlayerOwes)
-    SeverActionsNative.PrismaUI_AddInt("totalOwedToPlayer", totalOwedToPlayer)
+    ; Phase 4 — debt structured data (debtCount / totalPlayerOwes /
+    ; totalOwedToPlayer / playerOwes[] / owedToPlayer[]) is now built by
+    ; PrismaUIDataGatherer::BuildWorldSettingsData on the C++ side. The
+    ; Papyrus fallback used to send the same fields; both reach the
+    ; frontend on the same page request, last write wins, so removing the
+    ; Papyrus version simplifies the source of truth without changing the
+    ; rendered output.
 
-    ; Build structured debt objects instead of flat strings
-    Float currentTime = 0.0
-    If DebtScript
-        currentTime = DebtScript.GetGameTimeInSeconds()
-    EndIf
-
-    SeverActionsNative.PrismaUI_BeginArray("playerOwes")
-    If DebtScript && thePlayer
-        Int pi = 0
-        While pi < debtCount
-            Actor creditor = StorageUtil.GetFormValue(DebtScript, DebtScript.GetDebtKey(pi, "Creditor"), None) as Actor
-            Actor debtor = StorageUtil.GetFormValue(DebtScript, DebtScript.GetDebtKey(pi, "Debtor"), None) as Actor
-            If debtor == thePlayer && creditor
-                Int amount = StorageUtil.GetIntValue(DebtScript, DebtScript.GetDebtKey(pi, "Amount"), 0)
-                String reason = StorageUtil.GetStringValue(DebtScript, DebtScript.GetDebtKey(pi, "Reason"), "")
-                Bool isRecurring = StorageUtil.GetIntValue(DebtScript, DebtScript.GetDebtKey(pi, "IsRecurring"), 0) == 1
-                Float dueTime = StorageUtil.GetFloatValue(DebtScript, DebtScript.GetDebtKey(pi, "DueTime"), 0.0)
-                Int creditLimit = StorageUtil.GetIntValue(DebtScript, DebtScript.GetDebtKey(pi, "CreditLimit"), 0)
-                SeverActionsNative.PrismaUI_BeginObject()
-                SeverActionsNative.PrismaUI_AddString("name", creditor.GetDisplayName())
-                SeverActionsNative.PrismaUI_AddInt("amount", amount)
-                SeverActionsNative.PrismaUI_AddString("reason", reason)
-                SeverActionsNative.PrismaUI_AddBool("recurring", isRecurring)
-                SeverActionsNative.PrismaUI_AddInt("creditLimit", creditLimit)
-                If isRecurring
-                    Int chargeAmount = StorageUtil.GetIntValue(DebtScript, DebtScript.GetDebtKey(pi, "RecurringCharge"), 0)
-                    Float intervalHours = StorageUtil.GetFloatValue(DebtScript, DebtScript.GetDebtKey(pi, "RecurringInterval"), 0.0)
-                    If chargeAmount > 0
-                        SeverActionsNative.PrismaUI_AddString("rate", DebtScript.FormatRecurringRate(chargeAmount, intervalHours))
-                    Else
-                        SeverActionsNative.PrismaUI_AddString("rate", DebtScript.FormatRecurringRate(amount, intervalHours))
-                    EndIf
-                Else
-                    SeverActionsNative.PrismaUI_AddString("rate", "")
-                EndIf
-                String timeStr = DebtScript.FormatTimeRemaining(dueTime, currentTime)
-                SeverActionsNative.PrismaUI_AddString("due", timeStr)
-                SeverActionsNative.PrismaUI_AddBool("overdue", dueTime > 0.0 && currentTime > dueTime)
-                SeverActionsNative.PrismaUI_EndObject()
-            EndIf
-            pi += 1
-        EndWhile
-    EndIf
-    SeverActionsNative.PrismaUI_EndArray()
-
-    SeverActionsNative.PrismaUI_BeginArray("owedToPlayer")
-    If DebtScript && thePlayer
-        Int oi = 0
-        While oi < debtCount
-            Actor creditor2 = StorageUtil.GetFormValue(DebtScript, DebtScript.GetDebtKey(oi, "Creditor"), None) as Actor
-            Actor debtor2 = StorageUtil.GetFormValue(DebtScript, DebtScript.GetDebtKey(oi, "Debtor"), None) as Actor
-            If creditor2 == thePlayer && debtor2
-                Int amount2 = StorageUtil.GetIntValue(DebtScript, DebtScript.GetDebtKey(oi, "Amount"), 0)
-                String reason2 = StorageUtil.GetStringValue(DebtScript, DebtScript.GetDebtKey(oi, "Reason"), "")
-                Bool isRecurring2 = StorageUtil.GetIntValue(DebtScript, DebtScript.GetDebtKey(oi, "IsRecurring"), 0) == 1
-                Float dueTime2 = StorageUtil.GetFloatValue(DebtScript, DebtScript.GetDebtKey(oi, "DueTime"), 0.0)
-                Int creditLimit2 = StorageUtil.GetIntValue(DebtScript, DebtScript.GetDebtKey(oi, "CreditLimit"), 0)
-                SeverActionsNative.PrismaUI_BeginObject()
-                SeverActionsNative.PrismaUI_AddString("name", debtor2.GetDisplayName())
-                SeverActionsNative.PrismaUI_AddInt("amount", amount2)
-                SeverActionsNative.PrismaUI_AddString("reason", reason2)
-                SeverActionsNative.PrismaUI_AddBool("recurring", isRecurring2)
-                SeverActionsNative.PrismaUI_AddInt("creditLimit", creditLimit2)
-                If isRecurring2
-                    Int chargeAmount2 = StorageUtil.GetIntValue(DebtScript, DebtScript.GetDebtKey(oi, "RecurringCharge"), 0)
-                    Float intervalHours2 = StorageUtil.GetFloatValue(DebtScript, DebtScript.GetDebtKey(oi, "RecurringInterval"), 0.0)
-                    If chargeAmount2 > 0
-                        SeverActionsNative.PrismaUI_AddString("rate", DebtScript.FormatRecurringRate(chargeAmount2, intervalHours2))
-                    Else
-                        SeverActionsNative.PrismaUI_AddString("rate", DebtScript.FormatRecurringRate(amount2, intervalHours2))
-                    EndIf
-                Else
-                    SeverActionsNative.PrismaUI_AddString("rate", "")
-                EndIf
-                String timeStr2 = DebtScript.FormatTimeRemaining(dueTime2, currentTime)
-                SeverActionsNative.PrismaUI_AddString("due", timeStr2)
-                SeverActionsNative.PrismaUI_AddBool("overdue", dueTime2 > 0.0 && currentTime > dueTime2)
-                SeverActionsNative.PrismaUI_EndObject()
-            EndIf
-            oi += 1
-        EndWhile
-    EndIf
-    SeverActionsNative.PrismaUI_EndArray()
-
-    SeverActionsNative.PrismaUI_SendPage()
+    SeverActionsNativeExt.PrismaUI_SendPage()
     Debug.Trace("[SeverActions_PrismaUI] SendWorldData DONE")
 EndFunction
 
@@ -457,28 +371,28 @@ Function SendDashboardData()
     {Build dashboard page: mod info + system availability.
      This is a simple Papyrus fallback in case C++ DataGatherer didn't serve it.}
     Debug.Trace("[SeverActions_PrismaUI] SendDashboardData START")
-    SeverActionsNative.PrismaUI_BeginPage("dashboard")
+    SeverActionsNativeExt.PrismaUI_BeginPage("dashboard")
 
-    SeverActionsNative.PrismaUI_AddString("version", "1.1")
-    SeverActionsNative.PrismaUI_AddString("author", "Severause")
+    SeverActionsNativeExt.PrismaUI_AddString("version", "1.1")
+    SeverActionsNativeExt.PrismaUI_AddString("author", "Severause")
 
     ; System availability flags
-    SeverActionsNative.PrismaUI_AddBool("hasFollowerManager", FollowerManagerScript != None)
-    SeverActionsNative.PrismaUI_AddBool("hasSurvivalScript", SurvivalScript != None)
-    SeverActionsNative.PrismaUI_AddBool("hasOutfitScript", OutfitScript != None)
-    SeverActionsNative.PrismaUI_AddBool("hasLootScript", LootScript != None)
-    SeverActionsNative.PrismaUI_AddBool("hasSpellTeachScript", SpellTeachScript != None)
+    SeverActionsNativeExt.PrismaUI_AddBool("hasFollowerManager", FollowerManagerScript != None)
+    SeverActionsNativeExt.PrismaUI_AddBool("hasSurvivalScript", SurvivalScript != None)
+    SeverActionsNativeExt.PrismaUI_AddBool("hasOutfitScript", OutfitScript != None)
+    SeverActionsNativeExt.PrismaUI_AddBool("hasLootScript", LootScript != None)
+    SeverActionsNativeExt.PrismaUI_AddBool("hasSpellTeachScript", SpellTeachScript != None)
 
     If FollowerManagerScript
-        SeverActionsNative.PrismaUI_AddInt("frameworkMode", FollowerManagerScript.FrameworkMode)
-        SeverActionsNative.PrismaUI_AddInt("maxFollowers", FollowerManagerScript.MaxFollowers)
+        SeverActionsNativeExt.PrismaUI_AddInt("frameworkMode", FollowerManagerScript.FrameworkMode)
+        SeverActionsNativeExt.PrismaUI_AddInt("maxFollowers", FollowerManagerScript.MaxFollowers)
     EndIf
 
     If SurvivalScript
-        SeverActionsNative.PrismaUI_AddBool("survivalEnabled", SurvivalScript.Enabled)
+        SeverActionsNativeExt.PrismaUI_AddBool("survivalEnabled", SurvivalScript.Enabled)
     EndIf
 
-    SeverActionsNative.PrismaUI_SendPage()
+    SeverActionsNativeExt.PrismaUI_SendPage()
     Debug.Trace("[SeverActions_PrismaUI] SendDashboardData DONE")
 EndFunction
 
@@ -489,47 +403,47 @@ Function SendSettingsData()
     {Build settings page: dialogue/tags, survival, spell teach config.
      Papyrus fallback when C++ ScriptReader can't read MCM properties.}
     Debug.Trace("[SeverActions_PrismaUI] SendSettingsData START")
-    SeverActionsNative.PrismaUI_BeginPage("settings")
+    SeverActionsNativeExt.PrismaUI_BeginPage("settings")
 
     ; ── Dialogue settings ──
     If MCMScript
-        SeverActionsNative.PrismaUI_AddBool("dialogueAnimEnabled", MCMScript.DialogueAnimEnabled)
-        SeverActionsNative.PrismaUI_AddInt("silenceChance", MCMScript.SilenceChance)
-        SeverActionsNative.PrismaUI_AddBool("tagCompanion", MCMScript.TagCompanionEnabled)
-        SeverActionsNative.PrismaUI_AddBool("tagEngaged", MCMScript.TagEngagedEnabled)
-        SeverActionsNative.PrismaUI_AddBool("tagInScene", MCMScript.TagInSceneEnabled)
+        SeverActionsNativeExt.PrismaUI_AddBool("dialogueAnimEnabled", MCMScript.DialogueAnimEnabled)
+        SeverActionsNativeExt.PrismaUI_AddInt("silenceChance", MCMScript.SilenceChance)
+        SeverActionsNativeExt.PrismaUI_AddBool("tagCompanion", MCMScript.TagCompanionEnabled)
+        SeverActionsNativeExt.PrismaUI_AddBool("tagEngaged", MCMScript.TagEngagedEnabled)
+        SeverActionsNativeExt.PrismaUI_AddBool("tagInScene", MCMScript.TagInSceneEnabled)
     EndIf
 
     ; ── Book reading ──
-    SeverActionsNative.PrismaUI_AddBool("hasLootScript", LootScript != None)
+    SeverActionsNativeExt.PrismaUI_AddBool("hasLootScript", LootScript != None)
     If LootScript
-        SeverActionsNative.PrismaUI_AddInt("bookReadMode", LootScript.BookReadMode)
+        SeverActionsNativeExt.PrismaUI_AddInt("bookReadMode", LootScript.BookReadMode)
     EndIf
 
     ; ── Spell teaching ──
-    SeverActionsNative.PrismaUI_AddBool("hasSpellTeachScript", SpellTeachScript != None)
+    SeverActionsNativeExt.PrismaUI_AddBool("hasSpellTeachScript", SpellTeachScript != None)
     If SpellTeachScript
-        SeverActionsNative.PrismaUI_AddBool("spellFailEnabled", SpellTeachScript.EnableFailureSystem)
-        SeverActionsNative.PrismaUI_AddFloat("spellFailDifficulty", SpellTeachScript.FailureDifficultyMult)
+        SeverActionsNativeExt.PrismaUI_AddBool("spellFailEnabled", SpellTeachScript.EnableFailureSystem)
+        SeverActionsNativeExt.PrismaUI_AddFloat("spellFailDifficulty", SpellTeachScript.FailureDifficultyMult)
     EndIf
 
     ; ── Survival ──
-    SeverActionsNative.PrismaUI_AddBool("hasSurvivalScript", SurvivalScript != None)
+    SeverActionsNativeExt.PrismaUI_AddBool("hasSurvivalScript", SurvivalScript != None)
     If SurvivalScript
-        SeverActionsNative.PrismaUI_AddBool("survivalEnabled", SurvivalScript.Enabled)
-        SeverActionsNative.PrismaUI_AddBool("hungerEnabled", SurvivalScript.HungerEnabled)
-        SeverActionsNative.PrismaUI_AddFloat("hungerRate", SurvivalScript.HungerRate)
-        SeverActionsNative.PrismaUI_AddInt("autoEatThreshold", SurvivalScript.AutoEatThreshold)
-        SeverActionsNative.PrismaUI_AddBool("fatigueEnabled", SurvivalScript.FatigueEnabled)
-        SeverActionsNative.PrismaUI_AddFloat("fatigueRate", SurvivalScript.FatigueRate)
-        SeverActionsNative.PrismaUI_AddBool("coldEnabled", SurvivalScript.ColdEnabled)
-        SeverActionsNative.PrismaUI_AddFloat("coldRate", SurvivalScript.ColdRate)
+        SeverActionsNativeExt.PrismaUI_AddBool("survivalEnabled", SurvivalScript.Enabled)
+        SeverActionsNativeExt.PrismaUI_AddBool("hungerEnabled", SurvivalScript.HungerEnabled)
+        SeverActionsNativeExt.PrismaUI_AddFloat("hungerRate", SurvivalScript.HungerRate)
+        SeverActionsNativeExt.PrismaUI_AddInt("autoEatThreshold", SurvivalScript.AutoEatThreshold)
+        SeverActionsNativeExt.PrismaUI_AddBool("fatigueEnabled", SurvivalScript.FatigueEnabled)
+        SeverActionsNativeExt.PrismaUI_AddFloat("fatigueRate", SurvivalScript.FatigueRate)
+        SeverActionsNativeExt.PrismaUI_AddBool("coldEnabled", SurvivalScript.ColdEnabled)
+        SeverActionsNativeExt.PrismaUI_AddFloat("coldRate", SurvivalScript.ColdRate)
     EndIf
 
     ; ── Follower manager ──
-    SeverActionsNative.PrismaUI_AddBool("hasFollowerManager", FollowerManagerScript != None)
+    SeverActionsNativeExt.PrismaUI_AddBool("hasFollowerManager", FollowerManagerScript != None)
 
-    SeverActionsNative.PrismaUI_SendPage()
+    SeverActionsNativeExt.PrismaUI_SendPage()
     Debug.Trace("[SeverActions_PrismaUI] SendSettingsData DONE")
 EndFunction
 
@@ -540,46 +454,46 @@ EndFunction
 
 Function BuildCompanionData(Actor c)
     {Build one companion object inside the companions array using the C++ builder.}
-    SeverActionsNative.PrismaUI_BeginObject()
-    SeverActionsNative.PrismaUI_AddString("name", SafeActorName(c))
+    SeverActionsNativeExt.PrismaUI_BeginObject()
+    SeverActionsNativeExt.PrismaUI_AddString("name", SafeActorName(c))
 
     ; Race
     Race cRace = c.GetRace()
     If cRace
-        SeverActionsNative.PrismaUI_AddString("race", cRace.GetName())
+        SeverActionsNativeExt.PrismaUI_AddString("race", cRace.GetName())
     Else
-        SeverActionsNative.PrismaUI_AddString("race", "Unknown")
+        SeverActionsNativeExt.PrismaUI_AddString("race", "Unknown")
     EndIf
 
-    SeverActionsNative.PrismaUI_AddInt("rapport", StorageUtil.GetFloatValue(c, "SeverFollower_Rapport", 0.0) as Int)
-    SeverActionsNative.PrismaUI_AddInt("trust", StorageUtil.GetFloatValue(c, "SeverFollower_Trust", 25.0) as Int)
-    SeverActionsNative.PrismaUI_AddInt("loyalty", StorageUtil.GetFloatValue(c, "SeverFollower_Loyalty", 50.0) as Int)
-    SeverActionsNative.PrismaUI_AddInt("mood", StorageUtil.GetFloatValue(c, "SeverFollower_Mood", 50.0) as Int)
+    SeverActionsNativeExt.PrismaUI_AddInt("rapport", SeverActionsNative.Native_GetRapport(c) as Int)
+    SeverActionsNativeExt.PrismaUI_AddInt("trust",   SeverActionsNative.Native_GetTrust(c)   as Int)
+    SeverActionsNativeExt.PrismaUI_AddInt("loyalty", SeverActionsNative.Native_GetLoyalty(c) as Int)
+    SeverActionsNativeExt.PrismaUI_AddInt("mood",    SeverActionsNative.Native_GetMood(c)    as Int)
 
     ; Combat style
     If FollowerManagerScript
-        SeverActionsNative.PrismaUI_AddString("combatStyle", FollowerManagerScript.GetCombatStyle(c))
+        SeverActionsNativeExt.PrismaUI_AddString("combatStyle", FollowerManagerScript.GetCombatStyle(c))
     Else
-        SeverActionsNative.PrismaUI_AddString("combatStyle", "balanced")
+        SeverActionsNativeExt.PrismaUI_AddString("combatStyle", "balanced")
     EndIf
-    SeverActionsNative.PrismaUI_AddString("home", StorageUtil.GetStringValue(c, "SeverFollower_HomeLocation", ""))
+    SeverActionsNativeExt.PrismaUI_AddString("home", SeverActionsNative.Native_GetHome(c))
 
     ; Active SkyrimNet packages
-    SeverActionsNative.PrismaUI_AddBool("hasFollowPkg", SafeHasPackage(c, "FollowPlayer"))
-    SeverActionsNative.PrismaUI_AddBool("hasTalkPlayerPkg", SafeHasPackage(c, "TalkToPlayer"))
-    SeverActionsNative.PrismaUI_AddBool("hasTalkNPCPkg", SafeHasPackage(c, "TalkToNPC"))
+    SeverActionsNativeExt.PrismaUI_AddBool("hasFollowPkg", SafeHasPackage(c, "FollowPlayer"))
+    SeverActionsNativeExt.PrismaUI_AddBool("hasTalkPlayerPkg", SafeHasPackage(c, "TalkToPlayer"))
+    SeverActionsNativeExt.PrismaUI_AddBool("hasTalkNPCPkg", SafeHasPackage(c, "TalkToNPC"))
 
     ; Behavioral states
-    SeverActionsNative.PrismaUI_AddBool("isSandboxing", StorageUtil.GetIntValue(c, "SeverActions_IsSandboxing", 0) == 1)
+    SeverActionsNativeExt.PrismaUI_AddBool("isSandboxing", SeverActionsNativeExt.Native_GetSandboxing(c))
     String tvState = StorageUtil.GetStringValue(c, "SeverTravel_State", "")
-    SeverActionsNative.PrismaUI_AddString("travelState", tvState)
+    SeverActionsNativeExt.PrismaUI_AddString("travelState", tvState)
     If tvState != ""
-        SeverActionsNative.PrismaUI_AddString("travelDest", StorageUtil.GetStringValue(c, "SeverTravel_Destination", ""))
+        SeverActionsNativeExt.PrismaUI_AddString("travelDest", StorageUtil.GetStringValue(c, "SeverTravel_Destination", ""))
     EndIf
-    SeverActionsNative.PrismaUI_AddBool("inForcedCombat", StorageUtil.GetIntValue(c, "SeverCombat_InForcedCombat", 0) == 1)
-    SeverActionsNative.PrismaUI_AddBool("hasSurrendered", StorageUtil.GetIntValue(c, "SeverCombat_WasSurrendered", 0) == 1)
+    SeverActionsNativeExt.PrismaUI_AddBool("inForcedCombat", StorageUtil.GetIntValue(c, "SeverCombat_InForcedCombat", 0) == 1)
+    SeverActionsNativeExt.PrismaUI_AddBool("hasSurrendered", StorageUtil.GetIntValue(c, "SeverCombat_WasSurrendered", 0) == 1)
 
-    SeverActionsNative.PrismaUI_EndObject()
+    SeverActionsNativeExt.PrismaUI_EndObject()
 EndFunction
 
 ; =============================================================================
@@ -610,72 +524,6 @@ Function HandleGeneralSetting(String sKey, String sVal)
     ElseIf sKey == "spellFailDifficulty" && SpellTeachScript
         SpellTeachScript.FailureDifficultyMult = sVal as Float
         StorageUtil.SetFloatValue(None, "SeverActions_SpellFailDifficulty", sVal as Float)
-    EndIf
-EndFunction
-
-Function HandleHotkeysSetting(String sKey, String sVal)
-    If !MCMScript
-        Return
-    EndIf
-    Int newKey = sVal as Int
-    If sKey == "targetMode"
-        MCMScript.TargetMode = newKey
-        If HotkeyScript
-            HotkeyScript.TargetMode = newKey
-        EndIf
-    ElseIf sKey == "nearestNPCRadius"
-        MCMScript.NearestNPCRadius = sVal as Float
-        If HotkeyScript
-            HotkeyScript.NearestNPCRadius = sVal as Float
-        EndIf
-    ElseIf sKey == "wheelMenuKey"
-        MCMScript.WheelMenuKey = newKey
-        MCMScript.ApplyWheelMenuSettings()
-    ElseIf sKey == "followToggleKey"
-        MCMScript.FollowToggleKey = newKey
-        If HotkeyScript
-            HotkeyScript.UpdateFollowToggleKey(newKey)
-        EndIf
-    ElseIf sKey == "dismissKey"
-        MCMScript.DismissKey = newKey
-        If HotkeyScript
-            HotkeyScript.UpdateDismissKey(newKey)
-        EndIf
-    ElseIf sKey == "setCompanionKey"
-        MCMScript.SetCompanionKey = newKey
-        If HotkeyScript
-            HotkeyScript.UpdateSetCompanionKey(newKey)
-        EndIf
-    ElseIf sKey == "companionWaitKey"
-        MCMScript.CompanionWaitKey = newKey
-        If HotkeyScript
-            HotkeyScript.UpdateCompanionWaitKey(newKey)
-        EndIf
-    ElseIf sKey == "assignHomeKey"
-        MCMScript.AssignHomeKey = newKey
-        If HotkeyScript
-            HotkeyScript.UpdateAssignHomeKey(newKey)
-        EndIf
-    ElseIf sKey == "standUpKey"
-        MCMScript.StandUpKey = newKey
-        If HotkeyScript
-            HotkeyScript.UpdateStandUpKey(newKey)
-        EndIf
-    ElseIf sKey == "yieldKey"
-        MCMScript.YieldKey = newKey
-        If HotkeyScript
-            HotkeyScript.UpdateYieldKey(newKey)
-        EndIf
-    ElseIf sKey == "undressKey"
-        MCMScript.UndressKey = newKey
-        If HotkeyScript
-            HotkeyScript.UpdateUndressKey(newKey)
-        EndIf
-    ElseIf sKey == "dressKey"
-        MCMScript.DressKey = newKey
-        If HotkeyScript
-            HotkeyScript.UpdateDressKey(newKey)
-        EndIf
     EndIf
 EndFunction
 
@@ -854,7 +702,7 @@ Function HandleAction(String actType, String json)
         If actTarget
             Debug.Trace("[SeverActions_PrismaUI] ClearAllPackages for " + actName)
             SkyrimNetApi.ClearAllPackages(actTarget)
-            StorageUtil.SetIntValue(actTarget, "SeverActions_IsSandboxing", 0)
+            SeverActionsNative.Native_SetSandboxing(actTarget, false)
         EndIf
         Utility.Wait(0.5)
         SeverActionsNative.PrismaUI_RefreshPage("companions")
@@ -866,19 +714,10 @@ Function HandleAction(String actType, String json)
             Debug.Trace("[SeverActions_PrismaUI] UnregisterPackage " + actLocName + " from " + actName)
             SkyrimNetApi.UnregisterPackage(actTarget, actLocName)
             If actLocName == "FollowPlayer"
-                StorageUtil.SetIntValue(actTarget, "SeverActions_IsSandboxing", 0)
+                SeverActionsNative.Native_SetSandboxing(actTarget, false)
             EndIf
         EndIf
         Utility.Wait(0.5)
-        SeverActionsNative.PrismaUI_RefreshPage("companions")
-
-    ; Survival actions
-    ElseIf actType == "toggleSurvivalExclude"
-        actName = SeverActionsNative.PrismaUI_ExtractJsonValue(json, "name")
-        actTarget = FindFollowerByName(actName)
-        If actTarget && SurvivalScript
-            SurvivalScript.ToggleFollowerExcluded(actTarget)
-        EndIf
         SeverActionsNative.PrismaUI_RefreshPage("companions")
     EndIf
 EndFunction
@@ -898,15 +737,19 @@ EndFunction
 Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form sender)
     EnsureScriptReferences()
 
-    ; Parse pipe-delimited fields
+    ; Parse pipe-delimited fields (6 slots — actionId | target | target2 |
+    ; strParam | intParam | str2Param). str2Param is empty for most actions;
+    ; v4 verbs (castSpell, setSituationOutfit, createRecurringDebt) use it
+    ; for a second string parameter (preset name / interval days / etc.).
     String actionId = GetPipeField(strArg, 0)
     String targetName = GetPipeField(strArg, 1)
     String target2Name = GetPipeField(strArg, 2)
     String strParam = GetPipeField(strArg, 3)
     Int intParam = GetPipeField(strArg, 4) as Int
+    String str2Param = GetPipeField(strArg, 5)
 
     Debug.Trace("[SeverActions_PrismaUI] ExecuteAction: " + actionId + " target=" + targetName \
-        + " target2=" + target2Name + " str=" + strParam + " int=" + intParam)
+        + " target2=" + target2Name + " str=" + strParam + " int=" + intParam + " str2=" + str2Param)
 
     ; Resolve primary target ("Player" → player ref, otherwise search by name)
     Actor target = None
@@ -920,12 +763,41 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
         Return
     EndIf
 
-    ; Resolve optional second target ("Player" → player ref)
+    ; Resolve optional second target ("Player" → player ref).
+    ; Several downstream Execute paths take target2Name as a raw string and
+    ; resolve it again themselves via FindActorByName (GiveGoldTrue_Execute,
+    ; DispatchGuardToArrest_Execute target2Name slot, DispatchGuardToHome_Execute
+    ; target2Name slot, etc.). FindActorByName fuzzy-matches via Levenshtein,
+    ; so a literal "Player" sentinel from the picker would otherwise match the
+    ; first NPC whose name contains "Player" (e.g. "Player Friend"). Whenever
+    ; we successfully resolve target2 to an Actor, also overwrite target2Name
+    ; with that actor's actual display name so the raw-string path can't
+    ; collide. For the player specifically, "Player" → player.GetDisplayName().
     Actor target2 = None
     If target2Name == "Player" || target2Name == "player"
         target2 = Game.GetPlayer()
+        target2Name = target2.GetDisplayName()
     ElseIf target2Name != ""
         target2 = SeverActionsNative.FindActorByName(target2Name)
+        If target2
+            ; Re-canonicalize so any downstream string-based resolve uses the
+            ; actor's authoritative display name rather than the picker's typed
+            ; value (which may differ in case / whitespace / NND-bracket form).
+            target2Name = target2.GetDisplayName()
+        Else
+            String resolveMsg = "PrismaUI dispatch: target2 name '" + target2Name + "' did not resolve to an actor (action=" + actionId + ")"
+            Debug.Trace("[SeverActions_PrismaUI] " + resolveMsg)
+            SeverActionsNative.Native_Arrest_Log(resolveMsg)
+        EndIf
+    EndIf
+
+    ; Same canonicalization for targetName — primary target string is also
+    ; passed downstream by some legacy paths.
+    If targetName == "Player" || targetName == "player"
+        ; target was already set to Game.GetPlayer() above; just rename.
+        targetName = target.GetDisplayName()
+    ElseIf target
+        targetName = target.GetDisplayName()
     EndIf
 
     ; ── Follower Actions ──
@@ -984,15 +856,42 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
             CombatScript.Yield_Execute(target)
         EndIf
 
+    ; ── Brawl Actions ──
+    ; All four mirror the SkyrimNet YAML entry points 1:1 so the PrismaUI
+    ; Actions page can drive a brawl end-to-end without the LLM. target =
+    ; subject (challenger / accepter / decliner / forfeiter); target2 =
+    ; opposite participant where relevant.
+    ElseIf actionId == "challengeBrawl"
+        If BrawlScript && target && target2
+            BrawlScript.ChallengeBrawl_Execute(target, target2)
+        EndIf
+
+    ElseIf actionId == "acceptBrawl"
+        ; akChallenger (target2) is optional in AcceptBrawl_Execute — when
+        ; omitted, the script looks up the pending challenge from native state.
+        ; The accepter (target) is dereferenced unconditionally, so guard it.
+        If BrawlScript && target
+            BrawlScript.AcceptBrawl_Execute(target, target2)
+        EndIf
+
+    ElseIf actionId == "declineBrawl"
+        If BrawlScript && target
+            BrawlScript.DeclineBrawl_Execute(target, target2)
+        EndIf
+
+    ElseIf actionId == "forfeitBrawl"
+        If BrawlScript && target
+            BrawlScript.ForfeitBrawl_Execute(target)
+        EndIf
+
     ; ── Economy Actions ──
     ElseIf actionId == "giveGold"
-        If CurrencyScript
-            If target2
-                CurrencyScript.GiveGold_Execute(target, target2, intParam)
-            ElseIf target2Name != ""
-                ; Use GiveGoldTrue which resolves by name
-                CurrencyScript.GiveGoldTrue_Execute(target, target2Name, intParam)
-            EndIf
+        ; Name-resolution fallback (GiveGoldTrue) was deleted in Phase 1 — the
+        ; PrismaUI action picker always supplies a resolved target2 Actor, so
+        ; the string-based path is unreachable in practice. If a future UI
+        ; surface needs name-resolution, restore GiveGoldTrue first.
+        If CurrencyScript && target2
+            CurrencyScript.GiveGold_Execute(target, target2, intParam)
         EndIf
 
     ElseIf actionId == "collectPayment"
@@ -1082,12 +981,22 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
 
     ; ── Arrest Actions ──
     ElseIf actionId == "arrestNPC"
-        If ArrestScript && target2
-            ArrestScript.ArrestNPC_Internal(target, target2)
+        If !ArrestScript
+            SeverActionsNative.Native_Arrest_Log("PrismaUI arrestNPC skipped — ArrestScript reference is None (script ref binding failed)")
+        ElseIf !target2
+            SeverActionsNative.Native_Arrest_Log("PrismaUI arrestNPC skipped — target2 (suspect) is None. target='" + targetName + "' target2Name='" + target2Name + "'")
+        Else
+            SeverActionsNative.Native_Arrest_Log("PrismaUI arrestNPC dispatching: guard='" + target.GetDisplayName() + "' suspect='" + target2.GetDisplayName() + "'")
+            Bool arrestStarted = ArrestScript.ArrestNPC_Internal(target, target2)
+            SeverActionsNative.Native_Arrest_Log("PrismaUI arrestNPC result: " + arrestStarted)
         EndIf
 
     ElseIf actionId == "freeFromJail"
-        If ArrestScript && target2
+        If !ArrestScript
+            SeverActionsNative.Native_Arrest_Log("PrismaUI freeFromJail skipped — ArrestScript reference is None")
+        ElseIf !target2
+            SeverActionsNative.Native_Arrest_Log("PrismaUI freeFromJail skipped — target2 (jailed NPC) is None. target='" + targetName + "' target2Name='" + target2Name + "'")
+        Else
             ArrestScript.FreeNPC_Internal(target, target2)
         EndIf
 
@@ -1098,7 +1007,12 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
             ; field 5 (str2Param) = authority who ordered the arrest (actor name from picker)
             ; Defaults to player if not specified
             String senderName = GetPipeField(strArg, 5)
-            If senderName == ""
+            ; Normalize the literal "Player" sentinel from the picker to the
+            ; player's actual display name. The downstream Execute path resolves
+            ; senders via FindActorByName, which fuzzy-matches "Player" to any
+            ; NPC whose display name contains "Player" (e.g. "Player Friend"),
+            ; sending the guard to the wrong actor entirely.
+            If senderName == "" || senderName == "Player" || senderName == "player"
                 senderName = Game.GetPlayer().GetDisplayName()
             EndIf
             ArrestScript.DispatchGuardToArrest_Execute(target, target2Name, senderName)
@@ -1112,7 +1026,8 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
             ; field 5 (str2Param) = authority who ordered (actor name from picker)
             ; Defaults to player if not specified
             String senderName = GetPipeField(strArg, 5)
-            If senderName == ""
+            ; Same "Player" sentinel normalization as dispatchGuardArrest above.
+            If senderName == "" || senderName == "Player" || senderName == "player"
                 senderName = Game.GetPlayer().GetDisplayName()
             EndIf
             ArrestScript.DispatchGuardToHome_Execute(target, target2Name, senderName, strParam)
@@ -1162,6 +1077,48 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
             PropertyScript.TransferOwnership(target, strParam)
         EndIf
 
+    ; ── Mysticism Actions (v4 Composer additions) ──
+    ElseIf actionId == "castSpell"
+        ; target  = caster (Subject), strParam = spell name
+        ; target2 = optional target NPC (empty/"0" = aimed cast in front of caster)
+        If SpellCastScript
+            String castTargetName = target2Name
+            If castTargetName == ""
+                castTargetName = "0"
+            EndIf
+            SpellCastScript.CastSpell_Execute(target, strParam, castTargetName, false, true, true)
+        EndIf
+
+    ; ── Outfit Situation Actions (v4) ──
+    ElseIf actionId == "setSituationOutfit"
+        ; target = NPC, strParam = situation, str2Param = preset name
+        If OutfitScript
+            OutfitScript.SetSituationPreset_Execute(target, strParam, str2Param)
+        EndIf
+
+    ElseIf actionId == "clearSituationOutfit"
+        ; target = NPC, strParam = situation
+        If OutfitScript
+            OutfitScript.ClearSituationPreset_Execute(target, strParam)
+        EndIf
+
+    ; ── Recurring Debt (v4) ──
+    ElseIf actionId == "createRecurringDebt"
+        ; target = creditor (also the speaker), target2 = debtor,
+        ; intParam = amount per cycle, strParam = reason,
+        ; str2Param = interval in days (string-encoded — parses to Int)
+        If DebtScript && target2
+            String rdReason = strParam
+            If rdReason == ""
+                rdReason = "recurring debt"
+            EndIf
+            Int rdInterval = str2Param as Int
+            If rdInterval <= 0
+                rdInterval = 7
+            EndIf
+            DebtScript.CreateRecurringDebt_Execute(target, target, target2, intParam, rdReason, rdInterval, 0)
+        EndIf
+
     Else
         Debug.Trace("[SeverActions_PrismaUI] ExecuteAction: Unknown actionId '" + actionId + "'")
     EndIf
@@ -1200,7 +1157,7 @@ Event OnPrismaClearPkgs(string eventName, string strArg, float numArg, Form send
     If akActor
         Debug.Trace("[SeverActions_PrismaUI] ClearAllPackages: " + akActor.GetDisplayName())
         SkyrimNetApi.ClearAllPackages(akActor)
-        StorageUtil.SetIntValue(akActor, "SeverActions_IsSandboxing", 0)
+        SeverActionsNative.Native_SetSandboxing(akActor, false)
     EndIf
 EndEvent
 
@@ -1217,7 +1174,7 @@ Event OnPrismaRemovePkg(string eventName, string strArg, float numArg, Form send
         Debug.Trace("[SeverActions_PrismaUI] RemovePackage: " + packageName + " from " + akActor.GetDisplayName())
         SkyrimNetApi.UnregisterPackage(akActor, packageName)
         If packageName == "FollowPlayer"
-            StorageUtil.SetIntValue(akActor, "SeverActions_IsSandboxing", 0)
+            SeverActionsNative.Native_SetSandboxing(akActor, false)
         EndIf
     EndIf
 EndEvent
@@ -1267,28 +1224,28 @@ ReferenceAlias Function GetTravelAlias(Int slot)
 EndFunction
 
 Function ClearBountyForHold(String hold)
-    If !ArrestScript
+    If !ArrestScript || !BountyScript
         Return
     EndIf
     Faction f = GetCrimeFactionForHold(hold)
     If f
-        ArrestScript.ClearTrackedBounty(f)
+        BountyScript.ClearTrackedBounty(f)
     EndIf
 EndFunction
 
 Function ClearAllBounties()
-    If !ArrestScript
+    If !ArrestScript || !BountyScript
         Return
     EndIf
-    ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionEastmarch)
-    ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionFalkreath)
-    ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionHaafingar)
-    ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionHjaalmarch)
-    ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionPale)
-    ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionReach)
-    ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionRift)
-    ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionWhiterun)
-    ArrestScript.ClearTrackedBounty(ArrestScript.CrimeFactionWinterhold)
+    BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionEastmarch)
+    BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionFalkreath)
+    BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionHaafingar)
+    BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionHjaalmarch)
+    BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionPale)
+    BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionReach)
+    BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionRift)
+    BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionWhiterun)
+    BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionWinterhold)
 EndFunction
 
 Faction Function GetCrimeFactionForHold(String hold)

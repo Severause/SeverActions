@@ -1,15 +1,15 @@
 name: ModifyArousal
-description: "Adjust arousal level. Negative to decrease (-2 to -20), positive to increase (+2 to +15)."
+description: "The speaker's blood runs hotter or cooler in the moment — a flirtation across a tavern table, a cold bucket of water to the face, a glance held a beat too long, a chastening word from a priest. Pushes arousal up or down."
 questEditorId: SeverActions
 scriptName: SeverActions_Arousal
 executionFunctionName: ModifyArousal_Execute
 parameterMapping:
   - type: speaker
     name: akActor
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor whose arousal is shifting
   - type: dynamic
     name: amount
-    description: "Amount to change. Negative decreases, positive increases."
+    description: "how much the needle moves — negative cools them off (-2 to -20), positive stokes them (+2 to +15)"
 enabled: true
 eligibilityRules:
   - conditions:

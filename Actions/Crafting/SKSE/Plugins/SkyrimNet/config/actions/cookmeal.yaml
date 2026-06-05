@@ -1,23 +1,24 @@
 customCategory: crafting
 name: CookMeal
-description: "Cook a meal at a cooking station and deliver it to the recipient."
+description: "The speaker steps over to the cookpot, fires the spit, ladles out a portion when it's done, and brings it across to the one waiting — venison stew at a wayside camp, an apple cabbage broth at the inn, sweetrolls baked at the hearth and pressed into a child's hand."
 questEditorId: SeverActions
 scriptName: SeverActions_Crafting
 executionFunctionName: CookMeal_Internal
 parameterMapping:
   - type: speaker
     name: akActor
-    description: Speaker Actor parameter (triggering entity)
+    description: the actor working the spit and ladle
   - type: dynamic
     name: recipeName
-    description: Name of the meal to cook
+    description: what's on the menu (e.g. 'venison stew', 'sweetroll')
   - type: dynamic
     name: akRecipient
-    description: Recipient of the food
-  - type: static
-    value: 1
+    description: the actor the bowl is going to
+  - type: dynamic
     name: itemCount
-    description: Static int parameter
+    description: "how many portions — leave empty (or 1) for a single serving. Only use > 1 when the request clearly asks for multiples (e.g. 'cook three bowls of stew')."
+    optional: true
+    default: 1
 enabled: true
 eligibilityRules:
   - conditions:

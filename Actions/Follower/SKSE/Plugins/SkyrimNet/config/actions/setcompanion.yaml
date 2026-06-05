@@ -1,12 +1,12 @@
 name: SetCompanion
-description: "Register this person as a companion. Use only when they genuinely agree to travel with {{ player.name }}. Also for re-recruiting a previously dismissed companion."
+description: "The speaker agrees to throw in with {{ player.name }} on the road ahead — a sellsword shaking on terms in a tavern back room, an old friend deciding to come along, a previously dismissed companion picking up the pack again. Use only when they genuinely consent to travel together."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: RegisterFollower
 parameterMapping:
   - type: speaker
     name: akActor
-    description: The NPC being set as a companion
+    description: the actor joining up with {{ player.name }}
 enabled: true
 defaultPriority: 6
 eligibilityRules:

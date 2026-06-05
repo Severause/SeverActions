@@ -1,0 +1,22 @@
+customCategory: camp
+name: EstablishCamp
+description: "Pitch a camp at the player's current location. The player drops a Camp Kit, builds a fire ring, lays out a bedroll, and settles in to rest. Use when the player wants to camp here, when a companion suggests stopping for the night, or when the party needs to rest, eat, or take watch. Only valid outside combat and when no camp is already active."
+questEditorId: SeversHearth
+scriptName: SeversHearth_Camp
+executionFunctionName: EstablishCamp
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The actor who suggested or initiated camping (player or companion).
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "A camp is established at the current location."
+isShortLived: false

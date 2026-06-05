@@ -1,16 +1,16 @@
 customCategory: magic
 name: LearnSpell
-description: "Learn a spell from the player. The player must know the spell for you to learn it. Only use this when the player offers to teach you a specific spell, or during roleplay where spell learning would make sense."
+description: "The speaker takes a spell from the player — a quiet hour at a College workbench tracing the gestures, an apprentice's curiosity by the fireside, a Restoration trick passed between friends. The player must actually know the spell to pass it on. Only use when the player has offered to teach a specific spell, or during roleplay where learning would make sense."
 questEditorId: SeverActions
 scriptName: SeverActions_SpellTeach
 executionFunctionName: learnspell
 parameterMapping:
   - type: speaker
     name: akActor
-    description: The NPC who is learning the spell
+    description: the actor taking the spell into their own hands
   - type: dynamic
     name: spellName
-    description: "The name of the spell to learn (e.g. 'Fireball', 'Close Wounds', 'Oakflesh')"
+    description: "the spell being learned (e.g. 'Fireball', 'Close Wounds', 'Oakflesh')"
 enabled: true
 defaultPriority: 5
 eligibilityRules:

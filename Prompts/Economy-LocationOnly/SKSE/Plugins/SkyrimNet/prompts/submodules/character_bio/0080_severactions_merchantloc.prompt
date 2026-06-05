@@ -1,9 +1,9 @@
-{# Skip merchant inventory during SexLab/OStim scenes - saves tokens #}
-{% if actorUUID and actorUUID != 0 %}
+{# Render-mode gate — "action" covers buy/sell/vendor drill-downs. #}
+{% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" or render_mode == "action" %}
+{% if actorUUID and actorUUID != 0 and not is_player(actorUUID) %}
 {% set _in_sexlab = is_in_faction(actorUUID, "SexLabAnimatingFaction") %}
 {% set _in_ostim = is_in_faction(actorUUID, "OStimExcitementFaction") %}
-{% set first_person = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
-{% if not is_player(actorUUID) and first_person and not _in_sexlab and not _in_ostim %}
+{% if not _in_sexlab and not _in_ostim %}
 {% set actor = decnpc(actorUUID) %}
 {% set actor_name = actor.name %}
 {# Per-actor merchant location mapping: actor name -> required location substring #}
@@ -139,6 +139,7 @@ These are your BASE prices for inventory items. You may negotiate within reason:
 - **When to hold firm**: For rare items, limited stock, or difficult customers, maintain higher prices
 
 Always START with your base prices and only adjust if the player actively negotiates or uses persuasion. Don't volunteer discounts.
+{% endif %}
 {% endif %}
 {% endif %}
 {% endif %}

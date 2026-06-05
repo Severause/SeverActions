@@ -6,27 +6,17 @@ Also supports merchant chest access for GiveItem/UseItem actions.}
 ; CONSTANTS
 ; =============================================================================
 
-float Property SEARCH_RADIUS = 1000.0 AutoReadOnly
 float Property INTERACTION_DISTANCE = 150.0 AutoReadOnly
 
 ; =============================================================================
-; LOOT TRACKING - Stores description of last looted items
-; =============================================================================
-
-String LastLootedItems = ""
-
-; =============================================================================
 ; BOOK READING STATE - Tracks active book reading for prompt integration
+; Source of truth for title/text is per-actor StorageUtil — read by prompts
+; via papyrus_util. Storing them as quest properties (Auto Hidden) bloated
+; the cosave on every save (book text can run tens of KB).
 ; =============================================================================
 
 Actor Property BookReader Auto Hidden
 {The NPC currently reading a book aloud. None if nobody is reading.}
-
-String Property BookReadingTitle = "" Auto Hidden
-{The title of the book currently being read.}
-
-String Property BookReadingText = "" Auto Hidden
-{The full text content of the book currently being read.}
 
 Float Property BookReadingStartTime = 0.0 Auto Hidden
 {Real time when reading started. Used for auto-timeout.}
@@ -97,31 +87,58 @@ Bool Function WalkToReference(Actor akActor, ObjectReference akTarget, float max
     if !akActor || !akTarget
         return false
     endif
-    
-    if GoToRefPackage && TargetRefAlias
+
+    Bool usingPackage = GoToRefPackage && TargetRefAlias
+    if usingPackage
         TargetRefAlias.ForceRefTo(akTarget)
         ActorUtil.AddPackageOverride(akActor, GoToRefPackage, 100)
         akActor.EvaluatePackage()
-        
+    else
+        akActor.PathToReference(akTarget, 1.0)
+    endif
+
+    ; Arrival detection: prefer the native ArrivalMonitor scan loop over
+    ; per-iteration Papyrus GetDistance. Polling Arrival_IsTracked is cheap
+    ; (one map lookup) — the actual XY distance math runs once per ~1s native
+    ; tick across ALL tracked actors, regardless of how many flows are walking
+    ; concurrently. Compared to the old loop (60 GetDistance calls per walker
+    ; over 15s), this scales sub-linearly with concurrent NPCs.
+    ;
+    ; Fallback: if the actor is already being tracked by another system
+    ; (arrest approach/escort), do NOT take it over — ArrivalMonitor is
+    ; one-actor-one-entry. Use the legacy GetDistance poll instead.
+    Bool useArrivalMonitor = !SeverActionsNativeExt.Arrival_IsTracked(akActor)
+    if useArrivalMonitor
+        SeverActionsNativeExt.Arrival_Register(akActor, akTarget, INTERACTION_DISTANCE, "sever_loot_walk")
+        float elapsed = 0.0
+        while SeverActionsNativeExt.Arrival_IsTracked(akActor) && elapsed < maxWaitTime
+            Utility.Wait(0.25)
+            elapsed += 0.25
+        endwhile
+        ; Defensive cancel if we timed out — also handles the "actor died
+        ; mid-walk, monitor auto-cancelled" case where IsTracked is false
+        ; but they didn't actually arrive.
+        if SeverActionsNativeExt.Arrival_IsTracked(akActor)
+            SeverActionsNativeExt.Arrival_Cancel(akActor)
+        endif
+    else
         float elapsed = 0.0
         while akActor.GetDistance(akTarget) > INTERACTION_DISTANCE && elapsed < maxWaitTime
             Utility.Wait(0.25)
             elapsed += 0.25
         endwhile
-        
+    endif
+
+    if usingPackage
         ActorUtil.RemovePackageOverride(akActor, GoToRefPackage)
         akActor.EvaluatePackage()
         TargetRefAlias.Clear()
-        return akActor.GetDistance(akTarget) <= INTERACTION_DISTANCE
-    else
-        akActor.PathToReference(akTarget, 1.0)
-        float elapsed = 0.0
-        while akActor.GetDistance(akTarget) > INTERACTION_DISTANCE && elapsed < maxWaitTime
-            Utility.Wait(0.1)
-            elapsed += 0.1
-        endwhile
-        return akActor.GetDistance(akTarget) <= INTERACTION_DISTANCE
     endif
+
+    ; Final distance check is the source of truth. ArrivalMonitor removes
+    ; the entry on arrival OR on actor-death auto-cancel; only the position
+    ; check distinguishes those.
+    return akActor.GetDistance(akTarget) <= INTERACTION_DISTANCE
 EndFunction
 
 ; =============================================================================
@@ -131,19 +148,6 @@ EndFunction
 String Function EscapeJsonString(String text) Global
     ; Native implementation: ~2000x faster
     return SeverActionsNative.EscapeJsonString(text)
-EndFunction
-
-String Function GetDirectionString(Actor akActor, ObjectReference akTarget) Global
-    float headingToTarget = akActor.GetHeadingAngle(akTarget)
-    if headingToTarget > -45.0 && headingToTarget < 45.0
-        return "ahead"
-    elseif headingToTarget >= 45.0 && headingToTarget < 135.0
-        return "to the right"
-    elseif headingToTarget <= -45.0 && headingToTarget > -135.0
-        return "to the left"
-    else
-        return "behind"
-    endif
 EndFunction
 
 ; Convert string to lowercase
@@ -197,7 +201,7 @@ Bool Function PickUpItem_IsEligible(Actor akActor, String itemType) Global
         return false
     endif
 
-    return FindNearbyItemOfType(akActor, itemType) != None
+    return SeverActionsNative.FindNearbyItemOfType(akActor, itemType, 1000.0) != None
 EndFunction
 
 Function PickUpItem_Execute(Actor akActor, String itemType)
@@ -206,7 +210,7 @@ Function PickUpItem_Execute(Actor akActor, String itemType)
         return
     endif
 
-    ObjectReference nearbyItem = FindNearbyItemOfType(akActor, itemType)
+    ObjectReference nearbyItem = SeverActionsNative.FindNearbyItemOfType(akActor, itemType, 1000.0)
 
     if nearbyItem
         Form itemBase = nearbyItem.GetBaseObject()
@@ -216,7 +220,16 @@ Function PickUpItem_Execute(Actor akActor, String itemType)
             if IdlePickUpItem
                 PlayAnimationAndWait(akActor, IdlePickUpItem, 1.5)
             endif
-            nearbyItem.Activate(akActor)
+            ; Owned item → silent native pickup (NO vanilla theft alarm; this is
+            ; the bug fix — Activate on owned goods was giving the player a
+            ; vanilla bounty even for follower pickups). SA bounty if witnessed.
+            ; Unowned → normal Activate (preserves extras, raises no crime).
+            if SeverActionsNativeExt.IsRefOwnedByNonPlayer(nearbyItem)
+                SeverActionsNativeExt.PickUpItemSilent(akActor, nearbyItem)
+                ApplyTheftBounty(akActor, itemName)
+            else
+                nearbyItem.Activate(akActor)
+            endif
             ResetToDefaultIdle(akActor)
             SkyrimNetApi.RegisterEvent("item_picked_up", akActor.GetDisplayName() + " picked up " + itemName, akActor, None)
         else
@@ -237,7 +250,7 @@ Bool Function LootContainer_IsEligible(Actor akActor, String containerName) Glob
         return false
     endif
 
-    return FindNearbyContainer(akActor, containerName) != None
+    return SeverActionsNative.FindNearbyContainer(akActor, containerName, 1000.0) != None
 EndFunction
 
 Function LootContainer_Execute(Actor akActor, String containerName, String itemsToTake)
@@ -246,33 +259,23 @@ Function LootContainer_Execute(Actor akActor, String containerName, String items
         return
     endif
 
-    ObjectReference akContainer = FindNearbyContainer(akActor, containerName)
+    ObjectReference akContainer = SeverActionsNative.FindNearbyContainer(akActor, containerName, 1000.0)
     if !akContainer
         SkyrimNetApi.RegisterEvent("container_not_found", akActor.GetDisplayName() + " couldn't find a " + containerName + " nearby", akActor, None)
         return
     endif
 
     String displayName = akContainer.GetBaseObject().GetName()
-    Debug.Trace("[SeverActions_Loot] " + akActor.GetDisplayName() + " looting container: " + displayName)
 
-    if WalkToReference(akActor, akContainer)
-        if IdleSearchingChest
-            PlayAnimationAndWait(akActor, IdleSearchingChest, 2.5)
-        endif
-        ; End the searching animation before processing loot (can take a while for many items)
-        ResetToDefaultIdle(akActor)
-        Utility.Wait(0.2)
-        int itemsTaken = ProcessLootList(akActor, akContainer, itemsToTake)
-        ResetToDefaultIdle(akActor)
-
-        if itemsTaken > 0 && LastLootedItems != ""
-            SkyrimNetApi.RegisterEvent("container_looted", akActor.GetDisplayName() + " took " + LastLootedItems + " from " + displayName, akActor, None)
-        else
-            SkyrimNetApi.RegisterEvent("container_looted", akActor.GetDisplayName() + " found nothing to take from " + displayName, akActor, None)
-        endif
-    else
-        SkyrimNetApi.RegisterEvent("container_unreachable", akActor.GetDisplayName() + " couldn't reach " + displayName, akActor, None)
+    ; Locked containers aren't free-looted — refuse and narrate so the smith/NPC
+    ; reacts ("it's locked"). No lockpick mechanic; this just gates the take.
+    if akContainer.IsLocked()
+        SkyrimNetApi.RegisterEvent("container_locked", akActor.GetDisplayName() + " went for " + displayName + ", but it's locked.", akActor, None)
+        return
     endif
+
+    Debug.Trace("[SeverActions_Loot] " + akActor.GetDisplayName() + " looting container: " + displayName)
+    LootRef_Helper(akActor, akContainer, IdleSearchingChest, 2.5, displayName, "container", "took", itemsToTake)
 EndFunction
 
 ; =============================================================================
@@ -284,7 +287,9 @@ Bool Function LootCorpse_IsEligible(Actor akActor, String corpseName) Global
         return false
     endif
 
-    Actor akCorpse = SeverActionsNative.FindActorByName(corpseName)
+    ; Prefer the nearest DEAD match so a live same-named actor doesn't shadow
+    ; the corpse right beside the looter.
+    Actor akCorpse = SeverActionsNativeExt.FindNearestDeadByName(akActor, corpseName, 4096.0)
     if !akCorpse || !akCorpse.IsDead()
         return false
     endif
@@ -297,7 +302,7 @@ Function LootCorpse_Execute(Actor akActor, String corpseName, String itemsToTake
         return
     endif
 
-    Actor akCorpse = SeverActionsNative.FindActorByName(corpseName)
+    Actor akCorpse = SeverActionsNativeExt.FindNearestDeadByName(akActor, corpseName, 4096.0)
     if !akCorpse
         SkyrimNetApi.RegisterEvent("corpse_not_found", akActor.GetDisplayName() + " couldn't find " + corpseName, akActor, None)
         return
@@ -314,24 +319,76 @@ Function LootCorpse_Execute(Actor akActor, String corpseName, String itemsToTake
         return
     endif
 
-    if WalkToReference(akActor, akCorpse)
-        if IdleLootBody
-            PlayAnimationAndWait(akActor, IdleLootBody, 3.0)
+    String displayName = akCorpse.GetDisplayName()
+    LootRef_Helper(akActor, akCorpse, IdleLootBody, 3.0, displayName, "corpse", "looted", itemsToTake)
+EndFunction
+
+; Shared body for LootContainer_Execute / LootCorpse_Execute: walk to target,
+; play idle, hand off to native ProcessLoot, fire either a "<kind>_looted" or
+; "<kind>_unreachable" event. The two callers only differ in animation, verb,
+; and event prefix.
+; Add a SeverActions TRACKED bounty for a witnessed theft recorded by the last
+; ProcessLoot / PickUpItemSilent. Vanilla crime is never raised — owned-goods
+; taking is silent at the engine level, so this is the only consequence, and
+; only when seen. No-op if nothing was stolen, no witness, or no crime faction.
+Function ApplyTheftBounty(Actor akActor, String displayName)
+    if !akActor
+        return
+    endif
+    Int stolenValue = SeverActionsNativeExt.GetLastStolenValue()
+    if stolenValue <= 0
+        return
+    endif
+    if !SeverActionsNativeExt.IsTheftWitnessed(akActor, 1500.0)
+        return   ; unseen theft is free — the goods stay flagged stolen
+    endif
+    Faction crimeFaction = SeverActionsNativeExt.GetLastStolenCrimeFaction()
+    if !crimeFaction
+        return
+    endif
+    SeverActionsNativeExt.Native_Bounty_Mod(crimeFaction, stolenValue)
+    SeverActionsNativeExt.Native_Bounty_AddEvent(crimeFaction, stolenValue, "theft", "")
+    Debug.Notification("Bounty: +" + stolenValue + " gold (theft witnessed)")
+    SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " was seen taking owned goods from " + displayName + " — a " + stolenValue + " gold tracked bounty was added.", akActor, Game.GetPlayer())
+EndFunction
+
+Function LootRef_Helper(Actor akActor, ObjectReference akTarget, Idle anim, Float animDuration, String displayName, String kind, String verb, String itemsToTake)
+    if !akActor || !akTarget
+        return
+    endif
+
+    if WalkToReference(akActor, akTarget)
+        if anim
+            PlayAnimationAndWait(akActor, anim, animDuration)
         endif
-        ; End the looting animation before processing loot (can take a while for many items)
+        ; End the idle before processing loot (can take a while for many items).
         ResetToDefaultIdle(akActor)
         Utility.Wait(0.2)
-        int itemsTaken = ProcessLootList(akActor, akCorpse, itemsToTake)
-        ResetToDefaultIdle(akActor)
 
-        String displayName = akCorpse.GetDisplayName()
-        if itemsTaken > 0 && LastLootedItems != ""
-            SkyrimNetApi.RegisterEvent("corpse_looted", akActor.GetDisplayName() + " looted " + LastLootedItems + " from " + displayName, akActor, None)
+        int itemsTaken = ProcessLootList(akActor, akTarget, itemsToTake)
+        String desc = SeverActionsNative.GetLastLootDescription()
+
+        if itemsTaken > 0 && desc != ""
+            String suffix = ""
+            if itemsTaken >= 30
+                ; ProcessLoot caps at 30 stacks per call — flag that more may remain.
+                suffix = " (as much as they could grab in one go)"
+            endif
+            SkyrimNetApi.RegisterEvent(kind + "_looted", akActor.GetDisplayName() + " " + verb + " " + desc + " from " + displayName + suffix, akActor, None)
+            ; Witnessed theft of OWNED goods → SeverActions tracked bounty (the
+            ; scripted RemoveItem above never triggered vanilla crime).
+            ApplyTheftBounty(akActor, displayName)
         else
-            SkyrimNetApi.RegisterEvent("corpse_looted", akActor.GetDisplayName() + " found nothing to take from " + displayName, akActor, None)
+            ; Specific feedback when a named-item request wasn't in there.
+            String nothingMsg = akActor.GetDisplayName() + " found nothing to take from " + displayName
+            String mode = ToLowerCase(itemsToTake)
+            if mode != "" && mode != "all" && mode != "everything" && mode != "valuables" && mode != "valuable" && mode != "gold" && mode != "septims" && mode != "money"
+                nothingMsg = displayName + " had no " + itemsToTake + " for " + akActor.GetDisplayName() + " to take"
+            endif
+            SkyrimNetApi.RegisterEvent(kind + "_looted", nothingMsg, akActor, None)
         endif
     else
-        SkyrimNetApi.RegisterEvent("corpse_unreachable", akActor.GetDisplayName() + " couldn't reach " + corpseName, akActor, None)
+        SkyrimNetApi.RegisterEvent(kind + "_unreachable", akActor.GetDisplayName() + " couldn't reach " + displayName, akActor, None)
     endif
 EndFunction
 
@@ -367,8 +424,7 @@ Function GiveItem_Execute(Actor akActor, Actor akTarget, String itemName, Int ai
         Form itemForm = GetItemFormByName(akActor, itemName)
         Int transferred = 0
         String actualName = itemName
-        Bool fromMerchantChest = false
-        
+
         if itemForm && akActor.GetItemCount(itemForm) > 0
             ; Has it in personal inventory
             actualName = itemForm.GetName()
@@ -396,7 +452,6 @@ Function GiveItem_Execute(Actor akActor, Actor akTarget, String itemName, Int ai
                     
                     if transferred > 0
                         merchantChest.RemoveItem(itemForm, transferred, false, akTarget)
-                        fromMerchantChest = true
                     endif
                 endif
             endif
@@ -427,34 +482,144 @@ Function GiveItem_Execute(Actor akActor, Actor akTarget, String itemName, Int ai
 EndFunction
 
 ; =============================================================================
-; ACTION: GiveItemTrue - Give item to a named target (string-based lookup)
-; Same as GiveItem but target is resolved by name via FindActorByName
+; TRANSACTION HELPERS (for BuyItem / SellItem in SeverActions_Currency)
+;
+; These mirror GiveItem_Execute but DELIBERATELY DIFFER on two counts:
+;   1. No auto-debt-growth — the item is being paid for here and now, so it
+;      must not silently grow any outstanding tab between the parties.
+;   2. No "item_given" event — the encompassing transaction event built by
+;      Currency.BuyItem_Execute / SellItem_Execute is the canonical record.
+;
+; Split into two so Currency can resolve the item once (for gold + event
+; narration) and then issue the transfer.
 ; =============================================================================
 
-Function GiveItemTrue_Execute(Actor akActor, String asRecipient, String itemName, Int aiCount = 1)
-    if !akActor || asRecipient == "" || itemName == ""
-        return
-    endif
+Form Function ResolveItemForTransaction(Actor akSeller, String itemName) Global
+    {Returns the Form for itemName in akSeller's inventory (personal first,
+     then merchant chest fallback). Returns None when nothing matches.
+     Pure lookup — no side effects, no actor mutation.}
+    If !akSeller || itemName == ""
+        Return None
+    EndIf
 
-    Actor akTarget = SeverActionsNative.FindActorByName(asRecipient)
-    if !akTarget
-        Debug.Trace("[SeverActions_Loot] GiveItemTrue: Could not find actor named '" + asRecipient + "'")
-        SkyrimNetApi.RegisterEvent("item_give_failed", akActor.GetDisplayName() + " tried to give " + itemName + " to " + asRecipient + " but could not find them", akActor, None)
-        return
-    endif
+    ; Personal inventory first.
+    Form itemForm = GetItemFormByName(akSeller, itemName)
+    If itemForm && akSeller.GetItemCount(itemForm) > 0
+        Return itemForm
+    EndIf
 
-    Debug.Trace("[SeverActions_Loot] GiveItemTrue: " + akActor.GetDisplayName() + " giving " + aiCount + "x " + itemName + " to " + akTarget.GetDisplayName() + " (resolved from '" + asRecipient + "')")
-    GiveItem_Execute(akActor, akTarget, itemName, aiCount)
+    ; Merchant chest fallback (mirrors GiveItem_Execute's logic).
+    ObjectReference merchantChest = GetMerchantContainer(akSeller)
+    If merchantChest && merchantChest != akSeller
+        itemForm = FindItemInContainer(merchantChest, itemName)
+        If itemForm && merchantChest.GetItemCount(itemForm) > 0
+            Return itemForm
+        EndIf
+    EndIf
+
+    Return None
+EndFunction
+
+Int Function GetTransactionAvailableQty(Actor akSeller, Form akItemForm) Global
+    {Returns how many of akItemForm akSeller can actually sell — the max of
+     their personal inventory count and (if applicable) the merchant chest
+     count. Lets the caller fail early on insufficient-stock before any
+     walk/animation work happens.}
+    If !akSeller || !akItemForm
+        Return 0
+    EndIf
+    Int personal = akSeller.GetItemCount(akItemForm)
+    Int chest = 0
+    ObjectReference merchantChest = GetMerchantContainer(akSeller)
+    If merchantChest && merchantChest != akSeller
+        chest = merchantChest.GetItemCount(akItemForm)
+    EndIf
+    If personal >= chest
+        Return personal
+    EndIf
+    Return chest
+EndFunction
+
+Int Function TransferItemForTransaction(Actor akSeller, Actor akBuyer, Form akItemForm, Int aiCount = 1)
+    {Atomic item transfer for a paid transaction. Walks the seller to the
+     buyer, plays IdleGive, then moves up to aiCount of akItemForm from the
+     seller's personal inventory OR merchant chest into the buyer's inventory.
+
+     Returns the COUNT actually transferred (0 = nothing moved). Caller is
+     responsible for the gold half and the transaction event.
+
+     Does NOT call SeverActions_Debt.AutoAddToDebt — Buy/Sell transactions
+     must not grow tabs (the item is paid for in the same breath). Does NOT
+     fire item_given — Currency builds the unified item_purchased event.}
+
+    If !akSeller || !akBuyer || !akItemForm || aiCount < 1
+        Return 0
+    EndIf
+
+    If !WalkToReference(akSeller, akBuyer)
+        Return 0
+    EndIf
+
+    If IdleGive
+        PlayAnimationAndWait(akSeller, IdleGive, 2.0)
+    EndIf
+
+    ; PR #103 review fix: pick the source that has the most stock so the
+    ; transfer count matches the GetTransactionAvailableQty pre-check
+    ; (which returns MAX(personal, chest)). The legacy GiveItem_Execute
+    ; pattern of "personal first if any" would silently undershoot when
+    ; a merchant has e.g. 3 in their pocket and 5 in the chest.
+    Int personal = akSeller.GetItemCount(akItemForm)
+    Int chest = 0
+    ObjectReference merchantChest = GetMerchantContainer(akSeller)
+    If merchantChest && merchantChest != akSeller
+        chest = merchantChest.GetItemCount(akItemForm)
+    EndIf
+
+    Int transferred = 0
+    If personal >= chest && personal > 0
+        Int toMove = aiCount
+        If toMove > personal
+            toMove = personal
+        EndIf
+        If toMove > 0
+            akSeller.RemoveItem(akItemForm, toMove, false, akBuyer)
+            transferred = toMove
+        EndIf
+    ElseIf chest > 0
+        Int toMove = aiCount
+        If toMove > chest
+            toMove = chest
+        EndIf
+        If toMove > 0
+            merchantChest.RemoveItem(akItemForm, toMove, false, akBuyer)
+            transferred = toMove
+        EndIf
+    EndIf
+
+    ResetToDefaultIdle(akSeller)
+    Return transferred
 EndFunction
 
 ; =============================================================================
-; ACTION: TakeItemFromPlayer - NPC takes an item from the player's inventory
+; ACTION: TakeItem — speaker takes an item out of another actor's hands
+;
+; Generalised from the original TakeItemFromPlayer. The target can be the
+; player OR any NPC (a quest-giver collecting payment, a merchant taking
+; a turn-in, two NPCs exchanging tools). TakeItemFromPlayer_Execute lives
+; on below as a thin wrapper so PrismaUI's existing call site keeps working.
 ; =============================================================================
 
-Function TakeItemFromPlayer_Execute(Actor akActor, String itemName, Int aiCount = 1)
-{NPC walks to the player, plays take animation, and transfers an item from the player's inventory.
- Also handles gold — LLMs often use this instead of CollectPayment for gold transfers.}
-    if !akActor || itemName == ""
+Function TakeItem_Execute(Actor akSpeaker, Actor akTarget, String itemName, Int aiCount = 1)
+{The speaker walks to the target, plays the take animation, and pulls an
+ item out of the target's inventory. Also handles gold — LLMs often pick
+ this for gold transfers when CollectPayment would be more semantically
+ correct, so we route the gold path through the same Take-style animation
+ + Debug.Notification when the target is the player.}
+    if !akSpeaker || !akTarget || itemName == ""
+        return
+    endif
+    if akSpeaker == akTarget
         return
     endif
 
@@ -464,25 +629,18 @@ Function TakeItemFromPlayer_Execute(Actor akActor, String itemName, Int aiCount 
     endif
 
     Actor playerRef = Game.GetPlayer()
-    if !playerRef
-        return
-    endif
+    Bool targetIsPlayer = (akTarget == playerRef)
 
     ; Check if the LLM is asking for gold (common aliases)
-    String lowerName = StringUtil.Substring(itemName, 0)
-    ; Simple lowercase check — StringUtil doesn't have ToLower, so check common variants
-    if itemName == "Gold" || itemName == "gold" || itemName == "Gold Coins" || itemName == "gold coins" \
-        || itemName == "Septims" || itemName == "septims" || itemName == "Coins" || itemName == "coins" \
-        || itemName == "Gold Coin" || itemName == "gold coin" || itemName == "Septim" || itemName == "septim" \
-        || itemName == "gold pieces" || itemName == "Gold Pieces"
-        TakeGoldFromPlayer(akActor, playerRef, aiCount)
+    if SeverActionsNative.IsGoldName(itemName)
+        TakeGoldFrom(akSpeaker, akTarget, aiCount)
         return
     endif
 
-    ; Find the item in the player's inventory
-    Form itemForm = GetItemFormByName(playerRef, itemName)
-    if !itemForm || playerRef.GetItemCount(itemForm) <= 0
-        SkyrimNetApi.RegisterEvent("take_item_failed", akActor.GetDisplayName() + " couldn't find " + itemName + " in the player's inventory", akActor, playerRef)
+    ; Find the item in the target's inventory
+    Form itemForm = GetItemFormByName(akTarget, itemName)
+    if !itemForm || akTarget.GetItemCount(itemForm) <= 0
+        SkyrimNetApi.RegisterEvent("take_item_failed", akSpeaker.GetDisplayName() + " couldn't find " + itemName + " in " + akTarget.GetDisplayName() + "'s inventory", akSpeaker, akTarget)
         return
     endif
 
@@ -491,81 +649,111 @@ Function TakeItemFromPlayer_Execute(Actor akActor, String itemName, Int aiCount 
     ; Check if the resolved item is actually gold (catches any other gold name variants)
     MiscObject goldForm = Game.GetFormFromFile(0x0000000F, "Skyrim.esm") as MiscObject
     if goldForm && itemForm == goldForm as Form
-        TakeGoldFromPlayer(akActor, playerRef, aiCount)
+        TakeGoldFrom(akSpeaker, akTarget, aiCount)
         return
     endif
 
-    ; Walk to the player
-    if WalkToReference(akActor, playerRef)
+    ; Walk to the target
+    if WalkToReference(akSpeaker, akTarget)
         if IdleTake
-            PlayAnimationAndWait(akActor, IdleTake, 2.0)
+            PlayAnimationAndWait(akSpeaker, IdleTake, 2.0)
         endif
 
         ; Transfer the item
-        Int available = playerRef.GetItemCount(itemForm)
+        Int available = akTarget.GetItemCount(itemForm)
         Int transferred = aiCount
         if transferred > available
             transferred = available
         endif
 
         if transferred > 0
-            playerRef.RemoveItem(itemForm, transferred, true, akActor)
+            ; abSilent — when the target is the player, the engine's normal
+            ; "X was added/removed" toast is suppressed because we fire our
+            ; own Debug.Notification below for clearer narration.
+            akTarget.RemoveItem(itemForm, transferred, targetIsPlayer, akSpeaker)
         endif
 
-        ResetToDefaultIdle(akActor)
+        ResetToDefaultIdle(akSpeaker)
 
-        ; Notify player and register event
-        String npcName = akActor.GetDisplayName()
+        ; Notify and register event. The player-target path retains the
+        ; legacy "item_taken_from_player" event name + Debug.Notification
+        ; so prompt templates and HUD behavior don't change for that case.
+        String speakerName = akSpeaker.GetDisplayName()
+        String targetName = akTarget.GetDisplayName()
         if transferred > 1
-            Debug.Notification(npcName + " took " + actualName + " (" + transferred + ")")
-            SkyrimNetApi.RegisterEvent("item_taken_from_player", npcName + " took " + transferred + " " + actualName + " from the player", akActor, playerRef)
+            if targetIsPlayer
+                Debug.Notification(speakerName + " took " + actualName + " (" + transferred + ")")
+                SkyrimNetApi.RegisterEvent("item_taken_from_player", speakerName + " took " + transferred + " " + actualName + " from the player", akSpeaker, akTarget)
+            else
+                SkyrimNetApi.RegisterEvent("item_taken", speakerName + " took " + transferred + " " + actualName + " from " + targetName, akSpeaker, akTarget)
+            endif
         elseif transferred == 1
-            Debug.Notification(npcName + " took " + actualName)
-            SkyrimNetApi.RegisterEvent("item_taken_from_player", npcName + " took " + actualName + " from the player", akActor, playerRef)
+            if targetIsPlayer
+                Debug.Notification(speakerName + " took " + actualName)
+                SkyrimNetApi.RegisterEvent("item_taken_from_player", speakerName + " took " + actualName + " from the player", akSpeaker, akTarget)
+            else
+                SkyrimNetApi.RegisterEvent("item_taken", speakerName + " took " + actualName + " from " + targetName, akSpeaker, akTarget)
+            endif
         else
-            SkyrimNetApi.RegisterEvent("take_item_failed", npcName + " couldn't take " + itemName + " from the player", akActor, playerRef)
+            SkyrimNetApi.RegisterEvent("take_item_failed", speakerName + " couldn't take " + itemName + " from " + targetName, akSpeaker, akTarget)
         endif
     else
-        SkyrimNetApi.RegisterEvent("take_item_failed", akActor.GetDisplayName() + " couldn't reach the player to take " + itemName, akActor, playerRef)
+        SkyrimNetApi.RegisterEvent("take_item_failed", akSpeaker.GetDisplayName() + " couldn't reach " + akTarget.GetDisplayName() + " to take " + itemName, akSpeaker, akTarget)
     endif
 EndFunction
 
-Function TakeGoldFromPlayer(Actor akActor, Actor playerRef, Int aiAmount)
-{Helper: NPC takes gold from the player with proper animation and notification.}
+Function TakeItemFromPlayer_Execute(Actor akActor, String itemName, Int aiCount = 1)
+{Back-compat wrapper. The original action only took from the player; PR
+ generalised it to TakeItem_Execute(speaker, target, ...). PrismaUI's
+ existing call site (and any user-side prompts that still reference the
+ old executionFunctionName) keep working via this passthrough.}
+    TakeItem_Execute(akActor, Game.GetPlayer(), itemName, aiCount)
+EndFunction
+
+Function TakeGoldFrom(Actor akSpeaker, Actor akTarget, Int aiAmount)
+{Helper: speaker takes gold from a target (any actor) with the take
+ animation. The Debug.Notification + dedicated event name are kept on the
+ player-target path for HUD/prompt parity with the legacy behavior.}
     MiscObject goldForm = Game.GetFormFromFile(0x0000000F, "Skyrim.esm") as MiscObject
     if !goldForm
-        SkyrimNetApi.RegisterEvent("take_item_failed", akActor.GetDisplayName() + " couldn't take gold from the player", akActor, playerRef)
+        SkyrimNetApi.RegisterEvent("take_item_failed", akSpeaker.GetDisplayName() + " couldn't take gold from " + akTarget.GetDisplayName(), akSpeaker, akTarget)
         return
     endif
 
-    Int playerGold = playerRef.GetItemCount(goldForm)
-    if playerGold <= 0
-        SkyrimNetApi.RegisterEvent("take_item_failed", akActor.GetDisplayName() + " tried to take gold but the player has none", akActor, playerRef)
+    Bool targetIsPlayer = (akTarget == Game.GetPlayer())
+
+    Int targetGold = akTarget.GetItemCount(goldForm)
+    if targetGold <= 0
+        SkyrimNetApi.RegisterEvent("take_item_failed", akSpeaker.GetDisplayName() + " tried to take gold but " + akTarget.GetDisplayName() + " has none", akSpeaker, akTarget)
         return
     endif
 
-    ; Walk to the player
-    if WalkToReference(akActor, playerRef)
+    ; Walk to the target
+    if WalkToReference(akSpeaker, akTarget)
         if IdleTake
-            PlayAnimationAndWait(akActor, IdleTake, 2.0)
+            PlayAnimationAndWait(akSpeaker, IdleTake, 2.0)
         endif
 
         Int transferred = aiAmount
-        if transferred > playerGold
-            transferred = playerGold
+        if transferred > targetGold
+            transferred = targetGold
         endif
 
         if transferred > 0
-            playerRef.RemoveItem(goldForm, transferred, false, akActor)
+            akTarget.RemoveItem(goldForm, transferred, false, akSpeaker)
         endif
 
-        ResetToDefaultIdle(akActor)
+        ResetToDefaultIdle(akSpeaker)
 
-        String npcName = akActor.GetDisplayName()
-        Debug.Notification(npcName + " took " + transferred + " gold")
-        SkyrimNetApi.RegisterEvent("gold_taken_from_player", npcName + " took " + transferred + " gold from the player", akActor, playerRef)
+        String speakerName = akSpeaker.GetDisplayName()
+        if targetIsPlayer
+            Debug.Notification(speakerName + " took " + transferred + " gold")
+            SkyrimNetApi.RegisterEvent("gold_taken_from_player", speakerName + " took " + transferred + " gold from the player", akSpeaker, akTarget)
+        else
+            SkyrimNetApi.RegisterEvent("gold_taken", speakerName + " took " + transferred + " gold from " + akTarget.GetDisplayName(), akSpeaker, akTarget)
+        endif
     else
-        SkyrimNetApi.RegisterEvent("take_item_failed", akActor.GetDisplayName() + " couldn't reach the player to take gold", akActor, playerRef)
+        SkyrimNetApi.RegisterEvent("take_item_failed", akSpeaker.GetDisplayName() + " couldn't reach " + akTarget.GetDisplayName() + " to take gold", akSpeaker, akTarget)
     endif
 EndFunction
 
@@ -579,7 +767,7 @@ Bool Function BringItem_IsEligible(Actor akActor, Actor akTarget, String itemTyp
         return false
     endif
 
-    return FindNearbyItemOfType(akActor, itemType) != None
+    return SeverActionsNative.FindNearbyItemOfType(akActor, itemType, 1000.0) != None
 EndFunction
 
 Function BringItem_Execute(Actor akActor, Actor akTarget, String itemType)
@@ -588,7 +776,7 @@ Function BringItem_Execute(Actor akActor, Actor akTarget, String itemType)
         return
     endif
 
-    ObjectReference nearbyItem = FindNearbyItemOfType(akActor, itemType)
+    ObjectReference nearbyItem = SeverActionsNative.FindNearbyItemOfType(akActor, itemType, 1000.0)
 
     if nearbyItem
         Form itemBase = nearbyItem.GetBaseObject()
@@ -623,223 +811,33 @@ Function BringItem_Execute(Actor akActor, Actor akTarget, String itemType)
 EndFunction
 
 ; =============================================================================
-; LOOT PROCESSING - Handles "all", "valuables", or comma-separated item names
+; LOOT PROCESSING
+; ProcessLoot lives in native (SeverActionsNative.ProcessLoot).
+; Callers that need the human-readable description query
+; SeverActionsNative.GetLastLootDescription() directly after this returns.
 ; =============================================================================
 
-; Process a loot list string and transfer items from source to actor
-; Supports: "all", "valuables", "gold", or comma-separated item names
-; Returns: Number of item stacks transferred
 int Function ProcessLootList(Actor akActor, ObjectReference akSource, String itemsToTake)
     if !akActor || !akSource
         return 0
     endif
 
-    ; Reset loot tracking
-    LastLootedItems = ""
+    int totalTaken = SeverActionsNative.ProcessLoot(akActor, akSource, itemsToTake, 30)
 
-    ; Cap items processed to prevent long stalls
-    int MAX_ITEMS = 30
-
-    ; Normalize the input
-    String lootRequest = ToLowerCase(itemsToTake)
-    int totalTaken = 0
-
-    ; Handle "all" - take everything
-    ; Uses RemoveAllItems for reliable transfer (handles leveled lists that
-    ; GetNthForm can't resolve until the player opens the container)
-    if lootRequest == "all" || lootRequest == "everything"
-        int numItems = akSource.GetNumItems()
-        Debug.Trace("[SeverActions_Loot] ProcessLootList ALL: source has " + numItems + " item stacks")
-
-        ; Snapshot item descriptions before transfer (best-effort for event text)
-        int cap = numItems
-        if cap > MAX_ITEMS
-            cap = MAX_ITEMS
-        endif
-        Form lastForm = None
-        int lastCount = 0
-        int i = 0
-        while i < cap
-            Form itemForm = akSource.GetNthForm(i)
-            if itemForm
-                int count = akSource.GetItemCount(itemForm)
-                if count > 0
-                    String itemName = itemForm.GetName()
-                    if itemName != ""
-                        totalTaken += 1
-                        AddToLootedItemsList(itemName, count)
-                        lastForm = itemForm
-                        lastCount = count
-                    endif
-                endif
-            endif
-            i += 1
-        endwhile
-
-        ; Transfer everything in one native call (resolves leveled items properly)
-        akSource.RemoveAllItems(akActor, false, true)
-
-        ; Track last item for prompt reference
-        if lastForm
-            TrackLootedItem(akActor, lastForm, lastCount)
-        endif
-
-        ; Verify source is empty
-        int remaining = akSource.GetNumItems()
-        if remaining > 0
-            Debug.Trace("[SeverActions_Loot] WARNING: " + remaining + " items remain after RemoveAllItems (quest items or engine lock)")
-        else
-            Debug.Trace("[SeverActions_Loot] ProcessLootList ALL: transfer complete, " + totalTaken + " stacks reported")
-        endif
-        return totalTaken
+    Form lastForm = SeverActionsNative.GetLastLootedForm()
+    if lastForm
+        SetLastLootedItem(akActor, lastForm, SeverActionsNative.GetLastLootedCount())
     endif
-
-    ; Handle "valuables" - take items worth 50+ gold
-    ; Iterate backwards so RemoveItem doesn't shift indices we haven't visited
-    if lootRequest == "valuables" || lootRequest == "valuable"
-        int numItems = akSource.GetNumItems()
-        Debug.Trace("[SeverActions_Loot] ProcessLootList VALUABLES: source has " + numItems + " item stacks")
-        int startIdx = numItems - 1
-        if startIdx >= MAX_ITEMS
-            startIdx = MAX_ITEMS - 1
-        endif
-        int failedRemovals = 0
-        int i = startIdx
-        while i >= 0
-            Form itemForm = akSource.GetNthForm(i)
-            if itemForm
-                int value = GetFormValue(itemForm)
-                if value >= 50
-                    int count = akSource.GetItemCount(itemForm)
-                    if count > 0
-                        Debug.Trace("[SeverActions_Loot]   Removing: " + itemForm.GetName() + " x" + count + " (value " + value + ")")
-                        akSource.RemoveItem(itemForm, count, true, akActor)
-                        ; Verify removal actually worked
-                        int remaining = akSource.GetItemCount(itemForm)
-                        if remaining < count
-                            totalTaken += 1
-                            int actuallyMoved = count - remaining
-                            TrackLootedItem(akActor, itemForm, actuallyMoved)
-                            AddToLootedItemsList(itemForm.GetName(), actuallyMoved)
-                        else
-                            Debug.Trace("[SeverActions_Loot]   WARNING: RemoveItem failed for " + itemForm.GetName() + " (still " + remaining + " in source) - likely unresolved leveled item")
-                            failedRemovals += 1
-                        endif
-                    endif
-                endif
-            endif
-            i -= 1
-        endwhile
-        ; If all individual removals failed, fall back to RemoveAllItems then return non-valuables
-        if totalTaken == 0 && failedRemovals > 0
-            Debug.Trace("[SeverActions_Loot] All RemoveItem calls failed - falling back to RemoveAllItems")
-            akSource.RemoveAllItems(akActor, false, true)
-            totalTaken = failedRemovals
-        endif
-        return totalTaken
-    endif
-    
-    ; Handle "gold" specifically
-    if lootRequest == "gold" || lootRequest == "septims" || lootRequest == "money"
-        Form goldForm = Game.GetFormFromFile(0x0000000F, "Skyrim.esm") as Form
-        if goldForm
-            int goldCount = akSource.GetItemCount(goldForm)
-            if goldCount > 0
-                Debug.Trace("[SeverActions_Loot] ProcessLootList GOLD: removing " + goldCount + " gold")
-                akSource.RemoveItem(goldForm, goldCount, true, akActor)
-                ; Verify
-                int remaining = akSource.GetItemCount(goldForm)
-                if remaining < goldCount
-                    int actuallyMoved = goldCount - remaining
-                    totalTaken += 1
-                    TrackLootedItem(akActor, goldForm, actuallyMoved)
-                    AddToLootedItemsList("Gold", actuallyMoved)
-                else
-                    Debug.Trace("[SeverActions_Loot] WARNING: Gold removal failed (still " + remaining + " in source)")
-                endif
-            endif
-        endif
-        return totalTaken
-    endif
-
-    ; Handle comma-separated list of item names
-    ; Split by comma and search for each item
-    Debug.Trace("[SeverActions_Loot] ProcessLootList SPECIFIC: '" + lootRequest + "'")
-    int startPos = 0
-    int commaPos = StringUtil.Find(lootRequest, ",", startPos)
-
-    while startPos < StringUtil.GetLength(lootRequest)
-        String itemName = ""
-
-        if commaPos >= 0
-            itemName = StringUtil.Substring(lootRequest, startPos, commaPos - startPos)
-            startPos = commaPos + 1
-            commaPos = StringUtil.Find(lootRequest, ",", startPos)
-        else
-            itemName = StringUtil.Substring(lootRequest, startPos)
-            startPos = StringUtil.GetLength(lootRequest)
-        endif
-
-        ; Trim whitespace (basic)
-        itemName = TrimString(itemName)
-
-        if itemName != ""
-            ; Find and take the item
-            Form itemForm = FindItemInContainer(akSource, itemName)
-            if itemForm
-                int count = akSource.GetItemCount(itemForm)
-                if count > 0
-                    Debug.Trace("[SeverActions_Loot]   Removing: " + itemForm.GetName() + " x" + count)
-                    akSource.RemoveItem(itemForm, count, true, akActor)
-                    ; Verify removal actually worked
-                    int remaining = akSource.GetItemCount(itemForm)
-                    if remaining < count
-                        int actuallyMoved = count - remaining
-                        totalTaken += 1
-                        TrackLootedItem(akActor, itemForm, actuallyMoved)
-                        AddToLootedItemsList(itemForm.GetName(), actuallyMoved)
-                    else
-                        Debug.Trace("[SeverActions_Loot]   WARNING: RemoveItem failed for " + itemForm.GetName() + " (still " + remaining + " in source) - likely unresolved leveled item")
-                    endif
-                endif
-            else
-                Debug.Trace("[SeverActions_Loot]   Item not found in container: '" + itemName + "'")
-            endif
-        endif
-    endwhile
 
     return totalTaken
 EndFunction
 
-; Trim leading/trailing spaces from a string
-String Function TrimString(String text) Global
-    ; Native implementation: ~2000x faster
-    return SeverActionsNative.TrimString(text)
-EndFunction
-
-; Add to the human-readable list of looted items
-Function AddToLootedItemsList(String itemName, int count)
-    String entry = ""
-    if count > 1
-        entry = itemName + " x" + count
-    else
-        entry = itemName
-    endif
-    
-    if LastLootedItems == ""
-        LastLootedItems = entry
-    else
-        LastLootedItems = LastLootedItems + ", " + entry
-    endif
-EndFunction
-
-; Track looted items in StorageUtil for later reference
-Function TrackLootedItem(Actor akActor, Form akItem, int count)
+; Store the most recent looted form on the actor for prompt reference.
+; Single-slot — last loot wins.
+Function SetLastLootedItem(Actor akActor, Form akItem, int count)
     if !akActor || !akItem
         return
     endif
-    
-    ; Store recent loot for potential reference by prompts
     String storageKey = "SeverLoot_RecentItem"
     StorageUtil.SetFormValue(akActor, storageKey, akItem)
     StorageUtil.SetIntValue(akActor, storageKey + "_Count", count)
@@ -857,124 +855,11 @@ EndFunction
 
 ; =============================================================================
 ; OBJECT FINDING HELPERS
+; FindNearbyItemOfType / FindNearbyContainer are provided natively by
+; SeverActionsNative — call sites use those directly. Native does a single
+; ForEachReferenceInRange pass; the prior Papyrus version cascaded 12 PO3
+; FindAllReferencesOfFormType calls per check.
 ; =============================================================================
-
-ObjectReference Function FindNearbyContainer(Actor akActor, String containerType) Global
-{Find a nearby container by type name. Used as fallback or for generic container searching.}
-    ObjectReference[] containers = PO3_SKSEFunctions.FindAllReferencesOfFormType(akActor, 28, 1000.0)
-    if !containers
-        return None
-    endif
-    
-    int i = 0
-    while i < containers.Length
-        ObjectReference ref = containers[i]
-        if ref && !ref.IsDisabled() && ref.GetNumItems() > 0
-            if containerType == "" || containerType == "any"
-                return ref
-            elseif StringUtil.Find(ToLowerCase(ref.GetBaseObject().GetName()), ToLowerCase(containerType)) >= 0
-                return ref
-            endif
-        endif
-        i += 1
-    endwhile
-    return None
-EndFunction
-
-ObjectReference Function FindNearbyItemOfType(Actor akActor, String itemType) Global
-    ; Search in priority order: Weapons > Armor > Potions > Books > Ingredients > Scrolls > Ammo > Keys > SoulGems > Misc
-    ObjectReference found = CheckFormType(akActor, 26, itemType) ; Weapons
-    if found
-        return found
-    endif
-    
-    found = CheckFormType(akActor, 41, itemType) ; Armor
-    if found
-        return found
-    endif
-    
-    found = CheckFormType(akActor, 46, itemType) ; Potions
-    if found
-        return found
-    endif
-    
-    found = CheckFormType(akActor, 27, itemType) ; Books
-    if found
-        return found
-    endif
-    
-    found = CheckFormType(akActor, 30, itemType) ; Ingredients
-    if found
-        return found
-    endif
-    
-    found = CheckFormType(akActor, 23, itemType) ; Scrolls
-    if found
-        return found
-    endif
-    
-    found = CheckFormType(akActor, 42, itemType) ; Ammo
-    if found
-        return found
-    endif
-    
-    found = CheckFormType(akActor, 45, itemType) ; Keys
-    if found
-        return found
-    endif
-    
-    found = CheckFormType(akActor, 52, itemType) ; SoulGems
-    if found
-        return found
-    endif
-    
-    found = CheckFormType(akActor, 32, itemType) ; Misc
-    if found
-        return found
-    endif
-
-    found = CheckFormType(akActor, 38, itemType) ; Trees (many harvestable plants use this type)
-    if found
-        return found
-    endif
-
-    found = CheckFormType(akActor, 39, itemType) ; Flora (flowers, plants, etc.)
-    if found
-        return found
-    endif
-
-    found = CheckFormType(akActor, 24, itemType) ; Activators (some harvestable plants use this)
-    return found
-EndFunction
-
-ObjectReference Function CheckFormType(Actor akActor, int typeID, String itemType) Global
-    ObjectReference[] refs = PO3_SKSEFunctions.FindAllReferencesOfFormType(akActor, typeID, 1000.0)
-    if !refs
-        Debug.Trace("[SeverActions_Loot] CheckFormType: No refs found for type " + typeID + " searching for '" + itemType + "'")
-        return None
-    endif
-
-    Debug.Trace("[SeverActions_Loot] CheckFormType: Found " + refs.Length + " refs for type " + typeID + " searching for '" + itemType + "'")
-
-    String itemTypeLower = ToLowerCase(itemType)
-
-    int i = 0
-    while i < refs.Length
-        ObjectReference ref = refs[i]
-        if ref && !ref.IsDisabled() && ref.Is3DLoaded()
-            String name = ref.GetBaseObject().GetName()
-            if name != ""
-                ; Check if item name contains the search term
-                if StringUtil.Find(ToLowerCase(name), itemTypeLower) >= 0
-                    Debug.Trace("[SeverActions_Loot] CheckFormType: MATCH '" + name + "' for type " + typeID)
-                    return ref
-                endif
-            endif
-        endif
-        i += 1
-    endwhile
-    return None
-EndFunction
 
 ; =============================================================================
 ; INVENTORY HELPERS
@@ -1011,50 +896,16 @@ EndFunction
 ; =============================================================================
 
 ObjectReference Function GetMerchantContainer(Actor akMerchant) Global
-{Find the merchant chest for this actor by checking their vendor factions.
-Falls back to actor's own inventory for NPCs without vendor containers.}
-    
+{Resolve the merchant chest for an actor. Returns the actor itself when no
+vendor faction is found — callers treat that as the "personal inventory"
+sentinel. Cached for 5 seconds per actor in native.}
     if !akMerchant
         return None
     endif
-    
-    String merchantName = akMerchant.GetDisplayName()
-    Debug.Trace("[SeverActions_Loot] GetMerchantContainer: Checking " + merchantName)
-    
-    ; Get all factions the actor belongs to
-    Faction[] factions = akMerchant.GetFactions(-128, 127)
-    if !factions || factions.Length == 0
-        Debug.Trace("[SeverActions_Loot] GetMerchantContainer: No factions found for " + merchantName + ", using actor inventory")
-        return akMerchant
+    ObjectReference vendorChest = SeverActionsNative.GetMerchantContainer(akMerchant)
+    if vendorChest
+        return vendorChest
     endif
-    
-    Debug.Trace("[SeverActions_Loot] GetMerchantContainer: Found " + factions.Length + " factions for " + merchantName)
-    
-    ; Check each faction for a vendor container
-    Int i = 0
-    ObjectReference vendorChest = None
-    while i < factions.Length
-        Faction f = factions[i]
-        if f
-            ; Try SKSE's native Faction.GetMerchantContainer() first
-            vendorChest = f.GetMerchantContainer()
-            if vendorChest
-                Debug.Trace("[SeverActions_Loot] GetMerchantContainer: Found vendor chest via SKSE Faction.GetMerchantContainer() for " + merchantName)
-                return vendorChest
-            endif
-            
-            ; Fallback to PO3 function
-            vendorChest = PO3_SKSEFunctions.GetVendorFactionContainer(f)
-            if vendorChest
-                Debug.Trace("[SeverActions_Loot] GetMerchantContainer: Found vendor chest via PO3 for " + merchantName)
-                return vendorChest
-            endif
-        endif
-        i += 1
-    endwhile
-    
-    ; No vendor container found - fall back to actor's own inventory
-    Debug.Trace("[SeverActions_Loot] GetMerchantContainer: No vendor chest found for " + merchantName + " after checking " + factions.Length + " factions, using actor inventory")
     return akMerchant
 EndFunction
 
@@ -1122,16 +973,13 @@ Function UseItem_Execute(Actor akActor, String itemName)
     
     ; Try personal inventory first
     Form itemForm = GetItemFormByName(akActor, itemName)
-    Bool fromMerchantChest = false
-    ObjectReference merchantChest = None
-    
+
     if !itemForm || akActor.GetItemCount(itemForm) <= 0
         ; Check merchant chest
-        merchantChest = GetMerchantContainer(akActor)
+        ObjectReference merchantChest = GetMerchantContainer(akActor)
         if merchantChest && merchantChest != akActor
             itemForm = FindItemInContainer(merchantChest, itemName)
             if itemForm && merchantChest.GetItemCount(itemForm) > 0
-                fromMerchantChest = true
                 ; Move item to actor's inventory so they can consume it
                 merchantChest.RemoveItem(itemForm, 1, true, akActor)
             else
@@ -1354,10 +1202,10 @@ naturally first (e.g. "What shall I read?") and the player drives the conversati
 
     Debug.Trace("[SeverActions_Loot] ReadBook: " + npcName + " reading '" + actualBookName + "' (" + StringUtil.GetLength(bookText) + " chars)")
 
-    ; Set book reading state — script properties for internal guards
+    ; Set book reading state — Papyrus only tracks the reader and start time;
+    ; title/text live in StorageUtil (below) so prompts can read them via
+    ; papyrus_util without bloating the cosave.
     BookReader = akActor
-    BookReadingTitle = actualBookName
-    BookReadingText = bookText
     BookReadingStartTime = Utility.GetCurrentRealTime()
 
     ; Store in StorageUtil — papyrus_util reads these natively, available immediately
@@ -1421,8 +1269,6 @@ Function ClearBookReadingState()
         ResetToDefaultIdle(BookReader)
     endif
     BookReader = None
-    BookReadingTitle = ""
-    BookReadingText = ""
     BookReadingStartTime = 0.0
     BookReadingLastNarrationTime = 0.0
 EndFunction
@@ -1434,8 +1280,8 @@ EndFunction
 ; =============================================================================
 
 Event OnDiaryEntrySelected(string eventName, string strArg, float numArg, Form sender)
-{ModEvent handler for diary entry selection. strArg = NPC name, numArg = reader FormID.}
-    Debug.Trace("[SeverActions_Loot] Diary entry selected for '" + strArg + "' (reader: " + numArg + ")")
+{ModEvent handler for diary entry selection. strArg = NPC name, sender = reader Actor.}
+    Debug.Trace("[SeverActions_Loot] Diary entry selected for '" + strArg + "'")
 
     ; Retrieve content from the native buffer
     String content = SeverActionsNative.PrismaUI_GetSelectedDiaryContent()
@@ -1447,10 +1293,12 @@ Event OnDiaryEntrySelected(string eventName, string strArg, float numArg, Form s
         return
     endif
 
-    ; Use the BookReader set during diary detection, or resolve from FormID
+    ; Reader comes through the ModEvent sender slot — FormID is exact (no float24
+    ; truncation). BookReader set during diary detection is the preferred source;
+    ; sender is the canonical fallback when this fires after BookReader was cleared.
     Actor reader = BookReader
     if !reader
-        reader = Game.GetFormEx(numArg as Int) as Actor
+        reader = sender as Actor
     endif
     if !reader
         Debug.Trace("[SeverActions_Loot] Diary: Could not resolve reader actor")
@@ -1460,10 +1308,8 @@ Event OnDiaryEntrySelected(string eventName, string strArg, float numArg, Form s
     String npcName = reader.GetDisplayName()
     Debug.Trace("[SeverActions_Loot] Diary: Starting reading — '" + title + "' by " + npcName)
 
-    ; Set book reading state
+    ; Set book reading state — title/text source-of-truth is StorageUtil (below).
     BookReader = reader
-    BookReadingTitle = title
-    BookReadingText = content
     BookReadingStartTime = Utility.GetCurrentRealTime()
 
     ; Store in StorageUtil for the reading prompt

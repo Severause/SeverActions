@@ -1,5 +1,218 @@
 # SeverActions Changelog
 
+## v3.0.5 — Outfits, followers, arrest, survival & Life Tracker fixes
+
+Everything since v3.0.1: a quality-of-life pass on the Companions / Life Tracker pages, a large batch of Outfits-mannequin renderer fixes, stronger follower catch-up (now with a track-only toggle), an arrest-eligibility fix, a survival master-switch fix, and several stability fixes. Save-compatible with v3.0+; the off-screen-life cosave gains two backward-compatible fields, so older saves load cleanly.
+
+### Outfits / Wardrobe renderer
+
+Robustness work on the mannequin preview — these only ever affected the offscreen Outfits-window baker, never your follower's actual in-game appearance. The harder-to-reproduce crashes below are best-effort fixes; the preview leans on a lot of third-party mesh and shader data, so more edge cases may still surface — please keep reporting them.
+
+- **Addressed several mannequin crashes & freezes.** Opening the preview for certain NPCs (heavy NPC-overhaul modlists) could CTD on a face/eyes/hair buffer over-read; changing a follower's outfit could crash mid-swap (a use-after-free); and rapid edits could freeze the page with a storm of un-debounced 24-angle bakes. These paths are now guarded, serialized, and debounced — crashes should be far rarer, though the mesh-dependent ones may not be fully eliminated.
+- **Reduced rendering artifacts.** BodySlide outfits bundling a reference/virtual body (a `VirtualCBBE`-style shape with no diffuse) could paint the whole body purple, and complex followers (glowing eyes, Spriggan/aura FX) could show as yellow/green glow blobs. Both should be largely resolved — phantom reference bodies are skipped and emissive is attenuated — but unusual mesh/shader setups may still need tuning.
+- **Ghost presets cleaned up.** Legacy presets that showed blank yet still occupied slots (so saving a new one jumped to preset #5) are repaired — slots free and new presets fill them.
+- **Blacklist respected on equip.** Equipping an outfit via the Sever UI no longer strips items from a blacklisted plugin you'd equipped outside SeverActions.
+- **Faster reopen.** Reopening an unchanged outfit reuses the cached preview instead of re-baking all 24 angles, so the panel appears instantly.
+
+### Followers
+
+- **More reliable follower catch-up.** Followers now get pulled through city gates, load doors, *and* fast travel even when you stop and give no input — noticeably better at keeping up, though still being tuned. A new **"Catch Up Track-Only Followers"** setting (Settings → Follower Behavior, default On) extends it to NFF / custom-AI / DLC followers like Serana; turn it off to leave those to their own framework. *(Setting is runtime-only for now — resets to On each launch.)*
+- **Surrendered-then-recruited followers stop getting stranded.** A follower you'd beaten into yielding and then recruited would refuse to follow through doors or fast travel — a lingering "surrendered" status kept the catch-up from moving them. They now keep up like any other companion, while followers genuinely told to wait stay put.
+- **Essential toggle now works on any follower.** It set an ActorBase flag the engine ignores for templated/leveled NPCs; it now makes the actor essential at the reference level, so it works on every follower and applies live.
+- **Work / Relax locations show outdoors.** Setting a follower's Work or Relax spot outdoors didn't show on the Companions page even though Set Home did; both now display correctly indoors or out.
+
+### Arrest
+
+- **Guards reliably offer arrest actions.** Fixed an eligibility bug that could stop guards from surfacing any arrest-related actions in conversation — arrests (NPC or player), adding bounty, jailing and releasing, and dispatching guards to investigate homes for evidence. The full arrest toolkit is now offered correctly across vanilla and mod-added guard factions.
+
+### Survival
+
+- **The master switch actually turns survival off now.** Toggling Survival off on the page (or in the MCM) didn't fully disable it — the survival prompt kept describing hunger/fatigue/cold in conversation, and followers kept their stat penalties. Off now means off: the prompt stops and penalties clear. Each follower's needs are **preserved** rather than wiped, so turning Survival back on resumes exactly where it left off.
+
+### Life Tracker — character management
+
+- **Remove a character.** A new remove (✕) button clears a character's letters and stats, hides them from the page, and stops generating new off-screen events for them — handy for cleaning up duplicated or deleted NPCs that lingered in the tracker.
+- **Restore a removed character.** A new **Hidden** list lets you bring a removed character back with one click; they reappear and resume their off-screen life.
+- **"Show Removed Characters" setting.** A toggle under **Settings → Off-Screen Life** hides the Hidden list entirely for a cleaner page, and brings it back when you want to restore someone.
+
+### Stability
+
+- **Fixed a world-map CTD** caused by dirty edits in the bundled Sever's Hearth ESP overriding the vanilla map-marker base static — a conflict that corrupted marker rendering on heavy map-mod load orders. The dirty edits are removed; the camp-on-map feature is unaffected.
+
+## v3.0.1 — Skyrim VR support
+
+Hotfix on top of v3.0. SeverActions and the bundled Sever's Hearth now build and run on **Skyrim VR** — the native DLLs are universal SE/AE/VR. Two small quality-of-life fixes round it out. Save-compatible with v3.0; no migration, no new requirements on SE/AE.
+
+### Skyrim VR support
+
+The native plugins are now compiled as universal SE/AE/VR binaries against CommonLibVR, fixing every crash and hang VR users hit on v3.0. No change for SE/AE players.
+
+- **Now boots on VR.** v3.0's DLLs were SE/AE-only, so VR CTD'd at launch with *"failed to open address library file."* Both `SeverActionsNative` and `SeversHearthNative` are multi-targeted now and load on VR.
+- **No more infinite load with SkyrimNet.** Our SkyrimNet decorators were registering before SkyrimNet finished standing up its own systems, which deadlocked its startup on VR — the main menu never appeared. Registration now happens at the correct point in load (kDataLoaded), so all decorators come up cleanly.
+- **No main-menu crash.** A VR-incompatible fast-travel event sink (the event doesn't exist on VR) is now guarded, so the situation/cell monitors no longer crash at the main menu.
+- **Outfit slots work on VR.** VR has no runtime-EditorID retention (no po3 Tweaks build), so the outfit system couldn't find its records by name and silently failed (*"Outfits/LvlItems FormLists missing"*). It now resolves its own records by FormID — all 800 outfit slots index correctly on VR.
+- **Survival warmth** degrades gracefully on VR, falling back to armor-record warmth where the SE/AE engine API isn't available.
+
+### Fixes
+
+- **Fertility — insemination narration removed.** The `*<father> releases inside <target>.*` narrator line that fired on Fertility Mode insemination is gone. (Conception narration is unchanged.)
+- **Dashboard date corrected.** The PrismaUI dashboard showed the wrong in-game date on a new game — *"Sundas, 1st of Morning Star"* with no year, instead of the canonical *"Fredas, 17th of Last Seed, 4E 201."* It now uses the save-anchored Skyrim calendar, so the date and year read correctly from day one and advance properly.
+
+## v3.0 — Hearth Ledger, native cosave, arrest overhaul, brawl
+
+The largest release in the mod's history. Six PrismaUI pages got the new "Hearth Ledger" visual identity, the outfit subsystem was rebuilt on a native cosave store, a full arrest pipeline shipped, a fist-fight brawl system arrived, and the travel / sandbox / follower-maintenance systems were rewritten for reliability. Save-compatible upgrade — pre-existing data migrates automatically on first load.
+
+### PrismaUI — Hearth Ledger visual overhaul
+
+Every page was rebuilt around a shared "parchment + brass + dark surface" design language, with rail / center / drawer layouts replacing the prior flat lists. The dashboard is the new front door.
+
+- **Dashboard.** Frontispiece title strip, ex-libris bookplate with your character + Skyrim date, six **Portal Tiles** (Companions / Coffers / Holdings / Provisions / Tidings / Chronicle — each in its destination page's accent color so the dashboard reads as a true table of contents), illuminated Recent Entries with sigil portraits and drop-cap actor names, Steward's Dispatch slip quoting the latest gossip, and a marginalia portent list. Consecutive entries from the same actor collapse with a small ↳ continuation marker.
+- **Outfits / Wardrobe.** Three-column layout (roster + active follower + builder). Mannequin renderer rebuilt: heads, hair, alpha-tested items, custom shader subclasses, helper meshes, and skin all render correctly. Cart-preview revert moved to native code so closing the menu without committing always reverts cleanly — no more "I closed the menu and my follower is still wearing the staged outfit."
+- **Inventory.** Three-column rail / center / drawer layout, native drag-to-give between actors, per-category limits, item-stack count fixes.
+- **Stats + Spells.** Stats tab redone as a character sheet (Skyrim-style attribute panel + perk count + skill bars). Spells tab redone as a grimoire (school filter chips, click for full effect breakdown, real magnitude/duration/area substitution).
+- **Settings.** Full rail-nav rewrite with section search. World, Inventory, Outfits, Schedule, Currency, Debt, and Off-Screen settings all reachable from one rail — one place to tune everything.
+- **World.** Parchment Skyrim atlas (Caro Tuts paper map) with hold sigil markers. Click a hold for a drawer with per-hold bounty, properties, travel, and debts. Map / Ledger toggle keeps the prior sectioned layout for power users.
+- **Survival.** Redesigned around a Camp shell. Party Vitals on one side, Camp Plan journal on the other, with at-a-glance Rations / Warmth / Risk hero banner.
+- **Active Arrests (new).** Visible feedback for the new arrest watchdog — see every active arrest, who's escorting whom, and how close each one is to timing out, color-coded by urgency.
+- **Companions refinements.** Sub-tab structure (Profile / Bonds / Bio / Memories / Journal / Quest Awareness). **Bonds is editable** — drag rapport / trust / loyalty / mood values directly. **Bio** tab mirrors SkyrimNet's on-disk character bios. **Memories** tab shows the most recent 20 memories with proper Skyrim-calendar dates.
+- **Actions Composer.** Rebuilt as `[Actor] → [Verb] → (target?) → (modifier…)` composer with spotlight typeahead, six pinned chips, and recents replay. **37 verbs across 8 categories** including the new Brawl and Travel categories. Required-param indicator + smarter confirm messages (`Execute Extort Gold as Lydia? Victim: Brand-Shei · Amount: 50` rather than just "Execute Extort Gold on Lydia?").
+- **Per-page help tooltips.** A "?" button next to the close button opens a modal with help content for the current page. Audited for all 11 pages.
+- **Page Help, Refresh, Scroll, and Confirm dialogs** now use in-app modals throughout (the previous browser-native `confirm()` returned `undefined` inside Ultralight and silently dropped actions).
+- **Dashboard quest banner.** The dashboard front page now surfaces your active quests, each with its next incomplete objective.
+
+### Brawl system (new)
+
+Fist-fight system for player ↔ NPC and NPC ↔ NPC, fully integrated with the LLM and PrismaUI.
+
+- **Challenge / Accept / Decline / Forfeit** action verbs and PrismaUI buttons. NPCs can challenge each other to brawl, and the loser yields cleanly.
+- **Brawl prompt overlay.** When you receive a challenge, a PrismaUI prompt surfaces the accept/decline choice without pausing the game in a normal menu.
+- **Native BrawlManager** handles the CS/DG cache, engagement watchdog, spectator pacification, and a friendly-fire exception so your other followers don't intervene.
+- **Spells stripped and restored.** Magic-user followers don't fireball their brawl opponent; their spell list is temporarily removed and restored on brawl end.
+- **Custom CombatStyle** (`BrawlerCS`) tuned for unarmed combat with no spells, no weapons, and no flee.
+- **Tracking-only followers rejoin cleanly after a brawl.** An NFF / SPID custom-AI / Serana-style follower has their teammate flag briefly cleared during a brawl (so your other followers don't pile in); they're now reliably re-onboarded into tracking mode when it ends, instead of being stranded on idle AI.
+
+### Arrest pipeline overhaul
+
+A complete rewrite of how NPC arrests work, with a watchdog to catch stuck arrests and a player-facing FSM for confrontation + persuasion.
+
+- **ArrestSessionStore.** Native watchdog tracking every active arrest with per-state in-game-hour timeouts. If a guard gets stuck escorting a prisoner across the map, the watchdog fires a timeout and forces a clean cancel instead of leaving the actor frozen forever.
+- **Mid-escort plea.** Prisoners can appeal to their escorting guard mid-march (60-second window, single attempt). Guard halts, weapon stays drawn, and accepts or rejects via dialogue or LLM action. Accept = release + cleanup; reject = resume escort.
+- **Scene-aware home suspend.** Vanilla quest scenes can pull your homed follower into scripted behavior (e.g. Serana searching her mother's lab during Soul Cairn). The home sandbox now detects active scenes and temporarily suspends itself so the quest scene plays correctly, then re-applies when the scene ends.
+- **Player-confrontation FSM** (Persuasion). When a guard tries to arrest you, you can plead, bribe, intimidate, or resist via PrismaUI. Each branch has its own logic and timer.
+- **Active Arrests panel** in PrismaUI (above) gives you live visibility into every in-flight arrest.
+- **SkyrimNet busy state** integrated — actors involved in an arrest report `is_busy = "arrest"` so other plugins and our own action YAMLs gate eligibility correctly.
+- **Sender-name canonicalization** — fixed cases where the LLM's authority picker sent `"Player"` literally and fuzzy-matched into NPCs whose names contained "Player".
+- **OrphanCleanup** rewritten so stale faction memberships from a crashed prior arrest never block re-arrest forever.
+- **PrismaUI Arrest prompt overlay** for when you're confronted by a guard, mirroring the brawl prompt pattern.
+
+### Outfit system — rebuilt on native cosave
+
+The whole outfit subsystem (locks, presets, situation mappings, dress/undress) moved off Papyrus StorageUtil and onto a versioned native C++ cosave store. Pre-existing saves migrate automatically on first load.
+
+- **No more split-brain outfits.** Cases where PrismaUI showed one outfit but the NPC wore another, or where SkyrimNet thought the NPC was wearing preset X but the actor's armor said otherwise, are gone. One source of truth.
+- **Dress / Undress survives a reload.** Undressing, saving, reloading, and re-dressing now correctly restores what they were wearing — including outfits applied via preset.
+- **100 outfit slots** (was 20). NFF-style per-item ownership tracking + outfit alias hardening for large follower rosters.
+- **Edit Preset (new).** Click `Edit` on any saved preset row — the staging card opens pre-filled with that preset's items and name. Add, remove, optionally rename, then save in place. Renames preserve the slot, container, leveled-item list, satchel, and catalog so SkyrimNet actions and the mannequin keep working.
+- **Delete Preset works.** The `✕` button on preset rows previously appeared to do nothing inside Ultralight (browser `confirm()` returns undefined there). Now routes through the in-app confirm dialog and actually fires the delete.
+- **Reset Outfit Data actually resets.** PrismaUI's red "Reset Outfit Data" button now wipes every situation mapping, the dress stash, and the follower-lock flag in one shot.
+- **Mannequin viewport no longer stutters.** Rapid preset swaps were queuing 7+ piled-up rebakes that froze the cursor; now throttled to one bake per frame.
+- **Daegon Kaekiri compat patch** updated to gate on `Native_Outfit_IsActivelyManaged` instead of a bare faction check, so flagging her as outfit-excluded properly hands ownership back to her mod's outfit dialogue.
+- **Situation outfits.** Bind a preset to one of seven situations (city / outdoor / sleeping / combat / house / rainy / snowy). Auto-switches based on the active situation.
+- **Outfit P0–P3 fixes from the tester report.** Saving a preset no longer auto-strips and re-equips; applying a preset preserves your existing lock state; "shadow" outfits in the cosave but absent from PrismaUI now surface as orphan rows with a Remove button; slot-mask sweep catches stray armor pieces (e.g. boots left over from a previous preset that didn't have them).
+- **Managed NPCs tab.** Non-follower NPCs you've dressed get their own Managed tab on the Outfits page, with **Forget** / **Forget All** to prune an NPC's lock + presets from the cosave and restore their original look — replacing the old clipped "Other NPCs" strip.
+- **Save preset from worn.** The left "Save Preset" button now snapshots whatever the follower is *currently wearing* straight into a real preset, instead of writing to a legacy store the slot-based list never showed — no need to re-stage an outfit you already put on them.
+- **Modded armor on extended slots stays visible.** The inventory and outfit menus no longer hide legitimate armor parked on biped slots 49-61 — skirts, pauldrons, layered tops/underwear, capes, corsets (the pieces SkyUI marks with a generic "shield" icon). Only genuinely valueless body overlays (SOS/TNG, morph markers) are filtered now.
+- **Smooth mannequin rotation.** Dragging to spin the preview no longer judders or flashes a blank frame.
+- **Mannequin skin rendering hardened.** The outfit preview now renders skin faithfully across the full range of modded setups. Full-colour skin replacers (Bijin et al., whose `bodyTintColor` is ~0) no longer bake to a black silhouette; wardrobe mods that bundle a duplicate body no longer z-fight into gray blotches; SAM's junk skin specular no longer paints a gray metallic rim; a follower whose body texture simply isn't streamed to full-res yet is demand-loaded from disk instead of dropping to flat white/peach (the Lillith Maiden-Loom "white body" case); a body referencing a genuinely-missing texture (Lillith's "Unibody" overlay) is dropped instead of rendering purple; and alpha-blended skin overlays the opaque baker can't composite — SexLab fluids, RaceMenu scars/tattoos/dirt — are dropped rather than painting black or red over the body (the Saadia "black front + dark-red face" case). Skin overlays (scars, bodypaint, fluids) still don't *composite* into the preview, but now degrade to cleanly absent instead of artifacting.
+
+### Companion + follower
+
+- **Wait / Follow buttons** on every companion card (per-row Wait + Follow, plus Wait All + Follow All in the mass-actions row). Mirrors the hotkey and wheel-menu entry points 1:1.
+- **Summon All** mass-action button.
+- **Companion Wait / Sandbox reliability fixes.** Ported the sandbox approach from Sever's Hearth — adds `EvaluatePackage()` calls so wait/follow transitions happen immediately instead of on the next AI tick, bumps sandbox package priority above other follower-framework overrides, and uses a gentler AI-reset flag. No more "I told them to wait but they're still trailing me."
+- **Schedule system.** Dismissed followers can be assigned per-hour Home / Work / Relax locations and they'll actually go there on the right schedule.
+- **NFF-style follow package (V2).** Tiered priorities, idle behaviors, and dynamic stance — replaces the prior default template.
+- **Healer combat style.** Set any follower to "healer" via PrismaUI dropdown, dialogue, or `setcombatstyle` action — they force-cast healing during combat with proper target priority, cooldowns, and a bleedout fail-safe.
+- **Cell catchup.** Followers no longer get left behind through load doors. A native catch-up sweep runs 1.5s after the player's cell loads, moves any roster member who didn't follow through, evaluates their package, and randomizes positions slightly to avoid pile-ups.
+- **Follower friendly-fire prevention.** Stray AoE / cloak / cone-spell hits between SA-followers no longer flip them hostile to each other.
+- **Per-follower Essential toggle** properly persists across save/load.
+- **Equipping a recruited NPC** now diff-strips the vanilla hunting bow + iron arrows starter kit so they don't permanently re-equip them.
+- **Animated NPC spell casting** via UseMagic AI packages — `castSpell` action now produces the visible casting animation instead of just stat changes.
+- **AttackTarget auto-cleanup** via ForcedCombatMonitor — combat ends cleanly when the target dies or surrenders, no stuck combat state.
+- **Track-only followers no longer wander off when the player sleeps.** `OnSleepStart`'s package-override clear used to wipe the external framework's follow package on NFF / SPID custom-AI / Serana-style followers, leaving them on default idle AI. Now gated to skip tracking-only followers; their controller owns the package stack.
+- **Fallen-comrade count fixed.** The Companions page no longer over-counts fallen comrades, and a **Clear Fallen & Orphaned** bulk action prunes dead and stale entries in one click.
+- **Safe-interior sandbox no longer sticks.** A companion who sandboxed in a tavern (e.g. after sleeping) could get stuck on the interior package and wander off instead of resuming follow; the sandbox now releases cleanly on active companions.
+
+### Travel system
+
+- **TravelOrchestrator** — new unified high-level travel API that composes line-of-sight arrival, stuck escalation, preflight reachability, and graceful give-up into one state machine with a single completion event.
+- **StuckDetector** now disambiguates "actually stuck" from "slowly pathing through a crowded inn" — the 30-second teleport no longer fires on actors who are navigating, just slowly.
+- **LOS-aware arrival.** Travel destinations on the far side of a wall, on a different floor, or behind a closed door no longer trigger arrival from raw distance alone.
+- **Graceful give-up.** When a destination has broken navmesh, fall back to the actor's editor location instead of teleporting them deeper into the broken area.
+
+### Crafting commissions (new)
+
+Order crafted gear now and collect it later, instead of standing at the forge while it's made.
+
+- **Order now, collect later.** Ask a blacksmith to craft something; they quote a price, take a deposit, and you pick the finished piece up on a return visit. The smith remembers which commissions are outstanding and hands the item over when it's ready.
+- **In-character pricing.** The smith names the deposit and total themselves, and the system charges exactly what was quoted — the spoken price and the gold actually moved always match.
+- **Commissions ledger.** A Commissions sub-rail on the World → Ledger page tracks open orders and completed history.
+
+### Performance + load-time
+
+- **Save load is now visibly faster.** Heavy per-follower maintenance (essential flag, combat style application, healer registration, opinion rebuild) moved from a saturated Papyrus VM to native C++ at `kPostLoadGame`. The PrismaUI hotkey is now responsive within ~1–2 seconds of cosave restore (was ~25 seconds on heavy rosters).
+- **Hearth-parity sandbox transitions.** `EvaluatePackage` calls added so wait/follow respond immediately.
+- **Batched mass actions.** Wait All / Follow All now dispatch a single event that Papyrus iterates server-side, instead of firing one event per follower — keeps the engine sane for NFF/UFO setups with 10+ followers.
+- **Companions page opens instantly on large rosters.** Each companion's Bio / Memories / Journal is now gathered lazily — only when you open that companion — instead of building all of it for every follower up front on page load.
+- **More per-tick work moved to native C++.** Survival and Fertility cell scans, plus the follower-roster lookup, no longer run on the Papyrus VM every tick.
+
+### Stability + crash fixes
+
+- **Non-UTF-8 JSON crash fixed.** SkyrimNet payloads containing Cyrillic or other non-ASCII characters used to crash with a `nlohmann::json::type_error.316`. Now strings are sanitized on the boundary.
+- **Survival page banner no longer shows stale followers from a previous save.** A frontend cache-merge bug surfaced characters from a prior load on a brand-new game (Daegon shown in the warmth banner with no party). All conditionally-emitted fields now emit cleared placeholders so the merge correctly reflects the current save.
+- **PrismaUI menu hotkey no longer silently breaks.** When the native script class grew past Skyrim's 511-function-per-script limit, every native call on it failed at link time. Functions were split across a sibling class so the budget stays safe.
+- **CommonLibSSE-NG v4.17 upgrade** — pinned via vcpkg overlay for reproducible builds, adopting native APIs that replaced ~180 lines of keyword-scanning warmth code, the legacy hand-rolled raycast, the Disable/Enable navmesh-snap pattern, and process-tier queries.
+- **OutfitMigration log lines** in `Papyrus.0.log` show any conflicts between your old StorageUtil data and the new native store when the migrator runs on first load.
+- **Dashboard no longer freezes the game on open.** A raw engine-member read for the compass-tracked quest banner spun forever on an unreliable lock, wedging the game thread the moment the dashboard opened. Removed — the banner now picks deterministically among your active quests.
+- **Decorator render-thread crashes closed.** SkyrimNet renders decorators on worker threads; ours now read from main-thread snapshot caches instead of touching live engine state mid-render, eliminating a class of race-condition crashes.
+
+### Prompts + content
+
+- **Nearby objects prompt split.** General dialogue context no longer carries container contents (keeps payload bounded), but action-mode now gets the full container listing so the LLM can pick items from a chest properly.
+- **Merchant inventory** prompts now render in `action` mode too, so the LLM has shop prices visible while picking buy/sell actions — not just during narration.
+- **User-configurable Nearby Objects filters.** PrismaUI Settings → Prompt Filters lets you exclude object types (clutter, misc, furniture:bed, item:weapon, etc.) from the LLM's nearby-objects context.
+- **Familiarity prompt eavesdrop filter.** Strangers no longer falsely claim to have overheard your name from a follower in places the follower has never spoken (Soul Cairn ghost scenario).
+- **Bounty prompt** updated with full scene-coverage (same-cell arrest section, dispatch-escort section, prisoner mid-escort affordance) and explicit exclusion lists.
+- **SkyrimNet character-bio Tier 1 audit** — 55 priority bios (vanilla followers, major quest characters, key faction figures) re-written to remove Tough-Guy-One-Liner speech_style priming and forward-looking quest spoilers in summary blocks. Ships as a parallel track outside the FOMOD.
+- **Yield / surrender context toggle.** A new Settings → Prompt Filters → Combat Context switch suppresses the "just surrendered / received a surrender / surrender broken" guidance when it doesn't fit the moment. Ceasefire and active-combat awareness are unaffected.
+- **Prior-companion context deferred to SkyrimNet.** Dropped the redundant "Past Relationship" block from the follower bio; SkyrimNet's own relationship decorator already surfaces that history, and the SA version could mis-fire for NPCs you'd only briefly traveled with.
+
+### Miscellaneous polish
+
+- **Brawl decorator** + split-prompt support so the LLM has structured awareness of brawl state.
+- **OSL silencer** keeps OStim/SexLab scenes from spamming the LLM context.
+- **CollectPayment** non-pausing PrismaUI overlay POC — collect debts without freezing the world.
+- **Transfer Ownership** action on the Actions page.
+- **Group Meeting** revived on SkyrimNet primitives.
+- **MCM UI Scale slider** as a PrismaUI escape hatch for users who can't read the default size.
+- **Off-Screen Life per-NPC cooldown overrides** + first-load staggering so dismissed-follower events don't all fire at once on save load.
+- **Quest awareness** noise filter, new Companions sub-tab, C++ LLM pump, per-follower memory.
+- **Holdings hold-resolution fix.** The Holdings portal tile no longer renders "Unknown × 1" for properties whose name doesn't contain the hold keyword (Breezehome, Vlindrel, Hjerim, etc.) — replaced with a three-tier resolver.
+- **Claim a property (Estate).** The World → Ledger → Estate tab gained a search to bring any building into your name — houses, inns, halls, temples (caves / dungeons filtered out, with a "Show all interiors" toggle for modded homes). It uses the same faction co-ownership as the in-character deed transfer, so you and the original owner share it without trespass — ideal for backstory roleplay. Each property card's badge is a click-to-cycle flavor label (Transferred / Purchased / Inherited), and releasing a claimed property now fully reverts ownership (it was passing a null faction before).
+- **NPCs no longer recite your holdings.** Removed the character-bio block that injected the player's full property list into every NPC's context.
+- **Ownership-aware looting.** Taking an owned item through a SeverActions loot/pickup action no longer gives the *player* a vanilla theft bounty (the "my follower grabbed a tankard in a tavern and now I'm wanted" case) — owned items transfer silently instead of tripping the engine's theft alarm. Loot-corpse now targets the nearest matching body, and locked containers are refused outright.
+- **No more critters in "nearby people."** Ambient animals (rabbits, foxes, etc.) are filtered out of the dashboard / nearby-actor lists.
+
+### Sever's Hearth — AI camping (bundled, new)
+
+A new AI-first camping mod ships alongside SeverActions as an **optional FOMOD module** ("Sever's Hearth (Camp System)"). It replaces Campfire outright — **no dependency required**. This is an early, foundational release: the core camping loop and LLM camp-awareness are in; survival, threats, and the off-screen follower-agency layers are still ahead.
+
+- **Make camp on the trail.** A companion can pitch a camp at the player's position — a fire ring and bedroll for the party to rest, eat, or take watch. (Player-initiated camp placement isn't in yet; camps are established relative to the player by a follower.)
+- **Establish / Break / Go-To camp actions.** The LLM can suggest making camp when the party needs to stop for the night, break it down to move on, or send a companion ahead to an existing camp.
+- **Camp-aware companions.** While a camp is active, the `current_camp` decorator feeds the campsite into each follower's bio context, so they reference the fire, a shared meal, or resting here naturally in conversation — the camp becomes a known waypoint in the scene, not just props.
+
+---
+
 ## v2.9.9
 
 ### SkyrimNet Bio Audit — Tier 1 (Parallel Track, Not In FOMOD)
@@ -494,7 +707,8 @@ In preparation for SkyrimNet's upcoming prompt refactor, trimmed the set of Skyr
   - `target_selectors/dialogue_speaker_selector.prompt` (TargetSelectors) — replaced by the new additive submodule below
   - `target_selectors/player_dialogue_target_selector.prompt` (TargetSelectors) — superseded by SkyrimNet's updated target selector
 - **Kept 3 intentional overrides** (Core, action-pipeline): `native_action_selector.prompt`, `native_action_selector_drilldown.prompt`, `submodules/user_final_instructions/0750_embedded_actions.prompt`. These directly orchestrate SeverActions' custom YAML actions and must stay in sync with our action schema; will be diffed and re-ported when SkyrimNet refactors them
-- **New additive submodule — `submodules/character_bio/0311_severactions_interject_hints.prompt`** (Core) replaces the `dialogue_speaker_selector` override's COMPANION/ENGAGED/IN SCENE tag functionality via extension instead of override. Renders only in `interject_inline` render mode (called once per candidate in SkyrimNet's speaker selector and gamemaster action selector). Reads the same three MCM/PrismaUI tag toggles via `papyrus_util("GetIntValue", 0, "SeverActions_TagCompanion|TagEngaged|TagInScene", 1)` that the old override used, so existing user settings keep working transparently. Emits concise per-candidate hints only when both the tag is enabled AND the faction/decorator check passes (`is_sever_follower` or `is_follower` for COMPANION; `SeverActions_ActivelyFollowing` for ENGAGED; `SexLabAnimatingFaction`/`OStimExcitementFaction` for IN SCENE). Survives SkyrimNet selector refactors as long as they keep calling `render_character_profile("interject_inline", ...)` per candidate
+- ~~**New additive submodule — `submodules/character_bio/0311_severactions_interject_hints.prompt`**~~ — staged in early v3.5 then **reverted before ship** (pending design changes; full PR #145). The previous `dialogue_speaker_selector` override behavior currently has no SeverActions replacement and will be revisited.
+- **Group Meeting Awareness rewritten on SkyrimNet primitives** — `0260_severactions_engaged_participants.prompt` no longer depends on the `SeverActions_ActivelyFollowing` faction. Party detection now uses `is_follower(uuid)` + `is_in_package(uuid, "SkyrimNet_PlayerFollowPackage")` from SkyrimNet's own decorators (requires SkyrimNet build with [MinLL/SkyrimNet#807](https://github.com/MinLL/SkyrimNet/pull/807) merged for the new `is_in_package` / `get_speaker_selector_settings` surface). Tag vocabulary now mirrors upstream's `dialogue_speaker_selector.prompt`: `[COMPANION]` / `[ENGAGED]` / `[IN SCENE]` so the LLM sees one consistent ontology across selector and per-NPC system_head renders. In-scene party members surface in a dedicated sub-list with explicit "do not address" guidance (mirrors upstream "Strongly deprioritize"). Player-in-scene case handled. Block gates on the dashboard's `dialogue.speakerSelector.tagEngaged` toggle so global preferences carry through.
 - **DialogueStyle FOMOD module is now purely additive** — contains only `submodules/guidelines/0550_severactions_conversation_flow.prompt` and `submodules/system_head/0505_severactions_personality.prompt`, both SeverActions-original content
 
 ### Familiarity Prompt — World Knowledge Deduplication
@@ -525,7 +739,7 @@ Rolled up user feedback about length rules stacking and redundant guidance accum
 - **`0400_roleplay_guidelines.prompt` trimmed** — removed the "max 2-3 sentences" clause (→ moved to 0020) and the entire `inDirectConversation` narration block (→ 0900 handles it with richer examples). 0400 is now purely character-voice roleplay per render_mode, 67 → 44 lines
 - **`0550_severactions_conversation_flow.prompt` slimmed** — from 7 pillars down to 5. Removed "Vary your rhythm" and "You don't always know what to say" (LLMs do these without instruction), "One thing at a time" (conflicts with per-character `speech_style` blocks; some characters genuinely stack thoughts), and "Don't narrate yourself" (→ 0900 owns narration gating). Sharpened **When to Stop** into a bulleted trigger list plus an explicit closing-line instruction — silence after a closing line is now explicitly labeled correct behavior, not a failure to respond
 - **`0900_response_format.prompt`** — removed redundant "Speak in your natural voice, respond with your own thoughts" and "Do not echo what was said" lines (→ kept only in 0550). 0900 now strictly governs FORMAT (narration, asterisks, structure); 0550 owns CONTENT mechanics
-- **`0260_severactions_engaged_participants.prompt`** (both Follower and GroupMeeting copies) — stripped "1 sentence most of the time" / "1-2 sentences" / "2-3 sentences" clauses. 0260 keeps group-scene framing only ("not performing a scene", "Use names sparingly", "comfortable silence is valid"); length is 0020's job
+- **`0260_severactions_engaged_participants.prompt`** (Follower copy; the GroupMeeting copy was removed entirely in PR #145) — stripped "1 sentence most of the time" / "1-2 sentences" / "2-3 sentences" clauses. 0260 keeps group-scene framing only ("not performing a scene", "Use names sparingly", "comfortable silence is valid"); length is 0020's job
 - **`0600_severactions_dialogue_rules.prompt` deleted** — rule was "don't echo system/action text like `[item_given]`, gold totals, etc." Redundant with 0900's "Do not describe yourself, target, or anyone else — say it as speech or not at all" and modern LLMs rarely leak system text without prompting. Removed from repo, MO2, live, and zip
 
 ### Relationship Assessment — Event Leak Fix

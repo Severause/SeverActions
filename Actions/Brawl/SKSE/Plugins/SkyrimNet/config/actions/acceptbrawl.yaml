@@ -1,0 +1,37 @@
+customCategory: brawl
+name: AcceptBrawl
+description: "The speaker grins, rolls their shoulders, and squares up — fists going up against a specific opponent. Use this when YOU are the one who wants to start a fist-fight against someone (either responding to their challenge, or initiating one yourself because they pushed you to it in dialogue). akChallenger names the other fighter. No weapons, no spells, just hands."
+questEditorId: SeverActions
+scriptName: SeverActions_Brawl
+executionFunctionName: AcceptBrawl_Execute
+parameterMapping:
+  - type: speaker
+    name: akAccepter
+    description: the actor stepping into the brawl
+  - type: dynamic
+    name: akChallenger
+    description: the other actor in the fight (the one who challenged, or the one the speaker is challenging back). May be omitted when accepting a pending challenge already recorded via ChallengeBrawl.
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

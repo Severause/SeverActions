@@ -49,12 +49,12 @@ NPC: {{ npc.name }} ({{ npc.race }}{% if npc.class %}, {{ npc.class }}{% endif %
 {# ── Temporal context ── #}
 {% set days_ago = familiarity.lastSeenDaysAgo %}
 {% set time_context = "" %}
-{% if days_ago and days_ago > 1 %}
+{% if days_ago and days_ago >= 1 %}
 {% if days_ago > 30 %}{% set time_context = "This person has not been seen in many weeks." %}
 {% elif days_ago > 14 %}{% set time_context = "This person has not been seen in a few weeks." %}
 {% elif days_ago > 7 %}{% set time_context = "This person has not been seen in about a week." %}
 {% elif days_ago > 3 %}{% set time_context = "This person was last seen several days ago." %}
-{% elif days_ago > 1 %}{% set time_context = "This person was last seen a day or two ago." %}
+{% else %}{% set time_context = "This person was last seen a day or two ago." %}
 {% endif %}
 {% endif %}
 
@@ -83,12 +83,15 @@ Memories {{ npc.name }} has that may bear on this person:
 {% for m in recent_memories %}- {{ m.summary }}{% if m.details %} — {{ m.details }}{% endif %}{% if m.emotion %} (felt: {{ m.emotion }}){% endif %}
 {% endfor %}{% endif %}
 
-{% if prev_blurb != "" %}
-Previous impression (from an earlier milestone — evolve this, do not repeat verbatim):
-{{ prev_blurb }}
-{% endif %}
+{# The NPC's prior impression of the player (if any) is already embedded in the
+   character profile above — the familiarity submodule renders it in tier-keyed
+   prose. Do NOT inject it again here; that double-feeds the same blurb into
+   the LLM and biases the new blurb toward repetition. The Rules block below
+   instructs the LLM to evolve rather than restate. #}
 
 Write an inner monologue from {{ npc.name }}'s private thoughts describing what they currently make of {{ player.name }}. Address {{ npc.name }} as "you" — this is what {{ npc.name }} thinks to themselves, NOT something they say out loud. Let the length follow the material: a stranger with no real information warrants a short, uncertain thought; an NPC with rich world knowledge, memories, and a prior impression to evolve can reasonably produce a fuller paragraph.
+
+If the character profile above includes an existing impression of {{ player.name }} ("Your impression of...", "What you have heard or sense about..."), treat it as a STARTING POINT to evolve — not as a finished statement. The bio's framing tells {{ npc.name }} how to feel right now; your job is to shift that forward given any new world knowledge, memories, or time elapsed.
 
 GOOD example (note: inner thought, no dialogue, no actions, no name in stranger tier):
 "You've heard a handful of travellers speak of someone matching this one's build — worn armor, Nord bearing, asking after dragons. Tavern talk, mostly. Until they put coin on the counter it's only noise, but the bearing does match the rumors."

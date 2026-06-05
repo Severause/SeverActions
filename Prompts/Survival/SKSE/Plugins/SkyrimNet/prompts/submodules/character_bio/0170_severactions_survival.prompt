@@ -1,14 +1,14 @@
 {# Survival Status - Tracks hunger, fatigue, and cold for followers and nearby NPCs #}
-{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "dialog" or render_mode == "action" %}
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
 {% if actorUUID and actorUUID != 0 %}
 {% set actor = decnpc(actorUUID) %}
 {% if actor and actor.UUID %}
 {% set is_companion = is_follower(actorUUID) or is_sever_follower(actorUUID) %}
 {% set excluded = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Excluded", 0) %}
 {% if excluded == 0 %}
-{% set hunger = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Hunger", 0) %}
-{% set fatigue = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Fatigue", 0) %}
-{% set cold = papyrus_util("GetIntValue", actor.UUID, "SeverActions_Survival_Cold", 0) %}
+{% set hunger = to_number(default(sever_hunger(actor.UUID), "0")) %}
+{% set fatigue = to_number(default(sever_fatigue(actor.UUID), "0")) %}
+{% set cold = to_number(default(sever_cold(actor.UUID), "0")) %}
 {% if (hunger >= 25) or (fatigue >= 25) or (cold >= 25) %}
 {% if is_companion %}
 ## How You Feel
