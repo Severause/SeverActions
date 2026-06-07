@@ -1,5 +1,28 @@
 # SeverActions Changelog
 
+## v3.0.7 — Mannequin fidelity, transparent-viewport fallback, outfit-menu crash fix & camp reliability
+
+Another pass on the Outfits-mannequin preview — much closer skin, makeup, and warpaint rendering — a new transparent-viewport fallback for stubborn load orders, a fix for an outfit-menu crash on common NPCs, and a reliability fix for Sever's Hearth's "go to camp." Save-compatible; no migration.
+
+### Outfits / Wardrobe renderer
+
+More fidelity work on the mannequin preview. As before, these affect only the offscreen Outfits-window preview — never your follower's actual in-game appearance.
+
+- **Per-pixel skin shading.** The preview now reads each skin's subsurface (`_sk`) and specular (`_s`) maps, so CBBE / 3BA skins render with proper soft subsurface tint and per-pixel highlights instead of a flat, uniform sheen.
+- **Scars, freckles & body overlays show.** RaceMenu / SKEE overlay layers — scars, freckles, birthmarks, and overlay-based makeup — now render via a transparent decal pass instead of being dropped from the preview.
+- **Makeup renders in its real color.** RaceMenu / SKEE makeup overlays with a chosen tint now show that color (eyeshadow, lip and blush tints) rather than the base texture color, by reading SKEE's per-overlay tint.
+- **Warpaint & complexion show on baked-FaceGen followers.** Baked warpaint, makeup, and complexion (the FaceGen "FaceTint" layer) now composite onto the head, so follower replacers with bundled face paint look right in the preview. Resolved from the live head, and — when a wet-skin / SSS shader has taken over the head's tint slot — directly from the NPC's FaceTint file.
+- **Fixed an outfit-menu crash on guards, bandits & generic NPCs.** Opening the outfit menu on a leveled / templated NPC (most guards, bandits, and generic townsfolk) could CTD on a bad form lookup. Those NPCs now open cleanly.
+- **Transparent-viewport fallback for the mannequin.** A new **Settings → Interface → "Disable Mannequin Preview"** toggle for load orders where the preview won't render correctly. Instead of a blank box, it turns the doll window into a transparent cutout onto the **live game**, so you can still see — and dress — the NPC in the world; it also skips the preview bake entirely (a performance win on those load orders). A **Free Look** button hands camera control to the game so you can frame the NPC with your own camera (fully compatible with SmoothCam / True Directional Movement) — press your menu key to return. Dressing, presets, and all other controls keep working, and the setting persists across saves.
+
+### Camp
+
+- **"Go to camp" works reliably now.** Sending a companion (or any NPC) to a Sever's Hearth camp had stopped working on existing saves — they wouldn't move, could crash the game on the latest runtime, or got pulled back a few seconds after setting off. They now walk over and settle in by the campfire properly, and apply their camp behavior on arrival instead of standing frozen. Includes a crash fix on Skyrim **1.6.1170** and self-healing on saves where the system didn't initialize on load.
+
+### Followers
+
+- **"Follow" reliably pulls companions out of camp or waiting.** The wheel **Follow** action is now a clean context toggle — companions swap between resume-follow and wait, casual NPCs between start and stop following — replacing the old dead-end where a following companion couldn't be toggled. More importantly, resuming follow now actually **breaks a companion out of a camp or waiting sandbox**: it cancels the camp hold, releases them from the Sever's Hearth campfire, and re-applies their follow package, instead of leaving them parked by the fire. This also fixes a long-standing issue where **recruiting or calling a follower** didn't release them from a camp (the underlying "called by player" signal was malformed and never reached the camp system).
+
 ## v3.0.5 — Outfits, followers, arrest, survival & Life Tracker fixes
 
 Everything since v3.0.1: a quality-of-life pass on the Companions / Life Tracker pages, a large batch of Outfits-mannequin renderer fixes, stronger follower catch-up (now with a track-only toggle), an arrest-eligibility fix, a survival master-switch fix, and several stability fixes. Save-compatible with v3.0+; the off-screen-life cosave gains two backward-compatible fields, so older saves load cleanly.

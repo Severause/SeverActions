@@ -149,6 +149,45 @@ Function RegisterSpeedPackages()
     SeverActionsNativeExt.Travel_RegisterSpeedPackages(TravelPackageWalk, TravelPackageJog, TravelPackageRun, TravelPackage)
 EndFunction
 
+Function EnsureReady()
+    {Lazy-init guard for the public entry points. OnInit/OnPlayerLoadGame normally
+     set up the slot arrays + event/speed-package registration, but on some existing
+     saves OnPlayerLoadGame doesn't re-fire (stale Papyrus load-event binding),
+     leaving the script uninitialized: slot arrays None ("Cannot access an element
+     of a None array") and the native speed-package / OrphanCleanup-traveler
+     registries empty. Running the same setup on first use makes travel work
+     regardless of whether the load event fired. All idempotent + cheap.}
+    ; Guard EVERY slot array individually (create only the missing ones, preserve
+    ; populated ones). NOT InitializeSlotArrays() — that wipes all 7 fresh, which
+    ; would erase live per-slot data if called mid-travel (e.g. from
+    ; OnTravelComplete). On this class of save, some arrays persist non-None while
+    ; others (added in later script versions) load as None, so a single SlotStates
+    ; check isn't enough — each must be guarded.
+    If SlotStates == None || SlotStates.Length != MAX_SLOTS
+        SlotStates = new Int[5]
+    EndIf
+    If SlotPlaceNames == None || SlotPlaceNames.Length != MAX_SLOTS
+        SlotPlaceNames = new String[5]
+    EndIf
+    If SlotDestinations == None || SlotDestinations.Length != MAX_SLOTS
+        SlotDestinations = new ObjectReference[5]
+    EndIf
+    If SlotWaitDeadlines == None || SlotWaitDeadlines.Length != MAX_SLOTS
+        SlotWaitDeadlines = new Float[5]
+    EndIf
+    If SlotSpeeds == None || SlotSpeeds.Length != MAX_SLOTS
+        SlotSpeeds = new Int[5]
+    EndIf
+    If SlotHandles == None || SlotHandles.Length != MAX_SLOTS
+        SlotHandles = new Int[5]
+    EndIf
+    If SlotSandboxOverrides == None || SlotSandboxOverrides.Length != MAX_SLOTS
+        SlotSandboxOverrides = new Package[5]
+    EndIf
+    RegisterEvents()
+    RegisterSpeedPackages()
+EndFunction
+
 Function InitializeSlotArrays()
     SlotStates = new Int[5]
     SlotPlaceNames = new String[5]
@@ -242,6 +281,12 @@ Event OnTravelComplete(string eventName, string strArg, float numArg, Form sende
         Return
     EndIf
 
+    ; The completion event can fire on a save where the slot arrays loaded as
+    ; None (OnPlayerLoadGame didn't run). Ensure they exist before any indexing
+    ; below / in OnArrived. EnsureReady preserves populated arrays, so this does
+    ; NOT wipe the in-flight slot data.
+    EnsureReady()
+
     Actor npc = sender as Actor
     DebugMsg("OnTravelComplete slot=" + slot + " status=" + status)
 
@@ -326,6 +371,8 @@ Bool Function TravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0
         Return false
     EndIf
 
+    EnsureReady()
+
     ; Clamp speed
     If speed < 0
         speed = 0
@@ -361,7 +408,7 @@ Bool Function TravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0
     ; Resolve the speed package BEFORE cancelling — if the package is missing
     ; (CK property not filled) we don't want to lose the current travel as a
     ; side effect of misconfiguration.
-    Package travelPkg = SeverActionsNativeExt.Travel_GetSpeedPackage(speed)
+    Package travelPkg = GetTravelPackageForSpeed(speed)
     If travelPkg == None
         DebugMsg("TravelToPlace: no package for speed " + speed)
         Return false
@@ -415,6 +462,12 @@ Bool Function TravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0
     SlotSpeeds[slot] = speed
     SlotHandles[slot] = handle
 
+    ; Mark this NPC as an actively-tracked traveler so OrphanCleanup's keyword
+    ; scan doesn't see the travel LinkedRef as a stale orphan and tear it down
+    ; mid-journey. Cleared in ClearSlot. (Without this, m_trackedTravelers stays
+    ; empty and OrphanCleanup cancels every travel ~5s after it starts.)
+    SeverActionsNative.OrphanCleanup_RegisterTraveler(akNPC)
+
     StorageUtil.SetStringValue(akNPC, "SeverTravel_State", "traveling")
     StorageUtil.SetStringValue(akNPC, "SeverTravel_Destination", placeName)
     SeverActionsNative.Native_SetTravelState(akNPC, "traveling", placeName)
@@ -451,6 +504,8 @@ Bool Function TravelNPCToReference(Actor akNPC, ObjectReference akDestination, F
         Return false
     EndIf
 
+    EnsureReady()
+
     If speed < 0
         speed = 0
     ElseIf speed > 2
@@ -469,7 +524,7 @@ Bool Function TravelNPCToReference(Actor akNPC, ObjectReference akDestination, F
         EndIf
     EndIf
 
-    Package travelPkg = SeverActionsNativeExt.Travel_GetSpeedPackage(speed)
+    Package travelPkg = GetTravelPackageForSpeed(speed)
     If travelPkg == None
         DebugMsg("TravelNPCToReference: no package for speed " + speed)
         Return false
@@ -512,6 +567,11 @@ Bool Function TravelNPCToReference(Actor akNPC, ObjectReference akDestination, F
 
     SlotStates[slot] = 1
     SlotSandboxOverrides[slot] = akSandboxOverride
+    ; ALSO persist the arrival sandbox override in StorageUtil (per-actor, cosave-
+    ; backed). The SlotSandboxOverrides member array can come back None across the
+    ; OnTravelComplete dispatch on fragile saves, losing the camp package; the
+    ; StorageUtil copy is the robust source OnArrived reads.
+    StorageUtil.SetFormValue(akNPC, "SeverTravel_SandboxOverride", akSandboxOverride)
     ; Use a synthetic place label since ref-targeted travel has no user-facing name.
     String label = "dispatch_target"
     If finalDest != None
@@ -528,6 +588,10 @@ Bool Function TravelNPCToReference(Actor akNPC, ObjectReference akDestination, F
     SlotWaitDeadlines[slot] = waitUntil
     SlotSpeeds[slot] = speed
     SlotHandles[slot] = handle
+
+    ; See TravelToPlace: register as a tracked traveler so OrphanCleanup doesn't
+    ; tear down the active travel LinkedRef as an orphan. Cleared in ClearSlot.
+    SeverActionsNative.OrphanCleanup_RegisterTraveler(akNPC)
 
     StorageUtil.SetStringValue(akNPC, "SeverTravel_State", "traveling")
     StorageUtil.SetStringValue(akNPC, "SeverTravel_Destination", label)
@@ -560,7 +624,13 @@ Function OnArrived(Int slot, Actor akNPC, String placeName)
     ; Sandbox override (per-slot) wins over the default SandboxPackage so a
     ; camp-bound follower joins the campfire crowd rather than picking SA's
     ; generic sandbox. Falls through to SandboxPackage when no override set.
-    Package sandboxToApply = SlotSandboxOverrides[slot]
+    ; Read the per-slot override from StorageUtil first (robust), falling back to
+    ; the member array, then to the default SandboxPackage. This is what makes the
+    ; camp sandbox actually apply on arrival even when the member array reset.
+    Package sandboxToApply = StorageUtil.GetFormValue(akNPC, "SeverTravel_SandboxOverride") as Package
+    If sandboxToApply == None
+        sandboxToApply = SlotSandboxOverrides[slot]
+    EndIf
     If sandboxToApply == None
         sandboxToApply = SandboxPackage
     EndIf
@@ -791,6 +861,9 @@ Function ClearSlot(Int slot, Bool restoreFollower = false)
             If TravelTargetKeyword
                 SeverActionsNative.LinkedRef_Clear(npc, TravelTargetKeyword)
             EndIf
+            ; Stop OrphanCleanup tracking this NPC as an active traveler (paired
+            ; with the OrphanCleanup_RegisterTraveler at travel start).
+            SeverActionsNative.OrphanCleanup_UnregisterTraveler(npc)
 
             If restoreFollower
                 Bool wasFollower = StorageUtil.GetIntValue(npc, "SeverTravel_WasFollower") as Bool
@@ -823,6 +896,7 @@ Function ClearTravelStorage(Actor akNPC)
     StorageUtil.UnsetStringValue(akNPC, "SeverTravel_Result")
     StorageUtil.UnsetFloatValue(akNPC, "SeverTravel_WaitUntil")
     StorageUtil.UnsetIntValue(akNPC, "SeverTravel_Slot")
+    StorageUtil.UnsetFormValue(akNPC, "SeverTravel_SandboxOverride")
     StorageUtil.UnsetIntValue(akNPC, "SeverTravel_WasFollower")
     StorageUtil.UnsetIntValue(akNPC, "SeverTravel_Speed")
     StorageUtil.UnsetIntValue(akNPC, "SeverTravel_SpokenTo")
@@ -990,7 +1064,18 @@ Bool Function SetTravelSpeedNatural(Actor akNPC, String speedText)
 EndFunction
 
 Package Function GetTravelPackageForSpeed(Int speed)
-    Return SeverActionsNativeExt.Travel_GetSpeedPackage(speed)
+    Package pkg = SeverActionsNativeExt.Travel_GetSpeedPackage(speed)
+    If pkg == None
+        ; Self-heal: an empty native speed registry means RegisterSpeedPackages()
+        ; never ran this session — happens on older saves where the script's
+        ; OnPlayerLoadGame doesn't re-fire (stale Papyrus load-event binding), so
+        ; travel silently no-ops ("no package for speed"). The Package properties
+        ; are ESP-set, so re-register from them and retry. Idempotent + cheap;
+        ; once it runs, the native registry persists for all later travel calls.
+        RegisterSpeedPackages()
+        pkg = SeverActionsNativeExt.Travel_GetSpeedPackage(speed)
+    EndIf
+    Return pkg
 EndFunction
 
 Function RemoveAllTravelPackages(Actor akNPC)

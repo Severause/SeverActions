@@ -641,6 +641,12 @@ EndFunction
 ; Called by startfollowing.yaml / stopfollowing.yaml
 ; =============================================================================
 
+SeverActions_Travel Function _GetTravelScript()
+    {Resolve the sibling Travel script (same quest). Used to cancel an active
+     travel/waiting slot when an actor is pulled back into following.}
+    Return (Self as Quest) as SeverActions_Travel
+EndFunction
+
 Function StartFollowing(Actor akActor)
     {Start casual following via SkyrimNet's built-in follow package.
      For any NPC the LLM decides should follow temporarily.
@@ -654,11 +660,27 @@ Function StartFollowing(Actor akActor)
     ; uses it to release a camp-pinned follower so they actually walk over
     ; instead of staying at the fire. strArg = "follow" so handlers can
     ; differentiate from "recruit" / "wait" if the action verb matters.
+    ; The handler signature is (string eventName, string strArg, float numArg,
+    ; Form sender). This engine's ModEvent passes EXACTLY the pushed args (no
+    ; auto eventName), so push all FOUR in order: eventName, strArg(verb), numArg,
+    ; sender(actor). (Earlier 2- and 3-push versions errored "Expected 4, got
+    ; 2/3", so the camp release never fired.)
     int followEvt = ModEvent.Create("SeverActions_FollowerCalledByPlayer")
     if followEvt
-        ModEvent.PushForm(followEvt, akActor)
+        ModEvent.PushString(followEvt, "SeverActions_FollowerCalledByPlayer")
         ModEvent.PushString(followEvt, "follow")
+        ModEvent.PushFloat(followEvt, 0.0)
+        ModEvent.PushForm(followEvt, akActor)
         ModEvent.Send(followEvt)
+    endif
+
+    ; Tear down any active travel/waiting slot so a camp/waiting arrival package
+    ; override (e.g. SeversHearth's CampSandboxPackage, applied at travel-package
+    ; priority) is removed and can't out-prioritize the follow package we register
+    ; below. restoreFollower=false — we apply follow ourselves. No-op if not traveling.
+    SeverActions_Travel travelSys = _GetTravelScript()
+    if travelSys
+        travelSys.CancelTravel(akActor, false)
     endif
 
     ; Clear waiting state FIRST — prevents the engine from creating an FF-prefix

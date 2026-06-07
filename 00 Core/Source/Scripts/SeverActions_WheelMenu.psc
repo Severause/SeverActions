@@ -140,10 +140,19 @@ Function OpenWheelMenu()
     UIExtensions.InitMenu("UIWheelMenu")
 
     ; Set up options with icons
-    ; Option 0 - Toggle Follow
+    ; Option 0 - Toggle Follow (context-aware: companion vs casual follower).
+    ; Companions toggle CompanionFollow<->CompanionWait; casual NPCs toggle
+    ; StartFollowing<->StopFollowing. "Held" = waiting or sandboxing (incl. camp).
     if target && FollowScript
-        bool isFollowing = FollowScript.HasFollowPackage(target) || FollowScript.IsSandboxing(target)
-        if isFollowing
+        bool tfCompanion = FollowerManagerScript && FollowerManagerScript.IsRegisteredFollower(target)
+        bool tfHeld = (target.GetAV("WaitingForPlayer") > 0) || FollowScript.IsSandboxing(target)
+        if tfCompanion
+            if tfHeld
+                UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_TOGGLE_FOLLOW, "Resume Follow")
+            else
+                UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_TOGGLE_FOLLOW, "Wait Here")
+            endif
+        elseif FollowScript.HasFollowPackage(target)
             UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_TOGGLE_FOLLOW, "Stop Follow")
         else
             UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_TOGGLE_FOLLOW, "Start Follow")
@@ -244,38 +253,33 @@ Function HandleFollowToggle(Actor target)
         Debug.Notification("SeverActions: Follow script not configured!")
         return
     endif
+    ; Resolve the follower manager so companions route correctly (a missing ref
+    ; would misclassify a companion as a casual NPC).
+    if !FollowerManagerScript
+        FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+    endif
 
-    ; Check if target is a registered companion (uses CK alias follow, not SkyrimNet)
+    ; Context-aware toggle:
+    ;   Companion     -> CompanionFollow (resume) <-> CompanionWait
+    ;   Casual NPC    -> StartFollowing            <-> StopFollowing
+    ; The "resume"/"start" paths reliably break the actor out of the camp /
+    ; waiting / travel sandbox: CompanionFollow + StartFollowing now CancelTravel
+    ; and fire the SeversHearth camp-release event before applying follow.
+    ; "Held" = waiting or sandboxing (which includes the camp sandbox).
     bool isCompanion = FollowerManagerScript && FollowerManagerScript.IsRegisteredFollower(target)
+    bool isHeld = (target.GetAV("WaitingForPlayer") > 0) || FollowScript.IsSandboxing(target)
 
-    ; Check current follow state and toggle
-    ; Also check sandboxing — sandboxing NPCs had FollowPlayer unregistered
-    bool isSandboxing = FollowScript.IsSandboxing(target)
-    bool isCurrentlyFollowing = isCompanion || FollowScript.HasFollowPackage(target) || isSandboxing
-
-    if isCurrentlyFollowing
-        if isSandboxing && !isCompanion
-            ; Sandboxing casual follower — stop entirely
-            FollowScript.StopFollowing(target)
-        elseif target.GetAV("WaitingForPlayer") > 0
-            ; Waiting — resume following
-            if isCompanion
-                FollowerManagerScript.CompanionFollow(target)
-            else
-                FollowScript.StopFollowing(target)
-            endif
+    if isCompanion
+        if isHeld
+            FollowerManagerScript.CompanionFollow(target)   ; resume — breaks out of camp/wait
         else
-            if isCompanion
-                ; Companions use dismiss, not stop following
-                Debug.Notification(target.GetDisplayName() + " is a companion — use Dismiss instead")
-            else
-                FollowScript.StopFollowing(target)
-            endif
+            FollowerManagerScript.CompanionWait(target)      ; following -> wait here
         endif
     else
-        ; Not following - start following
-        if SeverActions_Follow.StartFollowing_IsEligible(target)
-            FollowScript.StartFollowing(target)
+        if FollowScript.HasFollowPackage(target)
+            FollowScript.StopFollowing(target)               ; actively following -> stop
+        elseif SeverActions_Follow.StartFollowing_IsEligible(target)
+            FollowScript.StartFollowing(target)              ; idle / held -> start (breaks out)
         endif
     endif
 EndFunction

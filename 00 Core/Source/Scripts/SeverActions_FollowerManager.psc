@@ -2918,8 +2918,10 @@ Function RegisterFollower(Actor akActor)
     ; own recruit logic toggles teammate / faction state. strArg = action verb.
     Int recruitEvt = ModEvent.Create("SeverActions_FollowerCalledByPlayer")
     If recruitEvt
-        ModEvent.PushForm(recruitEvt, akActor)
+        ModEvent.PushString(recruitEvt, "SeverActions_FollowerCalledByPlayer")
         ModEvent.PushString(recruitEvt, "recruit")
+        ModEvent.PushFloat(recruitEvt, 0.0)
+        ModEvent.PushForm(recruitEvt, akActor)
         ModEvent.Send(recruitEvt)
     EndIf
 
@@ -7129,8 +7131,10 @@ Function CompanionWait(Actor akActor)
     ; the actor so they stand by the player rather than walk back to the fire.
     Int waitEvt = ModEvent.Create("SeverActions_FollowerCalledByPlayer")
     If waitEvt
-        ModEvent.PushForm(waitEvt, akActor)
+        ModEvent.PushString(waitEvt, "SeverActions_FollowerCalledByPlayer")
         ModEvent.PushString(waitEvt, "wait")
+        ModEvent.PushFloat(waitEvt, 0.0)
+        ModEvent.PushForm(waitEvt, akActor)
         ModEvent.Send(waitEvt)
     EndIf
 
@@ -7179,6 +7183,28 @@ Function CompanionFollow(Actor akActor)
        FollowPlayer package.}
     If !akActor
         Return
+    EndIf
+
+    ; Reliable break-out from camp / waiting / travel holds BEFORE resuming follow:
+    ;  - CancelTravel tears down any active travel slot (removes the arrival
+    ;    sandbox override — e.g. SeversHearth's CampSandboxPackage — plus the
+    ;    travel LinkedRef and OrphanCleanup registration). restoreFollower=false:
+    ;    we re-apply follow ourselves below.
+    ;  - The FollowerCalledByPlayer event tells SeversHearth's camp to untrack +
+    ;    release the actor so CampTick stops re-restoring them to the fire.
+    ; (CompanionWait/StartFollowing already fired the latter; CompanionFollow
+    ;  previously did neither, which is why camp followers wouldn't break loose.)
+    SeverActions_Travel travelSys = GetTravelScript()
+    If travelSys
+        travelSys.CancelTravel(akActor, false)
+    EndIf
+    Int followEvt = ModEvent.Create("SeverActions_FollowerCalledByPlayer")
+    If followEvt
+        ModEvent.PushString(followEvt, "SeverActions_FollowerCalledByPlayer")
+        ModEvent.PushString(followEvt, "follow")
+        ModEvent.PushFloat(followEvt, 0.0)
+        ModEvent.PushForm(followEvt, akActor)
+        ModEvent.Send(followEvt)
     EndIf
 
     SeverActions_Follow followSys = GetFollowScript()

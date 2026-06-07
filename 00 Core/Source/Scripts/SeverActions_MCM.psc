@@ -29,6 +29,12 @@ bool Property AllowConjuredGold = true Auto
 bool Property DialogueAnimEnabled = true Auto Hidden
 int Property SilenceChance = 50 Auto Hidden
 
+; Mannequin renderer fallback (Outfits page) — when true, PrismaUI skips the
+; mannequin bake and renders the viewport as a transparent cutout so the user
+; can see the live NPC in the world. Read/written by the native settings
+; gatherer/handler via GetProperty/SetProperty; no MCM page UI (PrismaUI owns it).
+bool Property MannequinRenderDisabled = false Auto Hidden
+
 ; Speaker Tag Toggles (stored here, synced to StorageUtil for prompt access)
 bool Property TagCompanionEnabled = true Auto Hidden
 bool Property TagEngagedEnabled = true Auto Hidden
