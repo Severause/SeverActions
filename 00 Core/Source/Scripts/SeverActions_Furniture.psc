@@ -71,6 +71,9 @@ Event OnNativeFurnitureCleanup(string eventName, string strArg, float numArg, Fo
     ; Unregister from SkyrimNet
     SkyrimNetApi.UnregisterPackage(akActor, "SeverActions_UseFurniture")
 
+    ; Force them out of the furniture (beds don't release on package removal alone).
+    Debug.SendAnimationEvent(akActor, "IdleForceDefaultState")
+
     ; Evaluate to let them stand up and return to normal AI
     akActor.EvaluatePackage()
 
@@ -112,26 +115,35 @@ Function UseFurniture_Execute(Actor akActor, String furnitureFormId)
     if !akActor || furnitureFormId == ""
         return
     endif
-    
+
     ObjectReference furnRef = GetFurnitureByFormIDForActor(furnitureFormId, akActor)
     if !furnRef
         SkyrimNetApi.RegisterEvent("furniture_not_found", akActor.GetDisplayName() + " couldn't find that furniture (ID: " + furnitureFormId + ")", akActor, None)
         return
     endif
-    
+    UseFurnitureRef_Execute(akActor, furnRef)
+EndFunction
+
+Function UseFurnitureRef_Execute(Actor akActor, ObjectReference furnRef)
+    {Apply the use-furniture sandbox to a furniture reference we already resolved
+     (e.g. the crosshair target from the hotkey) - skips the FormID lookup.}
+    if !akActor || !furnRef
+        return
+    endif
+
     if furnRef.IsFurnitureInUse()
         SkyrimNetApi.RegisterEvent("furniture_in_use", akActor.GetDisplayName() + " - furniture is already in use", akActor, None)
         return
     endif
-    
+
     String furnName = furnRef.GetBaseObject().GetName()
     Debug.Trace("[SeverActions_Furniture] " + akActor.GetDisplayName() + " using: " + furnName)
-    
+
     ; Set linked ref to the furniture
     if SeverActions_FurnitureTargetKeyword
         SeverActionsNative.LinkedRef_Set(akActor, furnRef, SeverActions_FurnitureTargetKeyword)
     endif
-    
+
     ; Apply sandbox package - they'll walk to and use the furniture
     if SeverActions_UseFurniturePackage
         ActorUtil.AddPackageOverride(akActor, SeverActions_UseFurniturePackage, FurniturePackagePriority, 1)
@@ -182,6 +194,13 @@ Function StopUsingFurniture_Execute(Actor akActor)
 
     ; Unregister from SkyrimNet
     SkyrimNetApi.UnregisterPackage(akActor, "SeverActions_UseFurniture")
+
+    ; Force them out of the furniture FIRST. Removing the package + EvaluatePackage
+    ; alone does NOT eject a SLEEPING actor from a bed (sleep state is sticky — the
+    ; engine keeps them down until a wake condition), so the stop hotkey silently
+    ; did nothing on beds. IdleForceDefaultState breaks the furniture/idle lock for
+    ; both chairs and beds (same call the arrest flow uses to clear PlayIdle locks).
+    Debug.SendAnimationEvent(akActor, "IdleForceDefaultState")
 
     ; Evaluate to let them stand up and return to normal AI
     akActor.EvaluatePackage()

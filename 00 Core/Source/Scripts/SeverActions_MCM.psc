@@ -35,6 +35,13 @@ int Property SilenceChance = 50 Auto Hidden
 ; gatherer/handler via GetProperty/SetProperty; no MCM page UI (PrismaUI owns it).
 bool Property MannequinRenderDisabled = false Auto Hidden
 
+; Followers auto-stand from furniture when the player walks this far away (0 =
+; disabled). Lives here so it survives game restarts: the native FurnitureManager
+; singleton holds only a volatile runtime copy, so PrismaUI writes BOTH this
+; cosaved property and the singleton, and OnGameReload pushes this value back into
+; the singleton on load. Default 500 mirrors the C++ default.
+Float Property FurnitureAutoStandDistance = 500.0 Auto Hidden
+
 ; Speaker Tag Toggles (stored here, synced to StorageUtil for prompt access)
 bool Property TagCompanionEnabled = true Auto Hidden
 bool Property TagEngagedEnabled = true Auto Hidden
@@ -55,12 +62,14 @@ int Property InvLimit_Misc = 5 Auto Hidden
 int Property FollowToggleKey = -1 Auto Hidden
 int Property DismissKey = -1 Auto Hidden
 int Property StandUpKey = -1 Auto Hidden
+int Property UseFurnitureKey = -1 Auto Hidden
 int Property YieldKey = -1 Auto Hidden
 int Property UndressKey = -1 Auto Hidden
 int Property DressKey = -1 Auto Hidden
 int Property SetCompanionKey = -1 Auto Hidden
 int Property CompanionWaitKey = -1 Auto Hidden
 int Property AssignHomeKey = -1 Auto Hidden
+int Property SetupCampKey = -1 Auto Hidden
 int Property TargetMode = 0 Auto Hidden
 float Property NearestNPCRadius = 500.0 Auto Hidden
 
@@ -97,12 +106,14 @@ int OID_ActiveSlotCount
 int OID_FollowToggleKey
 int OID_DismissKey
 int OID_StandUpKey
+int OID_UseFurnitureKey
 int OID_YieldKey
 int OID_UndressKey
 int OID_DressKey
 int OID_SetCompanionKey
 int OID_CompanionWaitKey
 int OID_AssignHomeKey
+int OID_SetupCampKey
 int OID_TargetMode
 int OID_NearestNPCRadius
 int OID_WheelMenuKey
@@ -245,11 +256,40 @@ string PAGE_BOUNTY = "Bounty"
 string PAGE_SURVIVAL = "Survival"
 string PAGE_FOLLOWERS = "Followers"
 string PAGE_OUTFITS = "Outfits"
+string PAGE_ENTERPRISES = "Enterprises (Debug)"
+
+; --- Enterprises (Debug) page — temporary harness for the off-screen
+;     labor/economy simulation. See ENTERPRISES.md. ---
+int OID_Ent_Target
+int OID_Ent_Job
+int OID_Ent_Arrangement
+int OID_Ent_Wage
+int OID_Ent_Hire
+int OID_Ent_Remove
+int OID_Ent_Settle
+int OID_Ent_Dump
+int OID_Ent_Count
+int OID_Ent_Enabled
+int OID_Ent_Collect
+int OID_Ent_CollectAll
+int OID_Ent_Bail
+int OID_Ent_ForceArrest
+int OID_Ent_TestLetter
+int OID_Ent_TestCourier
+int OID_Ent_TestCourierLLM
+int OID_Ent_ForceAmbush
+int EntJob = 0
+int EntArrangement = 0
+int EntWage = 200
+bool EntEnabled = true
+string[] EntJobOptions
+string[] EntArrangementOptions
 
 ; Outfits page OIDs
 int OID_Outfit_NPCSelect
 int OID_Outfit_Lock
 int[] OID_Outfit_DeletePreset
+int OID_Outfit_DeferBondage
 String[] CachedOutfitPresetNames
 Actor[] CachedPresetActors
 int SelectedOutfitNPCIdx = 0
@@ -264,7 +304,7 @@ string[] TargetModeOptions
 Int Function GetVersion()
     {Override SKI_ConfigBase. SkyUI compares this against the saved version
      to trigger OnVersionUpdate. Increment when MCM structure changes.}
-    Return 121
+    Return 122
 EndFunction
 
 Event OnConfigInit()
@@ -274,7 +314,7 @@ Event OnConfigInit()
     ; Format: major * 100 + minor (e.g., 107 = version 1.07)
     CurrentVersion = 123
 
-    Pages = new string[8]
+    Pages = new string[9]
     Pages[0] = PAGE_GENERAL
     Pages[1] = PAGE_HOTKEYS
     Pages[2] = PAGE_CURRENCY
@@ -283,6 +323,9 @@ Event OnConfigInit()
     Pages[5] = PAGE_SURVIVAL
     Pages[6] = PAGE_FOLLOWERS
     Pages[7] = PAGE_OUTFITS
+    Pages[8] = PAGE_ENTERPRISES
+
+    InitEnterpriseDropdowns()
 
     ; Initialize target mode dropdown options
     TargetModeOptions = new string[3]
@@ -310,6 +353,24 @@ Event OnConfigInit()
 
     ; Register for PrismaUI inventory sync event
     RegisterForModEvent("SeverActions_SyncInvLimits", "OnSyncInvLimits")
+
+    ; Make sure the Enterprises courier-letter event is registered. The handler
+    ; lives on SeverActions_Travel, whose OnPlayerLoadGame is unreliable on churned
+    ; saves; the MCM's lifecycle is reliable, so kick the registration from here.
+    If TravelScript != None
+        TravelScript.EnsureCourierEvents()
+    EndIf
+EndEvent
+
+Event OnGameReload()
+    parent.OnGameReload()
+    ; Re-assert the courier-letter registration on every load (see OnConfigInit).
+    If TravelScript != None
+        TravelScript.EnsureCourierEvents()
+    EndIf
+    ; Restore the cosaved furniture auto-stand distance into the native singleton,
+    ; which only keeps a volatile runtime copy (resets to its C++ default on boot).
+    SeverActionsNative.SetDefaultAutoStandDistance(FurnitureAutoStandDistance)
 EndEvent
 
 ; Called by PrismaUI (via ModEvent) after writing inventory limit properties
@@ -331,7 +392,7 @@ Event OnVersionUpdate(int newVersion)
     Debug.Trace("[SeverActions_MCM] Updating from version " + CurrentVersion + " to " + newVersion)
 
     ; Force page rebuild on any version change
-    Pages = new string[8]
+    Pages = new string[9]
     Pages[0] = PAGE_GENERAL
     Pages[1] = PAGE_HOTKEYS
     Pages[2] = PAGE_CURRENCY
@@ -340,6 +401,9 @@ Event OnVersionUpdate(int newVersion)
     Pages[5] = PAGE_SURVIVAL
     Pages[6] = PAGE_FOLLOWERS
     Pages[7] = PAGE_OUTFITS
+    Pages[8] = PAGE_ENTERPRISES
+
+    InitEnterpriseDropdowns()
 
     ; Re-initialize dropdown options
     TargetModeOptions = new string[3]
@@ -400,8 +464,74 @@ Event OnPageReset(string page)
         DrawFollowersPage()
     elseif page == PAGE_OUTFITS
         DrawOutfitsPage()
+    elseif page == PAGE_ENTERPRISES
+        DrawEnterprisesDebugPage()
     endif
 EndEvent
+
+; =============================================================================
+; ENTERPRISES (DEBUG) PAGE — temporary harness for the Enterprises simulation.
+; See ENTERPRISES.md. Drives the Venture_* natives on SeverActionsNativeExt.
+; =============================================================================
+
+Function InitEnterpriseDropdowns()
+    EntJobOptions = new string[7]
+    EntJobOptions[0] = "Miner"
+    EntJobOptions[1] = "Merchant"
+    EntJobOptions[2] = "Alchemist"
+    EntJobOptions[3] = "Farmer"
+    EntJobOptions[4] = "Fence"
+    EntJobOptions[5] = "Mercenary"
+    EntJobOptions[6] = "Escort"
+    EntArrangementOptions = new string[3]
+    EntArrangementOptions[0] = "Employed (you pay wage)"
+    EntArrangementOptions[1] = "Partnership (you get cut)"
+    EntArrangementOptions[2] = "Vassalage (coerced cut)"
+EndFunction
+
+Function DrawEnterprisesDebugPage()
+    If !EntJobOptions
+        InitEnterpriseDropdowns()
+    EndIf
+
+    AddHeaderOption("Enterprises - Debug Harness")
+    AddTextOption("", "Aim your crosshair at an NPC, pick a")
+    AddTextOption("", "job/arrangement, then Hire.")
+
+    Actor target = Game.GetCurrentCrosshairRef() as Actor
+    string tname = "(none - aim at an NPC)"
+    If target
+        tname = target.GetDisplayName()
+    EndIf
+    OID_Ent_Target = AddTextOption("Crosshair Target", tname)
+
+    OID_Ent_Job         = AddMenuOption("Job", EntJobOptions[EntJob])
+    OID_Ent_Arrangement = AddMenuOption("Arrangement", EntArrangementOptions[EntArrangement])
+    OID_Ent_Wage        = AddSliderOption("Weekly Wage (Employed)", EntWage as Float, "{0}g")
+
+    OID_Ent_Hire   = AddTextOption("Hire Retainer", "")
+    OID_Ent_Remove = AddTextOption("Remove Retainer", "")
+
+    AddHeaderOption("Simulation")
+    OID_Ent_Count   = AddTextOption("Active Ventures", "" + SeverActionsNativeExt.Venture_Count())
+    OID_Ent_Settle  = AddTextOption("Force Weekly Settle", "")
+    OID_Ent_Dump    = AddTextOption("Dump All To Log", "")
+    OID_Ent_Enabled = AddToggleOption("Auto Settlement Enabled", EntEnabled)
+
+    AddHeaderOption("Collect")
+    OID_Ent_Collect    = AddTextOption("Collect From Target", "")
+    OID_Ent_CollectAll = AddTextOption("Collect From All", "")
+
+    AddHeaderOption("Law")
+    OID_Ent_ForceArrest = AddTextOption("Force Arrest Target", "")
+    OID_Ent_Bail        = AddTextOption("Bail Out Target", "")
+
+    AddHeaderOption("Letters (Debug)")
+    OID_Ent_TestLetter     = AddTextOption("Deliver Test Letter", "" + SeverActionsNativeExt.Letter_Count() + " archived")
+    OID_Ent_TestCourier    = AddTextOption("Dispatch Courier (canned)", "walks up & hands over")
+    OID_Ent_TestCourierLLM = AddTextOption("Send Real Letter (LLM)", "a retainer writes one")
+    OID_Ent_ForceAmbush    = AddTextOption("Force Thug Ambush", "grudge thugs attack now")
+EndFunction
 
 ; =============================================================================
 ; OUTFITS PAGE
@@ -412,6 +542,12 @@ Function DrawOutfitsPage()
         AddTextOption("", "Outfit system not connected!")
         return
     EndIf
+
+    ; --- Global compatibility (always shown, even when no presets exist) ---
+    AddHeaderOption("Compatibility")
+    Bool deferBondage = StorageUtil.GetIntValue(None, "SeverOutfit_DeferBondage", 1) as Bool
+    OID_Outfit_DeferBondage = AddToggleOption("Defer to Bondage Mods (DOM/PAH)", deferBondage)
+    AddEmptyOption()
 
     ; Get all actors with saved presets
     Actor[] allPresetActors = OutfitScript.GetPresetActors()
@@ -598,10 +734,12 @@ Function DrawHotkeysPage()
     OID_SetCompanionKey = AddKeyMapOption("Set Companion", SetCompanionKey)
     OID_CompanionWaitKey = AddKeyMapOption("Wait Here / Resume", CompanionWaitKey)
     OID_AssignHomeKey = AddKeyMapOption("Assign Home Here", AssignHomeKey)
+    OID_SetupCampKey = AddKeyMapOption("Set Up Camp (Hearth)", SetupCampKey)
 
     AddEmptyOption()
     AddHeaderOption("Furniture Hotkeys")
     OID_StandUpKey = AddKeyMapOption("Make NPC Stand Up", StandUpKey)
+    OID_UseFurnitureKey = AddKeyMapOption("Use Furniture (NPC, then furniture)", UseFurnitureKey)
 
     AddEmptyOption()
     AddHeaderOption("Combat Hotkeys")
@@ -831,6 +969,15 @@ Function DrawSurvivalPage()
         AddTextOption("", "Toggle survival for individual followers.")
         AddTextOption("", "Excluded followers won't get hungry/tired/cold.")
 
+        ; When the master switch is off, these per-follower toggles do nothing
+        ; (the update loop early-outs on !Enabled), so grey them out — the choices
+        ; are preserved, just inactive until the system is turned back on.
+        Int perFollowerFlags = 0
+        If !SurvivalScript.Enabled
+            perFollowerFlags = OPTION_FLAG_DISABLED
+            AddTextOption("", "Survival system is OFF - toggles inactive.", OPTION_FLAG_DISABLED)
+        EndIf
+
         ; Cache current followers and create toggles
         CachedFollowers = SurvivalScript.GetCurrentFollowers()
         OID_FollowerExclude = new int[20]
@@ -843,7 +990,7 @@ Function DrawSurvivalPage()
                 Actor follower = CachedFollowers[j]
                 If follower
                     Bool isExcluded = SurvivalScript.IsFollowerExcluded(follower)
-                    OID_FollowerExclude[j] = AddToggleOption(follower.GetDisplayName(), !isExcluded)
+                    OID_FollowerExclude[j] = AddToggleOption(follower.GetDisplayName(), !isExcluded, perFollowerFlags)
                 EndIf
                 j += 1
             EndWhile
@@ -1076,6 +1223,120 @@ Event OnOptionSelect(int option)
         SetToggleOptionValue(OID_DialogueAnimEnabled, DialogueAnimEnabled)
         SeverActionsNative.SetDialogueAnimEnabled(DialogueAnimEnabled)
 
+    elseif option == OID_Ent_Hire
+        Actor entT = Game.GetCurrentCrosshairRef() as Actor
+        If entT
+            SeverActionsNativeExt.Venture_DebugAdd(entT, EntJob, EntArrangement, EntWage)
+        Else
+            Debug.Notification("Enterprises: aim your crosshair at an NPC first.")
+        EndIf
+        ForcePageReset()
+    elseif option == OID_Ent_Remove
+        Actor entR = Game.GetCurrentCrosshairRef() as Actor
+        If entR
+            SeverActionsNativeExt.Venture_DebugRemove(entR)
+        EndIf
+        ForcePageReset()
+    elseif option == OID_Ent_Settle
+        SeverActionsNativeExt.Venture_ForceSettle()
+        ForcePageReset()
+    elseif option == OID_Ent_Dump
+        SeverActionsNativeExt.Venture_Dump()
+    elseif option == OID_Ent_Collect
+        Actor entC = Game.GetCurrentCrosshairRef() as Actor
+        If entC
+            SeverActionsNativeExt.Venture_Collect(entC)
+            ForcePageReset()
+        Else
+            Debug.Notification("Enterprises: aim your crosshair at a retainer first.")
+        EndIf
+    elseif option == OID_Ent_CollectAll
+        SeverActionsNativeExt.Venture_CollectAll()
+        ForcePageReset()
+    elseif option == OID_Ent_ForceArrest
+        Actor entA = Game.GetCurrentCrosshairRef() as Actor
+        If entA
+            SeverActionsNativeExt.Venture_ForceArrest(entA)
+            ForcePageReset()
+        Else
+            Debug.Notification("Enterprises: aim your crosshair at a fence retainer first.")
+        EndIf
+    elseif option == OID_Ent_Bail
+        Actor entB = Game.GetCurrentCrosshairRef() as Actor
+        If entB
+            SeverActionsNativeExt.Venture_Bail(entB)
+            ForcePageReset()
+        Else
+            Debug.Notification("Enterprises: aim your crosshair at a jailed retainer first.")
+        EndIf
+    elseif option == OID_Ent_TestLetter
+        int letterId = SeverActionsNativeExt.Letter_DebugDeliverTest()
+        If letterId > 0
+            Debug.Notification("A courier's letter (#" + letterId + ") is in your inventory - read it.")
+        Else
+            Debug.Notification("Letter delivery failed - check the log.")
+        EndIf
+        ForcePageReset()
+    elseif option == OID_Ent_TestCourier
+        ; Bring a sample letter via a walking courier so the whole walk-up /
+        ; handoff loop is testable. Pick one of the player's retainers at random
+        ; as the sender so the courier names them (and the letter is attributed).
+        Actor letterSender = None
+        int retCount = SeverActionsNativeExt.Venture_Count()
+        If retCount > 0
+            letterSender = SeverActionsNativeExt.Venture_GetAssigneeAt(Utility.RandomInt(0, retCount - 1))
+        EndIf
+        String subj = "A Word, When You Can"
+        String body = "I'll keep this short, since paper costs me what little I've got.\n\nThe work goes - not well, not poorly, just on. But there's a matter I'd rather put to you in person than trust to a courier's pocket. Come find me when your road bends back this way.\n\nDon't make me send another of these. They're dear."
+        If TravelScript == None
+            Debug.Notification("Courier system unavailable - check the log.")
+        Else
+            int dispatched = TravelScript.DispatchCourier(letterSender, subj, body, "meet")
+            If dispatched > 0
+                If letterSender != None
+                    Debug.Notification("A courier is on the way with a letter from " + letterSender.GetDisplayName() + ".")
+                Else
+                    Debug.Notification("A courier is on the way with a letter (no retainers - unsigned).")
+                EndIf
+            Else
+                Debug.Notification("Courier dispatch failed - check the log.")
+            EndIf
+        EndIf
+    elseif option == OID_Ent_TestCourierLLM
+        ; Force a REAL per-NPC letter: a random retainer writes one via the LLM,
+        ; and a courier brings it when the model returns (a few seconds).
+        int rc = SeverActionsNativeExt.Venture_Count()
+        If rc <= 0
+            Debug.Notification("No retainers - hire one first.")
+        Else
+            Actor r = SeverActionsNativeExt.Venture_GetAssigneeAt(Utility.RandomInt(0, rc - 1))
+            If r != None
+                If TravelScript != None
+                    TravelScript.EnsureCourierEvents()  ; guarantee the courier event is live
+                EndIf
+                SeverActionsNativeExt.Venture_DebugRequestLetter(r)
+                Debug.Notification(r.GetDisplayName() + " is penning a letter - a courier will follow shortly.")
+            Else
+                Debug.Notification("Could not resolve a retainer - check the log.")
+            EndIf
+        EndIf
+    elseif option == OID_Ent_ForceAmbush
+        ; Force a grudge thug ambush right now (bypasses delay/cooldown/location).
+        ; Arms a grudge if none is pending so it always fires while testing.
+        If TravelScript != None
+            TravelScript.EnsureCourierEvents()  ; guarantee the ambush event is live
+        EndIf
+        Bool fired = SeverActionsNativeExt.Venture_DebugForceAmbush()
+        If fired
+            Debug.Notification("Thugs are on their way - watch your back.")
+        Else
+            Debug.Notification("No retainers to ambush from - hire one first.")
+        EndIf
+    elseif option == OID_Ent_Enabled
+        EntEnabled = !EntEnabled
+        SetToggleOptionValue(OID_Ent_Enabled, EntEnabled)
+        SeverActionsNativeExt.Venture_SetEnabled(EntEnabled)
+
     elseif option == OID_ConfigMenuShift
         ConfigMenuRequireShift = !ConfigMenuRequireShift
         SetToggleOptionValue(OID_ConfigMenuShift, ConfigMenuRequireShift)
@@ -1207,7 +1468,7 @@ Event OnOptionSelect(int option)
             If follower
                 Bool curVal = SeverActionsNative.Native_Outfit_GetAutoSwitchEnabled(follower)
                 Bool newVal = !curVal
-                Debug.Trace("[SeverActions_MCM] PerActorAutoSwitch: " + follower.GetDisplayName() + " (" + follower.GetFormID() + ") curVal=" + curVal + " → newVal=" + newVal)
+                Debug.Trace("[SeverActions_MCM] PerActorAutoSwitch: " + follower.GetDisplayName() + " (" + follower.GetFormID() + ") curVal=" + curVal + " -> newVal=" + newVal)
                 SeverActionsNative.Native_Outfit_SetAutoSwitchEnabled(follower, newVal)
                 StorageUtil.SetIntValue(follower, "SeverOutfit_AutoSwitch", newVal as Int)
                 ; Verify the write took effect
@@ -1312,7 +1573,7 @@ Event OnOptionSelect(int option)
                             Debug.Notification("Current location has no name.")
                         EndIf
                     Else
-                        Debug.Notification("No location detected — try from inside a named area.")
+                        Debug.Notification("No location detected - try from inside a named area.")
                     EndIf
                 ElseIf OID_FM_ClearHome && option == OID_FM_ClearHome[j] && CachedManagedFollowers[j]
                     FollowerManagerScript.ClearHome(CachedManagedFollowers[j])
@@ -1373,6 +1634,15 @@ Event OnOptionSelect(int option)
                     EndIf
                 EndIf
             EndIf
+        EndIf
+
+        ; --- Outfits page: defer-to-bondage-mods global toggle ---
+        If option == OID_Outfit_DeferBondage
+            Bool curDefer = StorageUtil.GetIntValue(None, "SeverOutfit_DeferBondage", 1) as Bool
+            Bool newDefer = !curDefer
+            StorageUtil.SetIntValue(None, "SeverOutfit_DeferBondage", newDefer as Int)
+            SeverActionsNativeExt.Native_Outfit_SetDeferBondage(newDefer)
+            SetToggleOptionValue(OID_Outfit_DeferBondage, newDefer)
         EndIf
 
         ; --- Outfits page: preset delete buttons ---
@@ -1578,6 +1848,11 @@ Event OnOptionKeyMapChange(int option, int keyCode, string conflictControl, stri
         SetKeyMapOptionValue(OID_StandUpKey, keyCode)
         ApplyHotkeySettings()
 
+    elseif option == OID_UseFurnitureKey
+        UseFurnitureKey = keyCode
+        SetKeyMapOptionValue(OID_UseFurnitureKey, keyCode)
+        ApplyHotkeySettings()
+
     elseif option == OID_YieldKey
         YieldKey = keyCode
         SetKeyMapOptionValue(OID_YieldKey, keyCode)
@@ -1608,6 +1883,11 @@ Event OnOptionKeyMapChange(int option, int keyCode, string conflictControl, stri
         SetKeyMapOptionValue(OID_AssignHomeKey, keyCode)
         ApplyHotkeySettings()
 
+    elseif option == OID_SetupCampKey
+        SetupCampKey = keyCode
+        SetKeyMapOptionValue(OID_SetupCampKey, keyCode)
+        ApplyHotkeySettings()
+
     elseif option == OID_WheelMenuKey
         WheelMenuKey = keyCode
         SetKeyMapOptionValue(OID_WheelMenuKey, keyCode)
@@ -1625,7 +1905,15 @@ EndEvent
 ; =============================================================================
 
 Event OnOptionMenuOpen(int option)
-    if option == OID_TargetMode
+    if option == OID_Ent_Job
+        SetMenuDialogStartIndex(EntJob)
+        SetMenuDialogDefaultIndex(0)
+        SetMenuDialogOptions(EntJobOptions)
+    elseif option == OID_Ent_Arrangement
+        SetMenuDialogStartIndex(EntArrangement)
+        SetMenuDialogDefaultIndex(0)
+        SetMenuDialogOptions(EntArrangementOptions)
+    elseif option == OID_TargetMode
         SetMenuDialogStartIndex(TargetMode)
         SetMenuDialogDefaultIndex(0)
         SetMenuDialogOptions(TargetModeOptions)
@@ -1724,7 +2012,13 @@ Event OnOptionMenuOpen(int option)
 EndEvent
 
 Event OnOptionMenuAccept(int option, int index)
-    if option == OID_TargetMode
+    if option == OID_Ent_Job
+        EntJob = index
+        SetMenuOptionValue(OID_Ent_Job, EntJobOptions[index])
+    elseif option == OID_Ent_Arrangement
+        EntArrangement = index
+        SetMenuOptionValue(OID_Ent_Arrangement, EntArrangementOptions[index])
+    elseif option == OID_TargetMode
         TargetMode = index
         SetMenuOptionValue(OID_TargetMode, TargetModeOptions[TargetMode])
         ApplyHotkeySettings()
@@ -1769,7 +2063,12 @@ EndEvent
 ; =============================================================================
 
 Event OnOptionSliderOpen(int option)
-    if option == OID_NearestNPCRadius
+    if option == OID_Ent_Wage
+        SetSliderDialogStartValue(EntWage as Float)
+        SetSliderDialogDefaultValue(200.0)
+        SetSliderDialogRange(0.0, 5000.0)
+        SetSliderDialogInterval(50.0)
+    elseif option == OID_NearestNPCRadius
         SetSliderDialogStartValue(NearestNPCRadius)
         SetSliderDialogDefaultValue(500.0)
         SetSliderDialogRange(100.0, 2000.0)
@@ -2046,7 +2345,10 @@ Event OnOptionSliderOpen(int option)
 EndEvent
 
 Event OnOptionSliderAccept(int option, float value)
-    if option == OID_NearestNPCRadius
+    if option == OID_Ent_Wage
+        EntWage = value as Int
+        SetSliderOptionValue(OID_Ent_Wage, value, "{0}g")
+    elseif option == OID_NearestNPCRadius
         NearestNPCRadius = value
         SetSliderOptionValue(OID_NearestNPCRadius, NearestNPCRadius, "{0} units")
         ApplyHotkeySettings()
@@ -2357,9 +2659,15 @@ Event OnOptionHighlight(int option)
     elseif option == OID_AssignHomeKey
         SetInfoText("Hotkey to assign the targeted NPC's home to your current location. The NPC will return here when dismissed. Works on any following NPC.")
 
+    elseif option == OID_SetupCampKey
+        SetInfoText("Hotkey to set up camp (requires Sever's Hearth). A solid ghost of the whole camp appears ahead of you - aim with your view, Q/E to rotate, Activate to confirm, Tab to cancel.")
+
     elseif option == OID_StandUpKey
         SetInfoText("Hotkey to make an NPC stand up from furniture. Look at the NPC and press this key to make them get up from chairs, beds, workstations, etc.")
-        
+
+    elseif option == OID_UseFurnitureKey
+        SetInfoText("Two-step hotkey to send an NPC to use furniture. Aim at an NPC and press once to select them, then aim at a chair / bed / workstation and press again to send them to use it. Selection resets after 30s.")
+
     elseif option == OID_YieldKey
         SetInfoText("Hotkey to make an NPC yield/surrender. Stops combat, removes them from hostile factions, and makes them friendly. Works on NPCs currently in combat.")
         
@@ -2445,7 +2753,7 @@ Event OnOptionHighlight(int option)
     elseif option == OID_FM_PerActorAutoSwitch
         SetInfoText("Toggle automatic outfit switching for this specific companion. When disabled, this companion will not change outfits based on situation even if the global setting is enabled.")
     elseif option == OID_FM_FrameworkMode
-        SetInfoText("How new followers are managed.\nSeverActions: Full control — teammate status, follow packages, outfit lock, relationships, essential toggle.\nTracking: Observe only — outfit lock and relationships, but no teammate or AI management. Use when another mod handles recruitment.\nSPID keyword holders and NFF token holders auto-route to Tracking regardless.\nTakes effect on next recruit.")
+        SetInfoText("How new followers are managed.\nSeverActions: Full control - teammate status, follow packages, outfit lock, relationships, essential toggle.\nTracking: Observe only - outfit lock and relationships, but no teammate or AI management. Use when another mod handles recruitment.\nSPID keyword holders and NFF token holders auto-route to Tracking regardless.\nTakes effect on next recruit.")
     elseif option == OID_FM_Notifications
         SetInfoText("Show notifications when companions are recruited, dismissed, or when relationship milestones occur.")
     elseif option == OID_FM_Debug
@@ -2469,7 +2777,7 @@ Event OnOptionHighlight(int option)
     elseif option == OID_FM_OffScreenCooldownMax
         SetInfoText("Maximum game hours between off-screen life events per dismissed follower. Random cooldown between min and max. Default: 40 hours.")
     elseif option == OID_FM_OffScreenConsequences
-        SetInfoText("When enabled, off-screen life events may have real consequences: followers can get arrested, earn or lose gold, or take on debt. Events are personality-driven — principled followers rarely commit crimes. Default: OFF.")
+        SetInfoText("When enabled, off-screen life events may have real consequences: followers can get arrested, earn or lose gold, or take on debt. Events are personality-driven - principled followers rarely commit crimes. Default: OFF.")
     elseif option == OID_FM_ConsequenceCooldown
         SetInfoText("Game hours between consequential off-screen events per follower. Consequences are rarer than regular events. Default: 36 hours.")
     elseif option == OID_FM_AutoAmbientBanter
@@ -2479,7 +2787,7 @@ Event OnOptionHighlight(int option)
     elseif option == OID_FM_AmbientBanterCooldownMax
         SetInfoText("Maximum game hours between ambient NPC banter cycles. Each cycle picks a random cooldown between min and max. Default: 7 hours.")
     elseif option == OID_FM_QuestAwarenessOutputCap
-        SetInfoText("Maximum quest awareness entries followers see in dialogue context per render. Newest entries fill the budget first; completed quests with memories are skipped automatically. The per-follower storage cap (30) is unaffected — this only controls how many reach the LLM. Range: 1-15. Default: 5.")
+        SetInfoText("Maximum quest awareness entries followers see in dialogue context per render. Newest entries fill the budget first; completed quests with memories are skipped automatically. The per-follower storage cap (30) is unaffected - this only controls how many reach the LLM. Range: 1-15. Default: 5.")
     elseif option == OID_FM_MaxBounty
         SetInfoText("Maximum cumulative bounty a follower can accumulate from off-screen crime events. Prevents runaway bounties. Default: 1000 gold.")
     elseif option == OID_FM_MaxGoldChange
@@ -2494,6 +2802,8 @@ Event OnOptionHighlight(int option)
         SetInfoText("Select which NPC to view and manage. Shows non-follower NPCs with saved outfit presets.")
     elseif option == OID_Outfit_Lock
         SetInfoText("When enabled, this NPC's outfit will be locked in place and re-equipped automatically on cell transitions. Disable to allow normal outfit changes.")
+    elseif option == OID_Outfit_DeferBondage
+        SetInfoText("When enabled (default), SeverActions stops enforcing outfits on NPCs captured, enslaved, or tied up by Diary of Mine / Paradise Halls, so it won't fight their strip, restraints, or weapon swaps. Disable to let SeverActions re-equip locked outfits even on those NPCs. No effect if neither mod is installed.")
     elseif option == OID_FM_ResetAll
         SetInfoText("Emergency reset: dismisses all companions and clears all relationship data. Use if the system is stuck or broken.")
 
@@ -2668,7 +2978,12 @@ Event OnOptionDefault(int option)
         StandUpKey = -1
         SetKeyMapOptionValue(OID_StandUpKey, StandUpKey)
         ApplyHotkeySettings()
-        
+
+    elseif option == OID_UseFurnitureKey
+        UseFurnitureKey = -1
+        SetKeyMapOptionValue(OID_UseFurnitureKey, UseFurnitureKey)
+        ApplyHotkeySettings()
+
     elseif option == OID_YieldKey
         YieldKey = -1
         SetKeyMapOptionValue(OID_YieldKey, YieldKey)
@@ -2703,6 +3018,11 @@ Event OnOptionDefault(int option)
     elseif option == OID_AssignHomeKey
         AssignHomeKey = -1
         SetKeyMapOptionValue(OID_AssignHomeKey, AssignHomeKey)
+        ApplyHotkeySettings()
+
+    elseif option == OID_SetupCampKey
+        SetupCampKey = -1
+        SetKeyMapOptionValue(OID_SetupCampKey, SetupCampKey)
         ApplyHotkeySettings()
 
     elseif option == OID_WheelMenuKey
@@ -2841,6 +3161,10 @@ Event OnOptionDefault(int option)
                 EndIf
             EndIf
         EndIf
+    elseif option == OID_Outfit_DeferBondage
+        StorageUtil.SetIntValue(None, "SeverOutfit_DeferBondage", 1)
+        SeverActionsNativeExt.Native_Outfit_SetDeferBondage(true)
+        SetToggleOptionValue(OID_Outfit_DeferBondage, true)
     elseif option == OID_FM_FrameworkMode
         If FollowerManagerScript
             FollowerManagerScript.FrameworkMode = 0
@@ -2975,12 +3299,14 @@ Function ApplyHotkeySettings()
         HotkeyScript.UpdateFollowToggleKey(FollowToggleKey)
         HotkeyScript.UpdateDismissKey(DismissKey)
         HotkeyScript.UpdateStandUpKey(StandUpKey)
+        HotkeyScript.UpdateUseFurnitureKey(UseFurnitureKey)
         HotkeyScript.UpdateYieldKey(YieldKey)
         HotkeyScript.UpdateUndressKey(UndressKey)
         HotkeyScript.UpdateDressKey(DressKey)
         HotkeyScript.UpdateSetCompanionKey(SetCompanionKey)
         HotkeyScript.UpdateCompanionWaitKey(CompanionWaitKey)
         HotkeyScript.UpdateAssignHomeKey(AssignHomeKey)
+        HotkeyScript.UpdateSetupCampKey(SetupCampKey)
         HotkeyScript.UpdateConfigMenuKey(ConfigMenuKey)
 
         ; Update other settings directly

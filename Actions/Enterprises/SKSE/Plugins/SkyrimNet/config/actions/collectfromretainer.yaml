@@ -1,0 +1,43 @@
+customCategory: enterprises
+name: CollectFromRetainer
+description: "Use when {{ player.name }} is collecting the earnings their retainer (the speaker) has been holding — the gold and goods produced since the last time {{ player.name }} collected. The 'In the Player's Service' context for this NPC will state how much is 'awaiting collection'. The game transfers it to {{ player.name }} automatically — do NOT call GiveGold or GiveItem for this. If nothing is pending, just tell {{ player.name }} there's nothing to collect yet and don't call this."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: CollectFromRetainer
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the retainer handing over their accumulated earnings
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # has_pending_payout returns "" (nothing) or the pending amount string.
+      - decoratorName: "has_pending_payout"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} handed over their earnings to {{ player.name }}"

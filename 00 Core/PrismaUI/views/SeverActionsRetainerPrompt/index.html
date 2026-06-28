@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SeverActions Retainer Assign Prompt</title>
+    <style>
+      /* Assign-retainer overlay -- non-pausing HUD card. Offered when the
+         player work-marks a non-retainer. Pre-targeted to one NPC. Controls are
+         inline pill buttons (mirrors the dashboard "+ Assign" modal — no
+         dropdowns). Visual tokens copied from the Arrest / CollectPayment
+         prompts (brass-on-dark). Vanilla HTML/CSS -- no React. */
+
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent !important;
+        font-family: 'Trajan Pro', 'EB Garamond', Georgia, serif;
+        font-size: 19px;
+        color: #cba560;
+        overflow: hidden;
+        pointer-events: none;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+      body {
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+      }
+
+      .ret-overlay {
+        display: none;
+        pointer-events: auto;
+        padding-bottom: 10vh;
+        width: 100%;
+        max-width: 660px;
+        justify-content: center;
+        animation: ret-rise 220ms ease-out;
+      }
+      .ret-overlay.visible { display: flex; }
+
+      @keyframes ret-rise {
+        from { transform: translateY(20px); opacity: 0; }
+        to   { transform: translateY(0);     opacity: 1; }
+      }
+
+      .ret-card {
+        width: 100%;
+        background:
+          linear-gradient(to bottom,
+            rgba(20, 14, 6, 0.97),
+            rgba(30, 22, 10, 0.97));
+        border: 1px solid rgba(203, 165, 96, 0.6);
+        border-radius: 5px;
+        box-shadow:
+          0 8px 26px rgba(0, 0, 0, 0.8),
+          inset 0 1px 0 rgba(226, 195, 130, 0.18);
+        padding: 16px 22px 0 22px;
+        overflow: hidden;
+      }
+
+      .ret-header {
+        font-size: 0.82em;
+        letter-spacing: 0.22em;
+        color: rgba(203, 165, 96, 0.78);
+        font-weight: 600;
+        border-bottom: 1px solid rgba(203, 165, 96, 0.22);
+        padding-bottom: 7px;
+        margin-bottom: 11px;
+      }
+
+      .ret-body {
+        font-size: 1.0em;
+        line-height: 1.4;
+        color: rgba(226, 195, 130, 0.97);
+        margin-bottom: 13px;
+      }
+      .ret-name { color: #e2c382; font-weight: 600; }
+
+      .ret-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 11px;
+        margin-bottom: 15px;
+      }
+      .ret-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      .ret-label {
+        flex: 0 0 110px;
+        padding-top: 6px;
+        font-size: 0.82em;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: rgba(203, 165, 96, 0.7);
+      }
+
+      /* Pill rows (Trade / Arrangement). */
+      .ret-pills {
+        flex: 1 1 0;
+        display: flex;
+        gap: 7px;
+        flex-wrap: wrap;
+      }
+      .ret-pill {
+        padding: 6px 13px;
+        background: rgba(60, 45, 22, 0.4);
+        color: #cba560;
+        border: 1px solid rgba(203, 165, 96, 0.38);
+        border-radius: 14px;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 0.86em;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+        transition: background 80ms ease-out, border-color 80ms ease-out, color 80ms ease-out;
+      }
+      .ret-pill:hover {
+        background: rgba(85, 65, 30, 0.6);
+        border-color: rgba(226, 195, 130, 0.6);
+      }
+      .ret-pill.active {
+        background: rgba(95, 73, 33, 0.9);
+        color: #f0d9a4;
+        border-color: rgba(226, 195, 130, 0.9);
+      }
+
+      .ret-wage {
+        flex: 0 0 130px;
+        padding: 7px 10px;
+        background: rgba(60, 45, 22, 0.45);
+        color: #e2c382;
+        border: 1px solid rgba(203, 165, 96, 0.45);
+        border-radius: 3px;
+        font-family: inherit;
+        font-size: 0.9em;
+      }
+      .ret-wage:focus { outline: none; border-color: rgba(226, 195, 130, 0.8); }
+      .ret-wage-hint {
+        align-self: center;
+        font-size: 0.78em;
+        color: rgba(203, 165, 96, 0.55);
+      }
+
+      .ret-loc-wrap { flex: 1 1 0; position: relative; }
+      .ret-loc {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        background: rgba(60, 45, 22, 0.45);
+        color: #e2c382;
+        border: 1px solid rgba(203, 165, 96, 0.45);
+        border-radius: 3px;
+        font-family: inherit;
+        font-size: 0.9em;
+      }
+      .ret-loc:focus { outline: none; border-color: rgba(226, 195, 130, 0.8); }
+      .ret-loc::placeholder { color: rgba(203, 165, 96, 0.4); font-style: italic; }
+
+      /* Dark autocomplete dropdown (NOT a native <select> — those render
+         OS-white in Ultralight). Shows the closest few matches as you type. */
+      .ret-suggest {
+        display: none;
+        position: absolute;
+        left: 0; right: 0; top: calc(100% + 2px);
+        z-index: 30;
+        background: rgba(22, 15, 7, 0.98);
+        border: 1px solid rgba(203, 165, 96, 0.6);
+        border-radius: 3px;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.8);
+        overflow: hidden;
+      }
+      .ret-suggest.visible { display: block; }
+      .ret-suggest-item {
+        padding: 7px 11px;
+        color: #cba560;
+        cursor: pointer;
+        font-size: 0.85em;
+        letter-spacing: 0.02em;
+        border-bottom: 1px solid rgba(203, 165, 96, 0.12);
+      }
+      .ret-suggest-item:last-child { border-bottom: none; }
+      .ret-suggest-item:hover,
+      .ret-suggest-item.active {
+        background: rgba(95, 73, 33, 0.92);
+        color: #f0d9a4;
+      }
+
+      .ret-note {
+        flex: 1 1 0;
+        resize: none;
+        padding: 7px 10px;
+        background: rgba(60, 45, 22, 0.45);
+        color: #e2c382;
+        border: 1px solid rgba(203, 165, 96, 0.45);
+        border-radius: 3px;
+        font-family: inherit;
+        font-size: 0.86em;
+        line-height: 1.35;
+      }
+      .ret-note:focus { outline: none; border-color: rgba(226, 195, 130, 0.8); }
+      .ret-note::placeholder { color: rgba(203, 165, 96, 0.4); font-style: italic; }
+
+      .ret-hint {
+        font-size: 0.76em;
+        color: rgba(203, 165, 96, 0.5);
+        margin: -4px 0 0 122px;
+      }
+
+      .ret-actions {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 13px;
+      }
+      .ret-btn {
+        flex: 1 1 0;
+        padding: 11px 10px;
+        background: rgba(60, 45, 22, 0.55);
+        color: #cba560;
+        border: 1px solid rgba(203, 165, 96, 0.45);
+        border-radius: 3px;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 1em;
+        letter-spacing: 0.06em;
+        transition: background 80ms ease-out, border-color 80ms ease-out;
+      }
+      .ret-btn:hover {
+        background: rgba(85, 65, 30, 0.7);
+        border-color: rgba(226, 195, 130, 0.65);
+      }
+      .ret-btn--confirm {
+        color: #d8e5b8;
+        border-color: rgba(140, 175, 95, 0.55);
+      }
+      .ret-btn--confirm:hover {
+        background: rgba(55, 75, 30, 0.55);
+        border-color: rgba(170, 200, 120, 0.7);
+      }
+
+      /* Drain bar -- gold fill, breaks out of card padding. */
+      .ret-timer {
+        height: 5px;
+        background: rgba(0, 0, 0, 0.6);
+        overflow: hidden;
+        margin: 0 -22px;
+        padding: 0;
+        width: calc(100% + 44px);
+      }
+      .ret-timer-fill {
+        height: 100%;
+        width: 100%;
+        background: linear-gradient(
+          to right,
+          rgba(203, 165, 96, 0.95),
+          rgba(226, 195, 130, 0.95)
+        );
+        transform-origin: left center;
+        animation-name: ret-drain;
+        animation-timing-function: linear;
+        animation-fill-mode: forwards;
+      }
+      @keyframes ret-drain {
+        from { transform: scaleX(1); }
+        to   { transform: scaleX(0); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="overlay" class="ret-overlay" role="dialog" aria-modal="false" aria-label="Assign Retainer">
+      <div class="ret-card">
+        <div class="ret-header" id="hdr">TAKE ON A RETAINER?</div>
+        <div class="ret-body" id="body">
+          Put <span id="npc" class="ret-name">this one</span> on your books?
+        </div>
+        <div class="ret-fields">
+          <div class="ret-row">
+            <span class="ret-label">Work spot</span>
+            <div class="ret-pills" id="markerToggle"></div>
+          </div>
+          <div class="ret-row" id="workplaceRow">
+            <span class="ret-label">Workplace</span>
+            <div class="ret-loc-wrap">
+              <input id="loc" class="ret-loc" type="text" autocomplete="off" spellcheck="false" />
+              <div id="loc-suggest" class="ret-suggest"></div>
+            </div>
+          </div>
+          <div class="ret-hint" id="locHint">Blank = here, where you're standing. Or start typing a place and pick a match.</div>
+          <div class="ret-row">
+            <span class="ret-label">Trade</span>
+            <div class="ret-pills" id="jobPills"></div>
+          </div>
+          <div class="ret-row" id="customNameRow">
+            <span class="ret-label">Trade name</span>
+            <div class="ret-loc-wrap">
+              <input id="customName" class="ret-loc" type="text" autocomplete="off" spellcheck="false"
+                     maxlength="40" placeholder="name this line of work (e.g. Stablehand, Scribe)" />
+            </div>
+          </div>
+          <div class="ret-row">
+            <span class="ret-label">Terms</span>
+            <div class="ret-pills" id="arrPills"></div>
+          </div>
+          <div class="ret-row">
+            <span class="ret-label" id="wageLabel">Weekly wage</span>
+            <input id="wage" class="ret-wage" type="number" min="0" placeholder="standard" />
+            <span class="ret-wage-hint" id="wageHint">blank = standard wage</span>
+          </div>
+          <div class="ret-row">
+            <span class="ret-label">How the work goes</span>
+            <textarea id="note" class="ret-note" rows="2"></textarea>
+          </div>
+          <div class="ret-hint" id="noteHint">Story flavor only — colors their weekly tales. Blank = the default for the trade.</div>
+        </div>
+        <div class="ret-actions" id="actions">
+          <button type="button" class="ret-btn ret-btn--confirm" id="btn-confirm">Hire</button>
+          <button type="button" class="ret-btn" id="btn-decline">Not now</button>
+        </div>
+        <div class="ret-timer" aria-hidden="true">
+          <div id="timer-fill" class="ret-timer-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Assign-retainer prompt frontend script.
+      //
+      // IN  -- window.receiveRetainerPromptData({
+      //          npcName, namedPlace, jobs:[...], jobDescs:[...],
+      //          arrangements:[...], allLocations:[...], timeoutMs })
+      //          (namedPlace prefills the Workplace field; allLocations feeds
+      //           the type-ahead autocomplete — the closest few are shown.)
+      // OUT -- window.retainerPromptChoice(JSON.stringify({
+      //          choice, location, placeName, job, arrangement, wage, cut, note }))
+      //         choice in { "confirm", "decline" }
+      //         location in { "here" (blank box), "named" (typed/prefilled) }
+      //
+      // Only "confirm" (Hire) does anything: it places the work marker at the
+      // chosen location AND hires the retainer. "decline" (Not now), timeout,
+      // and Escape are full cancels — nothing is placed or hired.
+
+      (function () {
+        var overlay   = document.getElementById('overlay');
+        var npcE      = document.getElementById('npc');
+        var bodyE     = document.getElementById('body');
+        var locE      = document.getElementById('loc');
+        var locSuggestE = document.getElementById('loc-suggest');
+        var markerToggleE = document.getElementById('markerToggle');
+        var workplaceRowE = document.getElementById('workplaceRow');
+        var locHintE  = document.getElementById('locHint');
+        var jobPillsE = document.getElementById('jobPills');
+        var customNameRowE = document.getElementById('customNameRow');
+        var customNameE = document.getElementById('customName');
+        var arrPillsE = document.getElementById('arrPills');
+        var wageLbl   = document.getElementById('wageLabel');
+        var wageE     = document.getElementById('wage');
+        var wageHint  = document.getElementById('wageHint');
+        var noteE     = document.getElementById('note');
+        var confirmB  = document.getElementById('btn-confirm');
+        var declineB  = document.getElementById('btn-decline');
+        var timerFill = document.getElementById('timer-fill');
+        var autoHandle = null;
+
+        // Selection state.
+        var selectedJob = 0;        // index into jobs[]
+        var selectedArr = 0;        // 0 Employed | 1 Partnership | 2 Vassalage (coerced) | 3 Sworn
+        var jobLabels = [];         // job pill labels (to detect the "Custom" trade)
+        var jobDescs = [];          // default "how the work goes" per job (placeholder)
+        var allLocations = [];      // full resolvable-location index (autocomplete)
+        var placeMarker = true;     // false = hire without a work marker (NPC keeps own AI)
+
+        // Employed (0) and Sworn (3) both pay a flat weekly wage; Partnership (1)
+        // and Vassalage (2) take a percentage cut instead.
+        function needsWage() { return selectedArr === 0 || selectedArr === 3; }
+
+        function isCustomJob() {
+          return String(jobLabels[selectedJob] || '').toLowerCase() === 'custom';
+        }
+
+        function syncWageRow() {
+          if (needsWage()) {
+            wageLbl.textContent = 'Weekly wage';
+            wageE.placeholder = 'standard';
+            wageHint.textContent = 'blank = standard wage';
+          } else {
+            // Default cut: Partnership (1) is near-equals → 50; Vassalage (2,
+            // coerced) → 70. Blank routes to the same native default.
+            var defCut = (selectedArr === 2) ? '70' : '50';
+            wageLbl.textContent = 'Your cut %';
+            wageE.placeholder = defCut;
+            wageHint.textContent = '5-95, blank = ' + defCut + '%';
+          }
+          wageE.value = '';
+        }
+
+        // Generic single-select pill group. defs: [{label, onPick}], initial idx.
+        function buildPills(container, defs, activeIdx) {
+          while (container.firstChild) container.removeChild(container.firstChild);
+          defs.forEach(function (d, i) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'ret-pill' + (i === activeIdx ? ' active' : '');
+            b.textContent = d.label;
+            b.addEventListener('click', function () {
+              Array.prototype.forEach.call(container.children, function (c) {
+                c.classList.remove('active');
+              });
+              b.classList.add('active');
+              d.onPick();
+            });
+            container.appendChild(b);
+          });
+        }
+
+        function postChoice(obj) {
+          var body = JSON.stringify(obj);
+          var tryCall = function () {
+            var fn = window.retainerPromptChoice;
+            if (typeof fn !== 'function') return false;
+            try { fn(body); return true; }
+            catch (e) { console.warn('[RetainerPrompt] choice send failed:', e); return false; }
+          };
+          if (!tryCall()) { window.setTimeout(function () { tryCall(); }, 200); }
+        }
+
+        function close() {
+          overlay.classList.remove('visible');
+          if (autoHandle !== null) { window.clearTimeout(autoHandle); autoHandle = null; }
+        }
+
+        function locFields() {
+          // Blank workplace = "here" (player position); any text = a named place
+          // resolved on the Papyrus side via LocationResolver.
+          var v = (locE.value || '').trim();
+          if (!v) return { location: 'here', placeName: '' };
+          return { location: 'named', placeName: v };
+        }
+
+        function sendConfirm() {
+          var wage = -1, cut = -1;
+          var raw = parseInt(wageE.value, 10);
+          if (!isNaN(raw)) {
+            if (needsWage()) { wage = Math.max(0, raw); }
+            else { cut = Math.min(95, Math.max(5, raw)); }
+          }
+          var p = placeMarker ? locFields() : { location: 'here', placeName: '' };
+          p.choice = 'confirm';
+          p.placeMarker = placeMarker;
+          p.job = selectedJob;
+          p.arrangement = selectedArr;
+          p.wage = wage;
+          p.cut = cut;
+          var note = (noteE.value || '').trim();
+          if (note) p.note = note;   // blank => the trade's default flavor
+          if (isCustomJob()) {
+            var cn = (customNameE.value || '').trim();
+            if (cn) p.customName = cn;   // player's bespoke trade name
+          }
+          postChoice(p);
+          close();
+        }
+
+        function sendDecline() {
+          var p = locFields();
+          p.choice = 'decline';
+          postChoice(p);
+          close();
+        }
+
+        confirmB.addEventListener('click', sendConfirm);
+        declineB.addEventListener('click', sendDecline);
+
+        // ── Workplace autocomplete ────────────────────────────────────────
+        // Type-ahead over the full location index (sent in payload.allLocations).
+        // Shows only the closest few matches (prefix-first, then contains) in a
+        // dark dropdown; picking one guarantees the name resolves on confirm.
+        var MAX_SUGGEST = 5;
+
+        function hideSuggest() {
+          locSuggestE.classList.remove('visible');
+          while (locSuggestE.firstChild) locSuggestE.removeChild(locSuggestE.firstChild);
+        }
+
+        function rankMatches(q) {
+          q = q.toLowerCase();
+          if (!q) return [];
+          var prefix = [], contains = [];
+          for (var i = 0; i < allLocations.length; i++) {
+            var lc = String(allLocations[i]).toLowerCase();
+            var pos = lc.indexOf(q);
+            if (pos === 0) { prefix.push(allLocations[i]); if (prefix.length >= MAX_SUGGEST) break; }
+            else if (pos > 0 && contains.length < MAX_SUGGEST) { contains.push(allLocations[i]); }
+          }
+          var out = prefix.slice(0, MAX_SUGGEST);
+          for (var j = 0; j < contains.length && out.length < MAX_SUGGEST; j++) out.push(contains[j]);
+          return out;
+        }
+
+        function renderSuggest() {
+          var q = (locE.value || '').trim();
+          var matches = rankMatches(q);
+          while (locSuggestE.firstChild) locSuggestE.removeChild(locSuggestE.firstChild);
+          // Hide when empty, no match, or the only match is what's already typed.
+          if (!q || matches.length === 0 ||
+              (matches.length === 1 && matches[0].toLowerCase() === q.toLowerCase())) {
+            hideSuggest();
+            return;
+          }
+          matches.forEach(function (name) {
+            var row = document.createElement('div');
+            row.className = 'ret-suggest-item';
+            row.textContent = name;
+            // mousedown (not click) so it fires before the input's blur.
+            row.addEventListener('mousedown', function (e) {
+              e.preventDefault();
+              locE.value = name;
+              hideSuggest();
+            });
+            locSuggestE.appendChild(row);
+          });
+          locSuggestE.classList.add('visible');
+        }
+
+        locE.addEventListener('input', renderSuggest);
+        locE.addEventListener('blur', function () { window.setTimeout(hideSuggest, 120); });
+
+        function escapeHtml(s) {
+          return String(s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+
+        function syncCustomRow() {
+          // The "Trade name" field only matters for the bespoke Custom trade.
+          customNameRowE.style.display = isCustomJob() ? '' : 'none';
+        }
+
+        function applyJobPlaceholder() {
+          noteE.placeholder = jobDescs[selectedJob] || 'how their week tends to go (optional)';
+          syncCustomRow();
+        }
+
+        function buildJobPills(jobs, activeIdx) {
+          jobLabels = jobs || ['Miner'];
+          var defs = jobLabels.map(function (label, idx) {
+            return { label: label, onPick: function () { selectedJob = idx; applyJobPlaceholder(); } };
+          });
+          selectedJob = activeIdx || 0;
+          buildPills(jobPillsE, defs, selectedJob);
+          applyJobPlaceholder();   // seed placeholder + custom-row visibility
+        }
+
+        function buildArrPills(arrangements, activeIdx) {
+          var defs = (arrangements || ['Employed']).map(function (label, idx) {
+            return { label: label, onPick: function () { selectedArr = idx; syncWageRow(); } };
+          });
+          selectedArr = activeIdx || 0;
+          buildPills(arrPillsE, defs, selectedArr);
+        }
+
+        // Match the LLM's free-text job/arrangement to a pill index (exact,
+        // then prefix either way; defaults to 0). Canonical names are what the
+        // action's param description tells the model to use.
+        function matchIndex(list, name) {
+          if (!name) return 0;
+          var lc = String(name).toLowerCase().trim();
+          var i;
+          for (i = 0; i < list.length; i++) {
+            if (String(list[i]).toLowerCase() === lc) return i;
+          }
+          for (i = 0; i < list.length; i++) {
+            var it = String(list[i]).toLowerCase();
+            if (lc.indexOf(it) === 0 || it.indexOf(lc) === 0) return i;
+          }
+          return 0;
+        }
+
+        function setWorkplaceVisible(v) {
+          workplaceRowE.style.display = v ? '' : 'none';
+          locHintE.style.display = v ? '' : 'none';
+          if (!v) hideSuggest();
+        }
+
+        // Toggle: drop a work marker (default) vs leave the NPC where they are
+        // (hire only — for someone who already runs their own place, e.g. an
+        // innkeeper). When off, the Workplace field is hidden + irrelevant.
+        function buildMarkerToggle() {
+          placeMarker = true;
+          buildPills(markerToggleE, [
+            { label: 'Drop a marker', onPick: function () { placeMarker = true;  setWorkplaceVisible(true); } },
+            { label: 'Leave them be', onPick: function () { placeMarker = false; setWorkplaceVisible(false); } }
+          ], 0);
+          setWorkplaceVisible(true);
+        }
+
+        window.receiveRetainerPromptData = function (payload) {
+          payload = payload || {};
+          var ms = payload.timeoutMs || 90000;
+          if (ms < 1000) ms = 1000;
+
+          var name = payload.npcName || 'this one';
+          npcE.textContent = name;
+          bodyE.innerHTML =
+            'Put <span class="ret-name">' + escapeHtml(name) +
+            '</span> on your books? They will tend the work and settle up each week.';
+
+          jobDescs = payload.jobDescs || [];
+          allLocations = payload.allLocations || [];
+          noteE.value = '';
+          customNameE.value = '';
+
+          // Workplace: prefill with the LLM's named place (if any); blank = here.
+          locE.value = (payload.namedPlace || '').toString();
+          locE.placeholder = 'Here (where you stand) — or type a place';
+          hideSuggest();
+
+          // Work-spot toggle (defaults to "Drop a marker", workplace shown).
+          buildMarkerToggle();
+
+          // Trade / Terms: pre-select the pill matching the LLM's inferred
+          // job/arrangement (HireRetainer), else default to the first.
+          var jobs = payload.jobs || ['Miner'];
+          var arrs = payload.arrangements || ['Employed'];
+          buildJobPills(jobs, matchIndex(jobs, payload.prefillJob));
+          buildArrPills(arrs, matchIndex(arrs, payload.prefillArrangement));
+          syncWageRow();
+
+          // Restart drain bar.
+          var clone = timerFill.cloneNode(true);
+          clone.style.animationDuration = ms + 'ms';
+          timerFill.parentNode.replaceChild(clone, timerFill);
+          timerFill = clone;
+
+          overlay.classList.add('visible');
+
+          if (autoHandle !== null) { window.clearTimeout(autoHandle); autoHandle = null; }
+          autoHandle = window.setTimeout(function () {
+            autoHandle = null;
+            var p = locFields();
+            p.choice = 'decline';
+            postChoice(p);
+            close();
+          }, ms);
+        };
+
+        try {
+          if (typeof window.retainerPromptReady === 'function') {
+            window.retainerPromptReady('');
+          }
+        } catch (e) { /* harmless */ }
+      })();
+    </script>
+  </body>
+</html>

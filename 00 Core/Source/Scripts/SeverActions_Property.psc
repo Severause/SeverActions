@@ -24,8 +24,8 @@ Function TransferOwnership(Actor akActor, String propertyName)
     EndIf
 
     If SeverActions_PropertyFaction == None
-        Debug.Trace("[SeverActions_Property] ERROR: SeverActions_PropertyFaction not filled — create in CK")
-        Debug.Notification("Property system error — faction not configured.")
+        Debug.Trace("[SeverActions_Property] ERROR: SeverActions_PropertyFaction not filled - create in CK")
+        Debug.Notification("Property system error - faction not configured.")
         Return
     EndIf
 
@@ -47,7 +47,7 @@ Function TransferOwnership(Actor akActor, String propertyName)
             rejected = "this property"
         EndIf
         Debug.Notification(akActor.GetDisplayName() + " doesn't own " + rejected + ".")
-        Debug.Trace("[SeverActions_Property] REJECTED transfer — " + akActor.GetDisplayName() \
+        Debug.Trace("[SeverActions_Property] REJECTED transfer - " + akActor.GetDisplayName() \
             + " is not the owner of '" + rejected + "'")
         Return
     EndIf

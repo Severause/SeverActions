@@ -99,7 +99,7 @@ Function EnsureScriptReferences()
         BrawlScript = q as SeverActions_Brawl
     EndIf
 
-    Debug.Trace("[SeverActions_PrismaUI] Script references resolved — " \
+    Debug.Trace("[SeverActions_PrismaUI] Script references resolved - " \
         + "MCM=" + (MCMScript != None) + " Follower=" + (FollowerManagerScript != None) \
         + " Survival=" + (SurvivalScript != None) + " Arrest=" + (ArrestScript != None) \
         + " Outfit=" + (OutfitScript != None) + " Follow=" + (FollowScript != None) \
@@ -167,7 +167,7 @@ Event OnRequestData(String eventName, String strArg, Float numArg, Form sender)
         EnsureScriptReferences()
         if OutfitScript
             OutfitScript.MigrateOutfitDataToNative()
-            Debug.Trace("[SeverActions_PrismaUI] Migration complete — refreshing outfits page")
+            Debug.Trace("[SeverActions_PrismaUI] Migration complete - refreshing outfits page")
             Utility.Wait(0.5)
             SeverActionsNative.PrismaUI_RefreshPage("outfits")
         else
@@ -662,6 +662,7 @@ Function HandleAction(String actType, String json)
             FollowerManagerScript.AssignHome(actTarget, actLocName)
         EndIf
         SeverActionsNative.PrismaUI_RefreshPage("companions")
+
     ElseIf actType == "clearCompanionHome"
         actName = SeverActionsNative.PrismaUI_ExtractJsonValue(json, "name")
         actTarget = FindFollowerByName(actName)
@@ -835,6 +836,15 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
             FollowerManagerScript.AssignHome(target, locName)
         EndIf
 
+    ElseIf actionId == "assignWork"
+        ; Same model as the AssignWork SkyrimNet action — works on ANY NPC
+        ; (target resolved via FindActorByName above) and opens the retainer
+        ; popup so the player picks the workplace + job. The frontend closes the
+        ; dashboard on Execute so the non-pausing popup isn't suppressed.
+        If FollowerManagerScript
+            FollowerManagerScript.AssignWork(target, "")
+        EndIf
+
     ElseIf actionId == "setCombatStyle"
         If FollowerManagerScript
             FollowerManagerScript.SetCombatStyle(target, strParam)
@@ -982,9 +992,9 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
     ; ── Arrest Actions ──
     ElseIf actionId == "arrestNPC"
         If !ArrestScript
-            SeverActionsNative.Native_Arrest_Log("PrismaUI arrestNPC skipped — ArrestScript reference is None (script ref binding failed)")
+            SeverActionsNative.Native_Arrest_Log("PrismaUI arrestNPC skipped - ArrestScript reference is None (script ref binding failed)")
         ElseIf !target2
-            SeverActionsNative.Native_Arrest_Log("PrismaUI arrestNPC skipped — target2 (suspect) is None. target='" + targetName + "' target2Name='" + target2Name + "'")
+            SeverActionsNative.Native_Arrest_Log("PrismaUI arrestNPC skipped - target2 (suspect) is None. target='" + targetName + "' target2Name='" + target2Name + "'")
         Else
             SeverActionsNative.Native_Arrest_Log("PrismaUI arrestNPC dispatching: guard='" + target.GetDisplayName() + "' suspect='" + target2.GetDisplayName() + "'")
             Bool arrestStarted = ArrestScript.ArrestNPC_Internal(target, target2)
@@ -993,9 +1003,9 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
 
     ElseIf actionId == "freeFromJail"
         If !ArrestScript
-            SeverActionsNative.Native_Arrest_Log("PrismaUI freeFromJail skipped — ArrestScript reference is None")
+            SeverActionsNative.Native_Arrest_Log("PrismaUI freeFromJail skipped - ArrestScript reference is None")
         ElseIf !target2
-            SeverActionsNative.Native_Arrest_Log("PrismaUI freeFromJail skipped — target2 (jailed NPC) is None. target='" + targetName + "' target2Name='" + target2Name + "'")
+            SeverActionsNative.Native_Arrest_Log("PrismaUI freeFromJail skipped - target2 (jailed NPC) is None. target='" + targetName + "' target2Name='" + target2Name + "'")
         Else
             ArrestScript.FreeNPC_Internal(target, target2)
         EndIf

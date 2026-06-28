@@ -118,7 +118,7 @@ Event OnUpdate()
         Else
             pollsWaitingForStart += 1
             If pollsWaitingForStart >= MaxPollsWaitingForStart
-                Debug.Trace("[SeverActions_SpellCast] Package never fired — abort")
+                Debug.Trace("[SeverActions_SpellCast] Package never fired - abort")
                 CleanupCast()
             Else
                 RegisterForSingleUpdate(PollInterval)
@@ -132,7 +132,7 @@ Event OnUpdate()
         Else
             pollsInFlight += 1
             If pollsInFlight >= MaxPollsInFlight
-                Debug.Trace("[SeverActions_SpellCast] Stuck charge detected — force release")
+                Debug.Trace("[SeverActions_SpellCast] Stuck charge detected - force release")
                 SeverActionsNativeExt.Native_ForceReleaseCast(caster)
                 CleanupCast()
             Else

@@ -33,6 +33,17 @@ int Property DismissKey = -1 Auto Hidden
 int Property StandUpKey = -1 Auto Hidden
 {Key code for making target NPC stand up from furniture. -1 = unset/disabled}
 
+int Property UseFurnitureKey = -1 Auto Hidden
+{Key code for the two-step "use furniture" hotkey. Press 1 on an NPC to select
+ them, press 2 on a piece of furniture to send them to use it. -1 = unset.}
+
+; Two-step use-furniture state: the NPC picked on the first press, awaiting a
+; furniture target on the second. Cleared after use or on timeout.
+Actor PendingFurnitureUser = None
+Float PendingFurnitureTime = 0.0
+float Property PendingFurnitureWindow = 30.0 AutoReadOnly
+{Seconds the selected NPC stays "pending" before the two-step flow resets.}
+
 int Property YieldKey = -1 Auto Hidden
 {Key code for making target NPC yield/surrender. -1 = unset/disabled}
 
@@ -50,6 +61,9 @@ int Property CompanionWaitKey = -1 Auto Hidden
 
 int Property AssignHomeKey = -1 Auto Hidden
 {Key code for assigning NPC's home to current location. -1 = unset/disabled}
+
+int Property SetupCampKey = -1 Auto Hidden
+{Key code for entering camp placement mode (Sever's Hearth). -1 = unset/disabled}
 
 int Property ConfigMenuKey = 9 Auto Hidden
 {Key code for opening the PrismaUI config menu. Default: 9 (the 8 key). -1 = disabled}
@@ -114,7 +128,13 @@ Function RegisterKeys()
         RegisterForKey(StandUpKey)
         Debug.Trace("[SeverActions_Hotkeys] Registered stand up key: " + StandUpKey)
     endif
-    
+
+    ; Register use-furniture key (only if set)
+    if UseFurnitureKey > 0
+        RegisterForKey(UseFurnitureKey)
+        Debug.Trace("[SeverActions_Hotkeys] Registered use furniture key: " + UseFurnitureKey)
+    endif
+
     ; Register yield key (only if set)
     if YieldKey > 0
         RegisterForKey(YieldKey)
@@ -149,6 +169,12 @@ Function RegisterKeys()
     if AssignHomeKey > 0
         RegisterForKey(AssignHomeKey)
         Debug.Trace("[SeverActions_Hotkeys] Registered assign home key: " + AssignHomeKey)
+    endif
+
+    ; Register setup camp key (only if set)
+    if SetupCampKey > 0
+        RegisterForKey(SetupCampKey)
+        Debug.Trace("[SeverActions_Hotkeys] Registered setup camp key: " + SetupCampKey)
     endif
 
     ; Register config menu key (only if set)
@@ -208,6 +234,23 @@ Function UpdateStandUpKey(int newKey)
         Debug.Trace("[SeverActions_Hotkeys] Updated stand up key to: " + newKey)
     else
         Debug.Trace("[SeverActions_Hotkeys] Stand up key cleared")
+    endif
+EndFunction
+
+Function UpdateUseFurnitureKey(int newKey)
+    ; Unregister old key if it was valid
+    if UseFurnitureKey > 0 && UseFurnitureKey != newKey
+        UnregisterForKey(UseFurnitureKey)
+    endif
+
+    UseFurnitureKey = newKey
+
+    ; Register new key (only if valid)
+    if newKey > 0
+        RegisterForKey(newKey)
+        Debug.Trace("[SeverActions_Hotkeys] Updated use furniture key to: " + newKey)
+    else
+        Debug.Trace("[SeverActions_Hotkeys] Use furniture key cleared")
     endif
 EndFunction
 
@@ -307,6 +350,21 @@ Function UpdateAssignHomeKey(int newKey)
     endif
 EndFunction
 
+Function UpdateSetupCampKey(int newKey)
+    if SetupCampKey > 0 && SetupCampKey != newKey
+        UnregisterForKey(SetupCampKey)
+    endif
+
+    SetupCampKey = newKey
+
+    if newKey > 0
+        RegisterForKey(newKey)
+        Debug.Trace("[SeverActions_Hotkeys] Updated setup camp key to: " + newKey)
+    else
+        Debug.Trace("[SeverActions_Hotkeys] Setup camp key cleared")
+    endif
+EndFunction
+
 Function UpdateConfigMenuKey(int newKey)
     if ConfigMenuKey > 0 && ConfigMenuKey != newKey
         UnregisterForKey(ConfigMenuKey)
@@ -359,6 +417,8 @@ Event OnKeyDown(int keyCode)
         HandleDismiss()
     elseif keyCode == StandUpKey && StandUpKey > 0
         HandleStandUp()
+    elseif keyCode == UseFurnitureKey && UseFurnitureKey > 0
+        HandleUseFurniture()
     elseif keyCode == YieldKey && YieldKey > 0
         HandleYield()
     elseif keyCode == UndressKey && UndressKey > 0
@@ -371,8 +431,30 @@ Event OnKeyDown(int keyCode)
         HandleCompanionWait()
     elseif keyCode == AssignHomeKey && AssignHomeKey > 0
         HandleAssignHome()
+    elseif keyCode == SetupCampKey && SetupCampKey > 0
+        HandleSetupCamp()
     endif
 EndEvent
+
+; =============================================================================
+; SETUP CAMP HANDLER
+; =============================================================================
+
+Function HandleSetupCamp()
+    ; Fire the same ModEvent the Survival page's "Set Up Camp" button uses.
+    ; Decoupled from Hearth's ESP — if Hearth isn't installed nothing listens
+    ; and this no-ops. SeversHearth_Camp opens the live ghost placement mode.
+    Int evt = ModEvent.Create("SeverActions_PrismaSetupCamp")
+    If evt
+        ModEvent.PushString(evt, "SeverActions_PrismaSetupCamp")
+        ModEvent.PushString(evt, "")
+        ModEvent.PushFloat(evt, 0.0)
+        ModEvent.PushForm(evt, None)
+        ModEvent.Send(evt)
+    Else
+        Debug.Notification("SeverActions: couldn't start camp placement.")
+    EndIf
+EndFunction
 
 ; =============================================================================
 ; FOLLOW TOGGLE HANDLER
@@ -477,6 +559,58 @@ Function HandleStandUp()
         ; Notification is handled by the furniture script via SkyrimNet event
     else
         Debug.Notification(target.GetDisplayName() + " is not using furniture")
+    endif
+EndFunction
+
+; =============================================================================
+; USE FURNITURE HANDLER (two-step: aim at NPC, then aim at furniture)
+; =============================================================================
+
+Function HandleUseFurniture()
+    if !FurnitureScript
+        Debug.Notification("SeverActions: Furniture script not configured!")
+        return
+    endif
+
+    Actor player = Game.GetPlayer()
+    ObjectReference ref = Game.GetCurrentCrosshairRef()
+    Actor crosshairActor = ref as Actor
+
+    ; Is a selection still live (NPC picked recently, awaiting furniture)?
+    Bool pendingLive = PendingFurnitureUser != None && !PendingFurnitureUser.IsDead() \
+        && (Utility.GetCurrentRealTime() - PendingFurnitureTime) < PendingFurnitureWindow
+
+    if pendingLive
+        ; STEP 2 — aiming at furniture sends the selected NPC to use it.
+        if ref && (ref.GetBaseObject() as Furniture) && crosshairActor == None
+            if ref.IsFurnitureInUse()
+                Debug.Notification("That furniture is already in use")
+                return
+            endif
+            Actor user = PendingFurnitureUser
+            PendingFurnitureUser = None
+            FurnitureScript.UseFurnitureRef_Execute(user, ref)
+            Debug.Notification(user.GetDisplayName() + " is heading to " + ref.GetBaseObject().GetName())
+            return
+        elseif crosshairActor != None && crosshairActor != player && !crosshairActor.IsDead()
+            ; Re-aimed at a different NPC — switch the selection instead.
+            PendingFurnitureUser = crosshairActor
+            PendingFurnitureTime = Utility.GetCurrentRealTime()
+            Debug.Notification("Selected " + crosshairActor.GetDisplayName() + " - now aim at furniture and press again")
+            return
+        else
+            Debug.Notification("Aim at a piece of furniture, then press again")
+            return
+        endif
+    endif
+
+    ; STEP 1 — pick the NPC under the crosshair.
+    if crosshairActor != None && crosshairActor != player && !crosshairActor.IsDead()
+        PendingFurnitureUser = crosshairActor
+        PendingFurnitureTime = Utility.GetCurrentRealTime()
+        Debug.Notification("Selected " + crosshairActor.GetDisplayName() + " - now aim at furniture and press again")
+    else
+        Debug.Notification("Aim at an NPC, then press again on furniture")
     endif
 EndFunction
 
@@ -708,7 +842,7 @@ Function HandleAssignHome()
             Debug.Notification("Current location has no name")
         endif
     else
-        Debug.Notification("No location detected — try from inside a named area.")
+        Debug.Notification("No location detected - try from inside a named area.")
     endif
 EndFunction
 

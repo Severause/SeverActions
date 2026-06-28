@@ -65,15 +65,10 @@ No recent dialogue involving companions.
 
 These are the explicit banter topics this party has already used. **Do not pick a topic that is the same theme as any of these — even loosely related counts as repetition.** "Complaining about the cold" and "remarking on the weather" are the same theme; "ribbing about a missed arrow" and "ribbing about clumsy footwork" are the same theme.
 
-{% set pastTopics = [] %}
-{% for ev in relevantEvents %}
-{% if existsIn(ev.data, "topic") and ev.data.topic != "" %}
-{% set pastTopics = append(pastTopics, ev) %}
-{% endif %}
-{% endfor %}
-{% if length(pastTopics) > 0 %}
-{% for ev in pastTopics %}
-- [{{ ev.gameTimeStr }}] {{ ev.data.speaker }} & {{ ev.data.listener }}: "{{ ev.data.topic }}"
+{% set recent = default(recentBanter, []) %}
+{% if length(recent) > 0 %}
+{% for r in recent %}
+- {{ r.speaker }} & {{ r.target }}: "{{ r.topic }}"
 {% endfor %}
 {% else %}
 No prior banter topics on record. Wide-open field.
@@ -85,10 +80,10 @@ The single most common failure mode is the same pair bantering every tick with t
 
 {% set lastSpeakers = [] %}
 {% set lastPairs = [] %}
-{% for ev in pastTopics %}
-{% if existsIn(ev.data, "speaker") and existsIn(ev.data, "listener") and ev.data.speaker != "" and ev.data.listener != "" %}
-{% set lastSpeakers = append(lastSpeakers, ev.data.speaker) %}
-{% set lastPairs = append(lastPairs, ev.data.speaker + " & " + ev.data.listener) %}
+{% for r in recent %}
+{% if r.speaker != "" and r.target != "" %}
+{% set lastSpeakers = append(lastSpeakers, r.speaker) %}
+{% set lastPairs = append(lastPairs, r.speaker + " & " + r.target) %}
 {% endif %}
 {% endfor %}
 

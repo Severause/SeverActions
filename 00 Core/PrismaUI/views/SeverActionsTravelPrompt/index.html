@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SeverActions Travel Prompt</title>
+<style>
+  :root {
+    --bg-panel: #1c1812;
+    --brass: #c9a866;
+    --border: #4a4036;
+    --border-accent: #6d5d40;
+    --text: #d8cdb6;
+    --text-dim: #9a8f7a;
+    --bg-input: #14110c;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: transparent; overflow: hidden;
+    font-family: "Times New Roman", Georgia, serif; color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  #overlay {
+    position: fixed; right: 40px; bottom: 80px; width: 380px;
+    opacity: 0; transform: translateY(8px);
+    transition: opacity 180ms ease, transform 180ms ease;
+  }
+  #overlay.show { opacity: 1; transform: translateY(0); }
+  .tp-card {
+    background: var(--bg-panel); border: 1px solid var(--border-accent);
+    border-radius: 6px; box-shadow: 0 18px 56px rgba(0,0,0,0.65);
+    padding: 16px 18px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .tp-title {
+    font-size: 15px; letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--brass); border-bottom: 1px solid rgba(201,168,102,0.2);
+    padding-bottom: 8px;
+  }
+  .tp-sub { font-size: 12px; color: var(--text-dim); font-style: italic; }
+  .tp-field { position: relative; }
+  .tp-input {
+    width: 100%; padding: 8px 10px; background: var(--bg-input);
+    border: 1px solid var(--border); border-radius: 3px;
+    color: var(--text); font-size: 14px; font-family: inherit;
+  }
+  .tp-suggest {
+    position: absolute; top: 38px; left: 0; right: 0; z-index: 5;
+    max-height: 170px; overflow-y: auto;
+    background: var(--bg-panel); border: 1px solid var(--border-accent);
+    border-radius: 3px; box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+    display: flex; flex-direction: column;
+  }
+  .tp-suggest-row {
+    text-align: left; padding: 6px 10px; background: none; border: none;
+    border-bottom: 1px solid rgba(201,168,102,0.08);
+    color: var(--text); font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  .tp-suggest-row:hover { background: rgba(201,168,102,0.12); color: var(--brass); }
+  .tp-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .tp-btn {
+    padding: 6px 18px; background: rgba(0,0,0,0.25);
+    border: 1px solid var(--border); border-radius: 3px;
+    color: var(--text); font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  .tp-btn:hover { border-color: var(--border-accent); }
+  .tp-btn--go { border-color: var(--brass); color: var(--brass); }
+  .tp-timer { height: 3px; background: rgba(0,0,0,0.3); border-radius: 2px; overflow: hidden; }
+  .tp-timer-fill { height: 100%; width: 100%; background: var(--brass); transition: width linear; }
+</style>
+</head>
+<body>
+  <div id="overlay">
+    <div class="tp-card">
+      <div class="tp-title" id="title">Where to?</div>
+      <div class="tp-sub">Confirm where they're headed — or type a different place.</div>
+      <div class="tp-field">
+        <input class="tp-input" id="dest" type="text" placeholder="Type a destination…" autocomplete="off" />
+        <div class="tp-suggest" id="suggest" style="display:none"></div>
+      </div>
+      <div class="tp-actions">
+        <button type="button" class="tp-btn tp-btn--go" id="btn-go">Go</button>
+        <button type="button" class="tp-btn" id="btn-cancel">Not now</button>
+      </div>
+      <div class="tp-timer" aria-hidden="true"><div id="timer-fill" class="tp-timer-fill"></div></div>
+    </div>
+  </div>
+
+<script>
+  // Travel prompt frontend.
+  //  IN  -- window.receiveTravelPromptData({ npcName, namedPlace, allLocations:[...], timeoutMs })
+  //  OUT -- window.travelPromptChoice(JSON.stringify({ choice, place }))
+  //         choice in { "confirm", "decline" }. Only "confirm" with a place travels.
+  (function () {
+    var MAX_SUGGEST = 5;
+    var overlay  = document.getElementById('overlay');
+    var titleE   = document.getElementById('title');
+    var destE    = document.getElementById('dest');
+    var suggestE = document.getElementById('suggest');
+    var goB      = document.getElementById('btn-go');
+    var cancelB  = document.getElementById('btn-cancel');
+    var timerFill = document.getElementById('timer-fill');
+    var allLocations = [];
+    var timerHandle = null;
+    var posted = false;
+
+    function post(choice) {
+      if (posted) return;
+      posted = true;
+      var payload = { choice: choice, place: destE.value.trim() };
+      try { if (window.travelPromptChoice) window.travelPromptChoice(JSON.stringify(payload)); } catch (e) {}
+    }
+
+    function hideSuggest() { suggestE.style.display = 'none'; while (suggestE.firstChild) suggestE.removeChild(suggestE.firstChild); }
+
+    function showSuggest() {
+      var q = destE.value.trim().toLowerCase();
+      hideSuggest();
+      if (!q || allLocations.length === 0) return;
+      var prefix = [], contains = [];
+      for (var i = 0; i < allLocations.length; i++) {
+        var lc = String(allLocations[i]).toLowerCase();
+        var pos = lc.indexOf(q);
+        if (pos === 0) { prefix.push(allLocations[i]); if (prefix.length >= MAX_SUGGEST) break; }
+        else if (pos > 0 && contains.length < MAX_SUGGEST) { contains.push(allLocations[i]); }
+      }
+      var out = prefix.slice(0, MAX_SUGGEST);
+      for (var j = 0; j < contains.length && out.length < MAX_SUGGEST; j++) out.push(contains[j]);
+      if (out.length === 1 && String(out[0]).toLowerCase() === q) return; // already picked
+      for (var k = 0; k < out.length; k++) {
+        (function (name) {
+          var b = document.createElement('button');
+          b.type = 'button'; b.className = 'tp-suggest-row'; b.textContent = name;
+          b.addEventListener('mousedown', function (e) { e.preventDefault(); destE.value = name; hideSuggest(); });
+          suggestE.appendChild(b);
+        })(out[k]);
+      }
+      if (out.length > 0) suggestE.style.display = 'flex';
+    }
+
+    destE.addEventListener('input', showSuggest);
+    destE.addEventListener('focus', showSuggest);
+    destE.addEventListener('blur', function () { setTimeout(hideSuggest, 120); });
+
+    goB.addEventListener('click', function () { if (destE.value.trim()) post('confirm'); });
+    cancelB.addEventListener('click', function () { post('decline'); });
+
+    window.receiveTravelPromptData = function (data) {
+      data = data || {};
+      posted = false;
+      allLocations = data.allLocations || [];
+      titleE.textContent = (data.npcName || 'Someone') + ' — where to?';
+      destE.value = (data.namedPlace || '').toString();
+      overlay.classList.add('show');
+      setTimeout(function () { destE.focus(); }, 60);
+      // Drain timer — lapse = decline (no travel).
+      var ms = parseInt(data.timeoutMs, 10) || 60000;
+      timerFill.style.transition = 'none';
+      timerFill.style.width = '100%';
+      void timerFill.offsetWidth;
+      timerFill.style.transition = 'width ' + ms + 'ms linear';
+      timerFill.style.width = '0%';
+      if (timerHandle) clearTimeout(timerHandle);
+      timerHandle = setTimeout(function () { post('decline'); }, ms);
+    };
+
+    if (window.travelPromptReady) window.travelPromptReady('');
+  })();
+</script>
+</body>
+</html>

@@ -803,12 +803,24 @@ String Property PENALTY_HEALTH_REGEN_KEY = "SeverActions_Penalty_HealthRegen" Au
 ; Per-follower exclusion key (1 = excluded from survival tracking)
 String Property EXCLUSION_KEY = "SeverActions_Survival_Excluded" AutoReadOnly
 
-; Regen reduction percentages at each severity level
-; These reduce the regen rate actor values (StaminaRate, MagickaRate, HealRate)
-; Vanilla regen is typically 100 (100% of base regen), so -50 = half regen, -100 = no regen
-Int Property REGEN_PENALTY_MILD = 50 AutoReadOnly      ; 50% reduction
-Int Property REGEN_PENALTY_MODERATE = 75 AutoReadOnly  ; 75% reduction
-Int Property REGEN_PENALTY_SEVERE = 100 AutoReadOnly   ; 100% reduction (no regen)
+; Regen reduction percentages at each severity level, applied to the *RateMult
+; actor values (HealRateMult / MagickaRateMult / StaminaRateMult) — NOT the flat
+; HealRate/MagickaRate/StaminaRate. The Mult AVs default to 100 (= 100% of base
+; regen), so -50 = half regen, -75 = quarter. (Older builds subtracted these from
+; the flat rates, whose base values are tiny ~0.7/3/5 — so any penalty drove them
+; negative and floored regen entirely, collapsing all three tiers to "no regen".
+; Bug catch: Pingoforce.)
+; Regen is NEVER fully stopped — REGEN_PENALTY_FLOOR_MULT caps the total applied
+; penalty so even a heavily-deprived follower keeps a trickle.
+Int Property REGEN_PENALTY_MILD = 50 AutoReadOnly      ; -> 50% regen
+Int Property REGEN_PENALTY_MODERATE = 75 AutoReadOnly  ; -> 25% regen
+Int Property REGEN_PENALTY_SEVERE = 90 AutoReadOnly    ; -> 10% regen (heavy, never zero)
+; Hard cap on the penalty after DebuffSeverity scaling, so RateMult never drops
+; below (100 - this). 90 => a guaranteed 10% regen floor at any severity.
+Int Property REGEN_PENALTY_FLOOR_MULT = 90 AutoReadOnly
+; Per-follower one-time migration flag — undoes the legacy flat-rate penalties
+; older builds left on HealRate/MagickaRate/StaminaRate before this moved to Mult.
+String Property REGEN_MIG_KEY = "SeverActions_RegenMigDone" AutoReadOnly
 
 ; Stamina drain per game hour at each hunger level
 Float Property HUNGER_STAMINA_DRAIN_MILD = 10.0 AutoReadOnly      ; Peckish: 10 stamina/hour
@@ -827,6 +839,9 @@ Float Property COLD_DAMAGE_SEVERE = 30.0 AutoReadOnly   ; Freezing: 30 health/ho
 
 Function ApplyStatPenalties(Actor akFollower, Int hunger, Int fatigue, Int cold)
     {Apply penalties based on survival levels - speed, regen reduction}
+
+    ; Undo any legacy flat-rate penalty before applying the Mult-based ones.
+    MigrateRegenPenalty(akFollower)
 
     ; Safety check: if follower is in bleedout, clear penalties and help them recover
     If akFollower.IsBleedingOut()
@@ -849,10 +864,38 @@ EndFunction
 
 Function ClearAllPenalties(Actor akFollower)
     {Clear all survival penalties from a follower}
+    MigrateRegenPenalty(akFollower)
     ClearSpeedPenalty(akFollower)
     ClearStaminaRegenPenalty(akFollower)
     ClearMagickaRegenPenalty(akFollower)
     ClearHealthRegenPenalty(akFollower)
+EndFunction
+
+Function MigrateRegenPenalty(Actor akFollower)
+    {One-time per-follower migration. Older builds applied regen penalties to the
+     FLAT rate AVs (HealRate/MagickaRate/StaminaRate), leaving them stuck deeply
+     negative once damaged (regen floored to 0 regardless of the Mult). Undo any
+     such legacy penalty on the flat rate and zero the stored amount, so the new
+     RateMult logic starts from a clean slate. Runs once per follower.}
+    If StorageUtil.GetIntValue(akFollower, REGEN_MIG_KEY, 0) >= 1
+        Return
+    EndIf
+    Int sp = StorageUtil.GetIntValue(akFollower, PENALTY_STAMINA_REGEN_KEY, 0)
+    If sp > 0
+        akFollower.ModAV("StaminaRate", sp)
+        StorageUtil.SetIntValue(akFollower, PENALTY_STAMINA_REGEN_KEY, 0)
+    EndIf
+    Int mp = StorageUtil.GetIntValue(akFollower, PENALTY_MAGICKA_REGEN_KEY, 0)
+    If mp > 0
+        akFollower.ModAV("MagickaRate", mp)
+        StorageUtil.SetIntValue(akFollower, PENALTY_MAGICKA_REGEN_KEY, 0)
+    EndIf
+    Int hp = StorageUtil.GetIntValue(akFollower, PENALTY_HEALTH_REGEN_KEY, 0)
+    If hp > 0
+        akFollower.ModAV("HealRate", hp)
+        StorageUtil.SetIntValue(akFollower, PENALTY_HEALTH_REGEN_KEY, 0)
+    EndIf
+    StorageUtil.SetIntValue(akFollower, REGEN_MIG_KEY, 1)
 EndFunction
 
 Function ApplyColdSpeedPenalty(Actor akFollower, Int cold)
@@ -1038,11 +1081,11 @@ Function ApplyStaminaRegenPenalty(Actor akFollower, Int hunger)
     If newPenalty != prevPenalty
         ; Restore previous penalty
         If prevPenalty > 0
-            akFollower.ModAV("StaminaRate", prevPenalty)
+            akFollower.ModAV("StaminaRateMult",prevPenalty)
         EndIf
         ; Apply new penalty
         If newPenalty > 0
-            akFollower.ModAV("StaminaRate", -newPenalty)
+            akFollower.ModAV("StaminaRateMult",-newPenalty)
         EndIf
         StorageUtil.SetIntValue(akFollower, PENALTY_STAMINA_REGEN_KEY, newPenalty)
 
@@ -1056,7 +1099,7 @@ Function ClearStaminaRegenPenalty(Actor akFollower)
     {Clear the stamina regen penalty}
     Int penalty = StorageUtil.GetIntValue(akFollower, PENALTY_STAMINA_REGEN_KEY, 0)
     If penalty > 0
-        akFollower.ModAV("StaminaRate", penalty)
+        akFollower.ModAV("StaminaRateMult",penalty)
         StorageUtil.SetIntValue(akFollower, PENALTY_STAMINA_REGEN_KEY, 0)
     EndIf
 EndFunction
@@ -1069,11 +1112,11 @@ Function ApplyMagickaRegenPenalty(Actor akFollower, Int fatigue)
     If newPenalty != prevPenalty
         ; Restore previous penalty
         If prevPenalty > 0
-            akFollower.ModAV("MagickaRate", prevPenalty)
+            akFollower.ModAV("MagickaRateMult",prevPenalty)
         EndIf
         ; Apply new penalty
         If newPenalty > 0
-            akFollower.ModAV("MagickaRate", -newPenalty)
+            akFollower.ModAV("MagickaRateMult",-newPenalty)
         EndIf
         StorageUtil.SetIntValue(akFollower, PENALTY_MAGICKA_REGEN_KEY, newPenalty)
 
@@ -1087,7 +1130,7 @@ Function ClearMagickaRegenPenalty(Actor akFollower)
     {Clear the magicka regen penalty}
     Int penalty = StorageUtil.GetIntValue(akFollower, PENALTY_MAGICKA_REGEN_KEY, 0)
     If penalty > 0
-        akFollower.ModAV("MagickaRate", penalty)
+        akFollower.ModAV("MagickaRateMult",penalty)
         StorageUtil.SetIntValue(akFollower, PENALTY_MAGICKA_REGEN_KEY, 0)
     EndIf
 EndFunction
@@ -1100,11 +1143,11 @@ Function ApplyHealthRegenPenalty(Actor akFollower, Int cold)
     If newPenalty != prevPenalty
         ; Restore previous penalty
         If prevPenalty > 0
-            akFollower.ModAV("HealRate", prevPenalty)
+            akFollower.ModAV("HealRateMult",prevPenalty)
         EndIf
         ; Apply new penalty
         If newPenalty > 0
-            akFollower.ModAV("HealRate", -newPenalty)
+            akFollower.ModAV("HealRateMult",-newPenalty)
         EndIf
         StorageUtil.SetIntValue(akFollower, PENALTY_HEALTH_REGEN_KEY, newPenalty)
 
@@ -1118,7 +1161,7 @@ Function ClearHealthRegenPenalty(Actor akFollower)
     {Clear the health regen penalty}
     Int penalty = StorageUtil.GetIntValue(akFollower, PENALTY_HEALTH_REGEN_KEY, 0)
     If penalty > 0
-        akFollower.ModAV("HealRate", penalty)
+        akFollower.ModAV("HealRateMult",penalty)
         StorageUtil.SetIntValue(akFollower, PENALTY_HEALTH_REGEN_KEY, 0)
     EndIf
 EndFunction
@@ -1136,7 +1179,12 @@ Int Function GetRegenPenaltyForLevel(Int survivalValue)
         basePenalty = REGEN_PENALTY_MILD
     EndIf
 
-    Return (basePenalty as Float * DebuffSeverity) as Int
+    Int scaled = (basePenalty as Float * DebuffSeverity) as Int
+    ; Never let DebuffSeverity push the penalty past the floor — regen always trickles.
+    If scaled > REGEN_PENALTY_FLOOR_MULT
+        scaled = REGEN_PENALTY_FLOOR_MULT
+    EndIf
+    Return scaled
 EndFunction
 
 ; =============================================================================
@@ -1666,17 +1714,12 @@ Function StopTracking()
         Debug.Trace("[SeverActions_Survival] StopTracking called")
     EndIf
 
-    ; Clear speed penalties from all currently tracked followers
-    ; Note: Stamina/Magicka/Health drain recovers naturally, no need to restore
-    Actor[] followers = GetCurrentFollowers()
-    Int i = 0
-    While i < followers.Length
-        Actor follower = followers[i]
-        If follower
-            ClearAllPenalties(follower)
-        EndIf
-        i += 1
-    EndWhile
+    ; Clear penalties from EVERY follower that could be holding one — not just the
+    ; current-cell party. Cell-only clearing left dismissed / out-of-cell followers
+    ; stuck with regen/speed penalties when the master toggle went off (the "survival
+    ; off but follower still penalized" bug). Stamina/Magicka/Health drain itself
+    ; recovers naturally; this only restores the ModAV penalties we applied.
+    ClearPenaltiesForEveryFollower()
 
     ; Stop the update loop
     UnregisterForUpdate()
@@ -1691,6 +1734,38 @@ Function StopTracking()
 
     If DebugMode
         Debug.Trace("[SeverActions_Survival] Tracking stopped, penalties cleared")
+    EndIf
+EndFunction
+
+Function ClearPenaltiesForEveryFollower()
+    {Clear survival penalties from the current-cell party AND the full managed
+     roster, so no follower keeps a stuck regen/speed penalty once the system is
+     off. Both sweeps are needed and complementary: GetCurrentFollowers is
+     cell-scoped (misses dismissed / out-of-cell followers), while the manager
+     roster is the SA-managed set (misses non-managed vanilla teammates).
+     ClearAllPenalties is idempotent — clearing an already-clean follower is a
+     no-op — so overlap between the two sets is harmless.}
+    ; Current-cell party
+    Actor[] party = GetCurrentFollowers()
+    Int i = 0
+    While i < party.Length
+        If party[i]
+            ClearAllPenalties(party[i])
+        EndIf
+        i += 1
+    EndWhile
+
+    ; Full managed roster (dismissed-but-managed, out-of-cell, etc.)
+    SeverActions_FollowerManager fm = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+    If fm
+        Actor[] roster = fm.GetAllFollowers()
+        Int j = 0
+        While j < roster.Length
+            If roster[j]
+                ClearAllPenalties(roster[j])
+            EndIf
+            j += 1
+        EndWhile
     EndIf
 EndFunction
 

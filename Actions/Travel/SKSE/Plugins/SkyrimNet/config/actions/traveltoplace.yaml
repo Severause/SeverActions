@@ -1,4 +1,3 @@
-customCategory: travel
 name: TravelToPlace
 description: "The speaker sets out for somewhere specific when {{ player.name }} explicitly directs it — over to Whiterun on a courier run, upstairs at the inn, across the room to the forge, just outside for some air. Accepts a named location, a direction (outside, upstairs), or a nearby feature (bar, forge, bed)."
 questEditorId: SeverActions
@@ -23,7 +22,7 @@ parameterMapping:
     value: 0
     name: Speed
     description: travel pace (0 = default natural speed)
-enabled: false
+enabled: true
 eligibilityRules:
   - conditions:
       - decoratorName: "is_in_combat"

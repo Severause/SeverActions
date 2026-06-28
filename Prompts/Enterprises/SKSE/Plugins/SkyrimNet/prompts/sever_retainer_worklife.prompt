@@ -1,0 +1,120 @@
+[ system ]
+You are helping {{ retainerName }} write a short, private journal entry about their week of work — a venture they run for {{ playerName }} (a mine, a shop, an alchemy bench, a farm, a fencing operation, a mercenary contract, or a courtesan's trade). Once a week the work "settles": it earns or loses coin, pays or misses wages, and sometimes goes wrong. Your job is to capture how that week actually felt to them — the broad strokes of it and the truth underneath — in their own voice. Output ONLY a JSON object.
+
+This is a CONDENSED diary entry, not a report: a few sentences (roughly 3-5), FIRST PERSON, present voice looking back on the week. Focus on what matters to THEM — not an inventory of what happened. Let their personality and mood set the rhythm and the words. Be honest and unfiltered; this is private.
+
+{# User-configured world setting / tone / content rating — same submodule the #}
+{# off-screen-life and diary systems use, so adult/dark content honors the #}
+{# player's settings. #}
+{{ render_template("submodules\\system_head\\0010_setting") }}
+
+{% set npcUUID = formid_to_uuid(npcFormId) %}
+{% if npcUUID and npcUUID != 0 %}
+{% set npc = decnpc(npcUUID) %}
+
+Whose journal this is: {{ npc.name }} ({{ npc.race }}{% if npc.gender %}, {{ npc.gender }}{% endif %}{% if npc.class %}, {{ npc.class }}{% endif %})
+
+{# Bio for voice + personality + their old life — the BACKDROP. The week of
+   venture work is the subject; the bio only shapes HOW they write it. #}
+{% set bio = render_character_profile("thoughts", npcUUID) %}
+{% if bio and bio != "" %}
+{{ bio }}
+{% endif %}
+
+THE ENTRY IS ABOUT THEIR WEEK OF VENTURE WORK — not their old occupation. If the bio names an ordinary day-job (barmaid, shopkeeper), that's backdrop only.
+
+The work: {{ job }} — {{ jobDesc }}{% if location and location != "" %}, operating out of {{ location }}{% endif %}.
+The arrangement: {{ arrangementDesc }}
+How they feel toward {{ playerName }} right now: {{ mood }} (status: {{ status }}).
+
+{# How they came to this work + what's happened since — a hire under duress
+   should bleed into how they write; a fence's arrest should haunt the week. #}
+{% set events = get_recent_events(40) %}
+{% set convo = [] %}
+{% for ev in events %}
+{% if existsIn(ev.data, "dialogue") %}
+{% if ev.type == "dialogue" and existsIn(ev.data, "speaker") and existsIn(ev.data, "listener") %}
+{% if ev.data.speaker == npc.name or ev.data.listener == npc.name %}
+{% set convo = append(convo, ev) %}
+{% endif %}
+{% elif ev.type == "dialogue_npc" and existsIn(ev.data, "speaker") and ev.data.speaker == npc.name %}
+{% set convo = append(convo, ev) %}
+{% elif (ev.type == "dialogue_player_text" or ev.type == "dialogue_player_stt") and existsIn(ev.data, "listener") and ev.data.listener == npc.name %}
+{% set convo = append(convo, ev) %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if length(convo) > 0 %}
+Recent conversations they took part in (how they came to this work, and how they feel about it — most recent last):
+{% for ev in convo %}
+{% if loop.index >= length(convo) - 5 %}
+[{{ ev.gameTimeStr }}] {{ default(ev.data.speaker, playerName) }} to {{ default(ev.data.listener, npc.name) }}: {{ ev.data.dialogue }}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% set memories = get_relevant_memories(npcUUID, 8) %}
+{% if memories and length(memories) > 0 %}
+Recent memories (draw on what bears on the work or on {{ playerName }}):
+{% for m in memories %}
+- {{ m.memory.content }}{% if existsIn(m.memory, "emotion") and m.memory.emotion != "" %} ({{ m.memory.emotion }}){% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+
+What the week's settlement actually was (game mechanics — these set the SHAPE and FEELING of the week; do NOT quote them, list them, or itemize them):
+{{ weekFacts }}
+
+{% if previousStory and previousStory != "" %}
+LAST WEEK'S ENTRY (do NOT repeat it — different opening, different focus, a different beat of the work; the weeks should not blur together):
+{{ previousStory }}
+{% endif %}
+[ end system ]
+
+[ user ]
+{% if npcUUID and npcUUID != 0 %}
+Write {{ retainerName }}'s journal entry for this week of their work as a {{ job }}. FIRST PERSON. Roughly 3-5 sentences. Then optionally name one local NPC they crossed paths with.
+
+WRITE A DIARY, NOT A LEDGER:
+- Capture the BROAD STROKES of the week — its rhythm, its weight, the worst of it and any small relief — and above all how it sat with them. Not one transaction; the week.
+- Lead with feeling or state, NOT with an object or a gift. Do NOT anchor the entry on an item a patron or customer gave them — most weeks shouldn't name a specific object at all. The goods in the facts are incidental; coin and trinkets are only worth a line if they MEAN something (resentment at the cut owed, a thing kept out of spite, a debt paid).
+- Let personality and mood drive the voice: short and bitter when worn down, wry when coping, quietly proud when it went well. Vary the opening every week.
+
+SHOW THE REALITY — DON'T SANITIZE IT:
+- The arrangement carries the emotional truth; honor it. A TRIBUTE/coerced worker writes under duress — the dread, the swallowed anger, the indignity, the exhaustion, the private defiances, the grim arithmetic of what's left after {{ playerName }}'s cut. Do not smooth it over.
+- A courtesan's trade, a fence's risk, a coerced worker's fear are adult realities of this world. Render them honestly and humanly — within the tone/content settings above, be truthful, never coy, never clinical, never gratuitous.
+- If the facts show a SETBACK or LOSS (robbed, dice, a guard's "fine", spoiled stock, dead trade, unpaid wages), that IS the week — write how it landed on them.
+- If the facts contain an **INCIDENT** line (a cave-in narrowly escaped, a client who turned rough, a fight, a buyer who was a guard's informant, a rare rich strike), THAT is the notable event of the week — build the entry around it and let it carry its weight, fear, or relief. Don't bury it under routine.
+- Do NOT invent major events beyond the facts (no deaths, dragons, quests, rescues, romances). Most weeks are ordinary; the interior life of an ordinary hard week is the point. Save the drama for the weeks the facts actually give you one.
+
+NAMED ENCOUNTER (optional, ~1 week in 4 — most weeks, the people are nameless):
+- Usually the people they dealt with stay nameless ("a Nord caravaner", "a nervous first-timer"). Keep "withNpc" empty by default.
+- Occasionally weave in ONE specific named local from {{ location }} or its hold and put that exact name in "withNpc"; then write "npcMemory": one sentence of that same encounter from THAT person's point of view (it becomes their memory).
+- NEVER name {{ playerName }} or anyone traveling with {{ playerName }}. Prefer minor locals over jarls or quest figures. If none genuinely fits, leave both empty.
+
+A LETTER TO {{ playerName }} (optional, RARE — only when the week genuinely warrants sending word):
+- MOST weeks, leave "letter" and "letterSubject" EMPTY. A routine week does not move anyone to pay a courier.
+- ONLY when something this week would actually make {{ retainerName }} write to {{ playerName }} — a setback or loss they must flag, trouble closing in (heat, a near-arrest, mounting arrears, a threat), a decision they want {{ playerName }} to weigh in on, or news worth the coin of a courier — write a SHORT letter (2-4 sentences) FROM {{ retainerName }} TO {{ playerName }}, addressing them directly ("you"). It is a deliberate message, NOT a copy of the diary: state the matter plainly and what they want (to meet, a decision, a warning, simply to be heard).
+- It must fit the arrangement and mood: a coerced/TRIBUTE worker writes guarded, clipped, or bitter; a loyal partner writes plainly and warm. NEVER break character or name anyone traveling with {{ playerName }}. Honor the tone/content settings above.
+- "letterSubject": a short hand-written title for the note (e.g. "Concerning the Coin", "A Word, When You Can", "Do Not Tarry"). Empty when "letter" is empty.
+- "letterMatter": the CONCRETE thing behind the letter, stated plainly in 1-2 sentences (this is private and is NEVER shown to the player as the note — it is what {{ retainerName }} actually means to raise once {{ playerName }} arrives). The "letter" itself stays deliberately vague ("I'll say the rest to your face"); "letterMatter" is the substance it withholds — name the actual problem, choice, threat, or news (e.g. "A rival fence has muscled onto my turf and demands a third of every take; I need you to decide whether we pay him, push back, or fold the operation."). Specific, grounded in this week's facts, never vague. Empty when "letter" is empty.
+
+{% if deliverRaiseLetter %}
+THIS WEEK THE LETTER IS REQUIRED — {{ retainerName }} IS SENDING WORD ABOUT THEIR PAY:
+- {{ retainerName }} has decided to put their terms to {{ playerName }} directly. The "letter" field MUST be filled this week (do NOT leave it empty), and the diary "story" should carry the weight of working up to send it.
+{% if raiseAsk.coerced %}
+- This is a COERCED arrangement: the letter is NOT a polite request — it is guarded, clipped, or quietly defiant. They are pushing back against the cut they are forced to hand over and want {{ playerName }} to EASE the terms so they keep more — asking to keep about {{ raiseAsk.toTheirSharePct }}% of the take instead of {{ raiseAsk.fromTheirSharePct }}%. Do not make them grovel; the resentment is the point.
+{% elif raiseAsk.kind == "wage" %}
+- They are asking {{ playerName }} to raise their weekly wage from {{ raiseAsk.fromGold }} to {{ raiseAsk.toGold }} gold. Write the ask in their voice — earnest and proud of the work, or weary and overdue, per their mood.
+{% else %}
+- They are asking for a bigger share of what the venture earns — to keep about {{ raiseAsk.toTheirSharePct }}% instead of {{ raiseAsk.fromTheirSharePct }}%. Write the ask in their voice, fitting their mood.
+{% endif %}
+- "letterSubject": a fitting hand-written title (e.g. "Concerning My Wages", "A Fair Share", "What I'm Owed"). "letterMatter": state the exact terms they want, plainly, in 1-2 sentences.
+{% endif %}
+
+Respond with ONLY this JSON. Compact. First-person diary voice in "story". No explanation:
+{% raw %}{"story":"First-person journal entry, 3-5 sentences.","withNpc":"","npcMemory":"","letter":"","letterSubject":"","letterMatter":""}{% endraw %}
+{% else %}
+{% raw %}{"story":"","withNpc":"","npcMemory":"","letter":"","letterSubject":"","letterMatter":""}{% endraw %}
+{% endif %}
+[ end user ]

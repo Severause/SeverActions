@@ -181,7 +181,7 @@ Event OnUpdate()
     ; "give me a moment to look around," not "I give up." The drain bar
     ; runs fresh on the new open.
     If ArrestScript
-        ArrestScript.DebugMsg("Arrest prompt dismissed but FSM is live — reopening")
+        ArrestScript.DebugMsg("Arrest prompt dismissed but FSM is live - reopening")
     EndIf
     ShowPlayerArrestMenu()
 EndEvent
@@ -198,14 +198,14 @@ Event OnArrestPromptChoiceEvent(String asEventName, String asChoice, Float afBou
 
     If ConfrontingGuard == None || ConfrontingFaction == None
         If ArrestScript
-            ArrestScript.DebugMsg("ArrestPromptChoice arrived but state is clean — ignoring")
+            ArrestScript.DebugMsg("ArrestPromptChoice arrived but state is clean - ignoring")
         EndIf
         Return
     EndIf
 
     If akSender != ConfrontingGuard
         If ArrestScript
-            ArrestScript.DebugMsg("ArrestPromptChoice for wrong guard — ignoring stale event")
+            ArrestScript.DebugMsg("ArrestPromptChoice for wrong guard - ignoring stale event")
         EndIf
         Return
     EndIf
@@ -247,7 +247,7 @@ Event OnPersuasionFailedEvent(String asEventName, String asReason, Float afUnuse
      menu reshow when the confronter is dead).}
     If asReason == "died"
         If ArrestScript
-            ArrestScript.DebugMsg("Persuasion ended — guard died (native monitor)")
+            ArrestScript.DebugMsg("Persuasion ended - guard died (native monitor)")
         EndIf
         ClearPlayerConfrontationState()
     Else
@@ -298,7 +298,7 @@ Event OnResistCombatEndedEvent(String asEventName, String asReason, Float afUnus
         ResistArrestFaction.SetCrimeGoldViolent(0)
         If ArrestScript
             If watchdog
-                ArrestScript.DebugMsg("Post-resist cleanup: WATCHDOG fired — re-absorbing " + vanillaBounty + " vanilla bounty (native monitor reports combat-lockout)")
+                ArrestScript.DebugMsg("Post-resist cleanup: WATCHDOG fired - re-absorbing " + vanillaBounty + " vanilla bounty (native monitor reports combat-lockout)")
             Else
                 ArrestScript.DebugMsg("Post-resist cleanup: re-absorbed " + vanillaBounty + " vanilla bounty back to tracked system (native combat-end signal)")
             EndIf

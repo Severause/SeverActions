@@ -309,6 +309,8 @@ Function Undress_Execute(Actor akActor)
         if equippedItem
             If SeverActionsNative.Native_Blacklist_IsBlacklisted(equippedItem)
                 Debug.Trace("[SeverActions_Outfit] Undress: Skipping blacklisted " + equippedItem.GetName())
+            ElseIf SeverActionsNativeExt.Native_IsDeviousDevice(equippedItem)
+                Debug.Trace("[SeverActions_Outfit] Undress: Skipping Devious Device " + equippedItem.GetName())
             Else
                 PlayUnequipAnimation(akActor, slotNames[i])
                 ; preventEquip = true — stops the engine's DefaultOutfit system
@@ -574,7 +576,7 @@ Function SaveOutfitPreset_Execute(Actor akActor, String presetName)
                     return
                 EndIf
             Else
-                Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset(slot): All 8 slots full for " + akActor.GetDisplayName() + " — legacy path only")
+                Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset(slot): All 8 slots full for " + akActor.GetDisplayName() + " - legacy path only")
             EndIf
         EndIf
     EndIf
@@ -666,7 +668,7 @@ Function ApplyOutfitPreset_Execute(Actor akActor, String presetName)
         Int wi = 0
         While wi < wornArmor.Length
             Armor equippedItem = wornArmor[wi] as Armor
-            if equippedItem && !SeverActionsNative.Native_Blacklist_IsBlacklisted(equippedItem)
+            if equippedItem && !SeverActionsNative.Native_Blacklist_IsBlacklisted(equippedItem) && !SeverActionsNativeExt.Native_IsDeviousDevice(equippedItem)
                 SeverActionsNativeExt.Native_Outfit_DressStashAdd(akActor, equippedItem)
                 akActor.UnequipItem(equippedItem, true, true)
             endif
@@ -778,6 +780,14 @@ Form Function UnequipSingleItemInternal2(Actor akActor, String itemName)
         Debug.Trace("[SeverActions_Outfit] UnequipMultiple: '" + itemName + "' not worn")
         return None
     endif
+
+    ; Devious Devices: never strip a locked device via the outfit system. It would
+    ; pull off the rendered (visible) half while the script-locked token stays,
+    ; desyncing the device. Removing a DD is DD's own job (requires a key).
+    If SeverActionsNativeExt.Native_IsDeviousDevice(foundForm)
+        Debug.Trace("[SeverActions_Outfit] UnequipMultiple: '" + foundForm.GetName() + "' is a Devious Device - leaving it (remove via DD/key)")
+        return None
+    EndIf
 
     ; Phase 5: stash unequipped armor in the native Dress session map.
     Armor armorItem = foundForm as Armor
@@ -973,7 +983,7 @@ Function ReapplyLockedOutfit(Actor akActor)
     EndWhile
 
     If wornCount == 0 && count >= 1
-        Debug.Trace("[SeverActions_Outfit] Bulk strip detected for " + akActor.GetDisplayName() + " — all " + count + " locked items removed. Yielding.")
+        Debug.Trace("[SeverActions_Outfit] Bulk strip detected for " + akActor.GetDisplayName() + " - all " + count + " locked items removed. Yielding.")
         return
     EndIf
 
@@ -1236,11 +1246,11 @@ Function MigrateOutfitDataToNative()
     ; legacy flag was 1).
     Int schemaVer = SeverActionsNativeExt.Native_Outfit_GetSchemaVersion()
     if schemaVer >= 3
-        Debug.Trace("[OutfitMigration] schemaVersion=" + schemaVer + " — already imported, skipping")
+        Debug.Trace("[OutfitMigration] schemaVersion=" + schemaVer + " - already imported, skipping")
         return
     endif
 
-    Debug.Trace("[OutfitMigration] schemaVersion=0 — starting native-wins import")
+    Debug.Trace("[OutfitMigration] schemaVersion=0 - starting native-wins import")
     Int importedLocks = 0
     Int skippedLocks = 0
     Int importedPresets = 0
@@ -1738,7 +1748,7 @@ Function SetSituationPreset_Execute(Actor akActor, String situation, String pres
     endif
 
     SeverActionsNative.Native_Outfit_SetSituationPreset(akActor, situation, presetName)
-    Debug.Trace("[SeverActions_Outfit] SetSituationPreset: " + akActor.GetDisplayName() + " — " + situation + " → " + presetName)
+    Debug.Trace("[SeverActions_Outfit] SetSituationPreset: " + akActor.GetDisplayName() + " - " + situation + " -> " + presetName)
 EndFunction
 
 Function ClearSituationPreset_Execute(Actor akActor, String situation)
@@ -1753,7 +1763,7 @@ Function ClearSituationPreset_Execute(Actor akActor, String situation)
 
     ; Phase 4: native-only.
     SeverActionsNative.Native_Outfit_ClearSituationPreset(akActor, situation)
-    Debug.Trace("[SeverActions_Outfit] ClearSituationPreset: " + akActor.GetDisplayName() + " — cleared " + situation)
+    Debug.Trace("[SeverActions_Outfit] ClearSituationPreset: " + akActor.GetDisplayName() + " - cleared " + situation)
 EndFunction
 
 ; Phase 1 parity sweep removed in Phase 4. With native as the single source
@@ -1822,6 +1832,14 @@ Function Maintenance()
     Bool savedAutoSwitch = StorageUtil.GetIntValue(None, "SeverOutfit_GlobalAutoSwitch", 1) as Bool
     SeverActionsNativeExt.SituationMonitor_SetEnabled(savedAutoSwitch)
 
+    ; Restore the bondage-mod outfit deferral toggle (Diary of Mine / Paradise
+    ; Halls compat) and push to native — RAM-only on the C++ side (defaults true
+    ; on DLL load), so we re-assert the persisted choice each load. Same pattern
+    ; as the auto-switch toggle above. 1 = defer to bondage mods (default),
+    ; 0 = SeverActions enforces outfits even on captured/enslaved NPCs.
+    Bool deferBondage = StorageUtil.GetIntValue(None, "SeverOutfit_DeferBondage", 1) as Bool
+    SeverActionsNativeExt.Native_Outfit_SetDeferBondage(deferBondage)
+
     ; Phase 4: Parity sweep retired. With native as the sole source of truth
     ; for lock/preset/situation state and the dual-write writers gone, there's
     ; no second store to compare against. ParityCheck_Sweep + ParityCheck_Actor
@@ -1865,7 +1883,7 @@ Function Maintenance()
             EndWhile
         endif
         StorageUtil.SetIntValue(None, "SeverActions_OutfitSuspendCleanupDone", 1)
-        Debug.Trace("[SeverActions_Outfit] Phase 5: cleaned " + cleared + " stale StorageUtil suspend key(s) — now using native SuspendUntil")
+        Debug.Trace("[SeverActions_Outfit] Phase 5: cleaned " + cleared + " stale StorageUtil suspend key(s) - now using native SuspendUntil")
     endif
 EndFunction
 
@@ -2176,7 +2194,7 @@ Event OnPrismaBuilderSavePreset(String eventName, String strArg, Float numArg, F
     String presetName = StringUtil.Substring(strArg, pipePos + 1)
     SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: parsed actorName='" + actorName + "' presetName='" + presetName + "'")
     If !akActor || presetName == ""
-        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: actor=" + akActor + " presetName='" + presetName + "' — aborting")
+        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: actor=" + akActor + " presetName='" + presetName + "' - aborting")
         Return
     EndIf
 
@@ -2197,7 +2215,7 @@ Event OnPrismaBuilderSavePreset(String eventName, String strArg, Float numArg, F
     SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: native fetch returned " + itemsLen + " items for '" + presetName + "'")
 
     If itemsLen == 0
-        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: ABORT — empty native fetch, refusing to register ghost legacy entry for '" + presetName + "'")
+        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: ABORT - empty native fetch, refusing to register ghost legacy entry for '" + presetName + "'")
         Return
     EndIf
 
@@ -2242,7 +2260,7 @@ Event OnPrismaBuilderSavePreset(String eventName, String strArg, Float numArg, F
             SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: No free slot index for " + akActor.GetDisplayName() + " '" + presetName + "' (all 8 full)")
         EndIf
     Else
-        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: SKIPPED slot registration — slotSys is None")
+        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: SKIPPED slot registration - slotSys is None")
     EndIf
 
     Debug.Trace("[SeverActions_Outfit] PrismaBuilderSavePreset: Synced preset '" + presetName + "' for " + akActor.GetDisplayName())
@@ -2276,7 +2294,7 @@ Event OnPrismaBuilderRenamePreset(String eventName, String strArg, Float numArg,
 
     Actor akActor = SeverActionsNative.FindActorByName(actorName)
     If !akActor || oldName == "" || newName == ""
-        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderRenamePreset: actor=" + akActor + " oldName='" + oldName + "' newName='" + newName + "' — aborting")
+        SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderRenamePreset: actor=" + akActor + " oldName='" + oldName + "' newName='" + newName + "' - aborting")
         Return
     EndIf
 
@@ -2312,7 +2330,7 @@ Event OnPrismaBuilderRenamePreset(String eventName, String strArg, Float numArg,
         StorageUtil.StringListAdd(None, namesKey, newName, false)
     EndIf
 
-    SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderRenamePreset: renamed '" + oldName + "' → '" + newName + "' for " + akActor.GetDisplayName() + " (items copied=" + itemCount + ")")
+    SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderRenamePreset: renamed '" + oldName + "' -> '" + newName + "' for " + akActor.GetDisplayName() + " (items copied=" + itemCount + ")")
 EndEvent
 
 Event OnPrismaClearLockForBuilder(String eventName, String strArg, Float numArg, Form sender)
@@ -2597,13 +2615,13 @@ Event OnPrismaSetSitPreset(String eventName, String strArg, Float numArg, Form s
     String remainder = StringUtil.Substring(strArg, pipePos + 1)
     Int pipe2 = StringUtil.Find(remainder, "|")
     If pipe2 < 0
-        Debug.Trace("[SeverActions_Outfit] PrismaSetSitPreset: Invalid format — no second pipe")
+        Debug.Trace("[SeverActions_Outfit] PrismaSetSitPreset: Invalid format - no second pipe")
         Return
     EndIf
     String situation = StringUtil.Substring(remainder, 0, pipe2)
     String presetName = StringUtil.Substring(remainder, pipe2 + 1)
     SetSituationPreset_Execute(akActor, situation, presetName)
-    Debug.Trace("[SeverActions_Outfit] PrismaSetSitPreset: " + akActor.GetDisplayName() + " — " + situation + " → " + presetName)
+    Debug.Trace("[SeverActions_Outfit] PrismaSetSitPreset: " + akActor.GetDisplayName() + " - " + situation + " -> " + presetName)
 EndEvent
 
 Event OnPrismaClearSitPreset(String eventName, String strArg, Float numArg, Form sender)
@@ -2617,7 +2635,7 @@ Event OnPrismaClearSitPreset(String eventName, String strArg, Float numArg, Form
         Return
     EndIf
     ClearSituationPreset_Execute(akActor, situation)
-    Debug.Trace("[SeverActions_Outfit] PrismaClearSitPreset: " + akActor.GetDisplayName() + " — cleared " + situation)
+    Debug.Trace("[SeverActions_Outfit] PrismaClearSitPreset: " + akActor.GetDisplayName() + " - cleared " + situation)
 EndEvent
 
 ; =============================================================================
@@ -2635,7 +2653,7 @@ Event OnPrismaToggleAutoSwitch(String eventName, String strArg, Float numArg, Fo
     EndIf
     Bool enabled = (valStr == "1")
     StorageUtil.SetIntValue(None, "SeverOutfit_GlobalAutoSwitch", enabled as Int)
-    Debug.Trace("[SeverActions_Outfit] PrismaToggleAutoSwitch: Global auto-switch → " + enabled)
+    Debug.Trace("[SeverActions_Outfit] PrismaToggleAutoSwitch: Global auto-switch -> " + enabled)
 EndEvent
 
 Event OnPrismaToggleActorAutoSwitch(String eventName, String strArg, Float numArg, Form sender)
@@ -2649,7 +2667,7 @@ Event OnPrismaToggleActorAutoSwitch(String eventName, String strArg, Float numAr
     EndIf
     Bool enabled = (StringUtil.Substring(strArg, pipePos + 1) == "1")
     StorageUtil.SetIntValue(akActor, "SeverOutfit_AutoSwitch", enabled as Int)
-    Debug.Trace("[SeverActions_Outfit] PrismaToggleActorAutoSwitch: " + akActor.GetDisplayName() + " auto-switch → " + enabled)
+    Debug.Trace("[SeverActions_Outfit] PrismaToggleActorAutoSwitch: " + akActor.GetDisplayName() + " auto-switch -> " + enabled)
 EndEvent
 
 ; =============================================================================
@@ -2697,7 +2715,7 @@ Event OnPrismaInventorySync(String eventName, String strArg, Float numArg, Form 
     ; Native OutfitDataStore already updated by C++ before this event fired
 
     Int lockCount = StorageUtil.FormListCount(None, lockKey)
-    Debug.Trace("[SeverActions_Outfit] PrismaInventorySync: Rebuilt lock for " + akActor.GetDisplayName() + " — " + lockCount + " items")
+    Debug.Trace("[SeverActions_Outfit] PrismaInventorySync: Rebuilt lock for " + akActor.GetDisplayName() + " - " + lockCount + " items")
 EndEvent
 
 ; =============================================================================
@@ -2707,21 +2725,21 @@ EndEvent
 ; SexLab global hooks — signature: (int threadID, bool hasPlayer)
 Event OnSexLabSceneStart(Int threadID, Bool hasPlayer)
     AnimationSceneActive = true
-    Debug.Trace("[SeverActions_Outfit] SexLab scene started (thread " + threadID + ") — outfit locks suspended")
+    Debug.Trace("[SeverActions_Outfit] SexLab scene started (thread " + threadID + ") - outfit locks suspended")
 EndEvent
 
 Event OnSexLabSceneEnd(Int threadID, Bool hasPlayer)
     AnimationSceneActive = false
-    Debug.Trace("[SeverActions_Outfit] SexLab scene ended (thread " + threadID + ") — outfit locks resumed")
+    Debug.Trace("[SeverActions_Outfit] SexLab scene ended (thread " + threadID + ") - outfit locks resumed")
 EndEvent
 
 ; OStim hooks — signature: (string eventName, string strArg, float numArg, Form sender)
 Event OnOStimSceneStart(String eventName, String strArg, Float numArg, Form sender)
     AnimationSceneActive = true
-    Debug.Trace("[SeverActions_Outfit] OStim scene started — outfit locks suspended")
+    Debug.Trace("[SeverActions_Outfit] OStim scene started - outfit locks suspended")
 EndEvent
 
 Event OnOStimSceneEnd(String eventName, String strArg, Float numArg, Form sender)
     AnimationSceneActive = false
-    Debug.Trace("[SeverActions_Outfit] OStim scene ended — outfit locks resumed")
+    Debug.Trace("[SeverActions_Outfit] OStim scene ended - outfit locks resumed")
 EndEvent

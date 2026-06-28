@@ -154,6 +154,10 @@ String Function Hold_GetBountyKeyForCrime(Faction akCrimeFaction) Global Native
 {Return the storage key for tracked bounty in a crime faction's hold, or "" if no match.
 Used by SeverActions_ArrestBounty where the caller already has the faction.}
 
+ObjectReference Function Hold_GetJailMarkerForCrime(Faction akCrimeFaction) Global Native
+{Return the jail XMarker for a crime faction's hold (registered marker, else the
+engine's crimeData.factionJailMarker). For jailing an NPC with no nearby guard.}
+
 Function Hold_Clear() Global Native
 {Clear every registered hold tuple. Mainly for testing / hot-reload.}
 
@@ -281,6 +285,18 @@ Bool Function Craft_SpikePackageOverride(Actor akActor, Package akPackage, Int p
 Bool Function Native_Outfit_IsLockActive(Actor akActor) Global Native
 {Phase 1: O(1) bool — true if actor has an active outfit lock in native.}
 
+Bool Function Native_Outfit_IsExternallyControlled(Actor akActor) Global Native
+{Bondage-mod compat (Diary of Mine / Paradise Halls). True if the actor is
+ currently captured/enslaved/tied by one of those mods (detected via their
+ factions) AND defer-to-bondage is enabled. The outfit-enforcement paths skip
+ re-equip when this is true so SA doesn't fight a strip / restraint / whip swap.
+ No-op (always false) when those mods aren't in the load order.}
+
+Function Native_Outfit_SetDeferBondage(Bool abEnabled) Global Native
+{Master toggle for the bondage-mod deferral above (default ON). Pushed from the
+ MCM on load. When OFF, Native_Outfit_IsExternallyControlled always returns false
+ and SA enforces outfits normally even on enslaved NPCs.}
+
 Bool Function Native_Outfit_IsActivelyManaged(Actor akActor) Global Native
 {True iff SeverActions is actively managing this actor's outfit RIGHT NOW.
  Three-flag check rolled into one native call for soft-dep compat patches
@@ -293,6 +309,14 @@ Bool Function Native_Outfit_IsActivelyManaged(Actor akActor) Global Native
  isn't tracking this actor at all, isn't managing their outfit, or has
  nothing currently locked. Mirrors the gate the SA outfit alias itself uses
  in OnObjectUnequipped (Native_GetOutfitExcluded + lock/preset check).}
+
+Bool Function Native_IsDeviousDevice(Form akForm) Global Native
+{Devious Devices compat. True if the form is a DD armor - the visible rendered
+ device (zad_Lockable / zad_DeviousX keyword) or the locked inventory token
+ (zad_InventoryDevice). Outfit strip/undress paths call this to skip locked
+ devices so we never unequip a DD out from under its own script (which leaves
+ the rendered armor invisible while the token stays locked). Keyword-based, no
+ hard DD dependency, works on SE and VR.}
 
 Bool Function Native_Outfit_HasSituationPreset(Actor akActor, String situation) Global Native
 {Phase 1: true if actor has a non-empty preset mapped to the given situation.}
@@ -501,6 +525,36 @@ Int Function Travel_ParseSpeedFromText(String text) Global Native
 
 String Function Travel_GetSpeedName(Int speed) Global Native
 {Human name: 0->"walking", 1->"jogging", 2->"running", else "moving".}
+
+; ─── PrismaUI assign-retainer popup (work-marking upsell) ──────────────────
+; Non-pausing 90s HUD card offered when the player work-marks a non-retainer.
+; Pre-targeted to one NPC (no candidate picker); Confirm hires via the same
+; path as the dashboard "+ Assign" modal.
+
+Bool Function PrismaUI_OpenRetainerAssignPrompt(Actor akNpc, String asNamedPlace, String asJob, String asArrangement, Int aiTimeoutMs) Global Native
+{Open the assign-retainer popup for this pre-selected NPC (non-pausing). asNamedPlace prefills the Workplace field (empty = here). asJob/asArrangement prefill the Trade/Terms pills (empty = defaults; matched case-insensitively, e.g. "miner"/"employed"). Returns false if PrismaUI isn't ready, a prompt is already open, or another view has focus.}
+
+Function PrismaUI_CloseRetainerAssignPrompt() Global Native
+{Silently dismiss the assign-retainer popup (no hire).}
+
+Bool Function PrismaUI_IsRetainerAssignPromptOpen() Global Native
+{True while the assign-retainer popup is showing.}
+
+Bool Function PrismaUI_IsRetainerAssignPromptAvailable() Global Native
+{True if the assign-retainer popup view is created and ready to open.}
+
+; ─── Travel prompt (non-pausing destination confirm/redirect) ────────────
+Bool Function PrismaUI_OpenTravelPrompt(Actor akNpc, String asNamedPlace, Int aiTimeoutMs) Global Native
+{Open the travel popup for this NPC (non-pausing). asNamedPlace prefills the destination field. On confirm, fires SeverActions_TravelPromptResult (sender=NPC, strArg=chosen place). Returns false if PrismaUI isn't ready, a prompt is already open, or another view has focus.}
+
+Function PrismaUI_CloseTravelPrompt() Global Native
+{Silently dismiss the travel popup (no travel).}
+
+Bool Function PrismaUI_IsTravelPromptOpen() Global Native
+{True while the travel popup is showing.}
+
+Bool Function PrismaUI_IsTravelPromptAvailable() Global Native
+{True if the travel popup view is created and ready to open.}
 
 ; ─── PrismaUI camp pushers (SeversHearth integration) ──────────────────────
 ; Migrated from SeverActionsNative for the same 511-limit reason. The older
@@ -1196,6 +1250,12 @@ Function Native_SetWorkLocationName(Actor akActor, String value) Global Native
 String Function Native_GetPlayLocationName(Actor akActor) Global Native
 Function Native_SetPlayLocationName(Actor akActor, String value) Global Native
 
+; ─── v15: dedicated work-pool slot (decoupled from the 40 home slots) ─────
+; Index 0-63 into WorkAnchorList / WorkPackageList; -1 = no work assignment.
+Int Function Native_AcquireWorkSlot(Actor akActor) Global Native
+Int Function Native_GetWorkSlot(Actor akActor) Global Native
+Function Native_ReleaseWorkSlot(Actor akActor) Global Native
+
 ; ─── T1-D.1: Active arrest singleton (player quest FSM state) ─────────
 ; Replaces 7 SeverActions_ActiveArrest* StorageUtil keys keyed by
 ; `Self as Form` on the arrest quest. Saved to a separate 'AARS' cosave
@@ -1490,3 +1550,119 @@ Bool Function PrismaUI_IsCommissionPromptOpen() Global Native
 Bool Function PrismaUI_IsCommissionPromptAvailable() Global Native
 {Returns True if the bridge is initialized AND the view finished its DOM-ready \
 handshake. Check before calling PrismaUI_OpenCommissionPrompt.}
+
+; ── Enterprises (off-screen labor/economy) — Phase 1 debug surface ──────────
+; See ENTERPRISES.md. These are temporary debug hooks for proving the weekly
+; settlement loop in logs; the real action/UI surface comes later.
+
+Function Venture_DebugAdd(Actor akAssignee, Int job, Int arrangement, Int wageWeekly) Global Native
+{Hire a test retainer. job: 0 Miner 1 Merchant 2 Alchemist 3 Farmer 4 Fence 5 Mercenary 6 Escort. \
+arrangement: 0 Employed 1 Partnership 2 Vassalage (coerced) 3 Sworn. wageWeekly applies to Employed/Sworn.}
+
+Function Venture_DebugRemove(Actor akAssignee) Global Native
+{Remove a retainer (debug cleanup / re-hire).}
+
+Function Venture_ForceSettle() Global Native
+{Force every active venture due and run a settlement pass now (logs each step).}
+
+Function Venture_Collect(Actor akAssignee) Global Native
+{Grant one retainer's pending escrow (gold + goods) to the player and clear it.}
+
+Function Venture_CollectAll() Global Native
+{Collect pending escrow from every retainer.}
+
+Function Venture_PayAllArrears() Global Native
+{Pay back-wages across the roster, cheapest-first, clearing as many retainers as the player's purse can fully cover.}
+
+Function Venture_Bail(Actor akAssignee) Global Native
+{Pay a jailed fence retainer's bounty from the player's gold to free them early.}
+
+Function Venture_ForceArrest(Actor akAssignee) Global Native
+{Debug: deterministically arrest+jail a retainer now (seeds a test bounty if none).}
+
+Bool Function Venture_Hire(Actor akAssignee, String asJob, String asArrangement) Global Native
+{Hire an NPC as a retainer. Job/arrangement are free text (normalized natively). Returns false on unparseable job or if already a retainer.}
+
+Function Venture_PayArrears(Actor akAssignee) Global Native
+{Pay a retainer's owed back-wages from the player's gold; clearing it restores good standing.}
+
+Function Venture_Dismiss(Actor akAssignee) Global Native
+{End a retainer's service (amicable — no exit theft). Returns false if not a retainer.}
+
+Int Function Venture_Count() Global Native
+{Number of active ventures.}
+
+Bool Function Venture_IsRetainer(Actor akActor) Global Native
+{True if this actor is currently one of the player's retainers. Used to gate the assign-retainer popup (offered only for non-retainers).}
+
+Actor Function Venture_GetAssigneeAt(Int index) Global Native
+{The retainer actor at a stable index (0..Venture_Count()-1). None if out of range or not loadable. Use with Venture_Count() to enumerate/pick retainers.}
+
+String Function Venture_LetterSubject(Actor akRetainer) Global Native
+{Pending courier-letter subject for this retainer ("" if none). Queued by the worklife story gen; pull on the SeverActions_VentureLetter ModEvent.}
+
+String Function Venture_LetterBody(Actor akRetainer) Global Native
+{Pending courier-letter body for this retainer ("" if none).}
+
+String Function Venture_LetterReason(Actor akRetainer) Global Native
+{Pending courier-letter reason tag for this retainer.}
+
+Function Venture_ClearLetter(Actor akRetainer) Global Native
+{Drop the pending courier letter for this retainer (call after dispatching).}
+
+Function Venture_DebugRequestLetter(Actor akRetainer) Global Native
+{DEBUG: force an LLM-generated letter from this retainer; dispatches a courier when the model returns. Tests the real settlement->letter->courier path.}
+
+Bool Function Venture_DebugForceAmbush() Global Native
+{DEBUG: force a retainer-grudge thug ambush right now, bypassing the delay/cooldown/location gates. Picks an armed grudge, else arms one on any deserter, else conscripts any venture entry. Fires SeverActions_VentureAmbush so the thugs spawn on the player. Returns false only if there are no venture entries at all.}
+
+Function Venture_RegisterAmbushThug(Actor akThug) Global Native
+{Mark a spawned actor as part of the live ambush standoff, so the is_ambush_thug decorator gates the Stand Down / Attack actions to them. Cleared on resolve.}
+
+Function Venture_ClearAmbushThugs() Global Native
+{Clear the live-ambush thug roster (call when the standoff resolves - stood down, attacked, or failed).}
+
+String Function Venture_AmbushTaunt(Actor akDeserter) Global Native
+{Short spoken opener for the lead thug's DirectNarration - names who sent them and why (templated from the deserter's grievance).}
+
+Function Venture_StageThugDirective(Actor akThug, Actor akDeserter) Global Native
+{Stage a 'hold and parley, wait for the player's reply, resolve via stand-down/attack' directive as a high-importance memory on a spawned ambush thug, so they don't swing on the first word.}
+
+Function Venture_Dump() Global Native
+{Log a summary of every venture (escrow, purse, arrears, heat, loyalty, status).}
+
+Function Venture_SetEnabled(Bool abEnabled) Global Native
+{Enable/disable the autonomous weekly settlement heartbeat.}
+
+Function Venture_SetStoryCap(Int aiCap) Global Native
+{Max weekly work-life vignettes (LLM calls) generated per settle batch. -1 = Auto (~40% of the active roster, min 1, cap 12); 0 = off (income still settles, no vignettes); 1-12 = a fixed max. Skipped retainers rotate in over following weeks (least-recently-storied first).}
+
+Function Venture_SetRaisesEnabled(Bool abEnabled) Global Native
+{Master toggle for retainer raise requests (Living payroll Phase B). When off, retainers never ask for a raise and never skim — income settles flat. Boot-synced + live-pushed from PrismaUI Settings.}
+
+Function Venture_SetAmbushesEnabled(Bool abEnabled) Global Native
+{Master toggle for retainer grudges (desertion consequences). When off, a wronged desertion arms no grudge and no thugs will come. Boot-synced + live-pushed from PrismaUI Settings.}
+
+; ── Quest Awareness (spillover from SeverActionsNative; 511-fn cap) ──────
+Function Native_QuestAwareness_SetEnabled(Bool abEnabled) Global Native
+{Master toggle for the v8+ fast-path quest-awareness summary LLM call (AutoQuestAwareness). When false, quest stage events still track storage but fire no SendCustomPromptToLLM("sever_quest_awareness"). Boot-synced + live-pushed from PrismaUI Settings. (The prompt-presence guard is automatic in C++.)}
+
+; ── Letters (courier deliveries) ────────────────────────────────────────
+Form Function Letter_DeliverToCourier(Actor akSender, Actor akCourier, String asSubject, String asBody, String asReason) Global Native
+{Archive + title a pool letter and place it in the COURIER's inventory so they can hand it over with the give animation. Returns the book form (None on failure) for the caller to drive the hand-over.}
+
+Int Function Letter_Count() Global Native
+{Number of archived letters.}
+
+Int Function Letter_LatestId() Global Native
+{Id of the most recently delivered letter (0 if none).}
+
+Int Function Letter_DebugDeliverTest() Global Native
+{DEBUG: deliver a hardcoded test letter on a vanilla note so the reading loop is testable from the console.}
+
+; ── Courier (letter delivery NPC) ───────────────────────────────────────
+Actor Function Courier_Spawn(Actor akTarget, Float afDistance) Global Native
+{Spawn a WICourierNPC near akTarget, landed on navmesh. afDistance<=1 spawns adjacent ("at your side"); larger spawns it that many units behind the target so it walks up. Returns the spawned courier (None on failure). Routing/package-override is the caller's job; despawn is auto-handled (backstop TTL).}
+
+Function Courier_Release(Actor akCourier) Global Native
+{Mark a delivered courier to sandbox in place and despawn once the player leaves the cell it was delivered in (with a long anti-bloat backstop).}

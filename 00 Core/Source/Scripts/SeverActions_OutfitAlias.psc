@@ -108,6 +108,10 @@ Event OnObjectUnequipped(Form akBaseObject, ObjectReference akReference)
         If SeverActionsNative.Native_Outfit_IsNativeSuspended(follower)
             Return
         EndIf
+        ; Defer to bondage mods (DOM/PAH) — a captured/tied NPC's gear is theirs
+        If SeverActionsNativeExt.Native_Outfit_IsExternallyControlled(follower)
+            Return
+        EndIf
 
         ; Slot-preset OR legacy lock — both want debounced reapply.
         ; OnUpdate will choose the right path (DirectEquip vs ReapplyLockedOutfit).
@@ -161,6 +165,10 @@ Event OnObjectEquipped(Form akBaseObject, ObjectReference akReference)
     If SeverActionsNative.Native_Outfit_IsNativeSuspended(follower)
         Return
     EndIf
+    ; Defer to bondage mods (DOM/PAH) — a captured/tied NPC's gear is theirs
+    If SeverActionsNativeExt.Native_Outfit_IsExternallyControlled(follower)
+        Return
+    EndIf
 
     ; Was this a preset item? If yes, no action needed (we equipped it).
     Int activeIdx = SeverActionsNative.Native_OutfitSlot_GetActivePreset(follower)
@@ -202,17 +210,22 @@ Event OnUpdate()
         Return
     EndIf
 
+    ; Defer to bondage mods (DOM/PAH) — don't re-equip over restraints / a strip
+    If SeverActionsNativeExt.Native_Outfit_IsExternallyControlled(follower)
+        Return
+    EndIf
+
     SeverActions_Outfit outfitSys = GetOutfitScript()
 
     ; Check global animation scene flag (set by SexLab/OStim ModEvent hooks in Outfit script)
     If outfitSys && outfitSys.AnimationSceneActive
-        Debug.Trace("[SeverActions_OutfitAlias] Animation scene active — yielding for " + follower.GetDisplayName())
+        Debug.Trace("[SeverActions_OutfitAlias] Animation scene active - yielding for " + follower.GetDisplayName())
         Return
     EndIf
 
     ; Check if burst-suppressed (3+ rapid unequips detected by C++)
     If SeverActionsNative.Native_Outfit_IsBurstSuppressed(follower)
-        Debug.Trace("[SeverActions_OutfitAlias] Burst suppression active — yielding for " + follower.GetDisplayName())
+        Debug.Trace("[SeverActions_OutfitAlias] Burst suppression active - yielding for " + follower.GetDisplayName())
         Return
     EndIf
 
@@ -264,6 +277,11 @@ Function ReequipIfLocked()
 
     ; Don't fight in-progress outfit operations (builder, preset apply, etc.)
     If SeverActionsNative.Native_Outfit_IsNativeSuspended(follower)
+        Return
+    EndIf
+
+    ; Defer to bondage mods (DOM/PAH) — a captured/tied NPC stays as they are
+    If SeverActionsNativeExt.Native_Outfit_IsExternallyControlled(follower)
         Return
     EndIf
 

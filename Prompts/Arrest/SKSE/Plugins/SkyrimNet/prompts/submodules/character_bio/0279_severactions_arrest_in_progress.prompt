@@ -38,6 +38,13 @@
 {% set prisonerName = prisonerData.name %}
 {% set subj = actor.subjectivePronoun %}
 {% set poss = actor.possessivePronoun %}
+{# Enterprises: if the prisoner is a wanted SeverActions fence retainer, give the
+   guard the actual charge so they cite fencing stolen goods rather than improvising
+   a generic offense. Empty (and silent) for any non-fence arrest. #}
+{% set fenceCharge = fence_crime_notice(currentPrisoner.uuid) %}
+{% if fenceCharge != "" %}
+**Reason for this arrest:** {{ prisonerName }} is wanted for {{ fenceCharge }} {{ actor.name }} knows this is the charge and should make the reason clear — this is no mere curfew or vagrancy matter.
+{% endif %}
 {% if arrestState == 4 %}
 ## ESCORT PLEA — LISTENING TO PRISONER
 {{ actor.name }} has paused the escort to hear {{ prisonerName }}'s plea. {{ poss | capitalize }} weapon is still drawn. {{ prisonerName }} is making their case — perhaps offering a bribe, claiming innocence, begging for mercy, or trying to buy their freedom with future favors.

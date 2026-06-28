@@ -1751,7 +1751,7 @@ Function PrismaUI_SetCampStatus(Bool active, String location, Int occupants) Glo
 {Set the camp-status indicator surfaced on the Survival page header.
  Called by external mods (SeversHearth on Establish/Break). occupants is the
  total count including the player. Pass `active=false` to clear. Renders as
- a "🏕 At Camp · N resting · <location>" badge while active.}
+ a "At Camp - N resting - <location>" badge while active.}
 
 ; NOTE: PrismaUI_SetCampMeta / SetCampThreats / SetCampMarked live in
 ; SeverActionsNativeExt (same 511-limit reason as Travel_* / Craft_*).

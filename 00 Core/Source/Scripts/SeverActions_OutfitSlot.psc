@@ -1,4 +1,4 @@
-﻿Scriptname SeverActions_OutfitSlot extends Quest
+Scriptname SeverActions_OutfitSlot extends Quest
 {
     NFF-style outfit slot system (wardrobe pattern).
 
@@ -115,7 +115,7 @@ ObjectReference Function EnsureContainer(Actor akActor, Int slotIdx, Int presetI
 
     Container chestBase = SeverActionsNative.Native_OutfitSlot_GetChestBase()
     if !chestBase
-        Log("EnsureContainer: ChestBase record missing â€” ESP scaffolding not applied")
+        Log("EnsureContainer: ChestBase record missing - ESP scaffolding not applied")
         return None
     endif
 
@@ -403,7 +403,7 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
         if currentActive == presetIdx
             SeverActionsNative.Native_OutfitSlot_SetActivePreset(akActor, -1)
             StorageUtil.UnsetIntValue(akActor, KEY_PRESET_ACTIVE)
-            Log("BuildPreset: cleared active state — overwrite affected the currently-active preset")
+            Log("BuildPreset: cleared active state - overwrite affected the currently-active preset")
         endif
 
         Log("BuildPreset: overwrite deleted " + oldChestCount + " old chest items, cleaned " + cleanedCatalog + " catalog temp-copies, preserved " + preservedUserOwned + " user-owned items, retained " + retainedAcrossEdit + " across edit, preserved " + blacklistPreserved + " blacklisted (slot=" + slotIdx + " preset=" + presetIdx + ")")
@@ -530,7 +530,7 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
     ; cleanup) until the user manually clicks Apply — the exact UX paper-cut
     ; user feedback flagged on the v2.9.2 Edit flow.
     if wasActive && committed > 0
-        Log("BuildPreset: re-applying preset " + presetIdx + " — was active before overwrite")
+        Log("BuildPreset: re-applying preset " + presetIdx + " - was active before overwrite")
         ApplyPresetBySlot(akActor, presetIdx)
     endif
 
@@ -648,7 +648,7 @@ Function RemovePresetItemsFromActor(Actor akActor, Int slotIdx, Int presetIdx)
     EndWhile
 
     if deletedCatalog > 0 || unequippedUserOwned > 0 || blacklistSkipped > 0
-        Log("RemovePresetItemsFromActor: preset " + presetIdx + " — deleted " + deletedCatalog + " catalog temp copies, unequipped " + unequippedUserOwned + " user-owned items, preserved " + blacklistSkipped + " blacklisted items (chest preserved)")
+        Log("RemovePresetItemsFromActor: preset " + presetIdx + " - deleted " + deletedCatalog + " catalog temp copies, unequipped " + unequippedUserOwned + " user-owned items, preserved " + blacklistSkipped + " blacklisted items (chest preserved)")
     endif
 EndFunction
 
@@ -747,12 +747,12 @@ Function ApplyPresetBySlot(Actor akActor, Int presetIdx)
     ; SetOutfit with an empty LvlItem would strip the actor naked.
     ObjectReference verifyChest = SeverActionsNative.Native_OutfitSlot_GetContainer(slotIdx, presetIdx)
     if !verifyChest
-        Log("ApplyPresetBySlot: Container ref is None for slot=" + slotIdx + " preset=" + presetIdx + " (cached count=" + storedItemCount + ") — refusing to apply ghost preset")
+        Log("ApplyPresetBySlot: Container ref is None for slot=" + slotIdx + " preset=" + presetIdx + " (cached count=" + storedItemCount + ") - refusing to apply ghost preset")
         return
     endif
     Int actualNumItems = verifyChest.GetNumItems()
     if actualNumItems <= 0
-        Log("ApplyPresetBySlot: Container is empty (cached count=" + storedItemCount + ") for slot=" + slotIdx + " preset=" + presetIdx + " — refusing to apply ghost preset")
+        Log("ApplyPresetBySlot: Container is empty (cached count=" + storedItemCount + ") for slot=" + slotIdx + " preset=" + presetIdx + " - refusing to apply ghost preset")
         return
     endif
     Log("ApplyPresetBySlot: Found preset record (storedCount=" + storedItemCount + ", containerActual=" + actualNumItems + ") for slot=" + slotIdx + " preset=" + presetIdx)
@@ -855,20 +855,20 @@ Function ApplyPresetBySlot(Actor akActor, Int presetIdx)
             Log("Applied preset " + presetIdx + " ('" + presetName + "') to " + akActor.GetDisplayName() + " (" + verifiedEquipped + "/" + storedItemCount + " items equipped) [OK]")
         else
             StorageUtil.SetIntValue(akActor, KEY_PRESET_ACTIVE, 0)
-            Log("Applied preset " + presetIdx + " ('" + presetName + "') to " + akActor.GetDisplayName() + " (" + verifiedEquipped + "/" + storedItemCount + " items — slot conflicts or blacklist filtered the rest) [partial — NOT marked active]")
+            Log("Applied preset " + presetIdx + " ('" + presetName + "') to " + akActor.GetDisplayName() + " (" + verifiedEquipped + "/" + storedItemCount + " items - slot conflicts or blacklist filtered the rest) [partial - NOT marked active]")
         endif
     elseif verifiedEquipped < 0
         ; Hard native failure — chest gone, equip mgr unavailable, etc.
         ; Do NOT mark active. NPC stays in whatever state we left them
         ; (probably partial worn from any pre-strip). User can retry; alias
         ; system will not short-circuit because PresetActive is unset.
-        Log("ApplyPresetBySlot: HARD FAILURE applying '" + presetName + "' to " + akActor.GetDisplayName() + " — DirectEquip returned " + verifiedEquipped + " — preset NOT marked active")
+        Log("ApplyPresetBySlot: HARD FAILURE applying '" + presetName + "' to " + akActor.GetDisplayName() + " - DirectEquip returned " + verifiedEquipped + " - preset NOT marked active")
     else
         ; verifiedEquipped == 0 — strip succeeded but every equip failed.
         ; The actor is fully naked right now. Restore their default outfit as
         ; a safety net so they're not running around bare while the user
         ; figures out what went wrong.
-        Log("ApplyPresetBySlot: ZERO-EQUIP failure for '" + presetName + "' on " + akActor.GetDisplayName() + " — restoring default outfit (preset NOT marked active)")
+        Log("ApplyPresetBySlot: ZERO-EQUIP failure for '" + presetName + "' on " + akActor.GetDisplayName() + " - restoring default outfit (preset NOT marked active)")
         ClearPreset(akActor)
     endif
 EndFunction
@@ -1487,7 +1487,7 @@ Bool Function DeletePresetFromSlot(Actor akActor, String presetName)
         if storeActiveName == "" || SeverActionsNative.StringToLower(storeActiveName) == SeverActionsNative.StringToLower(presetName)
             ClearPreset(akActor)
         else
-            Log("DeletePresetFromSlot: slot.activeIdx=" + activeIdx + " matches presetIdx but OutfitDataStore.activePresetName='" + storeActiveName + "' != '" + presetName + "' — skipping ClearPreset to avoid stripping the wrong outfit. Fixing slot index.")
+            Log("DeletePresetFromSlot: slot.activeIdx=" + activeIdx + " matches presetIdx but OutfitDataStore.activePresetName='" + storeActiveName + "' != '" + presetName + "' - skipping ClearPreset to avoid stripping the wrong outfit. Fixing slot index.")
             ; The slot's activeIdx was stale. Clear it without invoking ClearPreset's
             ; strip/restore — actor stays in whatever outfit they're actually wearing.
             SeverActionsNative.Native_OutfitSlot_SetActivePreset(akActor, -1)
@@ -1564,7 +1564,7 @@ Function UnequipAllExceptBlacklisted(Actor akActor)
     EndWhile
 
     if kept > 0
-        Log("UnequipAllExceptBlacklisted: " + akActor.GetDisplayName() + " — unequipped " + unequipped + " items, preserved " + kept + " blacklisted")
+        Log("UnequipAllExceptBlacklisted: " + akActor.GetDisplayName() + " - unequipped " + unequipped + " items, preserved " + kept + " blacklisted")
     endif
 EndFunction
 
@@ -1824,7 +1824,7 @@ Function MigrateToOutfitSlotSystem()
                                 ; Chest empty — recover from legacy mirror.
                                 targetIdx = existingSlotIdx
                                 needsItemCommit = true
-                                Log("Migration: name '" + name + "' exists at preset " + existingSlotIdx + " but chest empty — refilling from legacy mirror")
+                                Log("Migration: name '" + name + "' exists at preset " + existingSlotIdx + " but chest empty - refilling from legacy mirror")
                             endif
                             ; else: chest has items, fully migrated, skip silently.
                         else
@@ -1890,7 +1890,7 @@ Function MigrateToOutfitSlotSystem()
                                     SeverActionsNative.Native_OutfitSlot_SetPresetItemCount(akActor, targetIdx, committed)
                                     Log("Migration: committed " + committed + " items for '" + name + "' slot=" + slotIdx + " preset=" + targetIdx)
                                 else
-                                    Log("Migration: EnsureContainer failed for slot=" + slotIdx + " preset=" + targetIdx + " name='" + name + "' — name registered but items not committed")
+                                    Log("Migration: EnsureContainer failed for slot=" + slotIdx + " preset=" + targetIdx + " name='" + name + "' - name registered but items not committed")
                                 endif
                             elseif existingSlotIdx < 0
                                 ; Name was freshly registered this pass (PHASE 1) but
@@ -1901,9 +1901,9 @@ Function MigrateToOutfitSlotSystem()
                                 SeverActionsNative.Native_OutfitSlot_ClearPreset(akActor, targetIdx)
                                 committedPresets -= 1
                                 migratedPresets -= 1
-                                Log("Migration: no items for '" + name + "' anywhere — rolled back empty name registration (slot freed)")
+                                Log("Migration: no items for '" + name + "' anywhere - rolled back empty name registration (slot freed)")
                             else
-                                Log("Migration: no items found for '" + name + "' in either StorageUtil or native store — name registered but items empty (user can rebuild via builder)")
+                                Log("Migration: no items found for '" + name + "' in either StorageUtil or native store - name registered but items empty (user can rebuild via builder)")
                             endif
                         elseif existingSlotIdx < 0 && targetIdx < 0
                             Log("Migration: no empty preset slots available for '" + name + "' on " + akActor.GetDisplayName() + " (all 8 full)")
@@ -2095,7 +2095,7 @@ Int Function RepairGhostPresets(Actor akActor)
                 endif
                 if suCount > 0 || nativeCount > 0
                     needsRemigrate = true
-                    Log("RepairGhostPresets: '" + name + "' on " + akActor.GetDisplayName() + " empty but recoverable (su=" + suCount + " native=" + nativeCount + ") — re-queued for migration")
+                    Log("RepairGhostPresets: '" + name + "' on " + akActor.GetDisplayName() + " empty but recoverable (su=" + suCount + " native=" + nativeCount + ") - re-queued for migration")
                 else
                     SeverActionsNative.Native_OutfitSlot_ClearPreset(akActor, p)
                     cleared += 1

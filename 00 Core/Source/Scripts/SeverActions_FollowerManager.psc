@@ -205,6 +205,19 @@ Int Property QuestAwarenessOutputCap = 5 Auto
 Storage cap (per-follower max retained quests) is unaffected — this only
 controls how many entries the LLM sees per render. Range 1-15, default 5.}
 
+Int Property EnterpriseStoryCap = -1 Auto
+{Max weekly retainer work-life vignettes (LLM calls) generated per settle batch.
+-1 = Auto (~40% of the active roster, min 1, cap 12); 0 = off; 1-12 = fixed.
+Set from PrismaUI Settings; boot-synced to the native each load.}
+
+Bool Property EnterpriseRaisesEnabled = True Auto
+{Master toggle for retainer raise requests (Living payroll). When off, retainers
+never ask for a raise and never skim. Set from PrismaUI Settings; boot-synced.}
+
+Bool Property EnterpriseAmbushesEnabled = True Auto
+{Master toggle for retainer grudges (desertion consequences). When off, a wronged
+desertion arms no grudge and no thugs will come. Set from PrismaUI Settings; boot-synced.}
+
 Bool Property AutoQuestAwareness = true Auto
 {Enable LLM-generated personalized quest awareness summaries when quests advance.
 When false, quest stage events still fire (for storage / inter-follower banter)
@@ -316,6 +329,27 @@ FormList Property WorkMarkerList Auto
 
 FormList Property PlayMarkerList Auto
 {FormList of 40 PlayMarker XMarkers. Same pattern as WorkMarkerList for play hours (17-22).}
+
+; ── Route B work pool (decoupled from home slots, no static markers) ──────────
+; A working NPC gets a runtime-spawned, force-persistent XMarker at their work
+; spot, linked to them via WorkAnchorKeyword. The single WorkSandboxPackage
+; sandboxes around that linked ref (radius 1200) and is applied during work hours
+; via AddPackageOverride / removed off-hours. LinkedRef_Set cosaves + restores the
+; link, so the marker survives saves. Filled by the esp-CLI auto-fill pass after
+; GenerateWorkSandbox.pas creates the records.
+; The work package + anchor keyword are resolved by FormID at runtime (NOT Auto
+; properties) — filling Auto props requires a Mutagen/CK write to the script-heavy
+; quest VMAD, which corrupts it (infinite hang before main menu). GetFormFromFile by
+; FormID is the safe pattern (same as the quest 0x000D62). FormIDs are deterministic:
+; GenerateWorkSandbox.pas creates the keyword first (0x165675) then the package
+; (0x165676) on a clean ESP. See GetWorkSandboxPackage / GetWorkAnchorKeyword.
+
+; Per-actor StorageUtil key holding the spawned work XMarker (so it stays a live,
+; persistent reference and can be cleaned up / reused on reassign).
+String Property KEY_WORK_MARKER = "SeverActions_WorkMarkerRef" AutoReadOnly
+; One-shot migration: move legacy borrow-a-home-slot work-only NPCs onto the
+; decoupled linked-ref work pool. Raise N to re-fire on a future schema change.
+String Property KEY_WORKPOOL_MIG = "SeverActions_WorkPoolMigDone" AutoReadOnly
 
 ; Per-slot home sandbox packages — fill these in CK, one per HomeSlot alias
 Package Property HomeSandboxPackage_00 Auto
@@ -429,6 +463,12 @@ String Property KEY_NEXT_INTER_ASSESS_GT = "SeverFollower_NextInterAssessGT" Aut
 ; Cooldown tracking for follower banter (global, stored on quest form via None)
 String Property KEY_LAST_BANTER_GT = "SeverActions_LastBanterGT" AutoReadOnly
 String Property KEY_NEXT_BANTER_GT = "SeverActions_NextBanterGT" AutoReadOnly
+; Rolling history of recent banter topics (pre-built JSON objects), injected
+; into the sever_follower_banter prompt as "recentBanter" so its anti-repetition
+; + rotation sections actually have data — get_recent_events never surfaced our
+; gamemaster_dialogue topics (wrong event type + "target" vs "listener").
+String Property KEY_BANTER_HISTORY = "SeverActions_BanterHistory" AutoReadOnly
+Int Property BanterHistoryMax = 12 AutoReadOnly
 String Property KEY_LAST_AMBIENT_GT = "SeverActions_LastAmbientGT" AutoReadOnly
 String Property KEY_NEXT_AMBIENT_GT = "SeverActions_NextAmbientGT" AutoReadOnly
 
@@ -465,6 +505,13 @@ String Property KEY_OFFSCREEN_DEBT = "SeverFollower_OffScreenDebt" AutoReadOnly
 
 ; Global tracking key for all NPCs with custom home assignments (stored on None form)
 String Property KEY_HOMED_NPCS = "SeverActions_HomedNPCs" AutoReadOnly
+
+; Global tracking key for NPCs given a WORK marker but NO home (work-only).
+; These borrow a marker slot; ProcessWorkOnlySwaps applies their sandbox ONLY
+; during work hours (8-17) and releases it (back to native AI) otherwise.
+; When such an NPC is later given a home, AssignHome promotes them off this list
+; into KEY_HOMED_NPCS (always-on sandbox with hourly anchor routing).
+String Property KEY_WORK_ONLY_NPCS = "SeverActions_WorkOnlyNPCs" AutoReadOnly
 
 ; Schedule system — tracks the last-applied schedule type per NPC so ProcessScheduleSwaps
 ; only moves HomeMarker when the hour crosses a schedule boundary.
@@ -700,6 +747,11 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_PrismaSetPlayLoc", "OnPrismaSetPlayLoc")
     RegisterForModEvent("SeverActions_PrismaClearPlayLoc", "OnPrismaClearPlayLoc")
 
+    ; Assign-retainer popup -> place the work marker at the chosen location
+    ; (fired ONLY on confirm/Hire; Not now / timeout / Escape are full cancels
+    ; and fire nothing. The hire itself is native).
+    RegisterForModEvent("SeverActions_RetainerWorkLoc", "OnRetainerWorkLoc")
+
     ; Off-screen life exclusion toggles from PrismaUI
     RegisterForModEvent("SeverActions_OffScreenExclude", "OnOffScreenExclude")
     RegisterForModEvent("SeverActions_OffScreenInclude", "OnOffScreenInclude")
@@ -789,6 +841,23 @@ Function Maintenance()
     ; The C++ default is 5; if the user changed it via PrismaUI / MCM, the new
     ; value lives in this property and gets pushed down here on each load.
     SeverActionsNative.Native_QuestAwareness_SetOutputCap(QuestAwarenessOutputCap)
+
+    ; Push the AutoQuestAwareness master toggle to the C++ store so the v8+
+    ; fast-path dispatch honors it (the legacy pump reads the property directly;
+    ; the fast path can't, so without this the toggle did nothing on modern
+    ; SkyrimNet). The prompt-presence guard is automatic in C++.
+    SeverActionsNativeExt.Native_QuestAwareness_SetEnabled(AutoQuestAwareness)
+
+    ; Same pattern for the Enterprises weekly-story budget (the LLM vignette
+    ; rate-limit). C++ defaults to Auto (-1); push the user's saved choice down.
+    SeverActionsNativeExt.Venture_SetStoryCap(EnterpriseStoryCap)
+
+    ; And the retainer raise-request master toggle (Living payroll). C++ defaults
+    ; on; push the saved choice so the v9 negotiation loop honours it.
+    SeverActionsNativeExt.Venture_SetRaisesEnabled(EnterpriseRaisesEnabled)
+
+    ; And the retainer grudge/ambush master toggle (desertion consequences).
+    SeverActionsNativeExt.Venture_SetAmbushesEnabled(EnterpriseAmbushesEnabled)
 
     ; ─── Defer heavy per-follower passes to the next OnUpdate tick ───
     ; Everything below — DetectExistingFollowers's cell scan, the cached
@@ -954,6 +1023,14 @@ Function RunDeferredMaintenance()
         StorageUtil.SetIntValue(None, "SeverActions_T1A3MigrationDone", 1)
     EndIf
 
+    ; Route B: migrate legacy borrow-a-home-slot workers onto the decoupled
+    ; linked-ref work pool. Gated on the WorkAnchorKeyword being filled (so it
+    ; waits for the ESP records + auto-fill) AND a one-shot sentinel.
+    If GetWorkAnchorKeyword() && StorageUtil.GetIntValue(None, KEY_WORKPOOL_MIG, 0) < 1
+        MigrateWorkPoolOnLoad()
+        StorageUtil.SetIntValue(None, KEY_WORKPOOL_MIG, 1)
+    EndIf
+
     ; Rebuild pre-formatted companion opinions strings from float values.
     ; StorageUtil strings are unreliable across save/load, but the individual
     ; Affinity/Respect float values persist fine. Rebuild on every load.
@@ -995,10 +1072,10 @@ Function RunDeferredMaintenance()
     If StorageUtil.GetIntValue(None, "SeverActions_FrameworkModeMigrated", 0) == 0
         If FrameworkMode == 1
             FrameworkMode = 0  ; old "SeverActions Only" → new "SeverActions"
-            Debug.Trace("[SeverActions_FollowerManager] Migrated FrameworkMode 1 → 0 (SeverActions)")
+            Debug.Trace("[SeverActions_FollowerManager] Migrated FrameworkMode 1 -> 0 (SeverActions)")
         ElseIf FrameworkMode >= 2
             FrameworkMode = 1  ; old "Tracking Only" → new "Tracking"
-            Debug.Trace("[SeverActions_FollowerManager] Migrated FrameworkMode 2 → 1 (Tracking)")
+            Debug.Trace("[SeverActions_FollowerManager] Migrated FrameworkMode 2 -> 1 (Tracking)")
         EndIf
         StorageUtil.SetIntValue(None, "SeverActions_FrameworkModeMigrated", 1)
     EndIf
@@ -1201,9 +1278,9 @@ Function DetectExistingFollowers()
                         _OnboardTrackingMode(actorRef, !isReturning)
 
                         If isReturning
-                            Debug.Trace("[SeverActions_FollowerManager] Returning follower re-detected — preserving existing data for " + actorRef.GetDisplayName())
+                            Debug.Trace("[SeverActions_FollowerManager] Returning follower re-detected - preserving existing data for " + actorRef.GetDisplayName())
                         Else
-                            Debug.Trace("[SeverActions_FollowerManager] New follower detected — initialized defaults for " + actorRef.GetDisplayName())
+                            Debug.Trace("[SeverActions_FollowerManager] New follower detected - initialized defaults for " + actorRef.GetDisplayName())
                         EndIf
 
                         ; Detected followers are always Tracking Mode (recruited externally)
@@ -1320,7 +1397,7 @@ Event OnNativeTeammateDetected(string eventName, string strArg, float numArg, Fo
     If StorageUtil.GetIntValue(akActor, KEY_DISMISSED, 0) == 1
         If akActor.GetAV("WaitingForPlayer") == 0.0
             StorageUtil.UnsetIntValue(akActor, KEY_DISMISSED)
-            DebugMsg("Dismissed flag cleared — re-recruited via custom dialogue: " + akActor.GetDisplayName())
+            DebugMsg("Dismissed flag cleared - re-recruited via custom dialogue: " + akActor.GetDisplayName())
         Else
             return
         EndIf
@@ -1412,10 +1489,10 @@ Event OnNativeTeammateRemoved(string eventName, string strArg, float numArg, For
             PendingDismissQueue[PendingDismissCount] = akActor
             PendingDismissCount += 1
         EndIf
-        DebugMsg("Vanilla dismiss candidate: " + akActor.GetDisplayName() + " — confirming in 2.5s (queue: " + PendingDismissCount + ")")
+        DebugMsg("Vanilla dismiss candidate: " + akActor.GetDisplayName() + " - confirming in 2.5s (queue: " + PendingDismissCount + ")")
         RegisterForSingleUpdate(2.5)
     Else
-        DebugMsg("Vanilla dismiss queue full (32) — dropping: " + akActor.GetDisplayName())
+        DebugMsg("Vanilla dismiss queue full (32) - dropping: " + akActor.GetDisplayName())
     EndIf
 EndEvent
 
@@ -1529,6 +1606,20 @@ Event OnCellLoadedReapplyHome(string eventName, string strArg, float numArg, For
     EndWhile
 EndEvent
 
+; Resolve the target actor for a PrismaUI per-actor ModEvent. Prefers the EXACT
+; reference passed as the ModEvent sender (PrismaUIActionHandler::SendModEvent
+; sets it from the FormID the UI sent) — this disambiguates followers that share
+; a generic display name (e.g. several "Vampire Fledgling"), which the strArg
+; name encoding cannot. Falls back to name lookup when sender is None (older
+; callers, or an orphan the C++ side couldn't resolve).
+Actor Function ResolvePrismaTarget(Form akSender, String asActorName)
+    Actor target = akSender as Actor
+    If target
+        Return target
+    EndIf
+    Return SeverActionsNative.FindActorByName(asActorName)
+EndFunction
+
 Event OnPrismaAssignHome(string eventName, string strArg, float numArg, Form sender)
     {Fired by PrismaUI when user clicks "Assign Home Here".
      strArg = "actorName|locationName" — name-based to avoid ESL FormID sign issues.}
@@ -1538,7 +1629,7 @@ Event OnPrismaAssignHome(string eventName, string strArg, float numArg, Form sen
     EndIf
     String actorName = StringUtil.Substring(strArg, 0, pipePos)
 
-    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    Actor akActor = ResolvePrismaTarget(sender, actorName)
     If !akActor
         Debug.Trace("[SeverActions_FollowerManager] PrismaAssignHome: could not resolve actor '" + actorName + "'")
         Return
@@ -1568,7 +1659,7 @@ Event OnPrismaClearHome(string eventName, string strArg, float numArg, Form send
     EndIf
     String actorName = StringUtil.Substring(strArg, 0, pipePos)
 
-    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    Actor akActor = ResolvePrismaTarget(sender, actorName)
     If !akActor
         Debug.Trace("[SeverActions_FollowerManager] PrismaClearHome: could not resolve actor '" + actorName + "'")
         Return
@@ -1586,11 +1677,14 @@ Event OnPrismaSetWorkLoc(string eventName, string strArg, float numArg, Form sen
         Return
     EndIf
     String actorName = StringUtil.Substring(strArg, 0, pipePos)
-    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    Actor akActor = ResolvePrismaTarget(sender, actorName)
     If !akActor
         Debug.Trace("[SeverActions_FollowerManager] PrismaSetWorkLoc: could not resolve actor '" + actorName + "'")
         Return
     EndIf
+    ; "Set Work Here" is a quick spatial mark (parity with "Set Home Here") —
+    ; drops the marker at the player, no retainer popup. The retainer offer
+    ; lives in the AssignWork action flow.
     SetRoutineLocHere(akActor, "work")
 EndEvent
 
@@ -1600,7 +1694,7 @@ Event OnPrismaClearWorkLoc(string eventName, string strArg, float numArg, Form s
         Return
     EndIf
     String actorName = StringUtil.Substring(strArg, 0, pipePos)
-    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    Actor akActor = ResolvePrismaTarget(sender, actorName)
     If !akActor
         Return
     EndIf
@@ -1614,7 +1708,7 @@ Event OnPrismaSetPlayLoc(string eventName, string strArg, float numArg, Form sen
         Return
     EndIf
     String actorName = StringUtil.Substring(strArg, 0, pipePos)
-    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    Actor akActor = ResolvePrismaTarget(sender, actorName)
     If !akActor
         Debug.Trace("[SeverActions_FollowerManager] PrismaSetPlayLoc: could not resolve actor '" + actorName + "'")
         Return
@@ -1628,7 +1722,7 @@ Event OnPrismaClearPlayLoc(string eventName, string strArg, float numArg, Form s
         Return
     EndIf
     String actorName = StringUtil.Substring(strArg, 0, pipePos)
-    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    Actor akActor = ResolvePrismaTarget(sender, actorName)
     If !akActor
         Return
     EndIf
@@ -1886,7 +1980,7 @@ Bool Function DismissViaVanillaDialogue(Actor akActor)
         DebugMsg("DismissViaVanillaDialogue: Called DismissFollower for " + akActor.GetDisplayName())
         Return true
     EndIf
-    DebugMsg("DismissViaVanillaDialogue: " + akActor.GetDisplayName() + " not in vanilla alias — skipping")
+    DebugMsg("DismissViaVanillaDialogue: " + akActor.GetDisplayName() + " not in vanilla alias - skipping")
     Return false
 EndFunction
 
@@ -2065,6 +2159,9 @@ Event OnUpdate()
 
     ; Schedule system — move HomeMarker to correct anchor (home/work/play) on hour transitions
     ProcessScheduleSwaps()
+    ; Work-only NPCs (work marker, no home): apply sandbox during work hours only,
+    ; release to native AI otherwise.
+    ProcessWorkOnlySwaps()
 
     ; Perf: build the active roster ONCE here and thread it to every
     ; read-only consumer below. GetAllFollowers does a native cell scan plus
@@ -2233,7 +2330,7 @@ Function AssignOutfitSlot(Actor akActor)
 
     ; Skip outfit-excluded actors — don't assign alias slot at all
     If SeverActionsNative.Native_GetOutfitExcluded(akActor)
-        DebugMsg("Outfit excluded: " + akActor.GetDisplayName() + " — skipping outfit slot assignment")
+        DebugMsg("Outfit excluded: " + akActor.GetDisplayName() + " - skipping outfit slot assignment")
         Return
     EndIf
 
@@ -2241,7 +2338,7 @@ Function AssignOutfitSlot(Actor akActor)
     Int check = 0
     While check < OutfitSlots.Length
         If OutfitSlots[check] && OutfitSlots[check].GetActorRef() == akActor
-            DebugMsg("Outfit slot " + check + " already assigned to " + akActor.GetDisplayName() + " — skipping")
+            DebugMsg("Outfit slot " + check + " already assigned to " + akActor.GetDisplayName() + " - skipping")
             Return
         EndIf
         check += 1
@@ -2494,7 +2591,7 @@ Function CheckDeadFollowers()
                 If deathTime == 0.0
                     ; First detection — record death time
                     SeverActionsNativeExt.Native_SetDeathTime(slotActor, currentTime)
-                    DebugMsg("Death detected: " + slotActor.GetDisplayName() + " — grace period started (" + DeathGracePeriodHours + " hours)")
+                    DebugMsg("Death detected: " + slotActor.GetDisplayName() + " - grace period started (" + DeathGracePeriodHours + " hours)")
                     If ShowNotifications
                         Debug.Notification(slotActor.GetDisplayName() + " has fallen...")
                     EndIf
@@ -2546,7 +2643,7 @@ Function CheckTrackOnlyFollowerStatus()
                         ObjectReference homeMarker = HomeMarkerList.GetAt(homeSlot) as ObjectReference
                         If homeMarker
                             ApplyHomeSandbox(follower, homeMarker, homeSlot)
-                            DebugMsg("Track-only auto-untrack: " + follower.GetDisplayName() + " — redirected to home (WFP=-1 → sandbox)")
+                            DebugMsg("Track-only auto-untrack: " + follower.GetDisplayName() + " - redirected to home (WFP=-1 -> sandbox)")
                         EndIf
                     EndIf
                     shouldUntrack = true
@@ -2707,7 +2804,7 @@ Event OnPrismaSoftReset(string eventName, string strArg, float numArg, Form send
         Return
     EndIf
     String actorName = StringUtil.Substring(strArg, 0, pipePos)
-    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    Actor akActor = ResolvePrismaTarget(sender, actorName)
     If akActor
         DebugMsg("PrismaUI soft-reset: " + akActor.GetDisplayName())
         SoftResetFollower(akActor)
@@ -2725,12 +2822,12 @@ Event OnPrismaForceRemove(string eventName, string strArg, float numArg, Form se
         Return
     EndIf
     String actorName = StringUtil.Substring(strArg, 0, pipePos)
-    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    Actor akActor = ResolvePrismaTarget(sender, actorName)
     If akActor
         DebugMsg("PrismaUI force-remove: " + akActor.GetDisplayName())
         PurgeFollower(akActor)
     Else
-        Debug.Trace("[SeverActions_FollowerManager] PrismaUI force-remove: actor '" + actorName + "' not resolvable (orphan) — native stores already cleared")
+        Debug.Trace("[SeverActions_FollowerManager] PrismaUI force-remove: actor '" + actorName + "' not resolvable (orphan) - native stores already cleared")
     EndIf
 EndEvent
 
@@ -2742,7 +2839,7 @@ Event OnPrismaDismiss(string eventName, string strArg, float numArg, Form sender
         Return
     EndIf
     String actorName = StringUtil.Substring(strArg, 0, pipePos)
-    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    Actor akActor = ResolvePrismaTarget(sender, actorName)
     If akActor
         DebugMsg("PrismaUI dismiss: " + akActor.GetDisplayName())
         DismissCompanion(akActor)
@@ -2760,7 +2857,7 @@ Event OnPrismaCompanionWait(string eventName, string strArg, float numArg, Form 
         Return
     EndIf
     String actorName = StringUtil.Substring(strArg, 0, pipePos)
-    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    Actor akActor = ResolvePrismaTarget(sender, actorName)
     If akActor
         DebugMsg("PrismaUI wait: " + akActor.GetDisplayName())
         CompanionWait(akActor)
@@ -2779,7 +2876,7 @@ Event OnPrismaCompanionFollow(string eventName, string strArg, float numArg, For
         Return
     EndIf
     String actorName = StringUtil.Substring(strArg, 0, pipePos)
-    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    Actor akActor = ResolvePrismaTarget(sender, actorName)
     If akActor
         DebugMsg("PrismaUI follow: " + akActor.GetDisplayName())
         CompanionFollow(akActor)
@@ -2983,7 +3080,7 @@ Function RegisterFollower(Actor akActor)
             SeverActionsNativeExt.Native_SetRecruitedViaSerana(akActor, true)
             DebugMsg("Serana DLC routing: " + akActor.GetDisplayName())
         Else
-            DebugMsg("Serana DLC routing FAILED — quest not ready, using manual setup")
+            DebugMsg("Serana DLC routing FAILED - quest not ready, using manual setup")
             akActor.SetPlayerTeammate(true)
             akActor.IgnoreFriendlyHits(true)
         EndIf
@@ -4358,7 +4455,7 @@ Function RebuildCompanionOpinionsString(Actor akActor)
                     ; No blurb yet — use varied fallback descriptions based on affinity + respect bands
                     String affDesc = ""
                     If aff >= 60.0
-                        affDesc = "You consider " + targetName + " a true friend — someone you'd fight beside without hesitation and trust to watch your back."
+                        affDesc = "You consider " + targetName + " a true friend - someone you'd fight beside without hesitation and trust to watch your back."
                     ElseIf aff >= 30.0
                         affDesc = "You genuinely enjoy " + targetName + "'s company. Traveling together feels natural, and you find yourself looking forward to conversations with them."
                     ElseIf aff >= 10.0
@@ -4375,7 +4472,7 @@ Function RebuildCompanionOpinionsString(Actor akActor)
 
                     String respDesc = ""
                     If resp >= 80.0
-                        respDesc = " You hold their abilities in the highest regard — they're one of the most capable people you've met."
+                        respDesc = " You hold their abilities in the highest regard - they're one of the most capable people you've met."
                     ElseIf resp >= 60.0
                         respDesc = " You respect what they bring to the group. They've proven themselves when it counted."
                     ElseIf resp >= 40.0
@@ -4433,7 +4530,7 @@ Function RebuildCompanionOpinionsStringCached(Actor akActor, Actor[] followers)
                     ; No blurb yet — use varied fallback descriptions based on affinity + respect bands
                     String affDesc = ""
                     If aff >= 60.0
-                        affDesc = "You consider " + targetName + " a true friend — someone you'd fight beside without hesitation and trust to watch your back."
+                        affDesc = "You consider " + targetName + " a true friend - someone you'd fight beside without hesitation and trust to watch your back."
                     ElseIf aff >= 30.0
                         affDesc = "You genuinely enjoy " + targetName + "'s company. Traveling together feels natural, and you find yourself looking forward to conversations with them."
                     ElseIf aff >= 10.0
@@ -4450,7 +4547,7 @@ Function RebuildCompanionOpinionsStringCached(Actor akActor, Actor[] followers)
 
                     String respDesc = ""
                     If resp >= 80.0
-                        respDesc = " You hold their abilities in the highest regard — they're one of the most capable people you've met."
+                        respDesc = " You hold their abilities in the highest regard - they're one of the most capable people you've met."
                     ElseIf resp >= 60.0
                         respDesc = " You respect what they bring to the group. They've proven themselves when it counted."
                     ElseIf resp >= 40.0
@@ -4706,7 +4803,7 @@ Function CheckFollowerBanter(Actor[] followers)
         Return
     EndIf
 
-    Debug.Notification("[Banter] Checking " + eligibleCount + " followers...")
+    Debug.Trace("[SeverActions][Banter] Checking " + eligibleCount + " followers...")
     FireFollowerBanter(eligible, eligibleCount)
 EndFunction
 
@@ -4774,6 +4871,23 @@ Function FireFollowerBanter(Actor[] eligible, Int count)
         EndWhile
         i += 1
     EndWhile
+    contextJson += "]"
+
+    ; Inject the persistent banter-topic history so the prompt's anti-repetition
+    ; + rotation sections actually have data. (The get_recent_events topic-mining
+    ; never surfaced our gamemaster_dialogue topics — wrong event type + "target"
+    ; vs "listener" — so those sections were always empty for a fixed party,
+    ; which is why followers kept circling the same talking points.)
+    contextJson += ",\"recentBanter\":["
+    Int hcount = StorageUtil.StringListCount(None, KEY_BANTER_HISTORY)
+    Int h = 0
+    While h < hcount
+        If h > 0
+            contextJson += ","
+        EndIf
+        contextJson += StorageUtil.StringListGet(None, KEY_BANTER_HISTORY, h)
+        h += 1
+    EndWhile
     contextJson += "]}"
 
     ; Skip if prompt module not installed.
@@ -4788,7 +4902,7 @@ Function FireFollowerBanter(Actor[] eligible, Int count)
 
     If result < 0
         BanterInProgress = false
-        Debug.Notification("[Banter] LLM call failed (code " + result + ")")
+        Debug.Trace("[SeverActions][Banter] LLM call failed (code " + result + ")")
     EndIf
 EndFunction
 
@@ -4800,13 +4914,13 @@ Function OnFollowerBanter(String response, Int success)
     BanterInProgress = false
 
     If success != 1
-        Debug.Notification("[Banter] LLM call failed")
+        Debug.Trace("[SeverActions][Banter] LLM call failed")
         Return
     EndIf
 
     ; Check if LLM chose no banter (the ~60% case)
     If StringUtil.Find(response, "\"banter\":null") >= 0 || StringUtil.Find(response, "\"banter\": null") >= 0
-        Debug.Notification("[Banter] LLM chose silence this cycle")
+        Debug.Trace("[SeverActions][Banter] LLM chose silence this cycle")
         Return
     EndIf
 
@@ -4816,7 +4930,7 @@ Function OnFollowerBanter(String response, Int success)
     String banterTopic = ExtractJsonString(response, "topic")
 
     If speakerName == "" || targetName == ""
-        Debug.Notification("[Banter] Bad LLM response — missing names")
+        Debug.Trace("[SeverActions][Banter] Bad LLM response - missing names")
         Return
     EndIf
 
@@ -4826,7 +4940,7 @@ Function OnFollowerBanter(String response, Int success)
     Actor targetActor = ResolveFollowerByName(targetName, followers)
 
     If !speakerActor || !targetActor
-        Debug.Notification("[Banter] Can't find " + speakerName + " or " + targetName)
+        Debug.Trace("[SeverActions][Banter] Can't find " + speakerName + " or " + targetName)
         Return
     EndIf
 
@@ -4847,8 +4961,29 @@ Function OnFollowerBanter(String response, Int success)
 
     SkyrimNetApi.RegisterEvent("gamemaster_dialogue", eventJson, speakerActor, targetActor)
 
-    Debug.Notification("[Banter] " + speakerName + " -> " + targetName + ": " + banterTopic)
+    Debug.Trace("[SeverActions][Banter] " + speakerName + " -> " + targetName + ": " + banterTopic)
 
+    ; Persist to the rolling banter history that drives the NEXT cycle's
+    ; anti-repetition + rotation (reliable, unlike mining get_recent_events).
+    RecordBanterTopic(speakerName, targetName, topicDirection)
+EndFunction
+
+Function RecordBanterTopic(String speakerName, String targetName, String topicText)
+    {Append a banter beat to the persistent rolling history (StorageUtil
+     StringList on None, capped at BanterHistoryMax) as a pre-escaped JSON
+     object. FireFollowerBanter joins these into the prompt's "recentBanter"
+     field, which drives the "Topics Already Covered" + "Rotation Pressure"
+     sections. Replaces the old reliance on get_recent_events topic-mining,
+     which never surfaced our gamemaster_dialogue topics (wrong event type +
+     "target" vs "listener"), leaving the director with no memory of what it
+     just used.}
+    String obj = "{\"speaker\":\"" + SeverActionsNative.EscapeJsonString(speakerName) + "\","
+    obj += "\"target\":\"" + SeverActionsNative.EscapeJsonString(targetName) + "\","
+    obj += "\"topic\":\"" + SeverActionsNative.EscapeJsonString(topicText) + "\"}"
+    StorageUtil.StringListAdd(None, KEY_BANTER_HISTORY, obj, true)
+    While StorageUtil.StringListCount(None, KEY_BANTER_HISTORY) > BanterHistoryMax
+        StorageUtil.StringListRemoveAt(None, KEY_BANTER_HISTORY, 0)
+    EndWhile
 EndFunction
 
 ; =============================================================================
@@ -4949,7 +5084,7 @@ Event OnAmbientBanterReady(string eventName, string strArg, float numArg, Form s
     SeverActionsNativeExt.Native_AmbientBanter_ClearReady()
 
     If eventJson == "" || !speakerActor || !targetActor
-        Debug.Trace("[AmbientBanter] ready slot was empty — race or stale call?")
+        Debug.Trace("[AmbientBanter] ready slot was empty - race or stale call?")
         Return
     EndIf
 
@@ -5306,7 +5441,7 @@ Event OnOffScreenLifeReady(string eventName, string strArg, float numArg, Form s
         Debug.Notification(actorName + " has been busy at " + home + ".")
     EndIf
 
-    DebugMsg("Off-screen life: " + actorName + " → " + lifeSummary)
+    DebugMsg("Off-screen life: " + actorName + " -> " + lifeSummary)
 EndEvent
 
 String Function PipeField(String data, Int fieldIndex)
@@ -5598,14 +5733,14 @@ Function ProcessOffScreenArrest(Actor akActor, String home, String crime, Int bo
 
                     DebugMsg("Off-screen arrest: " + actorName + " placed in jail at " + home)
                 Else
-                    DebugMsg("Off-screen arrest: no jail marker found for " + home + " — arrest recorded but NPC not moved")
+                    DebugMsg("Off-screen arrest: no jail marker found for " + home + " - arrest recorded but NPC not moved")
                 EndIf
             Else
-                DebugMsg("Off-screen arrest: no crime faction found for '" + home + "' — arrest recorded but NPC not moved")
+                DebugMsg("Off-screen arrest: no crime faction found for '" + home + "' - arrest recorded but NPC not moved")
             EndIf
         EndIf
     Else
-        DebugMsg("Off-screen arrest: ArrestScript not available — arrest recorded but NPC not moved")
+        DebugMsg("Off-screen arrest: ArrestScript not available - arrest recorded but NPC not moved")
     EndIf
 
     If ShowNotifications
@@ -5807,16 +5942,324 @@ ObjectReference Function GetScheduleAnchorForNPC(Actor akActor, Int slot, Int sc
     Return None
 EndFunction
 
-Function SetRoutineLocHere(Actor akActor, String kind)
-    {Move the follower's Work or Play marker to the player's current position.
-     kind = "work" or "play". Requires a home to have been assigned first (needs a slot).}
+; ── Route B work-pool helpers ────────────────────────────────────────────────
+Form WorkMarkerBaseCache   ; XMarkerHeading STAT, resolved lazily
+
+Form Function GetWorkMarkerBase()
+    If !WorkMarkerBaseCache
+        WorkMarkerBaseCache = Game.GetFormFromFile(0x00000034, "Skyrim.esm")  ; XMarkerHeading
+    EndIf
+    Return WorkMarkerBaseCache
+EndFunction
+
+Package WorkSandboxPackageCache
+Keyword WorkAnchorKeywordCache
+
+Package Function GetWorkSandboxPackage()
+    {The tight-radius (1200) work sandbox package, resolved by FormID (created by
+     GenerateWorkSandbox.pas). Returns None until the .pas has been run.}
+    If !WorkSandboxPackageCache
+        WorkSandboxPackageCache = Game.GetFormFromFile(0x00165676, "SeverActions.esp") as Package
+    EndIf
+    Return WorkSandboxPackageCache
+EndFunction
+
+Keyword Function GetWorkAnchorKeyword()
+    {The work-marker linked-ref keyword, resolved by FormID. Returns None until the
+     .pas has been run.}
+    If !WorkAnchorKeywordCache
+        WorkAnchorKeywordCache = Game.GetFormFromFile(0x00165675, "SeverActions.esp") as Keyword
+    EndIf
+    Return WorkAnchorKeywordCache
+EndFunction
+
+Package WorkGuardPackageCache
+
+Package Function GetWorkGuardPackage()
+    {Bodyguard package — the dedicated SeverActions_GuardBodyguard (0x165677), a
+     purpose-built clone of FollowGuard_Prisoner: a Follow targeting a LinkedRef, NO
+     WeaponDrawn flag (sheathed), radius 300/400 (comfortable spacing — not the 128/256
+     combat crowding), crosses load doors. Made via GenerateGuardFollow.pas so we don't
+     repurpose the arrest packages. (The .pas couldn't set Preferred Speed to Run by
+     element name, so the follow gait is whatever the engine's default follow AI uses —
+     verify in-game it sprints to catch up; if not, fix the .pas speed field + re-run.)
+     The protectee is linked via GetGuardAnchorKeyword (FollowTargetKW), which this
+     package follows. OrphanCleanup's arrest scrub spares bodyguards (see
+     OnOrphanCleanup in SeverActions_Arrest.psc).}
+    If !WorkGuardPackageCache
+        WorkGuardPackageCache = Game.GetFormFromFile(0x00165677, "SeverActions.esp") as Package
+    EndIf
+    Return WorkGuardPackageCache
+EndFunction
+
+Keyword GuardAnchorKeywordCache
+
+Keyword Function GetGuardAnchorKeyword()
+    {The arrest system's follow linked-ref keyword (FollowTargetKW, 0x030155). The
+     bodyguard reuses it because FollowGuard_Prisoner follows whatever it points at —
+     here, the protectee. Separate from WorkAnchorKW (location work) so the two modes
+     never collide.}
+    If !GuardAnchorKeywordCache
+        GuardAnchorKeywordCache = Game.GetFormFromFile(0x00030155, "SeverActions.esp") as Keyword
+    EndIf
+    Return GuardAnchorKeywordCache
+EndFunction
+
+Package Function GetActiveWorkPackage(Actor akActor)
+    {Pick the work package for this retainer: the tight bodyguard package when the
+     work target is an Actor (protect-a-person), else the roam-the-workplace sandbox.}
+    If (SeverActionsNative.Native_GetWorkLoc(akActor) as Actor)
+        Return GetWorkGuardPackage()
+    EndIf
+    Return GetWorkSandboxPackage()
+EndFunction
+
+; Hex FormID parsing uses the native SeverActionsNative.HexToInt (StringUtils.h) —
+; handles the "0x"/"..." formats, far faster than a Papyrus char loop, and already
+; used by Follow/Outfit. (Was a hand-rolled HexToInt/HexDigitVal pair here.)
+
+Function GuardNPC(Actor akActor, Actor akProtectee)
+    {Protect-a-person work assignment (Guard/Mercenary). Links the retainer to a
+     MOVING actor (so the tight WorkGuard package shadows them), sets an Ally
+     relationship so the retainer engages threats to their charge, and applies the
+     guard package during work hours. The protectee actor IS the work "loc" — guard
+     mode is detected by Native_GetWorkLoc returning an Actor.}
+    If !akActor || !akProtectee
+        Return
+    EndIf
+    ; Link via the arrest follow keyword — FollowGuard_Prisoner follows whatever this
+    ; points at (sheathed, crosses doors), so the retainer shadows their charge.
+    Keyword followKw = GetGuardAnchorKeyword()
+    If followKw
+        SeverActionsNative.LinkedRef_Set(akActor, akProtectee, followKw)
+    Else
+        DebugMsg("GuardNPC: guard follow keyword not found. Guard inactive for " + akActor.GetDisplayName())
+    EndIf
+    SeverActionsNative.Native_SetWorkLoc(akActor, akProtectee)
+    SeverActionsNativeExt.Native_SetWorkLocationName(akActor, "protecting " + akProtectee.GetDisplayName())
+    ; Ally rank (3) → a helps-allies combat NPC (guards/mercs) defends their charge.
+    akActor.SetRelationshipRank(akProtectee, 3)
+
+    If GetAssignedHome(akActor) == ""
+        If !StorageUtil.FormListHas(None, KEY_WORK_ONLY_NPCS, akActor as Form)
+            StorageUtil.FormListAdd(None, KEY_WORK_ONLY_NPCS, akActor as Form, false)
+        EndIf
+        StorageUtil.SetIntValue(akActor, KEY_TRUEHOME_MIGRATED, 1)
+    EndIf
+
+    StorageUtil.SetIntValue(akActor, KEY_LAST_SCHEDULED_TYPE, -99)
+    If DetermineScheduleTypeForNow() == SCHEDULE_WORK
+        ApplyWorkSandbox(akActor)   ; picks WorkGuard via GetActiveWorkPackage
+        StorageUtil.SetIntValue(akActor, KEY_LAST_SCHEDULED_TYPE, SCHEDULE_WORK)
+    EndIf
+
+    DebugMsg("GuardNPC: " + akActor.GetDisplayName() + " now protects " + akProtectee.GetDisplayName())
+    If ShowNotifications
+        Debug.Notification(akActor.GetDisplayName() + " will protect " + akProtectee.GetDisplayName() + " during work hours.")
+    EndIf
+EndFunction
+
+ObjectReference Function EnsureWorkMarker(Actor akActor, ObjectReference akTarget)
+    {Return this actor's work marker — reposition the existing one (reassign to a new
+     spot) or spawn a force-persistent XMarkerHeading at akTarget. Stored per-actor so
+     it stays a live, persistent reference and can be reused / cleaned up.}
+    If !akActor || !akTarget
+        Return None
+    EndIf
+    ObjectReference marker = StorageUtil.GetFormValue(akActor, KEY_WORK_MARKER) as ObjectReference
+    If marker
+        marker.MoveTo(akTarget)
+        Return marker
+    EndIf
+    Form base = GetWorkMarkerBase()
+    If !base
+        Return None
+    EndIf
+    marker = akTarget.PlaceAtMe(base, 1, true, false)   ; abForcePersist = true
+    If marker
+        StorageUtil.SetFormValue(akActor, KEY_WORK_MARKER, marker)
+    EndIf
+    Return marker
+EndFunction
+
+Function ApplyWorkSandbox(Actor akActor)
+    {Apply the tight-radius (1200) work package, anchored to the NPC's linked work
+     marker. Symmetric with RemoveWorkSandbox — touches ONLY our own
+     WorkSandboxPackage override, never the actor's wider stack, so it's safe on any
+     SA-owned worker (incl. track-only). Never overrides an active following companion.}
+    Package workPkg = GetActiveWorkPackage(akActor)
+    If !akActor || !workPkg
+        Return
+    EndIf
+    If IsRegisteredFollower(akActor) && akActor.IsPlayerTeammate() && akActor.GetAV("WaitingForPlayer") != -1.0
+        Return
+    EndIf
+    ; Priority 110 (matches the proven PrisonerSandBox) so the work package wins
+    ; over stubborn vanilla schedule packages on full NPCs (bards, citizens, etc.).
+    ActorUtil.AddPackageOverride(akActor, workPkg, 110, 1)
+    akActor.SetAV("WaitingForPlayer", 2)
+    akActor.EvaluatePackage()
+EndFunction
+
+Function RemoveWorkSandbox(Actor akActor)
+    {Remove the work package override so the NPC reverts to their home schedule
+     (homed) or native AI (home-less). Symmetric with ApplyWorkSandbox.}
     If !akActor
         Return
     EndIf
+    ; Remove BOTH work packages — the active one may have switched between the
+    ; sandbox (location) and guard (protect-a-person) modes since it was applied.
+    Package sandboxPkg = GetWorkSandboxPackage()
+    Package guardPkg = GetWorkGuardPackage()
+    If sandboxPkg
+        ActorUtil.RemovePackageOverride(akActor, sandboxPkg)
+    EndIf
+    If guardPkg
+        ActorUtil.RemovePackageOverride(akActor, guardPkg)
+    EndIf
+    akActor.EvaluatePackage()
+EndFunction
+
+Function ReinforceWorkPackage(Actor akActor)
+    {Re-assert the work package mid-shift. A vanilla NPC-to-NPC greeting / scene can
+     pull a working NPC (especially a bodyguard following their charge) off our
+     override; the override persists but the engine won't snap back to it on its own,
+     so they'd stay idle for the rest of the shift. Re-apply + EvaluatePackage so they
+     resume after the interruption — mirrors how companions reacquire their follow
+     package after a greeting. Called every work tick for NPCs already on shift.
+     Cheap no-op when they're already on the work package; skips combat so we never
+     yank them out of a fight. EvaluatePackage respects a still-active higher-priority
+     greeting (it won't cut one short), then re-selects ours once it ends.}
+    If !akActor || akActor.IsInCombat()
+        Return
+    EndIf
+    Package workPkg = GetActiveWorkPackage(akActor)
+    If !workPkg || akActor.GetCurrentPackage() == workPkg
+        Return
+    EndIf
+    ; Don't disturb a registered companion the player is actively running.
+    If IsRegisteredFollower(akActor) && akActor.IsPlayerTeammate() && akActor.GetAV("WaitingForPlayer") != -1.0
+        Return
+    EndIf
+    ActorUtil.AddPackageOverride(akActor, workPkg, 110, 1)
+    akActor.EvaluatePackage()
+EndFunction
+
+String Function ResolveRoutineLocName(ObjectReference target, String asNameOverride)
+    {Human-readable place name for a routine marker: caller override wins, else the
+     target's Location (city/landmark), else parent cell, else a generic label.}
+    String locName = asNameOverride
+    If locName == "" && target
+        Location tgtLoc = target.GetCurrentLocation()
+        If tgtLoc
+            locName = tgtLoc.GetName()
+        EndIf
+        If locName == ""
+            Cell tgtCell = target.GetParentCell()
+            If tgtCell
+                locName = tgtCell.GetName()
+            EndIf
+        EndIf
+    EndIf
+    If locName == ""
+        locName = "a familiar spot"
+    EndIf
+    Return locName
+EndFunction
+
+Function SetRoutineLocHere(Actor akActor, String kind, ObjectReference akDest = None, String asNameOverride = "")
+    {Move the follower's Work or Play marker into position.
+     kind = "work" or "play". By default the marker drops at the PLAYER's current
+     position (akDest = None). Pass akDest to place it at a resolved destination
+     instead (e.g. a named workplace the player isn't standing at). asNameOverride
+     forces the display/prompt location name; blank = derive it from the target's
+     own location/cell.
+     WORK (Route B): no home or marker slot needed. A force-persistent XMarker is
+     spawned at the spot and linked to the NPC via WorkAnchorKeyword; the tight
+     WorkSandboxPackage is applied during work hours only. Home-less workers are
+     tracked in KEY_WORK_ONLY_NPCS; homed workers are detected by Native_GetWorkLoc.
+     PLAY still uses the home-slot PlayMarker (a leisure routine only makes sense
+     alongside a home).}
+    If !akActor
+        Return
+    EndIf
+
+    ; ── WORK (Route B decoupled pool) ──
+    If kind == "work"
+        Bool hadHome = (GetAssignedHome(akActor) != "")
+        ObjectReference target = akDest
+        If target
+            ; A NAMED interior destination resolves to the EXTERIOR entrance door
+            ; (the interior cell is unloaded at resolve time, so the resolver can't
+            ; reach its interior marker). For a work SPOT we want a point INSIDE —
+            ; follow the door's teleport to the interior marker so they work in the
+            ; building, not loitering on the doorstep. Returns None for non-doors /
+            ; exterior targets, so the original target is kept.
+            ObjectReference inside = SeverActionsNative.FindInteriorMarkerForDoor(target)
+            If inside
+                target = inside
+            EndIf
+        Else
+            target = Game.GetPlayer()
+        EndIf
+        ObjectReference workMarker = EnsureWorkMarker(akActor, target)
+        If !workMarker
+            DebugMsg("SetRoutineLocHere: failed to spawn work marker for " + akActor.GetDisplayName())
+            Return
+        EndIf
+        ; Link the NPC to the marker (cosaved + restored by PackageManager LREF) and
+        ; record the work loc for prompts / decorators. The link/override are skipped
+        ; (with a warning) until the ESP records exist + properties are auto-filled —
+        ; the marker + work-loc name still register so prompts read correctly.
+        Keyword workKw = GetWorkAnchorKeyword()
+        If workKw
+            SeverActionsNative.LinkedRef_Set(akActor, workMarker, workKw)
+        Else
+            DebugMsg("SetRoutineLocHere(work): work keyword not found - run GenerateWorkSandbox.pas. Work sandbox inactive for " + akActor.GetDisplayName())
+        EndIf
+        SeverActionsNative.Native_SetWorkLoc(akActor, workMarker)
+        String workName = ResolveRoutineLocName(target, asNameOverride)
+        SeverActionsNativeExt.Native_SetWorkLocationName(akActor, workName)
+
+        ; Home-less worker: track for ProcessWorkOnlySwaps' work-hours-only toggle,
+        ; and mark TrueHome migrated so no off-hours path teleports them anywhere.
+        If !hadHome
+            If !StorageUtil.FormListHas(None, KEY_WORK_ONLY_NPCS, akActor as Form)
+                StorageUtil.FormListAdd(None, KEY_WORK_ONLY_NPCS, akActor as Form, false)
+            EndIf
+            StorageUtil.SetIntValue(akActor, KEY_TRUEHOME_MIGRATED, 1)
+        EndIf
+
+        ; Force the next swap tick to re-evaluate, and apply immediately if it's
+        ; already work hours so the NPC heads to the spot without a 30s wait.
+        StorageUtil.SetIntValue(akActor, KEY_LAST_SCHEDULED_TYPE, -99)
+        If DetermineScheduleTypeForNow() == SCHEDULE_WORK
+            ApplyWorkSandbox(akActor)
+            StorageUtil.SetIntValue(akActor, KEY_LAST_SCHEDULED_TYPE, SCHEDULE_WORK)
+        EndIf
+
+        DebugMsg("Set work location for " + akActor.GetDisplayName() + " (" + workName + ")")
+        If ShowNotifications
+            Debug.Notification(akActor.GetDisplayName() + " will spend their work hours here.")
+        EndIf
+        Return
+    EndIf
+
+    ; ── PLAY (legacy home-slot marker path) ──
+    Bool hasHome = (GetAssignedHome(akActor) != "")
     Int slot = SeverActionsNative.Native_GetHomeMarkerSlot(akActor)
     If slot < 0
-        DebugMsg("SetRoutineLocHere: " + akActor.GetDisplayName() + " has no home slot — assign home first")
-        Return
+        If kind == "work"
+            ; Borrow a marker slot so a home-less NPC can still be work-marked.
+            slot = SeverActionsNative.Native_AcquireHomeMarkerSlot(akActor)
+            If slot < 0
+                DebugMsg("SetRoutineLocHere: no free marker slot for " + akActor.GetDisplayName())
+                Return
+            EndIf
+        Else
+            DebugMsg("SetRoutineLocHere: " + akActor.GetDisplayName() + " has no home slot - assign home first")
+            Return
+        EndIf
     EndIf
 
     FormList markerList = None
@@ -5836,8 +6279,12 @@ Function SetRoutineLocHere(Actor akActor, String kind)
         Return
     EndIf
 
-    Actor PlayerRef = Game.GetPlayer()
-    marker.MoveTo(PlayerRef)
+    ; Destination: caller-supplied resolved ref, else the player's position.
+    ObjectReference target = akDest
+    If !target
+        target = Game.GetPlayer()
+    EndIf
+    marker.MoveTo(target)
     If kind == "work"
         SeverActionsNative.Native_SetWorkLoc(akActor, marker)
     Else
@@ -5845,22 +6292,24 @@ Function SetRoutineLocHere(Actor akActor, String kind)
     EndIf
 
     ; Capture a human-readable name for the location so prompts can tell the
-    ; NPC "you work at X" / "you relax at Y". Prefer the player's current
-    ; Location (city / dungeon / landmark); fall back to the parent cell name;
-    ; fall back to a generic label if neither resolves.
-    String locName = ""
-    Location playerLoc = PlayerRef.GetCurrentLocation()
-    If playerLoc
-        locName = playerLoc.GetName()
-    EndIf
+    ; NPC "you work at X" / "you relax at Y". A caller-supplied name wins;
+    ; otherwise prefer the target's Location (city / dungeon / landmark), fall
+    ; back to its parent cell name, then a generic label.
+    String locName = asNameOverride
     If locName == ""
-        Cell playerCell = PlayerRef.GetParentCell()
-        If playerCell
-            locName = playerCell.GetName()
+        Location tgtLoc = target.GetCurrentLocation()
+        If tgtLoc
+            locName = tgtLoc.GetName()
         EndIf
-    EndIf
-    If locName == ""
-        locName = "a familiar spot"
+        If locName == ""
+            Cell tgtCell = target.GetParentCell()
+            If tgtCell
+                locName = tgtCell.GetName()
+            EndIf
+        EndIf
+        If locName == ""
+            locName = "a familiar spot"
+        EndIf
     EndIf
     ; T1-A.3: native source of truth — surfaced into prompts via
     ; sever_work_location / sever_play_location decorators.
@@ -5868,6 +6317,18 @@ Function SetRoutineLocHere(Actor akActor, String kind)
         SeverActionsNativeExt.Native_SetWorkLocationName(akActor, locName)
     Else
         SeverActionsNativeExt.Native_SetPlayLocationName(akActor, locName)
+    EndIf
+
+    ; Work-only tracking: a home-less NPC given a work marker borrows the slot
+    ; but must NOT be driven by the always-on home schedule. Track them so
+    ; ProcessWorkOnlySwaps applies their sandbox during work hours only and
+    ; releases it otherwise. Mark TrueHomeAnchor "migrated" so no off-hours code
+    ; path ever teleports them to the holding cell (we release instead).
+    If kind == "work" && !hasHome
+        If !StorageUtil.FormListHas(None, KEY_WORK_ONLY_NPCS, akActor as Form)
+            StorageUtil.FormListAdd(None, KEY_WORK_ONLY_NPCS, akActor as Form, false)
+        EndIf
+        StorageUtil.SetIntValue(akActor, KEY_TRUEHOME_MIGRATED, 1)
     EndIf
 
     ; Force next tick to re-evaluate — if current hour matches this schedule type,
@@ -5894,8 +6355,35 @@ Function ClearRoutineLoc(Actor akActor, String kind)
         Return
     EndIf
     If kind == "work"
+        ; Guard mode? Undo the Ally bond with the protectee before we wipe the work
+        ; target (so we still know who it was).
+        Actor exProtectee = SeverActionsNative.Native_GetWorkLoc(akActor) as Actor
+        If exProtectee
+            akActor.SetRelationshipRank(exProtectee, 0)
+        EndIf
         SeverActionsNative.Native_ClearWorkLoc(akActor)
         StorageUtil.UnsetStringValue(akActor, "SeverFollower_WorkLocation")
+        ; Route B teardown: drop the work-package override, unlink the marker, and
+        ; delete the spawned marker so it doesn't leak as a persistent ref.
+        RemoveWorkSandbox(akActor)
+        Keyword workKwClear = GetWorkAnchorKeyword()
+        If workKwClear
+            SeverActionsNative.LinkedRef_Clear(akActor, workKwClear)
+        EndIf
+        ; Guard mode links via the follow keyword instead — clear that too.
+        Keyword followKwClear = GetGuardAnchorKeyword()
+        If followKwClear
+            SeverActionsNative.LinkedRef_Clear(akActor, followKwClear)
+        EndIf
+        ObjectReference workMarker = StorageUtil.GetFormValue(akActor, KEY_WORK_MARKER) as ObjectReference
+        If workMarker
+            workMarker.Delete()
+            StorageUtil.UnsetFormValue(akActor, KEY_WORK_MARKER)
+        EndIf
+        ; Home-less worker reverts fully to native AI.
+        If StorageUtil.FormListHas(None, KEY_WORK_ONLY_NPCS, akActor as Form)
+            StorageUtil.FormListRemove(None, KEY_WORK_ONLY_NPCS, akActor as Form, true)
+        EndIf
     ElseIf kind == "play"
         SeverActionsNative.Native_ClearPlayLoc(akActor)
         StorageUtil.UnsetStringValue(akActor, "SeverFollower_PlayLocation")
@@ -5955,15 +6443,118 @@ Function ProcessScheduleSwaps()
                     ObjectReference targetAnchor = GetScheduleAnchorForNPC(npc, slot, targetType)
                     If homeMarker && targetAnchor
                         homeMarker.MoveTo(targetAnchor)
+                        ; Route B: a homed NPC that ALSO has a work assignment gets the
+                        ; tight 1200-radius work package during work hours (overrides the
+                        ; large home sandbox), and reverts to the home schedule otherwise.
+                        If SeverActionsNative.Native_GetWorkLoc(npc)
+                            If targetType == SCHEDULE_WORK
+                                ApplyWorkSandbox(npc)
+                            Else
+                                RemoveWorkSandbox(npc)
+                            EndIf
+                        EndIf
                         StorageUtil.SetIntValue(npc, KEY_LAST_SCHEDULED_TYPE, targetType)
                         npc.EvaluatePackage()
                         DebugMsg("ScheduleSwap: " + npc.GetDisplayName() + " -> type " + targetType + " (slot " + slot + ")")
                     EndIf
+                ElseIf targetType == SCHEDULE_WORK && SeverActionsNative.Native_GetWorkLoc(npc)
+                    ; Homed NPC already on a work shift — reinforce so a greeting/scene
+                    ; doesn't strand them off their work/guard package mid-shift.
+                    ReinforceWorkPackage(npc)
                 EndIf
             EndIf
         EndIf
         i += 1
     EndWhile
+EndFunction
+
+Function ProcessWorkOnlySwaps()
+    {Iterate work-only NPCs (Route B: a linked work marker, NO home). During work
+     hours apply the tight 1200-radius WorkSandboxPackage (anchored to their linked
+     marker); outside work hours remove it so they fully revert to native / vanilla
+     AI (the "work-hours sandbox only" contract). Binary applied(work)/released(non-
+     work) keyed off KEY_LAST_SCHEDULED_TYPE — these NPCs are NOT in KEY_HOMED_NPCS
+     so ProcessScheduleSwaps never touches them; the key is unshared per actor.}
+    Bool isWorkHours = (DetermineScheduleTypeForNow() == SCHEDULE_WORK)
+    Int desired = SCHEDULE_HOME
+    If isWorkHours
+        desired = SCHEDULE_WORK
+    EndIf
+
+    Int count = StorageUtil.FormListCount(None, KEY_WORK_ONLY_NPCS)
+    Int i = 0
+    While i < count
+        Form entry = StorageUtil.FormListGet(None, KEY_WORK_ONLY_NPCS, i)
+        Actor npc = entry as Actor
+        If npc && !npc.IsDeleted() && !npc.IsPlayerTeammate()
+            Int lastType = StorageUtil.GetIntValue(npc, KEY_LAST_SCHEDULED_TYPE, -99)
+            If lastType != desired
+                If isWorkHours
+                    ApplyWorkSandbox(npc)
+                    DebugMsg("WorkOnlySwap: " + npc.GetDisplayName() + " -> WORK")
+                Else
+                    RemoveWorkSandbox(npc)
+                    DebugMsg("WorkOnlySwap: " + npc.GetDisplayName() + " -> released (off hours)")
+                EndIf
+                StorageUtil.SetIntValue(npc, KEY_LAST_SCHEDULED_TYPE, desired)
+            ElseIf isWorkHours
+                ; Already on shift — keep them on the work package through greetings/scenes.
+                ReinforceWorkPackage(npc)
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+EndFunction
+
+Function MigrateWorkPoolOnLoad()
+    {One-shot: move legacy work assignments onto the Route B linked-ref pool. Reuses
+     each NPC's already-positioned work marker (Native_GetWorkLoc) as the linked-ref
+     target — no re-placement. Home-less workers also drop their old large-radius
+     home override and release the home slot they borrowed under the old system.
+     No-op until WorkAnchorKeyword is filled (guarded by the caller).}
+    Keyword workKw = GetWorkAnchorKeyword()
+    If !workKw
+        Return   ; records not present yet — nothing to migrate onto
+    EndIf
+    Actor npc = None
+    ObjectReference wm = None
+
+    ; Home-less workers (KEY_WORK_ONLY_NPCS).
+    Int wc = StorageUtil.FormListCount(None, KEY_WORK_ONLY_NPCS)
+    Int i = 0
+    While i < wc
+        npc = StorageUtil.FormListGet(None, KEY_WORK_ONLY_NPCS, i) as Actor
+        If npc
+            wm = SeverActionsNative.Native_GetWorkLoc(npc)
+            If wm
+                SeverActionsNative.LinkedRef_Set(npc, wm, workKw)
+            EndIf
+            RemoveHomeSandbox(npc)
+            If GetAssignedHome(npc) == "" && SeverActionsNative.Native_GetHomeMarkerSlot(npc) >= 0
+                SeverActionsNative.Native_ReleaseHomeMarkerSlot(npc)
+            EndIf
+            StorageUtil.SetIntValue(npc, KEY_LAST_SCHEDULED_TYPE, -99)
+        EndIf
+        i += 1
+    EndWhile
+
+    ; Homed workers (KEY_HOMED_NPCS with a work loc) — just establish the linked
+    ; ref so the schedule's work-hours override can anchor to it.
+    Int hc = StorageUtil.FormListCount(None, KEY_HOMED_NPCS)
+    i = 0
+    While i < hc
+        npc = StorageUtil.FormListGet(None, KEY_HOMED_NPCS, i) as Actor
+        If npc
+            wm = SeverActionsNative.Native_GetWorkLoc(npc)
+            If wm
+                SeverActionsNative.LinkedRef_Set(npc, wm, workKw)
+                StorageUtil.SetIntValue(npc, KEY_LAST_SCHEDULED_TYPE, -99)
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+
+    DebugMsg("MigrateWorkPoolOnLoad: linked " + wc + " work-only + scanned " + hc + " homed for Route B")
 EndFunction
 
 ; =============================================================================
@@ -6033,7 +6624,7 @@ Function AssignHome(Actor akActor, String locationName)
                 DebugMsg("Home marker slot " + slot + " moved to player position at " + locationName + " for " + akActor.GetDisplayName())
             EndIf
         Else
-            DebugMsg("WARNING: All 40 home marker slots in use — " + akActor.GetDisplayName() + " will use travel fallback")
+            DebugMsg("WARNING: All 40 home marker slots in use - " + akActor.GetDisplayName() + " will use travel fallback")
         EndIf
     EndIf
 
@@ -6067,6 +6658,14 @@ Function AssignHome(Actor akActor, String locationName)
         StorageUtil.FormListAdd(None, KEY_HOMED_NPCS, akActor as Form, false)
     EndIf
 
+    ; Promote: if this NPC was work-only, they now have a real home — drop them
+    ; from the work-only list so the always-on home schedule (ProcessScheduleSwaps)
+    ; owns them, routing to the work marker during work hours and home otherwise.
+    If StorageUtil.FormListHas(None, KEY_WORK_ONLY_NPCS, akActor as Form)
+        StorageUtil.FormListRemove(None, KEY_WORK_ONLY_NPCS, akActor as Form, true)
+        StorageUtil.SetIntValue(akActor, KEY_LAST_SCHEDULED_TYPE, -99)
+    EndIf
+
     If ShowNotifications
         Debug.Notification(akActor.GetDisplayName() + " will now call " + locationName + " home.")
     EndIf
@@ -6076,6 +6675,103 @@ Function AssignHome(Actor akActor, String locationName)
         akActor, Game.GetPlayer())
 
     DebugMsg("Home assigned for " + akActor.GetDisplayName() + ": " + locationName)
+EndFunction
+
+Function AssignWork(Actor akActor, String locationName)
+    {SkyrimNet action: mark the player's current position as where this NPC works.
+     Parallel to AssignHome, but for the WORK routine — and NO prior home is
+     required (a borrowed marker slot drives a work-hours-only sandbox; see
+     SetRoutineLocHere / ProcessWorkOnlySwaps). If the NPC isn't already one of
+     the player's retainers, a 90s non-pausing popup offers to put them on the
+     books (optional — the work marker stands regardless).}
+    If !akActor
+        Return
+    EndIf
+
+    ; Resolve the named workplace once (if given + resolvable) — used both as
+    ; the popup's "named place" button and as the fallback placement target.
+    ObjectReference dest = None
+    If locationName != "" && SeverActionsNative.IsLocationResolverReady()
+        dest = SeverActionsNative.ResolveDestination(akActor, locationName)
+    EndIf
+    String namedPlace = ""
+    If dest
+        namedPlace = locationName
+    EndIf
+
+    ; Preferred path: open the unified assign-retainer popup. It lets the player
+    ; choose the workplace (Here / the named place) + terms; on confirm/Hire the
+    ; marker is placed by OnRetainerWorkLoc and the hire is done natively. Not
+    ; now / timeout / Escape are full cancels (nothing placed or hired). Only for
+    ; non-retainers; the open call self-suppresses if a PrismaUI view has focus
+    ; or PrismaUI isn't available.
+    If !SeverActionsNativeExt.Venture_IsRetainer(akActor) \
+        && SeverActionsNativeExt.PrismaUI_IsRetainerAssignPromptAvailable() \
+        && SeverActionsNativeExt.PrismaUI_OpenRetainerAssignPrompt(akActor, namedPlace, "", "", 90000)
+        DebugMsg("AssignWork: opened assign-retainer popup for " + akActor.GetDisplayName())
+        Return
+    EndIf
+
+    ; Fallback (already a retainer, PrismaUI down, or popup suppressed): place
+    ; the work marker directly — at the resolved destination if we have one,
+    ; else the player's position.
+    SetRoutineLocHere(akActor, "work", dest, locationName)
+    FireWorkAssignedEvent(akActor)
+    DebugMsg("AssignWork (direct): " + akActor.GetDisplayName() + " -> " + locationName)
+EndFunction
+
+Event OnRetainerWorkLoc(string eventName, string strArg, float numArg, Form sender)
+    {Fired by the assign-retainer popup ONLY on Hire (confirm). Places the work
+     marker at the chosen location (the hire itself is done natively by the
+     bridge). Not now / timeout / Escape are full cancels and never fire this.
+     strArg = "here" or "named|<placeName>".}
+    Actor npc = sender as Actor
+    If !npc
+        Return
+    EndIf
+    ; "clear" = manage modal's "Leave them be" — tear down the work marker/override
+    ; so the retainer reverts to their own AI.
+    If strArg == "clear"
+        ClearRoutineLoc(npc, "work")
+        Return
+    EndIf
+    ; "guard|<hexFormId>" — protect a specific NPC (Guard/Mercenary bodyguard) rather
+    ; than a place. The protectee actor becomes the work target.
+    If StringUtil.Find(strArg, "guard|") == 0
+        Actor protectee = Game.GetForm(SeverActionsNative.HexToInt(StringUtil.Substring(strArg, 6))) as Actor
+        If protectee
+            GuardNPC(npc, protectee)
+        Else
+            DebugMsg("OnRetainerWorkLoc: guard target did not resolve from '" + strArg + "'")
+        EndIf
+        Return
+    EndIf
+    ObjectReference dest = None
+    String placeLabel = ""
+    Int bar = StringUtil.Find(strArg, "|")
+    If bar >= 0
+        placeLabel = StringUtil.Substring(strArg, bar + 1)
+        If placeLabel != "" && SeverActionsNative.IsLocationResolverReady()
+            dest = SeverActionsNative.ResolveDestination(npc, placeLabel)
+        EndIf
+    EndIf
+    SetRoutineLocHere(npc, "work", dest, placeLabel)
+    FireWorkAssignedEvent(npc)
+    DebugMsg("OnRetainerWorkLoc: placed work marker for " + npc.GetDisplayName() + " (" + strArg + ")")
+EndEvent
+
+Function FireWorkAssignedEvent(Actor akActor)
+    {Announce the work assignment to SkyrimNet using the stored work-location name.}
+    If !akActor
+        Return
+    EndIf
+    String wp = SeverActionsNativeExt.Native_GetWorkLocationName(akActor)
+    If wp == ""
+        wp = "their new workplace"
+    EndIf
+    SkyrimNetApi.RegisterPersistentEvent( \
+        akActor.GetDisplayName() + " now works at " + wp + ".", \
+        akActor, Game.GetPlayer())
 EndFunction
 
 Function SendHome(Actor akActor)
@@ -6111,7 +6807,7 @@ Function SendHome(Actor akActor)
                 ObjectReference marker = HomeMarkerList.GetAt(slot) as ObjectReference
                 If marker
                     marker.MoveTo(destRef)
-                    DebugMsg("SendHome migrated " + akActor.GetDisplayName() + " to marker slot " + slot + " (door position — re-assign to fix)")
+                    DebugMsg("SendHome migrated " + akActor.GetDisplayName() + " to marker slot " + slot + " (door position - re-assign to fix)")
                 EndIf
             EndIf
         EndIf
@@ -6137,7 +6833,7 @@ Function SendHome(Actor akActor)
     EndIf
 
     ; Fallback: only if marker system completely unavailable (no FormList/Keyword configured)
-    DebugMsg("SendHome: FALLBACK — no marker system")
+    DebugMsg("SendHome: FALLBACK - no marker system")
 EndFunction
 
 Package Function GetHomeSandboxPackage(Int slot)
@@ -6249,7 +6945,7 @@ Function ApplyHomeSandbox(Actor akActor, ObjectReference homeMarker, Int slot)
     ; they're actively following — bail. The legitimate track-only dismiss-redirect
     ; callers observe WFP == -1 before calling, so they're unaffected.
     If IsRegisteredFollower(akActor) && akActor.IsPlayerTeammate() && akActor.GetAV("WaitingForPlayer") != -1.0
-        DebugMsg("ApplyHomeSandbox: SKIPPED — " + akActor.GetDisplayName() + " is an active following companion (not dismissed)")
+        DebugMsg("ApplyHomeSandbox: SKIPPED - " + akActor.GetDisplayName() + " is an active following companion (not dismissed)")
         Return
     EndIf
 
@@ -6259,7 +6955,7 @@ Function ApplyHomeSandbox(Actor akActor, ObjectReference homeMarker, Int slot)
     ; home"). Mark them scene-suspended; CheckSceneSuspendedHomes on the next
     ; OnUpdate tick will retry once the scene ends.
     If SeverActionsNative.Native_IsActorInScene(akActor)
-        DebugMsg("Home: skipping application — " + akActor.GetDisplayName() + " is in a vanilla scene; will retry once scene ends")
+        DebugMsg("Home: skipping application - " + akActor.GetDisplayName() + " is in a vanilla scene; will retry once scene ends")
         ; T1-B: native source of truth for the home scene-suspend flag.
         SeverActionsNativeExt.Native_SetHomeSceneSuspended(akActor, true)
         Return
@@ -6900,7 +7596,7 @@ Function ReapplyHomeSandboxing()
      Once all users have upgraded, this function does nothing (aliases persist natively).
      Called from Maintenance() on every game load.}
     If !HomeMarkerList || !HomeSlots
-        DebugMsg("Home marker system not configured — skipping home sandbox check")
+        DebugMsg("Home marker system not configured - skipping home sandbox check")
         Return
     EndIf
 
@@ -7333,7 +8029,7 @@ Function ProcessNextSummaryRequest()
     ; LLM calls that never fire. The C++ queue pop already happened, so no
     ; orphan state stays behind.
     If !AutoQuestAwareness || !SeverActionsNative.Native_IsPromptAvailable("sever_quest_awareness")
-        DebugMsg("Quest awareness skipped (toggle off or prompt missing) — draining queue")
+        DebugMsg("Quest awareness skipped (toggle off or prompt missing) - draining queue")
         ProcessNextSummaryRequest()
         Return
     EndIf
@@ -7387,7 +8083,7 @@ Event OnQuestCompletedEvent(String eventName, String strArg, Float numArg, Form 
      C++ already collected completion entries before marking completed.
      We drain the completion queue and create memories for each follower.}
 
-    DebugMsg("Quest awareness: quest completed — " + strArg)
+    DebugMsg("Quest awareness: quest completed - " + strArg)
 
     ; Drain the completion queue
     String entryJson = SeverActionsNative.Native_PopCompletionEntry()
@@ -7423,7 +8119,7 @@ Event OnQuestCompletedEvent(String eventName, String strArg, Float numArg, Form 
                 SeverActionsNative.Native_QuestAwareness_MarkMemorized(akFollower, entryEditorID)
                 DebugMsg("Quest awareness: created " + memType + " memory #" + memId + " for " + akFollower.GetDisplayName())
             ElseIf memId == 0
-                DebugMsg("Quest awareness: Native_AddMemory failed for " + akFollower.GetDisplayName() + " on " + entryEditorID + " — entry stays visible")
+                DebugMsg("Quest awareness: Native_AddMemory failed for " + akFollower.GetDisplayName() + " on " + entryEditorID + " - entry stays visible")
             EndIf
         EndIf
 

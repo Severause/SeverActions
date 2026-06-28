@@ -1,0 +1,13 @@
+{# SeverActions Enterprises — the player's roster summary, rendered only on the
+   PLAYER's own bio so it's in context when an NPC references the player (e.g. the
+   player asks "how are my businesses doing?"). enterprises_summary returns "" for
+   non-player actors and when the player has no retainers. #}
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{% if player and player.UUID and actorUUID == player.UUID %}
+{% set entSummary = enterprises_summary(actorUUID) %}
+{% if entSummary != "" %}
+## The Player's Enterprises
+{{ entSummary }}
+{% endif %}
+{% endif %}
+{% endif %}

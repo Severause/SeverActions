@@ -34,11 +34,11 @@ EndFunction
 Function CastSpell_Execute(Actor akCaster, String spellName, String targetName, Bool bDualCasting, Bool bHealToFull, Bool bUseMagicka)
     SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] CastSpell_Execute ENTRY caster=" + akCaster + " spellName='" + spellName + "' target='" + targetName + "'")
     If !akCaster || akCaster.IsDead()
-        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] caster invalid or dead — abort")
+        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] caster invalid or dead - abort")
         Return
     EndIf
     If akCaster.IsInCombat()
-        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] " + akCaster.GetDisplayName() + " in combat — abort")
+        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] " + akCaster.GetDisplayName() + " in combat - abort")
         SkyrimNetApi.DirectNarration(akCaster.GetDisplayName() + " won't stop to cast a spell while fighting.", akCaster)
         Return
     EndIf
@@ -56,12 +56,12 @@ Function CastSpell_Execute(Actor akCaster, String spellName, String targetName, 
     ObjectReference targetRef = ResolveTarget(akCaster, spellToCast, targetName)
     Bool markerPlaced = false
     If !targetRef
-        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] no target resolved — placing aim marker")
+        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] no target resolved - placing aim marker")
         targetRef = PlaceAimMarker(akCaster)
         markerPlaced = (targetRef != None)
     EndIf
     If !targetRef
-        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] no target AND no aim marker — abort")
+        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] no target AND no aim marker - abort")
         Return
     EndIf
     SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] target=" + targetRef + " markerPlaced=" + markerPlaced)
@@ -101,7 +101,7 @@ EndFunction
 Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference akTarget, Bool bDualCasting, Bool bUseMagicka, Bool bHealToFull, Bool bMarkerIsTarget)
     ReferenceAlias slot = FindFreeSlot()
     If !slot
-        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] FindFreeSlot returned None — all 4 slots busy")
+        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] FindFreeSlot returned None - all 4 slots busy")
         SkyrimNetApi.DirectNarration(akCaster.GetDisplayName() + " is too busy to cast right now.", akCaster)
         Return false
     EndIf
@@ -113,7 +113,7 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
     If bUseMagicka
         Int spellCost = SeverActionsNativeExt.Native_GetEffectiveMagickaCost(akCaster, akSpell, bDualCasting)
         If spellCost > akCaster.GetActorValue("Magicka")
-            SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] " + akCaster.GetDisplayName() + " low magicka (" + akCaster.GetActorValue("Magicka") + " < " + spellCost + ") — abort")
+            SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] " + akCaster.GetDisplayName() + " low magicka (" + akCaster.GetActorValue("Magicka") + " < " + spellCost + ") - abort")
             SkyrimNetApi.DirectNarration(akCaster.GetDisplayName() + " doesn't have enough magicka to cast that.", akCaster)
             Return false
         EndIf
@@ -140,14 +140,14 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
     ; equipSlot set to EitherHand, mirroring bosn's clonePackageSpell.
     Spell castSpell = SeverActionsNativeExt.Native_CloneSpellForCast(akCaster, akSpell, bDualCasting)
     If !castSpell
-        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] CloneSpellForCast returned None — falling back to original")
+        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] CloneSpellForCast returned None - falling back to original")
         castSpell = akSpell
     Else
         SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] cloned spell: " + castSpell)
     EndIf
 
     If !SeverActionsNativeExt.Native_InjectSpellIntoPackage(livePackage, castSpell)
-        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] Native_InjectSpellIntoPackage returned false — abort")
+        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] Native_InjectSpellIntoPackage returned false - abort")
         Return false
     EndIf
     SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] spell injected: " + castSpell)
@@ -169,7 +169,7 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
     ; immediately and the UseMagic procedure has the correct spell + target
     ; from the start.
     slot.ForceRefTo(akCaster)
-    SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] caster alias filled — engine should pick up package")
+    SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] caster alias filled - engine should pick up package")
 
     ; Force an explicit package re-evaluation. ForceRefTo is supposed to
     ; trigger this automatically, but in practice (especially on registered

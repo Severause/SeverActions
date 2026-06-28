@@ -1,0 +1,19 @@
+{# SeverActions Enterprises — surfaces an NPC's employment as one of the player's
+   retainers so the LLM knows they work for the player (and how it's going).
+   retainer_status(actorUUID) returns "" for anyone who isn't a retainer. #}
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{% if actorUUID and actorUUID != 0 %}
+{% set retStatus = retainer_status(actorUUID) %}
+{% if retStatus != "" %}
+## Employment — In the Player's Service
+{{ retStatus }}
+{% endif %}
+{# A letter they sent the player and the matter behind it — so they have it in #}
+{# mind (and bring it up) when the player comes to them about it. #}
+{% set retLetter = sever_retainer_letter(actorUUID) %}
+{% if retLetter != "" %}
+## A Letter You Sent the Player
+{{ retLetter }}
+{% endif %}
+{% endif %}
+{% endif %}

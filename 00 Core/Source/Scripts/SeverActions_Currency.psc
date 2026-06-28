@@ -333,13 +333,13 @@ EndFunction
 Event OnCollectPaymentChoice(String asEventName, String asChoice, Float afAmount, Form akSender)
     Actor akCollector = akSender as Actor
     if !akCollector
-        Debug.Trace("[SeverActions_Currency] OnCollectPaymentChoice: sender is not an Actor — ignoring")
+        Debug.Trace("[SeverActions_Currency] OnCollectPaymentChoice: sender is not an Actor - ignoring")
         return
     endif
 
     Int aiAmount = afAmount as Int
     if aiAmount <= 0
-        Debug.Trace("[SeverActions_Currency] OnCollectPaymentChoice: invalid amount " + afAmount + " — ignoring")
+        Debug.Trace("[SeverActions_Currency] OnCollectPaymentChoice: invalid amount " + afAmount + " - ignoring")
         return
     endif
 
@@ -463,7 +463,7 @@ Function _DoItemTransaction(Actor akSeller, Actor akBuyer, String asItemName, In
         ; Null-guard: when eligibility fails because an actor is None, don't
         ; build a malformed " could not buy X from " event — just log.
         If !akSeller || !akBuyer
-            Debug.Trace("[SeverActions_Currency] _DoItemTransaction: missing actor — skipping")
+            Debug.Trace("[SeverActions_Currency] _DoItemTransaction: missing actor - skipping")
             Return
         EndIf
         SkyrimNetApi.RegisterEvent("item_purchase_failed", \
@@ -492,7 +492,7 @@ Function _DoItemTransaction(Actor akSeller, Actor akBuyer, String asItemName, In
     Int available = SeverActions_Loot.GetTransactionAvailableQty(akSeller, itemForm)
     If available < aiQuantity
         SkyrimNetApi.RegisterEvent("item_purchase_failed", \
-            akSeller.GetDisplayName() + " only has " + available + " " + itemForm.GetName() + " — not enough for " + akBuyer.GetDisplayName() + "'s " + aiQuantity, \
+            akSeller.GetDisplayName() + " only has " + available + " " + itemForm.GetName() + " - not enough for " + akBuyer.GetDisplayName() + "'s " + aiQuantity, \
             akSeller, akBuyer)
         Return
     EndIf
@@ -521,7 +521,7 @@ Function _DoItemTransaction(Actor akSeller, Actor akBuyer, String asItemName, In
         ; right now (we just gave it to them), so this transfer is safe.
         TransferGold(akSeller, akBuyer, aiTotalGold, False)
         SkyrimNetApi.RegisterEvent("item_purchase_failed", \
-            akSeller.GetDisplayName() + " could not hand over " + asItemName + " to " + akBuyer.GetDisplayName() + " — " + aiTotalGold + " gold refunded", \
+            akSeller.GetDisplayName() + " could not hand over " + asItemName + " to " + akBuyer.GetDisplayName() + " - " + aiTotalGold + " gold refunded", \
             akSeller, akBuyer)
         Return
     EndIf
@@ -560,4 +560,60 @@ Function _DoItemTransaction(Actor akSeller, Actor akBuyer, String asItemName, In
         src = "sell_item"
     EndIf
     _LogToLedger(akBuyer, akSeller, chargedGold, src, itemLabel)
+EndFunction
+
+; =============================================================================
+; ENTERPRISES — SkyrimNet dialogue actions (Phase 4)
+; The retainer economy lives natively (VentureMonitor / VentureStore); these
+; thin member functions are the LLM-callable entry points. Hosted here (the
+; economy script) rather than a dedicated quest-attached script to avoid a
+; Mutagen re-serialize of the 27-script SeverActions quest.
+; =============================================================================
+
+Bool Function HireRetainer(Actor akActor, String job, String arrangement)
+    {The speaker agrees to work for the player as a retainer. Opens the assign-
+     retainer popup (prefilled with the agreed job/arrangement + the workplace
+     autocomplete) so the player finalizes where they work and the terms, then
+     the popup commits the hire. Falls back to a direct hire (job + arrangement
+     as agreed) if PrismaUI is unavailable. Returns false if already a retainer.}
+    If !akActor
+        Return false
+    EndIf
+    If SeverActionsNativeExt.Venture_IsRetainer(akActor)
+        Return false
+    EndIf
+    ; Preferred: open the popup, prefilled from the agreed terms. HireRetainer is
+    ; LLM-driven in conversation (no menu open), so the non-pausing popup shows.
+    If SeverActionsNativeExt.PrismaUI_IsRetainerAssignPromptAvailable() \
+        && SeverActionsNativeExt.PrismaUI_OpenRetainerAssignPrompt(akActor, "", job, arrangement, 90000)
+        Return true
+    EndIf
+    ; Fallback (PrismaUI absent / suppressed): hire directly with the agreed terms.
+    Return SeverActionsNativeExt.Venture_Hire(akActor, job, arrangement)
+EndFunction
+
+Bool Function CollectFromRetainer(Actor akActor)
+    {Collect the speaker-retainer's pending payout (gold + goods) for the player.}
+    If !akActor
+        Return false
+    EndIf
+    SeverActionsNativeExt.Venture_Collect(akActor)
+    Return true
+EndFunction
+
+Bool Function PayArrears(Actor akActor)
+    {Pay the back-wages the player owes this retainer, from the player's gold.}
+    If !akActor
+        Return false
+    EndIf
+    SeverActionsNativeExt.Venture_PayArrears(akActor)
+    Return true
+EndFunction
+
+Bool Function DismissRetainer(Actor akActor)
+    {End the speaker-retainer's service amicably.}
+    If !akActor
+        Return false
+    EndIf
+    Return SeverActionsNativeExt.Venture_Dismiss(akActor)
 EndFunction

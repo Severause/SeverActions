@@ -46,6 +46,14 @@ Int Property PendingPopupId = 0 Auto Hidden
 Form Property PendingPopupChallenger = None Auto Hidden
 Float Property PendingPopupStartTime = 0.0 Auto Hidden
 
+; Transient state for the PrismaUI-overlay defer-retry. When a challenge is
+; triggered from a PrismaUI menu (e.g. the Actions page), that menu still holds
+; focus for a beat after it closes, so PrismaUI_OpenBrawlPrompt is suppressed.
+; Rather than drop to the SkyMessage box, we retry the overlay a few times via
+; OnUpdate until focus is released.
+Form Property PendingOverlayChallenger = None Auto Hidden
+Int Property OverlayRetryCount = 0 Auto Hidden
+
 ; ============================================================================
 ; STORAGEUTIL KEYS (per-actor, set by this script, read by prompts)
 ; ============================================================================
@@ -198,29 +206,71 @@ EndFunction
 ; PLAYER-TARGET POPUP (SkyMessage)
 ; ============================================================================
 
-Function ShowPlayerChallengePopup(Actor akChallenger)
+Function ShowPlayerChallengePopup(Actor akChallenger, Bool abIsRetry = false)
     {Three-tier popup chain:
        1. PrismaUI HUD overlay (preferred — non-pausing, brass-on-dark card).
        2. SkyMessage non-blocking popup (fallback if PrismaUI absent).
        3. Debug.Notification (last resort if both are absent — challenge
-          still auto-expires via the native monitor).}
+          still auto-expires via the native monitor).
+     abIsRetry: true when re-entered from OnUpdate's overlay defer-retry, so the
+     retry counter is preserved instead of reset.}
+
+    ; Fresh challenge (not a retry) resets the overlay-retry budget.
+    If !abIsRetry
+        OverlayRetryCount = 0
+    EndIf
 
     String challengerName = akChallenger.GetDisplayName()
 
-    ; Tier 1 — PrismaUI overlay.
-    If SeverActionsNative.PrismaUI_IsBrawlPromptAvailable() && !SeverActionsNative.PrismaUI_IsBrawlPromptOpen()
+    ; A fresh challenge supersedes any stale prompt. Clear a leftover PrismaUI
+    ; overlay AND any pending SkyMessage box first, so a stale "prompt open" flag
+    ; from a prior challenge that never closed can't shove a PrismaUI user onto
+    ; the Papyrus message box (Tier 2). ClosePromptSilent clears the open flag
+    ; and unfocuses the view synchronously, so the Tier-1 open below sees a clean
+    ; slate.
+    If SeverActionsNative.PrismaUI_IsBrawlPromptOpen()
+        SeverActionsNative.PrismaUI_CloseBrawlPrompt()
+        Debug.Trace("[SeverBrawl] ShowPlayerChallengePopup: cleared stale PrismaUI brawl prompt before reopening")
+    EndIf
+    If PendingPopupId != 0
+        SkyMessage.Delete(PendingPopupId)
+        PendingPopupId = 0
+    EndIf
+
+    ; Tier 1 — PrismaUI overlay. Availability is no longer gated on "not already
+    ; open" (we just cleared any stale prompt); only a genuine open failure
+    ; (another PrismaUI view holding focus, or a bridge error) drops through to
+    ; the SkyMessage fallback below.
+    If SeverActionsNative.PrismaUI_IsBrawlPromptAvailable()
         Int timeoutMs = (PendingChallengeExpiry * 1000) as Int
         If SeverActionsNative.PrismaUI_OpenBrawlPrompt(akChallenger, challengerName, timeoutMs)
             ; Choice arrives asynchronously via OnBrawlPromptChoice. No
             ; OnUpdate poll needed — the native bridge owns the timer and
             ; ModEvent dispatch.
+            OverlayRetryCount = 0
+            PendingOverlayChallenger = None
             Debug.Trace("[SeverBrawl] ShowPlayerChallengePopup: PrismaUI overlay opened")
             Return
         EndIf
+        ; Open failed — almost always because another PrismaUI view (e.g. the
+        ; SeverActions config menu this challenge was launched from) still holds
+        ; focus and hasn't finished closing. Defer and retry a few times so the
+        ; overlay wins once focus is released, instead of dropping to SkyMessage.
+        ; 6 x 0.25s = up to ~1.5s grace for the menu to close.
+        If OverlayRetryCount < 6
+            OverlayRetryCount += 1
+            PendingOverlayChallenger = akChallenger
+            RegisterForSingleUpdate(0.25)
+            Debug.Trace("[SeverBrawl] ShowPlayerChallengePopup: overlay suppressed (a view has focus); deferring retry " + OverlayRetryCount + "/6")
+            Return
+        EndIf
+        OverlayRetryCount = 0
+        PendingOverlayChallenger = None
+        Debug.Trace("[SeverBrawl] ShowPlayerChallengePopup: overlay retries exhausted - SkyMessage fallback")
     EndIf
 
     ; Tier 2 — SkyMessage fallback.
-    String body = challengerName + " squares up and challenges you to a brawl. Fists only — no weapons, no spells."
+    String body = challengerName + " squares up and challenges you to a brawl. Fists only - no weapons, no spells."
     Int boxId = SkyMessage.Show_NonBlocking(body, "Accept", "Decline")
     If boxId != 0
         PendingPopupId = boxId
@@ -240,7 +290,7 @@ Event OnBrawlPromptChoice(String asEventName, String asChoice, Float afNumArg, F
      strArg = "accept" or "decline". Dispatch to the existing Execute paths.}
     Actor challenger = akSender as Actor
     If !challenger
-        Debug.Trace("[SeverBrawl] OnBrawlPromptChoice: sender is not an Actor — ignoring")
+        Debug.Trace("[SeverBrawl] OnBrawlPromptChoice: sender is not an Actor - ignoring")
         Return
     EndIf
     Actor player = Game.GetPlayer()
@@ -257,6 +307,19 @@ Event OnUpdate()
     ; popup-poll loop so both can coexist. Cheap when no queue is pending
     ; (single FormListCount read).
     ProcessPendingRerecruit()
+
+    ; Pending PrismaUI-overlay retry — the menu that launched the challenge
+    ; needed a moment to release focus. Re-attempt the popup chain (preserving
+    ; the retry counter); it either opens the overlay, schedules another retry,
+    ; or finally falls to the SkyMessage box.
+    If PendingOverlayChallenger != None
+        Actor overlayChallenger = PendingOverlayChallenger as Actor
+        PendingOverlayChallenger = None
+        If overlayChallenger
+            ShowPlayerChallengePopup(overlayChallenger, true)
+        EndIf
+        Return
+    EndIf
 
     If PendingPopupId == 0
         Return
@@ -324,7 +387,7 @@ Function StartChallengeFollow(Actor akChallenger, Actor akTarget)
         akChallenger.EvaluatePackage()
         Debug.Trace("[SeverBrawl] Follow package applied to " + akChallenger.GetDisplayName())
     Else
-        Debug.Trace("[SeverBrawl] No follow package available — challenge will not actively trail target")
+        Debug.Trace("[SeverBrawl] No follow package available - challenge will not actively trail target")
     EndIf
 
     SeverActionsNative.Native_BrawlChallenge_Begin(akChallenger, akTarget, \
@@ -804,11 +867,11 @@ Event OnBrawlEnded(String eventName, String strArg, Float numArg, Form sender)
             ; Knockout — loser hit bleedout. They're on the ground catching
             ; their breath. Stage directions only; let the LLM finish the
             ; line in-voice.
-            narration = "*" + loser.GetDisplayName() + " drops to one knee, spitting blood, hands raised. The fight's over — they've been bested.*"
+            narration = "*" + loser.GetDisplayName() + " drops to one knee, spitting blood, hands raised. The fight's over - they've been bested.*"
         ElseIf reason == 2
             ; Forfeit — loser voluntarily gave up. Less battered, more
             ; pragmatic.
-            narration = "*" + loser.GetDisplayName() + " backs off with a hand raised, breathing hard. They've called it — " + winner.GetDisplayName() + " wins this one.*"
+            narration = "*" + loser.GetDisplayName() + " backs off with a hand raised, breathing hard. They've called it - " + winner.GetDisplayName() + " wins this one.*"
         EndIf
         If narration != ""
             SkyrimNetApi.DirectNarration(narration, loser, winner)

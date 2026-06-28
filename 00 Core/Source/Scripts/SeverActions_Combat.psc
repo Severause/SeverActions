@@ -137,7 +137,7 @@ Event OnForcedCombatEnded(String eventName, String strArg, Float numArg, Form se
     If !a
         Return
     EndIf
-    Debug.Trace("[SeverCombat] ForcedCombatEnded for " + a.GetDisplayName() + " — running FullCleanup")
+    Debug.Trace("[SeverCombat] ForcedCombatEnded for " + a.GetDisplayName() + " - running FullCleanup")
     FullCleanup(a)
 EndEvent
 
@@ -171,11 +171,11 @@ Function AttackTarget_Execute(Actor akAttacker, Actor akTarget)
     ; or ceasefire monitor — the next incidental hit would fire YieldBroken/
     ; CeasefireBroken mid-scripted-combat and leave dual-faction state.
     If StorageUtil.GetIntValue(akAttacker, "SeverCombat_WasSurrendered", 0) == 1 || SeverActionsNative.Ceasefire_IsMonitored(akAttacker) || SeverActionsNative.IsYieldMonitored(akAttacker)
-        Debug.Trace("[SeverCombat] AttackTarget: attacker " + akAttacker.GetDisplayName() + " was surrendered/ceasefire'd — running FullCleanup first")
+        Debug.Trace("[SeverCombat] AttackTarget: attacker " + akAttacker.GetDisplayName() + " was surrendered/ceasefire'd - running FullCleanup first")
         FullCleanup(akAttacker)
     EndIf
     If StorageUtil.GetIntValue(akTarget, "SeverCombat_WasSurrendered", 0) == 1 || SeverActionsNative.Ceasefire_IsMonitored(akTarget) || SeverActionsNative.IsYieldMonitored(akTarget)
-        Debug.Trace("[SeverCombat] AttackTarget: target " + akTarget.GetDisplayName() + " was surrendered/ceasefire'd — running FullCleanup first")
+        Debug.Trace("[SeverCombat] AttackTarget: target " + akTarget.GetDisplayName() + " was surrendered/ceasefire'd - running FullCleanup first")
         FullCleanup(akTarget)
     EndIf
 
@@ -313,7 +313,7 @@ Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
     ; Apply cooldown (prevents immediate re-attack action)
     ApplyCooldown(akActor1, akStoredTarget)
 
-    Debug.Trace("[SeverCombat] CeaseFire complete — group ceasefire active, indefinite until player attacks or NPC re-engages")
+    Debug.Trace("[SeverCombat] CeaseFire complete - group ceasefire active, indefinite until player attacks or NPC re-engages")
 EndFunction
 
 Bool Function CeaseFire_IsEligible(Actor akActor1, Actor akActor2)
@@ -748,7 +748,7 @@ Event OnCeasefireBroken(String eventName, String strArg, Float numArg, Form send
         Return
     EndIf
 
-    Debug.Trace("[SeverCombat] CeasefireBroken: " + akActor.GetDisplayName() + " — clearing prompt-side state")
+    Debug.Trace("[SeverCombat] CeasefireBroken: " + akActor.GetDisplayName() + " - clearing prompt-side state")
 
     ; Legacy keys (Phase 4 and earlier): clear if any old save still has them.
     ; Phase 5 onward, the C++ side owns the faction list + partner.
@@ -851,7 +851,7 @@ Function AssignYieldSlot(Actor akActor)
         i += 1
     EndWhile
 
-    Debug.Trace("[SeverCombat] WARNING: No free yield slots for " + akActor.GetDisplayName() + " — NPC may not persist across cells")
+    Debug.Trace("[SeverCombat] WARNING: No free yield slots for " + akActor.GetDisplayName() + " - NPC may not persist across cells")
 EndFunction
 
 Function ClearYieldSlot(Actor akActor)

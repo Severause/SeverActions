@@ -119,7 +119,14 @@ CORRECT (Aela on ⛔ list, Lydia is the subject):
 {% if npcUUID and npcUUID != 0 %}
 Generate a single believable daily life event for {{ npc.name }} living in {{ homeLocation }} while {{ player.name }} is away. Keep the summary under 750 characters.
 
-{% if previousEvent and previousEvent != "" %}
+{% set recentEvts = default(recentEvents, []) %}
+{% if length(recentEvts) > 0 %}
+RECENT EVENTS for {{ npc.name }} (oldest first, newest last) — do NOT repeat or closely mirror ANY of these. Vary the activity, the SETTING (if the last few were all at or near {{ homeLocation }}, take this one elsewhere in the hold), the cast of characters, the tone, and the sentence structure:
+{% for e in recentEvts %}
+- {{ e }}
+{% endfor %}
+If the recent events are all small home-bound errands (market, water's edge, the local inn), that is exactly the rut to break — pick a different category AND a different place this time.
+{% elif previousEvent and previousEvent != "" %}
 PREVIOUS EVENT (do NOT repeat or closely mirror this — vary the activity, setting, tone, and sentence structure):
 {{ previousEvent }}
 {% endif %}
@@ -181,13 +188,25 @@ Activity categories (rotate between these — don't repeat the same category as 
 - REST/REFLECTION: sleeping in late, sitting by the fire lost in thought, visiting a shrine to pray, writing in a journal, staring at the night sky, tending a garden
 - EMOTIONAL/PERSONAL: having nightmares about past battles, composing a letter they never send, reminiscing about travels with {{ player.name }}, visiting a spot that reminds them of someone, struggling with loneliness or boredom, celebrating a small personal victory
 
+BIGGER LIFE DEVELOPMENTS (RARE — at most about 1 in 6 events, and only when it fits the character):
+Most events are small daily life. But every so often give {{ npc.name }} something with real stakes — proof they have a life of their own beyond the player. Tell it in PAST tense as something that already happened and resolved, so they're back now and the player can still find them:
+- AWAY-WORK: took paid work that sent them out of town for a while — a Thieves Guild / Companions / mercenary job in another hold, guarding a caravan to a neighboring hold, a stint at a mine or mill, crewing a fishing boat, escorting a merchant. ("spent the better part of a week in Windhelm running a job, came back with coin and a limp.")
+- TROUBLE WITH THE LAW: got into a brawl and spent a night in the {{ holdName }} jail, talked their way out of a fine, ran afoul of a guard, quietly paid off a bounty.
+- RELATIONSHIP BEAT: made or lost a friend, a rivalry flared, a brief romance ran its course, reconnected with family, fell out with a neighbor over something real.
+- WINDFALL OR SETBACK: came into a chunk of coin, got robbed on the road, won (or lost) big at cards, lost a prized possession, was cheated in a deal and is sore about it.
+- FACTION / WORLD PULL: brushed up against the Guild, the Companions, a local cult, Stormcloak/Imperial recruiters, or some daedric oddity — a flirtation with a bigger thread, NOT a full quest or heroics.
+Keep these believable for THIS specific character (a timid cook doesn't run Guild jobs; a roguish type might). When a development has a real outcome, attach the matching consequence below (away-work or cards → gold_change; a brawl arrest → arrest/bounty; a robbery → negative gold_change). Never strand them somewhere — the framing is always "did this, now back."
+
 Personality and mood should shape HOW they do things:
 - Unhappy characters: brood, drink alone, pick fights, isolate themselves, snap at strangers, neglect their appearance
 - Happy characters: help neighbors, train enthusiastically, socialize freely, whistle while working, treat themselves to something nice
 - High rapport with {{ player.name }}: miss the player, do things that remind them of past adventures, keep the player's favorite drink stocked, tell stories about their travels together
 - Low rapport: focus entirely on their own life, avoid mentioning the player, may resent being left behind, build new independent routines
 
-Ground events in {{ homeLocation }} — prefer the daily rhythm locations from earlier when they fit, otherwise use whatever specific landmarks, shops, inns, roads, or local NPCs make sense for the character. Don't over-rely on the most famous landmark — the back streets, side roads, and quiet corners of a hold are just as legitimate as the headline tavern.
+LOCATION — range across {{ holdName }} hold, not just the doorstep of {{ homeLocation }}:
+- {{ homeLocation }} and the daily-rhythm spots above are the BASE, but {{ npc.name }} has legs and a life of their own. Roughly HALF the time, set the event somewhere ELSE in {{ holdName }} hold: a different town or village, an outlying farm or mill, a mine, a stretch of road or a bridge, a shrine, a fishery or dock, a wilderness camp, a neighboring settlement's market or inn.
+- Don't over-rely on the headline tavern or the one landmark right behind the house — that's the exact rut that makes every event feel the same. Back streets, side roads, outlying farms, and the quiet corners of the WIDER hold are all fair game.
+- Name real, specific places in {{ holdName }} hold where you can; otherwise a plausible unnamed spot (a roadside camp, a hillside shrine, a hunters' lean-to, a fishing jetty) is fine. Match the place to what the character would actually do there.
 
 {% if isAnimal %}
 Animal companion behavior:

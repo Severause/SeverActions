@@ -106,6 +106,7 @@ Function Initialize(Bool isFirstInit)
     ; SyncPluginConfig() — disabled: WebUI config clobbers PrismaUI/MCM settings on reload.
     ; Will revisit once SkyrimNet exposes a PluginConfig setter API for bidirectional sync.
     InitializeSurvivalSystem()
+    InitializeHearthCamp()
 
     ; Initialize diary viewer events (ModEvent registration)
     if LootSystem
@@ -148,7 +149,7 @@ EndFunction
 ; WebUI config callback — disabled while SyncPluginConfig is disabled.
 ; Event OnPluginConfigSaved(string eventName, string strArg, float numArg, Form sender)
 ;     If strArg == "SeverActions"
-;         Debug.Trace("[SeverActions] WebUI plugin config changed — re-syncing settings...")
+;         Debug.Trace("[SeverActions] WebUI plugin config changed - re-syncing settings...")
 ;         SyncPluginConfig()
 ;         Debug.Notification("SeverActions config updated from WebUI")
 ;     EndIf
@@ -395,9 +396,33 @@ Function InitializeSurvivalSystem()
     SeverActions_Survival survival = myQuest as SeverActions_Survival
     If survival
         survival.Maintenance()
-        Debug.Trace("[SeverActions] Survival System initialized — Enabled: " + survival.Enabled)
+        Debug.Trace("[SeverActions] Survival System initialized - Enabled: " + survival.Enabled)
     Else
         Debug.Trace("[SeverActions] Survival System not found (optional)")
+    EndIf
+EndFunction
+
+; =============================================================================
+; SEVER'S HEARTH CAMP — re-register listeners on every load
+; =============================================================================
+; Hearth's camp script (SeversHearth_Camp) is a Quest script, which does NOT
+; receive OnPlayerLoadGame — so its own RegisterCampEvents only ever runs once
+; via OnInit (when the quest first started). Any camp ModEvents added after that
+; (e.g. the player-placement Setup/Reposition events) never re-register on an
+; existing save, so the buttons/hotkey fire into a dead listener.
+;
+; This script is a ReferenceAlias, which DOES get OnPlayerLoadGame reliably, so
+; we soft-resolve the Hearth camp quest and re-run RegisterCampEvents here every
+; load. Idempotent (RegisterForModEvent dedups). No-op if Hearth isn't installed
+; — GetFormFromFile returns None and the cast yields None.
+Function InitializeHearthCamp()
+    ; SeversHearth quest is FE..BED800 at runtime → local 0x800 in SeversHearth.esp.
+    SeversHearth_Camp campScript = Game.GetFormFromFile(0x000800, "SeversHearth.esp") as SeversHearth_Camp
+    If campScript
+        campScript.RegisterCampEvents()
+        Debug.Trace("[SeverActions] Re-registered Sever's Hearth camp ModEvents")
+    Else
+        Debug.Trace("[SeverActions] Sever's Hearth not installed - camp re-register skipped")
     EndIf
 EndFunction
 
@@ -643,7 +668,7 @@ EndFunction
 
 Function SyncPluginConfig()
     If !SeverActionsNative.PluginConfig_IsAvailable()
-        Debug.Trace("[SeverActions] WebUI plugin config not available — using MCM/defaults")
+        Debug.Trace("[SeverActions] WebUI plugin config not available - using MCM/defaults")
         Return
     EndIf
 

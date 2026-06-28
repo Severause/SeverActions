@@ -1,0 +1,43 @@
+customCategory: enterprises
+name: PayArrears
+description: "Use when {{ player.name }} pays the back-wages they OWE this retainer (the speaker) — wages that went unpaid because {{ player.name }} couldn't afford them on a past settlement. The 'In the Player's Service' context will note the retainer is 'owed back-wages and growing resentful'. Paying clears the debt out of {{ player.name }}'s gold and restores the retainer's loyalty. Only call this when the retainer is actually owed money."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: PayArrears
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the retainer being paid the back-wages they're owed
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # has_arrears returns "" (nothing owed) or the owed amount string.
+      - decoratorName: "has_arrears"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ player.name }} paid {{ actor.name }} the back-wages they were owed"

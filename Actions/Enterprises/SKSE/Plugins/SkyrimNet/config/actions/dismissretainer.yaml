@@ -1,0 +1,43 @@
+customCategory: enterprises
+name: DismissRetainer
+description: "Use when {{ player.name }} ends this retainer's (the speaker's) employment — letting them go from the venture they run. They stop producing and go back to their normal life. Only call when {{ player.name }} clearly wants to dismiss them from their WORK; this is NOT for dismissing a combat follower. If they're still owed back-wages, consider paying those first — dismissing does not settle debts."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: DismissRetainer
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the retainer being let go from the player's service
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # retainer_status != "" means "is currently a retainer".
+      - decoratorName: "retainer_status"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} is no longer in {{ player.name }}'s service"

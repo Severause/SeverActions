@@ -47,8 +47,12 @@ Idle Property IdleGive Auto
 ; CONFIGURATION
 ; =============================================================================
 
-float Property SEARCH_RADIUS = 2000.0 Auto
-{Radius to search for workstations (game units; ~28 m).}
+float Property SEARCH_RADIUS = 4000.0 Auto
+{Radius to search for workstations (game units; ~57 m). Bumped from 2000 — a
+ cooking pot across a large inn, or a forge a courtyard away, sat just outside
+ the old radius and the action failed with "I can't find one". Paired with the
+ native FindNearbyWorkstation switch from single-cell to TES (loaded-grid) search
+ so exterior stations across a cell boundary are found too.}
 
 int Property CRAFT_PACKAGE_PRIORITY = 100 Auto
 {Priority for the workstation package override. Must outrank dialogue (50–80).}
@@ -395,7 +399,7 @@ Function _PlaceCommission()
 
     string etaPhrase = DescribeEta(etaDays)
     SeverActionsNativeExt.Native_Ledger_RecordEvent(deposit, true, "commission", akActor, "", "deposit: " + itemLabel, 0)
-    Debug.Notification("Commissioned " + itemLabel + " — " + deposit + " gold deposit paid, " + balanceDue + " gold due on pickup.")
+    Debug.Notification("Commissioned " + itemLabel + " - " + deposit + " gold deposit paid, " + balanceDue + " gold due on pickup.")
     SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " agreed to craft " + itemLabel + " for the player, ready " + etaPhrase + ". Took a " + deposit + " gold deposit; " + balanceDue + " gold is due when the player collects it.", akActor, player)
     _ClearCommPending()
 EndFunction
@@ -427,7 +431,7 @@ Function _CollectBalanceAndHandover()
     if balanceDue > 0
         if player.GetGoldAmount() < balanceDue
             Debug.Notification("You can't afford the " + balanceDue + " gold balance.")
-            SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " holds onto " + itemLabel + " — the player can't cover the " + balanceDue + " gold balance.", akActor, player)
+            SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " holds onto " + itemLabel + " - the player can't cover the " + balanceDue + " gold balance.", akActor, player)
             _ClearCommPending()
             return
         endif
@@ -461,7 +465,7 @@ Event OnCommissionPromptChoice(String asEventName, String asChoice, Float afAmou
     endif
     ; Guard a stale callback for a different in-flight smith.
     if m_commSmith && smith != m_commSmith
-        Debug.Trace("[SeverActions_Crafting] OnCommissionPromptChoice: sender mismatch — ignoring")
+        Debug.Trace("[SeverActions_Crafting] OnCommissionPromptChoice: sender mismatch - ignoring")
         return
     endif
 
@@ -663,7 +667,7 @@ Function CollectCommission_Internal(Actor akActor)
         endif
     endif
 
-    String choice = SkyMessage.Show(akActor.GetDisplayName() + "'s work is done — your " + itemName + " is ready. Pay the remaining " + balanceDue + " gold?", "Pay " + balanceDue + " gold", "Not now", getIndex = true)
+    String choice = SkyMessage.Show(akActor.GetDisplayName() + "'s work is done - your " + itemName + " is ready. Pay the remaining " + balanceDue + " gold?", "Pay " + balanceDue + " gold", "Not now", getIndex = true)
     if choice == "0"
         _CollectBalanceAndHandover()
     else
@@ -725,7 +729,7 @@ Event OnCraftPhaseChange(string eventName, string strArg, float numArg, Form sen
     int handle = numArg as Int
     Actor akActor = sender as Actor
     if !akActor
-        Debug.Trace("SeverActions_Crafting: PhaseChange handle=" + handle + " phase='" + strArg + "' — null sender, skipping")
+        Debug.Trace("SeverActions_Crafting: PhaseChange handle=" + handle + " phase='" + strArg + "' - null sender, skipping")
         return
     endif
 

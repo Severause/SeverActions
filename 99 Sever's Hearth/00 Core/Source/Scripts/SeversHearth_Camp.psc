@@ -131,6 +131,14 @@ Float Property FireBlockRadius = 50.0 Auto Hidden
 {A tree within this radius of the fire position blocks the camp.
  Smaller than tent radius — the fire footprint is tighter.}
 
+; ── Player-driven camp placement (live ghost preview) ───────────────────
+; Transient positioning state. Not meaningful across saves — OnPlayerLoadGame
+; resets it (the native ghost refs don't survive a reload).
+Int PlacementMode = 0                ; 0 = idle, 1 = positioning the ghost
+Float PlacementRotateOffset = 0.0    ; Q/E rotation dialed on top of facing (deg)
+Int PlacementConfirmKey = 28         ; resolved Activate key, or Enter on collision
+Float PlacementBannerCooldown = 0.0  ; seconds until the next banner reminder
+
 ; ── Lifecycle: register for the SeversHearth_CampTick ModEvent that
 ; CampSurvivalTick.h fires from the InputEvent heartbeat. Without this
 ; the heartbeat fires harmlessly and no restoration happens. ────────────
@@ -150,6 +158,14 @@ Event OnPlayerLoadGame()
         _PinCampRestStop()
         Debug.Trace("[SeversHearth] OnPlayerLoadGame: re-pinned active camp")
     EndIf
+    ; A save taken mid-placement loads back with the transient ghost gone
+    ; (native preview state resets on reload). Tear down the dangling Papyrus
+    ; side so controls/keys/update don't stay stuck.
+    If PlacementMode != 0
+        PlacementMode = 0
+        _EndPlacementInput()
+        UnregisterForUpdate()
+    EndIf
 EndEvent
 
 Function RegisterCampEvents()
@@ -162,6 +178,10 @@ Function RegisterCampEvents()
     RegisterForModEvent("SeverActions_PrismaBreakCamp",       "OnPrismaBreakCamp")
     RegisterForModEvent("SeverActions_PrismaTravelToCamp",    "OnPrismaTravelToCamp")
     RegisterForModEvent("SeverActions_PrismaToggleCampMarker","OnPrismaToggleCampMarker")
+    ; Player-driven placement: the Survival page buttons + the MCM hotkey both
+    ; fire these (the hotkey routes through SeverActions, decoupled from this ESP).
+    RegisterForModEvent("SeverActions_PrismaSetupCamp",       "OnPrismaSetupCamp")
+    RegisterForModEvent("SeverActions_PrismaRepositionCamp",  "OnPrismaRepositionCamp")
     ; Player-directed follower commands (recruit / follow / wait) — release
     ; the actor from the camp sandbox so they respond to the call instead
     ; of staying pinned to the fire.
@@ -217,7 +237,7 @@ Function MarkCampOnMap()
      give it a location-aware name. No-op if CampMapMarker isn't filled
      (CK setup pending) or no camp is active.}
     If !CampMapMarker
-        Debug.Trace("[SeversHearth] MarkCampOnMap: CampMapMarker property unfilled — see script docs")
+        Debug.Trace("[SeversHearth] MarkCampOnMap: CampMapMarker property unfilled - see script docs")
         Debug.Notification("Map marker unavailable: CampMapMarker not configured in CK")
         Return
     EndIf
@@ -364,6 +384,22 @@ Function EstablishCamp(Actor akActor)
     Actor PlayerRef = Game.GetPlayer()
     Float angleZ = PlayerRef.GetAngleZ()
 
+    ; Wilderness camps only — refuse indoor placement. The clearance peek below
+    ; only tests for tree crowding and explicitly passes inside interiors, so
+    ; this guard has to come first.
+    Cell playerCell = PlayerRef.GetParentCell()
+    If playerCell && playerCell.IsInterior()
+        If akActor != None && akActor != PlayerRef
+            String indoorNarration = "{{ npc.name }} glances around the enclosed space, " + \
+                                     "then shakes their head at {{ player.name }}. " + \
+                                     "'We can't make camp indoors - we'd need open ground outside.'"
+            SkyrimNetApi.DirectNarration(indoorNarration, akActor, PlayerRef)
+        Else
+            Debug.Notification("You can't pitch a camp indoors - find open ground outside.")
+        EndIf
+        Return
+    EndIf
+
     ; Pre-flight clearance peek — runs the same tree-iteration test the
     ; spawn function uses, but does NOT touch cosave state. Lets us
     ; narrate a rejection cleanly without rolling back an Establish.
@@ -371,11 +407,11 @@ Function EstablishCamp(Actor akActor)
         If akActor != None && akActor != PlayerRef
             String narration = "{{ npc.name }} looks around at the trees pressing in, " + \
                                "then shakes their head at {{ player.name }}. " + \
-                               "'Not here — the ground's too crowded for the tents. " + \
+                               "'Not here - the ground's too crowded for the tents. " + \
                                "We'd best find more open ground.'"
             SkyrimNetApi.DirectNarration(narration, akActor, PlayerRef)
         Else
-            Debug.Notification("Too crowded here — find a more open spot.")
+            Debug.Notification("Too crowded here - find a more open spot.")
         EndIf
         Return
     EndIf
@@ -450,6 +486,185 @@ Function BreakCamp(Actor akActor)
     EndIf
     Actor PlayerRef = Game.GetPlayer()
     _BreakCampFlow(akActor, PlayerRef)
+EndFunction
+
+; ============================================================================
+; Player-driven camp placement — live ghost preview
+;
+; The player triggers setup (MCM hotkey or the PrismaUI Survival button). A
+; solid ghost of the WHOLE camp projects a few meters ahead of them and follows
+; their view; Q/E rotate the layout, Enter/Activate confirms (the ghost BECOMES
+; the camp — no re-spawn), Tab cancels. Reposition first tears the current camp
+; down (the stash chest + its loot are preserved) so the ghost replaces it.
+;
+; Driven entirely Papyrus-side: a RegisterForSingleUpdate tick calls the native
+; UpdatePreview; RegisterForKey feeds OnKeyDown; DisablePlayerControls blocks
+; menus/activate/fighting so the control keys don't double-fire while leaving
+; movement + looking on for aiming.
+; ============================================================================
+
+Event OnPrismaSetupCamp(string eventName, string strArg, float numArg, Form sender)
+    EnterPlacementMode(False)
+EndEvent
+
+Event OnPrismaRepositionCamp(string eventName, string strArg, float numArg, Form sender)
+    EnterPlacementMode(True)
+EndEvent
+
+Function EnterPlacementMode(Bool reposition)
+    {Begin positioning the camp ghost. reposition=true tears the current camp
+     down first (chest preserved); false requires no camp to already exist.}
+    If PlacementMode != 0
+        Return                       ; already positioning
+    EndIf
+    Actor PlayerRef = Game.GetPlayer()
+    If !PlayerRef
+        Return
+    EndIf
+
+    ; Wilderness camps only — block indoor placement (covers Set Up Camp and
+    ; Reposition, since both route through here).
+    Cell playerCell = PlayerRef.GetParentCell()
+    If playerCell && playerCell.IsInterior()
+        Debug.Notification("You can't pitch a camp indoors - find open ground outside.")
+        Return
+    EndIf
+
+    If reposition
+        If !Native_Camp_IsActive()
+            Debug.Notification("No camp to reposition. Set one up first.")
+            Return
+        EndIf
+        _QuietBreakForReposition()
+    ElseIf Native_Camp_IsActive()
+        Debug.Notification("You already have a camp - break or reposition it.")
+        Return
+    EndIf
+
+    RegisterCampEvents()             ; refresh bindings on older saves
+
+    If !Native_Camp_StartPreview(TentSideOffset)
+        Debug.Notification("Can't start camp placement here.")
+        Return
+    EndIf
+
+    PlacementMode = 1
+    PlacementRotateOffset = 0.0
+    PlacementBannerCooldown = 0.0
+    _BeginPlacementInput()
+    _ShowPlacementBanner()
+    RegisterForSingleUpdate(0.1)
+EndFunction
+
+Event OnUpdate()
+    If PlacementMode == 0
+        Return
+    EndIf
+    Native_Camp_UpdatePreview(PlacementRotateOffset)
+    PlacementBannerCooldown -= 0.1
+    If PlacementBannerCooldown <= 0.0
+        _ShowPlacementBanner()
+    EndIf
+    RegisterForSingleUpdate(0.1)
+EndEvent
+
+Event OnKeyDown(Int keyCode)
+    If PlacementMode == 0
+        Return
+    EndIf
+    If keyCode == 16                 ; Q — rotate left
+        PlacementRotateOffset -= 15.0
+        Native_Camp_UpdatePreview(PlacementRotateOffset)
+    ElseIf keyCode == 18             ; E — rotate right
+        PlacementRotateOffset += 15.0
+        Native_Camp_UpdatePreview(PlacementRotateOffset)
+    ElseIf keyCode == 15             ; Tab — cancel
+        CancelPlacement()
+    ElseIf keyCode == 28 || keyCode == PlacementConfirmKey   ; Enter / Activate — confirm
+        ConfirmPlacement()
+    EndIf
+EndEvent
+
+Function ConfirmPlacement()
+    Int placed = Native_Camp_CommitPreview()
+    _EndPlacementMode()
+    If placed > 0
+        _FinishCommit(Game.GetPlayer())
+        Debug.Notification("Camp established (" + placed + " structure" + PluralS(placed) + ").")
+    Else
+        Debug.Notification("Camp placement failed.")
+    EndIf
+EndFunction
+
+Function CancelPlacement()
+    Native_Camp_CancelPreview()
+    _EndPlacementMode()
+    Debug.Notification("Camp placement cancelled.")
+EndFunction
+
+; Post-commit bookkeeping — mirrors the tail of _EstablishCampFlow (minus the
+; cinematic fade / single-follower sandbox; the fan-out covers all teammates).
+Function _FinishCommit(Actor PlayerRef)
+    _FanOutSandboxToTeammates(PlayerRef, 1000.0)
+    Native_Camp_SetPhase(2)          ; CampPhase::Active
+    _PinCampRestStop()
+    Native_Camp_ForceTick()
+    MarkCampOnMap()
+    _BindCampLocationToMarker()
+    Native_Camp_KickThreatScan()
+EndFunction
+
+; Quiet teardown used by reposition: stop the tick, clear the sandbox + map +
+; location binding, despawn the structures (native Break preserves the stash
+; chest), and clear the SA rest-stop — all with no fade/sound so the new ghost
+; replaces the old camp immediately.
+Function _QuietBreakForReposition()
+    Native_Camp_SetPhase(3)          ; CampPhase::Breaking — stop the survival tick
+    _ClearCampSandbox()
+    UnmarkCampOnMap()
+    _UnbindCampLocation()
+    Native_Camp_DespawnPlacedRefs()
+    Native_Camp_Break()
+    _ClearCampRestStop()
+EndFunction
+
+Function _BeginPlacementInput()
+    ; Resolve the Activate key for confirm; fall back to Enter (28) when it
+    ; collides with a control key (Q/E/Tab) — which it does on the default
+    ; E binding. Enter is always a confirm regardless.
+    PlacementConfirmKey = Input.GetMappedKey("Activate")
+    If PlacementConfirmKey == 16 || PlacementConfirmKey == 18 || PlacementConfirmKey == 15 || PlacementConfirmKey <= 0
+        PlacementConfirmKey = 28
+    EndIf
+    RegisterForKey(16)               ; Q — rotate left
+    RegisterForKey(18)               ; E — rotate right
+    RegisterForKey(15)               ; Tab — cancel
+    RegisterForKey(28)               ; Enter — confirm
+    RegisterForKey(PlacementConfirmKey)
+    ; movement=on, fighting=off, camSwitch=on, looking=on, sneaking=on,
+    ; menu=off, activate=off, journalTabs=off — aim freely, no menus/swings.
+    Game.DisablePlayerControls(False, True, False, False, False, True, True, True)
+EndFunction
+
+Function _EndPlacementInput()
+    UnregisterForKey(16)
+    UnregisterForKey(18)
+    UnregisterForKey(15)
+    UnregisterForKey(28)
+    UnregisterForKey(PlacementConfirmKey)
+    Game.EnablePlayerControls()
+EndFunction
+
+Function _EndPlacementMode()
+    PlacementMode = 0
+    PlacementRotateOffset = 0.0
+    _EndPlacementInput()
+    UnregisterForUpdate()
+EndFunction
+
+Function _ShowPlacementBanner()
+    Debug.Notification("Camp placement - aim with your view, Q/E rotate, Enter/Activate confirms, Tab cancels")
+    PlacementBannerCooldown = 3.0
 EndFunction
 
 ; ============================================================================
@@ -726,7 +941,7 @@ Function _ApplyCampSandbox(Actor occupant)
     ; The prior version applied the override before the capacity check, so
     ; over-cap followers got a permanent stuck package on BreakCamp.
     If SandboxedActorCount >= SandboxedActorTracking.Length
-        Debug.Trace("[SeversHearth] Sandbox capacity reached (" + SandboxedActorCount + ") — skipping " + occupant)
+        Debug.Trace("[SeversHearth] Sandbox capacity reached (" + SandboxedActorCount + ") - skipping " + occupant)
         Return
     EndIf
 
@@ -837,7 +1052,7 @@ Function _FanOutSandboxToTeammates(Actor playerRef, Float maxDistance)
     ; root cause is almost always an unfilled CampSandboxPackage property in
     ; the SeversHearth quest. Surfaces ONCE per fan-out (not per follower).
     If !CampSandboxPackage
-        Debug.Trace("[SeversHearth] ERROR: CampSandboxPackage property is None — fix the SeversHearth quest in CK")
+        Debug.Trace("[SeversHearth] ERROR: CampSandboxPackage property is None - fix the SeversHearth quest in CK")
         Debug.Notification("Camp sandbox unavailable: CampSandboxPackage missing")
         Return
     EndIf
@@ -1050,7 +1265,7 @@ Function _PinCampRestStop()
 
     ; Survival-page badge — the occupant count is (sandboxed followers + 1
     ; for the player). Location uses the bare location name (no "Camp near"
-    ; prefix) so the badge reads "🏕 At Camp · N resting · Whiterun".
+    ; prefix) so the badge reads "At Camp - N resting - Whiterun".
     Int occupants = SandboxedActorCount + 1
     SeverActionsNative.PrismaUI_SetCampStatus(true, loc, occupants)
     ; Seed meta immediately so the Survival page detail section has real
@@ -1167,3 +1382,16 @@ Bool Function Native_Camp_IsClearForCamp(Float angleZ, Float fireBlockRadius, Fl
 ; fan-out to populate every nearby follower regardless of which follower
 ; framework (NFF / AFT / UFO / vanilla) manages them.
 Actor[] Function Native_Camp_FindNearbyTeammates(Float radius) Global Native
+
+; ── Player-driven placement preview (CampPlacement.h) ──────────────────
+; StartPreview spawns the full camp as a live, solid ghost projected ahead of
+; the player; UpdatePreview re-projects + re-ground-snaps it each tick (the
+; rotateOffset is the player's Q/E rotation on top of their facing);
+; CommitPreview ADOPTS those exact refs as the camp (no re-spawn), preserving
+; the stash chest, and returns the structure count; CancelPreview deletes the
+; ghost; IsPreviewing reports whether one is currently up.
+Bool Function Native_Camp_StartPreview(Float tentSideOffset) Global Native
+Function Native_Camp_UpdatePreview(Float rotateOffsetDeg) Global Native
+Int Function Native_Camp_CommitPreview() Global Native
+Function Native_Camp_CancelPreview() Global Native
+Bool Function Native_Camp_IsPreviewing() Global Native

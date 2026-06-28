@@ -1,0 +1,23 @@
+customCategory: enterprises
+name: ThugStandDown
+description: "Use ONLY when you are one of the hired thugs confronting {{ player.name }} in an ambush, and the exchange has given you a real reason to back off - they have paid you off, intimidated you, convinced you the job is not worth your neck, or talked you down. Calling this lowers everyone's weapons and you all leave {{ player.name }} unharmed. Someone the player wronged paid you to do this - you owe them nothing if the price or the risk no longer adds up. Do NOT call this if you still mean to fight, and never out of an ordinary conversation - it ONLY resolves the ambush peacefully."
+questEditorId: SeverActions
+scriptName: SeverActions_Travel
+executionFunctionName: ThugStandDown_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the thug calling off the ambush
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      # is_ambush_thug returns "1" only for actors in a live ambush standoff.
+      # Custom decorators are string-compared, so gate on empty vs non-empty.
+      - decoratorName: "is_ambush_thug"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} and the other thugs back down and leave {{ player.name }} be"

@@ -1,5 +1,66 @@
 # SeverActions Changelog
 
+## v3.1.0 — Enterprises: put your NPCs to work, courier letters, player-placed camp & a batch of fixes
+
+A big release built around a brand-new system. **Enterprises** lets you assign any tracked NPC to work for you while you're off adventuring — a trade post, a mine, an alchemy lab, a fence laundering your spoils — running a small off-screen economy that produces gold and real goods, with payroll as a real obligation so stiffing people has teeth. Because it's SkyrimNet-aware, the worker *knows* they work for you and can bring it up, negotiate, or complain in conversation. Also in this release: livelier, less-repetitive companions (richer off-screen lives and follower banter), **settings that persist across saves and updates**, physical courier-delivered letters, a player-driven camp you can place and preview yourself, Devious Devices and Diary of Mine / Paradise Halls outfit compatibility, and a stack of stability fixes. Save-compatible — existing saves gain the Enterprises cosave cleanly with no migration.
+
+### Enterprises (new)
+
+The core loop: assign a retainer to a job at a location under an arrangement; each in-game week their work settles off-screen into a payout you collect when you meet them or from the new money page.
+
+- **Hire any NPC as a retainer.** Companions or ordinary townsfolk — agree a job in conversation (the LLM-driven `HireRetainer`) or assign one from the PrismaUI Actions page. Jobs include trade, mining, smithing, alchemy, farming, fencing, **guarding, and lumberjacking**, each with its own curated rewards. Home-less NPCs get a work-hours-only sandbox so they don't need a house first.
+- **Three ways to be paid.** **Employed** (you pay a weekly wage), **Partnership** (you split the take), or **Tribute** (they pay *you* a cut). Each settles weekly into escrow as **real gold and real items** you Collect — and the retainer's own earnings become **actual coin in their inventory**, so off-screen labor visibly grows their wealth.
+- **Payroll has teeth.** Miss wages and a retainer slides into arrears, then a two-week grace period, then **deserts** — taking some of your escrow on the way out. Pay back-wages to restore good standing (and loyalty). It's a self-balancing economy, not free money.
+- **Illicit work and consequences.** A **fence** launders your spoils for profit, but accrues heat — at the threshold it becomes a real bounty and a guard may **arrest and jail** them (a guard walks up if you're nearby; otherwise they're hauled off-screen). You can **bail them out** early, and the arrest is something the world and the fence remember.
+- **Grow your ventures.** Invest gold to raise a venture's **tier** for bigger output, and watch retainers ask for **raises** as their operation grows — **grant**, refuse, or **negotiate a meeting-in-the-middle**. Refuse too often and a resentful retainer may start quietly skimming.
+- **They're alive about it.** Retainers know they work for you and can talk about the job, their pay, and their grievances. Significant moments (a missed payday, a desertion, a bail-out, a jail term served) become real memories and tavern gossip, and each retainer keeps a weekly **work log**. Occasional **setback weeks** and incidents keep the numbers from being too tidy.
+- **Cross someone badly enough and it follows you.** A retainer wronged hard enough on the way out can leave with a **grudge** — and later send **hired thugs** to ambush you on the road. A tense standoff plays out (with dialogue options) before it comes to blows.
+- **The Enterprises money page.** A new top-level PrismaUI page: a board of your retainers grouped by job with per-column and top-line totals (income, payroll, net, troubled, jailed, heat), the full Steward's Ledger (Summary · Bounty · Estate · Debts · Travel · Commissions), and per-card actions — **Collect, Pay wages, Bail, Dismiss, Collect-all**, plus an **Assign** picker and a **Manage** panel to reassign job, change the arrangement, or adjust wage/cut. Each card also has a **Log** of that retainer's history.
+
+### Courier letters (new)
+
+- **Retainers can write to you.** Instead of only surfacing in dialogue, a retainer's news (a raise demand, a situation update) can arrive as a **physical letter** hand-delivered by a courier who walks up to you and hands it over. Read it in a new **parchment popup**. The letters use real in-world book forms.
+
+### Camp
+
+- **Place your own camp, with a live preview.** You can now set up a Sever's Hearth camp yourself — a translucent **ghost preview** of the whole layout follows your aim so you can see exactly how it'll sit before committing. **Rotate** it with Q/E, confirm or cancel, and **reposition** an already-placed camp. Available from a configurable **hotkey** and from new **Set Up Camp / Reposition / Break Camp** buttons on the Survival page.
+- **Camps stay outdoors.** A camp can no longer be pitched inside a building — both the manual Set Up Camp flow and an NPC's establish-camp action ask for open ground outside.
+
+### Survival
+
+- **Regen penalties work as intended.** Follower hunger / fatigue / cold were collapsing every severity tier into "no regen at all." They now scale properly — roughly half regen when mild, a quarter when moderate, a trickle at the worst — and regen is never fully stopped, only heavily reduced.
+- **Turning survival off clears everyone.** Disabling the system used to leave penalties stuck on followers who weren't standing next to you; it now clears every follower, in your cell or not.
+- **Per-follower tracking toggle.** Each follower on the Survival page has a Tracked / Paused button to opt individuals in or out, and the matching MCM toggles grey out while the whole system is off.
+- **Survival page tidy-up.** Set Up Camp and the active-camp controls (Send to camp · Mark on Map · Reposition · Break Camp) now sit in the Camp Plan panel instead of off-screen at the bottom, and the per-follower toggle no longer overlaps the follower's row.
+
+### Outfits
+
+- **Full Devious Devices compatibility.** Outfit strip/undress operations now skip locked Devious Devices entirely, so a rendered device can't go invisible while its locked token stays on — DD-locked gear is left exactly as DD intends across every outfit path.
+- **Outfit presets stick on managed non-followers.** An NPC you've given an outfit preset keeps it even after they're dismissed — for example a retainer who's now guarding another follower. They no longer revert to their default outfit on a cell change just because they're not an active follower; any "Managed" actor keeps their look by virtue of being managed.
+- **Bondage / enslavement-mod compatibility (Diary of Mine, Paradise Halls).** While an NPC is captured, enslaved, or tied up by one of those mods, the outfit lock now stands aside — it won't fight the strip, the restraints, or the weapon swaps — and resumes managing their outfit once they're freed. Completely inert if you don't run those mods; toggleable on the Outfits MCM page.
+
+### Companion life — livelier and less repetitive
+
+- **Off-screen lives that range across the whole hold.** Dismissed companions no longer loop the same few beats by their front door. Their off-screen events now spread across the entire hold — other towns and villages, farms, mills, mines, roads, shrines, docks, the wilderness — and they remember their recent events so they stop repeating themselves. Every so often something with real stakes happens: they take paid work in another hold (a Guild or mercenary job, a caravan guard, a stint at a mill or on a boat), spend a night in the hold jail after a brawl, come into coin or get robbed, or have a falling-out — an actual life of their own, always wrapped up so you can still find them where you left them.
+- **Follower banter that doesn't get stuck.** The party-banter director now keeps a real memory of recent topics, speakers, and pairs, so companions stop circling the same handful of talking points and rotate who opens, who they talk to, and what about.
+
+### Settings
+
+- **Your settings now follow you across saves and updates.** SeverActions preferences used to live only inside each save, so a new character meant redoing everything — and a handful of options reset on every launch. They're now also kept in a global file *outside* the save and *outside* the mod folder (`Documents\My Games\Skyrim Special Edition\SKSE\SeverActions_Settings.json`), so anything you change on the Settings page persists across new games and mod updates. Genuinely per-character details (a specific follower's combat style, outfit lock, survival opt-in, etc.) stay per-save, as they should.
+
+### Fixes & stability
+
+- **Brawls no longer kill NPCs.** A temporary essential status is layered on for the duration of a brawl, closing a gap where a third party (a stray spell, a custom-AI follower) could land the killing blow on someone who should only have been knocked down. The loser is also healed up before that status is cleared at the end, so they can't drop dead the instant the brawl resolves. Restored cleanly either way.
+- **Brawl challenge popup shows correctly.** When an NPC challenges you to a brawl, you now reliably get the PrismaUI overlay card instead of occasionally getting the plain Papyrus message box — even when the challenge was triggered from a menu. (Also fixed a garbled character in the fallback prompt's text.)
+- **Right NPC, every time (PrismaUI).** Follower and home actions from the UI now resolve the target by its form, not its display name, so duplicate-named NPCs (two "Bandit"s, two guards) no longer cause the action to land on the wrong one.
+- **VR summon crash fixed.** Summoning a follower to you while you were using furniture could crash on VR; the teleport now ejects from furniture and retries safely.
+- **Settings that stick.** The **auto-stand furniture** distance now persists and reloads correctly, and the **mannequin-preview** toggle is honored on a fresh game load instead of resetting.
+- **Actions-page crash fixed.** Running the recurring-debt action from the PrismaUI Actions page could reliably crash; fixed.
+- **Quieter banter.** Removed the debug notifications that popped in the top-right when follower banter was about to fire — banter now arrives unannounced, as intended.
+- **NPCs reliably find a workstation.** Asking a follower to cook or smith would often fail with "I can't find one" even with a pot or forge nearby — the search only checked your immediate cell within a short radius. It now spans the loaded area around you and reaches farther, so the inn kitchen across the room and the forge across the courtyard both count.
+- **Garbled in-game text cleaned up (mojibake).** Audited every Papyrus display string and removed the non-ASCII characters the compiler was baking into the game as garbled text (an em-dash showing up as `â€"`) — notifications, MCM labels, follower narrations, and the camp-placement banner all read cleanly now.
+- Plus a quest-item retrieval fix and a quest-awareness prompt-availability fix.
+
 ## v3.0.7 — Mannequin fidelity, transparent-viewport fallback, outfit-menu crash fix & camp reliability
 
 Another pass on the Outfits-mannequin preview — much closer skin, makeup, and warpaint rendering — a new transparent-viewport fallback for stubborn load orders, a fix for an outfit-menu crash on common NPCs, and a reliability fix for Sever's Hearth's "go to camp." Save-compatible; no migration.

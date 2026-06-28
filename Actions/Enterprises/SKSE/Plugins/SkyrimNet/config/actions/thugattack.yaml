@@ -1,0 +1,22 @@
+customCategory: enterprises
+name: ThugAttack
+description: "Use when you are one of the hired thugs confronting {{ player.name }} in an ambush and the standoff has TURNED to violence - {{ player.name }} has refused to settle, threatened you, mocked the one who hired you, drawn a weapon, or struck first. Calling this makes you and the others fall on {{ player.name }} and attack. IMPORTANT: do NOT call this on your opening turn or before {{ player.name }} has actually answered your demand - you stopped them to TALK first and give them the chance to make it easy. Hold and wait for their reply; only attack once they've clearly refused or made a hostile move. Prefer ThugStandDown if they pay you, frighten you, or talk you out of it."
+questEditorId: SeverActions
+scriptName: SeverActions_Travel
+executionFunctionName: ThugAttack_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the thug opening the attack
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      # is_ambush_thug returns "1" only for actors in a live ambush standoff.
+      - decoratorName: "is_ambush_thug"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} and the other thugs attack {{ player.name }}"

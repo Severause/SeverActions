@@ -349,7 +349,7 @@ Function ApplyTheftBounty(Actor akActor, String displayName)
     SeverActionsNativeExt.Native_Bounty_Mod(crimeFaction, stolenValue)
     SeverActionsNativeExt.Native_Bounty_AddEvent(crimeFaction, stolenValue, "theft", "")
     Debug.Notification("Bounty: +" + stolenValue + " gold (theft witnessed)")
-    SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " was seen taking owned goods from " + displayName + " — a " + stolenValue + " gold tracked bounty was added.", akActor, Game.GetPlayer())
+    SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " was seen taking owned goods from " + displayName + " - a " + stolenValue + " gold tracked bounty was added.", akActor, Game.GetPlayer())
 EndFunction
 
 Function LootRef_Helper(Actor akActor, ObjectReference akTarget, Idle anim, Float animDuration, String displayName, String kind, String verb, String itemsToTake)
@@ -479,6 +479,32 @@ Function GiveItem_Execute(Actor akActor, Actor akTarget, String itemName, Int ai
             SkyrimNetApi.RegisterEvent("item_give_failed", akActor.GetDisplayName() + " doesn't have " + itemName + " to give", akActor, akTarget)
         endif
     endif
+EndFunction
+
+Function GiveItemForm_Execute(Actor akActor, Actor akTarget, Form akItem, Int aiCount = 1)
+{Hand a specific item FORM from akActor to akTarget with the give animation.
+ Like GiveItem_Execute but resolves by form, not name — needed for items whose
+ runtime display name differs from their base record (e.g. courier letters that
+ are retitled at delivery). No walk-up (caller positions the giver), no auto-debt
+ (letters/gifts must not grow a tab).}
+    if !akActor || !akTarget || !akItem
+        return
+    endif
+    if aiCount < 1
+        aiCount = 1
+    endif
+    if IdleGive
+        PlayAnimationAndWait(akActor, IdleGive, 2.0)
+    endif
+    Int available = akActor.GetItemCount(akItem)
+    Int transferred = aiCount
+    if transferred > available
+        transferred = available
+    endif
+    if transferred > 0
+        akActor.RemoveItem(akItem, transferred, false, akTarget)
+    endif
+    ResetToDefaultIdle(akActor)
 EndFunction
 
 ; =============================================================================
@@ -1183,13 +1209,13 @@ naturally first (e.g. "What shall I read?") and the player drives the conversati
     ; a specific entry to read aloud.
     if StringUtil.Find(actualBookName, "'s Diary") >= 0
         if SeverActionsNative.PrismaUI_IsAvailable()
-            Debug.Trace("[SeverActions_Loot] ReadBook: Diary detected — opening diary viewer for '" + actualBookName + "'")
+            Debug.Trace("[SeverActions_Loot] ReadBook: Diary detected - opening diary viewer for '" + actualBookName + "'")
             SeverActionsNative.PrismaUI_OpenDiaryViewerForBook(bookForm, akActor)
             ; Store reader reference so the ModEvent handler can use it
             BookReader = akActor
             return
         endif
-        Debug.Trace("[SeverActions_Loot] ReadBook: Diary detected but PrismaUI not available — falling back to normal read")
+        Debug.Trace("[SeverActions_Loot] ReadBook: Diary detected but PrismaUI not available - falling back to normal read")
     endif
 
     ; Extract the full text from the book
@@ -1245,7 +1271,7 @@ naturally first (e.g. "What shall I read?") and the player drives the conversati
         openNarration = "*" + npcName + " opens '" + actualBookName + "' and begins reading through it quietly.*"
     else
         ; Verbatim mode — NPC prepares to read aloud, worded to prevent LLM from reading ahead
-        openNarration = "*" + npcName + " pulls out '" + actualBookName + "' and begins searching for the right page. They haven't started reading yet — do not read or recite any of the book's contents until the full text is available.*"
+        openNarration = "*" + npcName + " pulls out '" + actualBookName + "' and begins searching for the right page. They haven't started reading yet - do not read or recite any of the book's contents until the full text is available.*"
     endif
     SkyrimNetApi.DirectNarration(openNarration, akActor, None)
 
@@ -1288,7 +1314,7 @@ Event OnDiaryEntrySelected(string eventName, string strArg, float numArg, Form s
     String title = SeverActionsNative.PrismaUI_GetSelectedDiaryTitle()
 
     if content == ""
-        Debug.Trace("[SeverActions_Loot] Diary: Empty content — aborting")
+        Debug.Trace("[SeverActions_Loot] Diary: Empty content - aborting")
         BookReader = None
         return
     endif
@@ -1306,7 +1332,7 @@ Event OnDiaryEntrySelected(string eventName, string strArg, float numArg, Form s
     endif
 
     String npcName = reader.GetDisplayName()
-    Debug.Trace("[SeverActions_Loot] Diary: Starting reading — '" + title + "' by " + npcName)
+    Debug.Trace("[SeverActions_Loot] Diary: Starting reading - '" + title + "' by " + npcName)
 
     ; Set book reading state — title/text source-of-truth is StorageUtil (below).
     BookReader = reader

@@ -144,6 +144,22 @@ Includes the debt-context prompt so NPCs are aware of debts they're involved in.
                             </typeDescriptor>
                         </plugin>
 
+                        <plugin name="Enterprises Actions">
+                            <description>Enterprises — put NPCs to work running off-screen ventures for you:
+• Hire Retainer - an NPC agrees to run a mine, shop, alchemy bench, farm, fencing operation, mercenary contract, or escort route
+• Collect From Retainer - take the gold and goods they've produced
+• Pay Arrears - settle back-wages you owe them (restores loyalty)
+• Dismiss Retainer - end their service
+
+Retainers produce gold and goods every in-game week, draw a weekly wage (or split a cut), gain loyalty when paid and desert when stiffed. Fences move stolen goods and can be arrested + jailed. The retainer simulation and the awareness decorators are native (SeverActions DLL); the "In the Player's Service" bio comes with Core Awareness Prompts.</description>
+                            <files>
+                                <folder source="Actions/Enterprises" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
                         <plugin name="Crafting Actions">
                             <description>Crafting system:
 • Craft Item (smithing/smelting)
@@ -226,10 +242,12 @@ Install with Follower Prompts for full companion awareness.</description>
 • Player Inventory Awareness - NPCs can see what the player is carrying (categorized, top 15 per type)
 • Nearby Objects - NPCs aware of surroundings (items, flora, furniture)
 • Book Reading Rules - Prevents NPCs from fabricating book content
+• Enterprises Awareness - retainers know they work for you (job, pay, mood); you can ask how your businesses are doing
 
 Recommended — these character_bio submodules are referenced by most SeverActions actions and prompts.</description>
                             <files>
                                 <folder source="Prompts/Core" destination="" priority="1"/>
+                                <folder source="Prompts/Enterprises" destination="" priority="1"/>
                             </files>
                             <typeDescriptor>
                                 <type name="Recommended"/>

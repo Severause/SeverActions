@@ -75,7 +75,7 @@ Function Maintenance()
      on first invocation. Phase 4 retired the per-actor summary cache — the
      prompt templates now read via the debt_context / debt_complaints native
      decorators, so no rebuild step is needed on load.}
-    DebugMsg("Maintenance — checking migration")
+    DebugMsg("Maintenance - checking migration")
     MigrateFromStorageUtilIfNeeded()
     DrainLegacySummaryKeys()
 
@@ -206,7 +206,7 @@ Function MigrateFromStorageUtilIfNeeded()
         If slotMigrated || slotEmpty
             ClearLegacySlot(i)
         Else
-            DebugMsg("Migration: slot " + i + " has valid data but native Add returned 0 — keeping legacy keys for retry")
+            DebugMsg("Migration: slot " + i + " has valid data but native Add returned 0 - keeping legacy keys for retry")
         EndIf
         i += 1
     EndWhile
@@ -323,7 +323,7 @@ Int Function AddDebt(Actor creditor, Actor debtor, Int amount, String reason, Fl
      Converts legacy unit conventions at the boundary: dueTime is in
      seconds-equivalent; recurringInterval is in hours; native uses days.}
     If !creditor || !debtor || amount <= 0 || creditor == debtor
-        DebugMsg("AddDebt rejected — invalid params")
+        DebugMsg("AddDebt rejected - invalid params")
         Return 0
     EndIf
 
@@ -677,14 +677,14 @@ Function CreateDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor akDebtor, I
     {Create a one-time debt. Player confirmation via SkyMessage if player is involved.
      aiDueDays: days until due (0 = open-ended). aiCreditLimit: max gold (0 = unlimited).}
     If !akSpeaker || !akCreditor || !akDebtor || aiAmount <= 0
-        DebugMsg("CreateDebt_Execute failed — invalid params")
+        DebugMsg("CreateDebt_Execute failed - invalid params")
         Return
     EndIf
 
     ; Duplicate prevention
     Int existingId = SeverActionsNativeExt.Native_Debt_FindByTriple(akCreditor, akDebtor, asReason)
     If existingId > 0
-        DebugMsg("CreateDebt: Duplicate rejected — " + akDebtor.GetDisplayName() + " already owes " + akCreditor.GetDisplayName() + " for " + asReason)
+        DebugMsg("CreateDebt: Duplicate rejected - " + akDebtor.GetDisplayName() + " already owes " + akCreditor.GetDisplayName() + " for " + asReason)
         SkyrimNetApi.RegisterEvent("debt_create_failed", akDebtor.GetDisplayName() + " already has an outstanding debt to " + akCreditor.GetDisplayName() + " for " + asReason, akSpeaker, akCreditor)
         Return
     EndIf
@@ -743,14 +743,14 @@ Function CreateRecurringDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor ak
     {Create a recurring debt. interval = aiIntervalDays x 24 game hours.
      aiCreditLimit: max gold this recurring debt can accumulate to (0 = unlimited).}
     If !akSpeaker || !akCreditor || !akDebtor || aiAmount <= 0 || aiIntervalDays <= 0
-        DebugMsg("CreateRecurringDebt_Execute failed — invalid params")
+        DebugMsg("CreateRecurringDebt_Execute failed - invalid params")
         Return
     EndIf
 
     Int existingId = SeverActionsNativeExt.Native_Debt_FindRecurringPair(akCreditor, akDebtor)
     If existingId > 0
         String existingReason = SeverActionsNativeExt.Native_Debt_GetReason(existingId)
-        DebugMsg("CreateRecurringDebt: Duplicate rejected — recurring debt already exists between " + akCreditor.GetDisplayName() + " and " + akDebtor.GetDisplayName() + " for " + existingReason)
+        DebugMsg("CreateRecurringDebt: Duplicate rejected - recurring debt already exists between " + akCreditor.GetDisplayName() + " and " + akDebtor.GetDisplayName() + " for " + existingReason)
         SkyrimNetApi.RegisterEvent("debt_create_failed", akDebtor.GetDisplayName() + " already has a recurring payment arrangement with " + akCreditor.GetDisplayName() + " for " + existingReason, akSpeaker, akCreditor)
         Return
     EndIf
@@ -834,7 +834,7 @@ EndFunction
 Function ForgiveDebt_Execute(Actor akSpeaker, Actor akTarget)
     {Speaker forgives what target owes them. Speaker must be the creditor.}
     If !akSpeaker || !akTarget
-        DebugMsg("ForgiveDebt_Execute failed — invalid params")
+        DebugMsg("ForgiveDebt_Execute failed - invalid params")
         Return
     EndIf
 
@@ -886,7 +886,7 @@ Function AddToDebt_Execute(Actor akSpeaker, Actor akTarget, Int aiAmount, String
      asReason helps match a specific debt; falls back to the first speaker→target debt found.
      Respects credit limits. Player confirmation if player is the debtor.}
     If !akSpeaker || !akTarget || aiAmount <= 0
-        DebugMsg("AddToDebt_Execute failed — invalid params")
+        DebugMsg("AddToDebt_Execute failed - invalid params")
         Return
     EndIf
 
@@ -899,7 +899,7 @@ Function AddToDebt_Execute(Actor akSpeaker, Actor akTarget, Int aiAmount, String
     EndIf
 
     If debtId <= 0
-        DebugMsg("AddToDebt: No speaker→target debt found (" + akSpeaker.GetDisplayName() + " → " + akTarget.GetDisplayName() + ")")
+        DebugMsg("AddToDebt: No speaker->target debt found (" + akSpeaker.GetDisplayName() + " -> " + akTarget.GetDisplayName() + ")")
         SkyrimNetApi.RegisterEvent("debt_add_failed", akTarget.GetDisplayName() + " has no open debt with " + akSpeaker.GetDisplayName() + " to add charges to", akSpeaker, akTarget)
         Return
     EndIf
