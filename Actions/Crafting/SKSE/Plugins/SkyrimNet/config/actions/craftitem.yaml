@@ -1,6 +1,6 @@
 customCategory: crafting
 name: CraftItem
-description: "The speaker works the forge — hammer, tongs, quench — and walks the finished piece across to the one who commissioned it. An iron sword pulled hot off the anvil for a militiaman, a steel cuirass laid out on the workbench, a pair of daggers wrapped in oilcloth for a courier."
+description: "The speaker works the forge — hammer, tongs, quench — and hands the finished piece to whoever asked for it, on the spot. Use for work done immediately. NOT for an order the smith will finish later (use CommissionItem)."
 questEditorId: SeverActions
 scriptName: SeverActions_Crafting
 executionFunctionName: CraftItem_Internal
@@ -31,7 +31,16 @@ eligibilityRules:
       - decoratorName: is_in_faction
         arguments:
           - currentActor
-          - JobBlacksmithFaction
+          # JobBlacksmithFaction (Skyrim.esm 0x0005091D). The hex FormID
+          # string is the VR-safe form: SkyrimNet resolves a faction name
+          # via LookupByEditorID, which returns nothing for FACT records
+          # unless po3 Tweaks ("Keep EditorIDs") is installed -- and there
+          # is no po3 build for Skyrim VR, so the EditorID form failed
+          # closed there (blacksmiths could never craft). A hex string is
+          # converted to numeric and takes the FormID path instead, which
+          # works everywhere. Skyrim.esm sits at index 00, so the runtime
+          # FormID equals this local one.
+          - "0x0005091D"
         comparisonOperator: ==
         expectedValue: true
   - conditions:

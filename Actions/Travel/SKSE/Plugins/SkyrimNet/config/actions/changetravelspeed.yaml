@@ -1,6 +1,8 @@
-customCategory: travel
+# NOTE: deliberately NO customCategory — no cat_travel container exists, and a
+# customCategory with no matching enabled cat_*.yaml makes this a nested action
+# the LLM is never offered (same reason CancelTravel/TravelToPlace are top-level).
 name: ChangeTravelSpeed
-description: "The speaker, already on the road, picks up the pace or slows it down — breaking into a run when news comes that a friend is in trouble, easing to a walk to take in the scenery on the way to High Hrothgar, jogging through a hostile stretch of moor."
+description: "Changes the speaker's pace during a trip already underway. Use ONLY while the speaker is traveling and the dialogue calls for faster or slower movement — urgent news, a scenic stretch, a dangerous road. Not for starting a trip and not for choosing speed at departure: use TravelToPlace for both."
 questEditorId: SeverActions
 scriptName: SeverActions_Travel
 executionFunctionName: SetTravelSpeedNatural
@@ -10,9 +12,22 @@ parameterMapping:
     description: the actor changing their stride
   - type: dynamic
     name: speedText
-    description: "how fast: run/hurry (fastest), jog/brisk (medium), walk/slow (slowest)"
-enabled: false
+    description: "one of: 'run' (fastest), 'jog' (medium), or 'walk' (slowest); 'hurry'->run, 'brisk'->jog, 'slow'->walk"
+enabled: true
 eligibilityRules:
+  - conditions:
+      # sever_is_traveling is a STRING decorator ("1" while a journey is
+      # live) - string-compared, gate on != "". Removes this action from
+      # every action list where nobody is traveling (it was always
+      # eligible; the native is a safe no-op, but the tokens were paid on
+      # every selection). New-decorator rule: this YAML and the DLL that
+      # registers sever_is_traveling must deploy together.
+      - decoratorName: "sever_is_traveling"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
   - conditions:
       - decoratorName: "is_in_combat"
         arguments: ["currentActor"]

@@ -10,6 +10,7 @@
 {% endfor %}
 {% if length(actor_inventory) > 0 %}
 ## Inventory Awareness
+What you carry beyond what you are wearing. You own only what is listed here and on your person - nothing else.
 {% for item_id, item_info in actor_inventory %}
 {%- if item_info.name and length(item_info.name) > 0 and not (item_info.name in worn_item_names) %}
 - {{ item_info.name }}: {{ item_info.count }}

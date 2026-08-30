@@ -14,10 +14,6 @@ After your dialogue, you may optionally perform ONE action if appropriate. Outpu
 {% endfor %}
 
 **Guidelines:**
-- Only use an action if it matches what you said, agreed to, or are doing
-- Agreement can be implicit—positive responses or steps toward fulfilling a request count
-- You can initiate actions unprompted if it fits your character
-- Some entries are **action categories** that group related actions (e.g., "Inventory", "Economy"). Selecting a category triggers a follow-up to pick the specific action within it
-- **REQUIRED**: When selecting a category, you MUST include `PARAMS: {"intent": "..."}` describing what you intend to do. Example: `ACTION: Economy PARAMS: {"intent": "sell a health potion to the player for 450 gold"}`. Category selections without intent will fail.
-- Output dialogue lines BEFORE the ACTION line (this allows speech to start while action is parsed)
+- Use an action when it matches what you said or agreed to (explicitly or implicitly — positive responses and steps toward fulfilling a request count), what you are doing, or when starting one unprompted fits your character
+- Some entries are **action categories** that group related actions (e.g., "Inventory", "Economy"). Selecting a category triggers a follow-up to pick the specific action within it — and MUST include `PARAMS: {"intent": "..."}`. Example: `ACTION: Economy PARAMS: {"intent": "sell a health potion to {{ player.name }} for 450 gold"}`. Category selections without intent will fail.
 {% endif %}

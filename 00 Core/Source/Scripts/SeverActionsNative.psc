@@ -60,18 +60,6 @@ Form Function FindWornItemByName(Actor akActor, String itemName) Global Native
 Checks all worn armor slots via InventoryChanges.IsWorn() plus equipped weapons.
 Returns None if no worn item matches. Much faster than Papyrus slot iteration.}
 
-Int Function EquipItemsByName(Actor akActor, String itemNames) Global Native
-{Equip multiple items from inventory by comma-separated name list.
-Splits string, searches inventory for each item, equips via ActorEquipManager.
-Returns count of items successfully equipped.
-Example: EquipItemsByName(actor, "steel gauntlets, iron helmet, glass cuirass")}
-
-Int Function UnequipItemsByName(Actor akActor, String itemNames) Global Native
-{Unequip multiple worn items by comma-separated name list.
-Splits string, searches worn items for each, unequips via ActorEquipManager.
-Returns count of items successfully unequipped.
-Example: UnequipItemsByName(actor, "steel gauntlets, iron helmet")}
-
 Int Function GetFormGoldValue(Form akForm) Global Native
 {Get gold value of any form - replaces type-checking cascade in Papyrus}
 
@@ -530,9 +518,7 @@ Call after creating new books via DBF's AppendToFile to refresh the mappings.
 No-op if DBF is not installed.}
 
 ; =============================================================================
-; STUCK DETECTOR
-; Native actor stuck detection and teleport escalation
-; Tracks actor positions over time and detects when they fail to move
+; STUCK DETECTOR — moved to SeverActionsNativeExt (Stuck_* natives live there)
 ; =============================================================================
 
 ; =============================================================================
@@ -664,7 +650,7 @@ ObjectReference Function FindExitDoorFromCell(Actor akActor) Global Native
 ObjectReference Function FindHomeInteriorMarker(Actor akActor) Global Native
 {Find an interior marker in the actor's home cell}
 
-ObjectReference Function FindInteriorMarkerForDoor(ObjectReference doorRef) Global Native
+ObjectReference Function FindInteriorMarkerForDoor(ObjectReference doorRef, Actor akActor = None) Global Native
 {Find the interior marker on the other side of a door reference}
 
 ; =============================================================================
@@ -711,30 +697,9 @@ Actor[] Function Ceasefire_FindNearbyAllies(Actor akActor, Float radius) Global 
  Used to propagate group ceasefire to nearby allies. Excludes dead actors and the player.}
 
 ; =============================================================================
-; DEPARTURE DETECTION (extension of StuckDetector)
-; Verifies an NPC actually started moving after receiving a travel package.
-; Uses baseline position from Stuck_StartTracking. Grace period: 15s, recovery: 30s.
-; =============================================================================
-
-; =============================================================================
-; PRE-FLIGHT REACHABILITY (alandtse v4.4+ — Actor::CanNavigateToPosition)
-; Use BEFORE BeginTravel/StartTracking. Drops unreachable destinations up front
-; instead of burning the full stuck-escalation cycle (9s → 18s → 30s) on a
-; destination that was never reachable.
-; =============================================================================
-
-; =============================================================================
-; TRAVEL-ABORT SIGNAL (alandtse v4.4+ — combined degraded-state check)
-; Poll alongside Stuck_CheckStatus. Returns true if continued travel monitoring
-; is wasted work (actor is dead, in killmove, on a mount, summoned, etc.) —
-; caller should Stuck_StopTracking and cancel any ArrivalMonitor entry.
-; =============================================================================
-
-; =============================================================================
-; GRACEFUL GIVE-UP RECOVERY (alandtse v4.4+ — TESObjectREFR::MoveToEditorLocation)
-; Alternative to escalation-level-3 force-teleport-to-destination. When the
-; destination itself has broken navmesh (actor would be stranded after teleport),
-; sending them back to their editor-defined home location is more deterministic.
+; DEPARTURE DETECTION / PRE-FLIGHT REACHABILITY / TRAVEL-ABORT SIGNAL /
+; GRACEFUL GIVE-UP RECOVERY — moved to SeverActionsNativeExt (the StuckDetector
+; extension natives live there, alongside the Stuck_* set).
 ; =============================================================================
 
 ; NOTE: TravelOrchestrator natives (Travel_*) live in SeverActionsNativeExt
@@ -772,19 +737,9 @@ Function OffScreen_ClearAll() Global Native
 {Clear all off-screen tracking data.}
 
 ; =============================================================================
-; ARRIVAL MONITOR
-; Tracks actors moving toward a destination and fires a ModEvent on arrival.
-; Uses distance checks on the game thread for zero-latency detection.
+; ARRIVAL MONITOR — moved to SeverActionsNativeExt (Arrival_* natives, incl. the
+; alandtse v4.4+ LOS-aware arrival mode, live there).
 ; =============================================================================
-
-; alandtse v4.4+ — LOS-aware arrival mode. Distance ≤ threshold isn't enough;
-; the actor must also have unobstructed Actor::CalculateLOS to the destination
-; position. Catches actors who are geometrically close but on the wrong side
-; of a wall, on a different floor, or behind a closed door. Use for interior
-; destinations where distance-only false-positives wrong-side arrivals.
-;
-; Skips the LOS check when the actor isn't 3D-loaded (falls back to distance
-; behaviour for that tick — LOS resumes on next tick when actor reloads).
 
 ; =============================================================================
 ; GUARD FINDER
@@ -867,6 +822,15 @@ Function Native_ArrestSession_EndAll() Global Native
 
 Bool Function Native_ArrestSession_HasSession(Actor akPrisoner) Global Native
 {Returns true if a session is currently tracked for this prisoner.}
+
+; TRUE while this actor is caught up in an arrest RIGHT NOW - as the prisoner,
+; as the arresting guard, as either half of the player-quest's active pair, or
+; as either end of a live dispatch/investigation. Superset of HasSession, which
+; is keyed by PRISONER only and so can never answer for a guard.
+Bool Function Native_ArrestSession_IsActorInArrest(Actor akActor) Global Native
+{TRUE while this actor is caught up in an arrest as prisoner, arresting guard,
+either half of the player-quest's active pair, or either end of a live
+dispatch/investigation. Superset of HasSession (which is keyed by prisoner only).}
 
 Int Function Native_ArrestSession_GetCount() Global Native
 {Total number of active arrest sessions across the load.}
@@ -1123,6 +1087,11 @@ Bool Function PrismaUI_IsMenuOpen() Global Native
 Function PrismaUI_ToggleMenu() Global Native
 {Toggle the PrismaUI config menu open/closed.}
 
+Function PrismaUI_SetMenuKey(Int keyCode, Bool requireShift) Global Native
+{Hand the config-menu hotkey to the NATIVE input sink (DX scancode; -1
+disables). The DLL persists it to the global settings file so the key is
+live at kDataLoaded on every later launch — no Papyrus in the input path.}
+
 Function PrismaUI_SendData(String jsonData) Global Native
 {Send JSON data to the PrismaUI config view (C++ forwards to JS via InteropCall).}
 
@@ -1140,6 +1109,19 @@ Function PrismaUI_SetYieldPromptEnabled(Bool enabled) Global Native
 {Set whether the yield/surrender combat-prompt guidance is exposed. Pushes the \
 StorageUtil-persisted value to the C++ atomic the settings gather reads. The \
 0160 combat prompt reads the StorageUtil(None) mirror directly.}
+
+Function PrismaUI_SetTravelPopupEnabled(Bool enabled) Global Native
+{Restore the travel-destination popup toggle to the C++ atomic on load.}
+
+Bool Function PrismaUI_IsTravelPopupEnabled() Global Native
+{True (default) = show the confirm popup; false = travel fires immediately.}
+
+Function PrismaUI_SetTravelPopupFollowersOnly(Bool enabled) Global Native
+{Restore the followers-only popup scope to the C++ atomic on load.}
+
+Bool Function PrismaUI_IsTravelPopupFollowersOnly() Global Native
+{True = only the player's followers get the destination popup; other NPCs
+ travel without asking. Default false (popup for everyone, legacy).}
 
 Bool Function PrismaUI_IsPauseOnOpen() Global Native
 {Return the current pause-on-open setting from C++.}
@@ -1333,6 +1315,12 @@ Function OrphanCleanup_UnregisterTraveler(Actor akActor) Global Native
 Function OrphanCleanup_RegisterFollower(Actor akActor) Global Native
 {Register a follower for orphan monitoring.}
 
+Function OrphanCleanup_MarkRosterSynced() Global Native
+{Release the post-load orphan-scan hold. Called by RunDeferredMaintenance
+ the moment the whole roster has been re-registered - until then (or a
+ 120s hard timeout) the scanner treats every follower as unverifiable and
+ must not strip anyone.}
+
 Function OrphanCleanup_UnregisterFollower(Actor akActor) Global Native
 {Unregister a follower from orphan monitoring.}
 
@@ -1397,6 +1385,18 @@ Bool Function IsNote(Form akForm) Global Native
 Form Function FindSpellOnActor(Actor akActor, String spellName) Global Native
 {Find a spell on an actor by name (case-insensitive). Returns the spell form or None.}
 
+Form Function GetLearnableSpellVariant(Form akSpell) Global Native
+{Resolve a spell to the version a PLAYER should be granted: the one a spell tome
+teaches, equippable in EITHER hand. Magic overhauls hand NPCs one-hand-locked
+copies that share the real spell's display name (MAG_FireboltRightHand vs
+MAG_Firebolt, both shown as Firebolt), so teaching straight from the teacher's
+known spells gave the player a spell they could only hold in one hand. Returns
+the input unchanged when it is already correct or nothing better exists.}
+
+Bool Function IsSpellHandLocked(Form akSpell) Global Native
+{TRUE when a spell can only ever be equipped in one specific hand (RightHand or
+LeftHand equip slot). EitherHand / BothHands / Voice all read FALSE.}
+
 String Function GetTeachableSpells(Actor akTeacher, Actor akLearner) Global Native
 {Get a JSON string of spells the teacher knows that the learner doesn't.}
 
@@ -1455,10 +1455,12 @@ Int Function Native_BedAssignment_GetBedFormID(Actor akActor) Global Native
 {Returns the FormID of the currently assigned bed, or 0 if none.}
 
 ; =============================================================================
-; AMBIENT NPC BANTER SCANNER
-; Find non-follower / non-player NPC pairs near the player who could
-; spontaneously banter. Hostile-cell guard returns 0 if any nearby actor is
-; hostile to the player (skips dungeons, bandit camps, under-attack settlements).
+; AMBIENT NPC BANTER SCANNER — moved to SeverActionsNativeExt
+; (Native_AmbientBanter_* natives live there).
+; =============================================================================
+
+; =============================================================================
+; FOLLOWER DATA STORE (combat style / relationship / state accessors)
 ; =============================================================================
 
 Function Native_SetCombatStyle(Actor akActor, String style) Global Native
@@ -1643,6 +1645,12 @@ Function Native_Outfit_CommitLock(Actor akActor) Global Native
 Function Native_Outfit_ClearLock(Actor akActor) Global Native
 {Clear outfit lock entirely. Removes actor from store if no presets remain.}
 
+Function Native_Outfit_ClearLockForUndress(Actor akActor) Global Native
+{Clear outfit lock WITHOUT restoring the actor's DefaultOutfit — and suppress
+DefaultOutfit first if it was never suppressed. Used by Undress so the engine's
+default-outfit auto-equip doesn't redress the actor on the next AI evaluation.
+The saved original stays parked for a later Dress / explicit unlock to restore.}
+
 Function Native_Outfit_RemoveLockedItem(Actor akActor, Form item) Global Native
 {Remove a single item from an existing locked outfit.}
 
@@ -1664,9 +1672,8 @@ Bool Function Native_Outfit_IsNativeSuspended(Actor akActor) Global Native
 ; --- Burst strip detection ---
 ; Detects when external mods rapidly strip armor (3+ items in 500ms).
 ; Auto-suspends outfit lock for 30 seconds to avoid fighting the other mod.
-
-Bool Function Native_Outfit_RecordExternalUnequip(Actor akActor) Global Native
-{Record an external unequip event. Returns true if burst strip detected (lock should yield).}
+; Form-aware external-change recording lives on
+; SeverActionsNativeExt2.Native_Outfit_RecordExternalChange.
 
 Function Native_Outfit_ClearBurstSuppression(Actor akActor) Global Native
 {Clear burst suppression for an actor (called when outfit system resumes control).}
@@ -1793,20 +1800,6 @@ Bool Function Native_IsPromptAvailable(String promptName) Global Native
 {True if Data\SKSE\Plugins\SkyrimNet\prompts\<promptName>.prompt was found
  at game load. Use as the first guard before SkyrimNetApi.SendCustomPromptToLLM
  so missing FOMOD modules silently skip rather than logging errors.}
-
-Function Native_Survival_InitNearby(Actor akActor) Global Native
-{Initialize or drift nearby NPC survival values in native store (C++ randomization).}
-
-Float Function Native_Survival_GetNearbyHunger(Actor akActor) Global Native
-{Read nearby NPC hunger from native store.}
-
-Float Function Native_Survival_GetNearbyFatigue(Actor akActor) Global Native
-{Read nearby NPC fatigue from native store.}
-
-Float Function Native_Survival_GetNearbyCold(Actor akActor) Global Native
-{Read nearby NPC cold from native store.}
-
-; ── Situation Monitor ──
 
 ; =============================================================================
 ; ARMOR CATALOG
@@ -1979,13 +1972,13 @@ String Function Native_PopCompletionEntry() Global Native
 Returns a JSON string with actorFormID, editorID, summary, and isFirsthand fields. \
 Returns "" when queue is empty.}
 
-; Native_StorePendingSummary REMOVED. The C++ side no longer stashes routing
-; metadata in a FIFO across the Pop → SendCustomPromptToLLM → callback round-
-; trip — early returns in the legacy Papyrus pump used to leak metadata and
-; misroute later responses. Papyrus now reads its own routing fields out of
-; the JSON returned by Native_PopSummaryRequest and calls Native_SetQuestSummary
-; directly. On SkyrimNet v8+ the C++ side dispatches the LLM call itself and
-; this whole pump path stays dormant.
+; No Native_StorePendingSummary: routing metadata is not stashed in a native
+; FIFO across the Pop → SendCustomPromptToLLM → callback round-trip (doing so
+; leaked metadata and misrouted responses via early returns in the Papyrus
+; pump). Papyrus reads its own routing fields out of the JSON returned by
+; Native_PopSummaryRequest and calls Native_SetQuestSummary directly. On
+; SkyrimNet v8+ the C++ side dispatches the LLM call itself and this pump path
+; stays dormant.
 
 Function Native_SetQuestSummary(Actor akActor, String editorID, String summary, Bool isFirsthand) Global Native
 {Store an LLM-generated personalized quest summary for a follower. \
@@ -2005,8 +1998,6 @@ the queue one at a time via the SeverActions_ReputationAssess ModEvent and \
 SendCustomPromptToLLM("sever_reputation_assess"). \
 Returns Actor directly (rather than FormID-as-int) to dodge Papyrus's signed-int \
 sign-extension on ESL / high-mod-index plugin FormIDs.}
-
-Int Function Native_GetFollowerAwarenessTier(Actor akActor, String editorID) Global Native
 
 Function Native_QuestAwareness_SetOutputCap(Int n) Global Native
 {Set the cap on quest awareness entries emitted to the prompt per follower. \
@@ -2057,7 +2048,7 @@ String Function Native_QuestAwareness_ListForActor(Actor akActor) Global Native
 Powers the Companions page Quest Awareness sub-tab.}
 
 ; =============================================================================
-; SITUATION MONITOR
+; FRIENDLY FIRE MONITOR
 ; =============================================================================
 
 Function FriendlyFireMonitor_SetEnabled(Bool enabled) Global Native

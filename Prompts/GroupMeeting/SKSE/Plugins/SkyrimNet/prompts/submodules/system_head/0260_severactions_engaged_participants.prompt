@@ -36,7 +36,7 @@
 {% for _n in _nearby %}
 {% set _nUUID = to_number(to_string(_n.UUID)) %}
 {% if _nUUID != 0 and _nUUID != _myUUID and (is_follower(_nUUID) or is_in_package(_nUUID, "SkyrimNet_PlayerFollowPackage")) %}
-{% if is_in_faction(_nUUID, "SexLabAnimatingFaction") or is_in_faction(_nUUID, "OStimExcitementFaction") %}
+{% if get_faction_rank(_nUUID, "SexLabAnimatingFaction") >= 0 or get_faction_rank(_nUUID, "OStimExcitementFaction") >= 0 %}
 {% set _occupied = append(_occupied, _n.name) %}
 {% else %}
 {% set _party = append(_party, _n.name) %}
@@ -44,7 +44,7 @@
 {% endif %}
 {% endfor %}
 {% set _playerUUID = to_number(to_string(player.UUID)) %}
-{% set _playerOccupied = _playerUUID != 0 and (is_in_faction(_playerUUID, "SexLabAnimatingFaction") or is_in_faction(_playerUUID, "OStimExcitementFaction")) %}
+{% set _playerOccupied = _playerUUID != 0 and (get_faction_rank(_playerUUID, "SexLabAnimatingFaction") >= 0 or get_faction_rank(_playerUUID, "OStimExcitementFaction") >= 0) %}
 {% if length(_party) > 0 or length(_occupied) > 0 or _playerOccupied %}
 ## Traveling Party
 {# Rendering shapes:
@@ -60,7 +60,7 @@ You are traveling with {{ player.name }}{% if length(_party) == 1 %} and {{ _par
 {% endif %}{% endif %}
 {% if length(_occupied) > 0 %}
 
-**[IN SCENE]** — currently occupied with intimate/sexual activity. Strongly deprioritize — do not address by name or pull into the conversation; they will speak again once free:
+**[IN SCENE]** — currently occupied with intimate activity. Do not address them by name or draw them into the conversation; they will speak again once free:
 {% for _name in _occupied %}
 - {{ _name }}
 {% endfor %}
@@ -73,6 +73,11 @@ You are traveling with {{ player.name }}{% if length(_party) == 1 %} and {{ _par
 Everyone above (except those marked [IN SCENE]) is nearby and can hear you. Speak naturally — respond to whoever you're actually engaging with. Use names when it makes sense (responding to someone, asking a question, reacting to what they said), but don't force it. Not every line needs to name-drop. A quip, observation, or group reaction is fine without tagging anyone.
 
 Don't run through a checklist of participants. {{ player.name }} is part of the party, not a spectator — include them naturally when relevant.
+{% if length(_party) > 0 %}
+
+## Your Own Voice
+Companions who travel together long enough start to sound alike — do not let that happen to you. You have your own way of speaking: your vocabulary, your cadence, your upbringing, your temper, your verbal habits. Keep them, especially in group talk. Do not drift into the register of whoever spoke last, and do not borrow another party member's pet phrases, metaphors, or sentence shapes — if the line would sound right coming from one of them, find the way YOU would say it. Style contrast is as natural as disagreement: the blunt stay blunt, the bookish stay precise, the sly stay sly, even when everyone agrees.
+{% endif %}
 {% endif %}
 {% endif %}
 {% endif %}

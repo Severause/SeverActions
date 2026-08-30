@@ -1,0 +1,11 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "dialogue_target" or render_mode == "target" or render_mode == "transform" %}
+{% if isValidActor(actorUUID) %}
+{% set tax_ctx = hold_tax_rate(actorUUID) %}
+{% if tax_ctx != "" %}
+## Hold Taxes (as Jarl)
+{{ tax_ctx }}
+
+As Jarl, taxation of {{ player.name }}'s enterprises is within this character's authority: a respectful, well-argued petition (or real service to the hold) may persuade them to ease the rate, while insults, threats, or brazen behavior may drive them to raise it. Whether to budge — and in which direction — is entirely this character's judgment, in character.
+{% endif %}
+{% endif %}
+{% endif %}

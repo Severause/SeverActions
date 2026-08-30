@@ -1,5 +1,5 @@
 name: TravelToPlace
-description: "The speaker sets out for somewhere specific when {{ player.name }} explicitly directs it — over to Whiterun on a courier run, upstairs at the inn, across the room to the forge, just outside for some air. Accepts a named location, a direction (outside, upstairs), or a nearby feature (bar, forge, bed)."
+description: "The speaker leaves right now, on foot, for a destination. Use ONLY when the trip is decided: {{ player.name }} told them to go, or the speaker just stated a firm plan to leave and the conversation is ending. NEVER fire because a place was mentioned, remembered, or suggested — talking about a place is not traveling to it. Not for inviting {{ player.name }} to come along: say the invitation and let {{ player.name }} lead. Not for returning to {{ player.name }}'s camp — use the camp-travel action instead. Accepts a named location, a direction (outside, upstairs), or a nearby feature (bar, forge, bed)."
 questEditorId: SeverActions
 scriptName: SeverActions_Travel
 executionFunctionName: TravelToPlace
@@ -9,7 +9,7 @@ parameterMapping:
     description: the actor heading off
   - type: dynamic
     name: placeName
-    description: "where they're going: a named location, a direction (outside, upstairs), or a nearby feature (bar, forge, bed)"
+    description: "where they're going, as the place's PROPER NAME only (e.g. 'The Bannered Mare', 'College of Winterhold' - never conversational phrases like 'back to the college'). A direction (outside, upstairs) or nearby feature (bar, forge, bed) also works. To meet OUTSIDE a place rather than in it, prefix the name: 'outside The Bannered Mare' or 'beside Bleak Falls Barrow' sends them to the entrance without going in. If several places share a name, qualify with the town after a comma, e.g. 'Hall of the Dead, Whiterun'"
   - type: static
     value: 24
     name: WaitHours
@@ -22,6 +22,10 @@ parameterMapping:
     value: 0
     name: Speed
     description: travel pace (0 = default natural speed)
+  - type: dynamic
+    name: waitForPlayer
+    optional: true
+    description: "true if they are traveling there to meet {{ player.name }} or will wait for them at the destination; false if they are going about their own business and will not wait"
 enabled: true
 eligibilityRules:
   - conditions:
@@ -43,5 +47,32 @@ eligibilityRules:
         arguments: ["currentActor", "OStimExcitementFaction"]
         comparisonOperator: "<"
         expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Mid-encounter setup (NSFW pairing owns this NPC's movement). Custom
+      # decorator - STRING compared; scene-bound actors return non-empty, so we
+      # gate on == "" (free actors pass). Empty for everyone when
+      # the NSFW add-on isn't installed, so this is a no-op without it.
+      - decoratorName: "sever_scene_bound"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Followers don't set off on their own trips just because a place came up
+      # in conversation — "I'm thinking of going to Whiterun" was making the
+      # whole party leave. sever_travel_allowed encodes the "Followers Can Travel"
+      # toggle (Settings + MCM, ships OFF): it returns "1" for a non-follower
+      # (always may travel) and for a follower ONLY when the toggle is on; "" for
+      # a follower while the toggle is off. Gate on != "" so the action is offered
+      # to everyone the decorator permits. New-decorator rule: this YAML and the
+      # DLL that registers sever_travel_allowed must deploy together.
+      # currentActor is the SPEAKER (the would-be traveller).
+      - decoratorName: "sever_travel_allowed"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
     logicalOperator: "AND"
     required: true

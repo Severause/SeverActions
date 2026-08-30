@@ -1,5 +1,5 @@
 name: StartFollowing
-description: "The speaker falls into step behind {{ player.name }} when asked — a guide leading them out of town, a friend tagging along to the next inn, a hireling agreeing to walk the road together. Use only when the speaker would actually agree given the context."
+description: "The speaker falls into step behind {{ player.name }} — a guide leading them out of town, a friend tagging along to the next inn. Use only when asked to come along, and only when the speaker would agree to it. For signing on as a registered traveling companion, use SetCompanion instead."
 questEditorId: SeverActions
 scriptName: SeverActions_Follow
 executionFunctionName: StartFollowing
@@ -9,6 +9,25 @@ parameterMapping:
     description: the actor falling in behind {{ player.name }}
 enabled: true
 eligibilityRules:
+  - conditions:
+      # Imperial tax collectors are loyal to the Empire alone — never
+      # recruitable, by design (P2 Final Audit). String-compared custom
+      # decorator: "" = not a collector.
+      #
+      # THIS RULE FAILS CLOSED, AND THAT IS DELIBERATE. SkyrimNet's
+      # EligibilityChecker returns false for an UNREGISTERED decorator before
+      # it ever compares, so if SeverActionsNative.dll is missing/stale (or
+      # SkyrimNet is pre-API-v5) this action goes ineligible for EVERY NPC —
+      # there is no fail-open formulation, inverting the operator behaves
+      # identically. These YAMLs are therefore DLL-COUPLED exactly like a
+      # prompt that calls a new decorator: ship them together, never alone.
+      # Papyrus backstops the same rule natively with an in-world refusal.
+      - decoratorName: "is_tax_collector"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
   - conditions:
       - decoratorName: "is_in_combat"
         arguments: ["currentActor"]

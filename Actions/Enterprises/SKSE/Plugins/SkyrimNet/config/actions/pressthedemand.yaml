@@ -1,0 +1,27 @@
+name: PressTheDemand
+description: "Use when {{ player.name }} REFUSES the Final Audit's demand outright, insults the Treasury's authority, draws a weapon, or makes clear the back-taxes will not be paid. The speaker (one of the Treasury collectors) closes the ledger the other way: the detail attacks {{ player.name }}. This is irreversible — the audit ends in blood, not coin. Do NOT call while negotiation is still genuinely open — one clear refusal or hostile move from {{ player.name }} is the trigger."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: PressTheDemand
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the collector pressing the demand
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_tax_collector"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "tax_audit_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "demanding"
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} declared the audit closed — the Imperial Treasury collects from {{ player.name }} by force"

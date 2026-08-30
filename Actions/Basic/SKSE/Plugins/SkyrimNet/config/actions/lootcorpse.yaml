@@ -1,6 +1,6 @@
 customCategory: items
 name: LootCorpse
-description: "The speaker kneels beside a body and pulls what's worth taking from it — coin from a dead bandit's belt, a soldier's blade from cold fingers, a smith's ring off a corpse on the road. Practical, sometimes grim."
+description: "The speaker kneels beside a body and pulls what's worth taking from it — coin from a dead bandit's belt, a soldier's blade from cold fingers, a smith's ring off a corpse on the road."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: LootCorpse_Execute
@@ -13,7 +13,7 @@ parameterMapping:
     description: name of the dead person being searched (e.g. "Bandit", "Stormcloak Soldier", a named NPC)
   - type: dynamic
     name: itemsToTake
-    description: "what to grab: 'all' (everything they had), 'valuables' (only worthwhile pieces), 'gold' (just coin), or a comma-separated list of specific items"
+    description: "what to grab: 'all' (everything they had), 'valuables' (only worthwhile pieces), 'gold' (just coin), a category ('weapons', 'armor', 'jewelry', 'potions', 'food', 'ingredients', 'books', 'soul gems', 'ammo', 'scrolls', 'gems'), or a comma-separated list of specific items/categories. Unsure what they carry? SearchCorpse first reveals the contents."
     optional: true
     default: "all"
 enabled: true

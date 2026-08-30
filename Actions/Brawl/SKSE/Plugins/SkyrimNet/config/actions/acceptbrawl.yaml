@@ -1,6 +1,6 @@
 customCategory: brawl
 name: AcceptBrawl
-description: "The speaker grins, rolls their shoulders, and squares up — fists going up against a specific opponent. Use this when YOU are the one who wants to start a fist-fight against someone (either responding to their challenge, or initiating one yourself because they pushed you to it in dialogue). akChallenger names the other fighter. No weapons, no spells, just hands."
+description: "Start a fist-fight now — fists only, no weapons, no spells. Use when the speaker answers a challenge or provocation with fists. akChallenger names the other fighter; omit it when a ChallengeBrawl is already pending. To issue a new challenge and wait for an answer, use ChallengeBrawl."
 questEditorId: SeverActions
 scriptName: SeverActions_Brawl
 executionFunctionName: AcceptBrawl_Execute
@@ -10,6 +10,12 @@ parameterMapping:
     description: the actor stepping into the brawl
   - type: dynamic
     name: akChallenger
+    # optional is load-bearing: without it, SkyrimNet's missing-parameter
+    # check aborts execution when the LLM omits the key (which the
+    # description invites) — the accept silently never reached Papyrus.
+    # Omitted → null → None, and AcceptBrawl_Execute(akChallenger = None)
+    # resolves the pending challenge itself.
+    optional: true
     description: the other actor in the fight (the one who challenged, or the one the speaker is challenging back). May be omitted when accepting a pending challenge already recorded via ChallengeBrawl.
 enabled: true
 defaultPriority: 7

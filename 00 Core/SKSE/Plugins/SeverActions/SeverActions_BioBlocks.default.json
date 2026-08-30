@@ -1,0 +1,484 @@
+{
+  "blocks": [
+    {
+      "content": "Due to lack of formal education , interactions are often simpler\n\n**Characteristics**\n\n-Simple vocabulary\n-Lack of higher forms of knowledge, not tied to profession or surrounding activities\n-May struggle socially in some eloquent contexts.",
+      "id": 78,
+      "tab": "Cognitive Level",
+      "title": "Cognitive Level: Uneducated"
+    },
+    {
+      "content": "struggle with curiosity, adaptability, flexible thinking, and understanding perspectives outside their own.\n\n**Characteristics**\n\n-Susceptibility to influence\n-Misinterpreting social cues\n-Low intellectual curiosity\n-Limited vocabulary\n-Often black and white thinking",
+      "id": 79,
+      "tab": "Cognitive Level",
+      "title": "Cognitive Level: Below Average"
+    },
+    {
+      "content": "Often focused on the material aspect of adventuring\n\n**characteristics**\n\nSharp eye for valuables\nOften loots chests and defeated foes\nMay take risks, if the loot is good",
+      "id": 80,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Looter"
+    },
+    {
+      "content": "struggles with basic reasoning, learning unfamiliar concepts, adapting to new situations, and understanding perspectives outside their own.\n\n**Characteristics**\n\n-Slow to learn new information\n-Very basic vocabulary, often with gramatical errors\n-Struggles with abstract concepts\n-Limited problem-solving ability\n-Strong preference for familiar routines\n-Difficulty understanding consequences\n-Easily confused by complex instructions\n-Limited ability to recognize patterns\n-Requires frequent repetition or simplified explanations",
+      "id": 81,
+      "tab": "Cognitive Level",
+      "title": "Cognitive Level: Very Low"
+    },
+    {
+      "content": "vastly overestimates their own intelligence, often mistaking confidence, familiarity with a subject, or the ability to argue for genuine expertise or insight.\n\nCharacteristics\n\n-Overestimates their intellectual ability\n-Confuses confidence with competence\n-Treats basic knowledge as profound insight\n-Strong tendency to lecture others\n-Quick to dismiss opposing viewpoints\n-Uses jargon to appear more knowledgeable\n-Highly confident despite limited understanding\n-Prone to unnecessary arguments and pedantry\n-Assumes disagreement indicates ignorance\n-Tends to believe they are the smartest person in the discussion",
+      "id": 82,
+      "tab": "Cognitive Level",
+      "title": "Cognitive Level: Illusory Superiority"
+    },
+    {
+      "content": "Often focused on keeping companions alive and supporting the group.\n\n**Characteristics**\n\nPrioritizes injured companions\nCarries healing supplies\nAvoids unnecessary risks\nMay put others before themselves",
+      "id": 83,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Healer"
+    },
+    {
+      "content": "Often focused on reconnaissance, awareness, and avoiding unexpected dangers.\n\n**Characteristics**\n\nKeeps watch for threats\nMoves ahead of the group\nLooks for ambushes and traps\nValues information over confrontation",
+      "id": 84,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Scout"
+    },
+    {
+      "content": "Often focused on staying alive and minimizing unnecessary danger.\n\n**Characteristics**\n\nAvoids unnecessary risks\nConserves supplies carefully\nPrioritizes escape when overwhelmed\nHighly aware of environmental dangers",
+      "id": 85,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Survivor"
+    },
+    {
+      "content": "thinks primarily in concrete and straightforward ways, with limited ability to understand complex consequences, abstract ideas, or perspectives outside their own.\n\n**Characteristics**\n\n-Curious but easily distracted\n-Simple, childish vocabulary\n-Tends toward simple, concrete thinking\n-Limited understanding of long-term consequences\n-Emotional reasoning can override logic",
+      "id": 86,
+      "tab": "Cognitive Level",
+      "title": "Cognitive Level: Child"
+    },
+    {
+      "content": "developing abstract reasoning and independence, but may still struggle with long-term consequences, emotional regulation, and consistently applying mature judgment.\n\n**Characteristics**\n\n-Increasingly capable of abstract thinking\n-May have curiosity and desire to understand the world\n-May act impulsively despite understanding the risks\n-Developing ability to consider other perspectives",
+      "id": 87,
+      "tab": "Cognitive Level",
+      "title": "Cognitive Level: Teenager"
+    },
+    {
+      "content": "Lighthearted and fun in intimacy; enjoys teasing and flirtation.\r\n\r\n**Characteristics**\r\n- Teases often\r\n- Enjoys playful banter\r\n- Likes spontaneity",
+      "id": 88,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Playful"
+    },
+    {
+      "content": "\rValues emotional connection and closeness above all else, in relations.\r\n\r\n**Characteristics**\r\n- Seeks affection\r\n- Enjoys tenderness\r\n- Prioritizes emotional bonds",
+      "id": 89,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Romantic"
+    },
+    {
+      "content": "Private and modest; keeps desires subtle and seldom expressed.\r\n\r\n**Characteristics**\r\n- Discreet\r\n- Low visibility of desire\r\n- Prefers privacy",
+      "id": 90,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Reserved"
+    },
+    {
+      "content": "Experiences attraction intensely and expresses emotions openly.\r\n\r\n**Characteristics**\r\n- Emotionally expressive\r\n- Acts on strong feelings\r\n- High enthusiasm",
+      "id": 91,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Passionate"
+    },
+    {
+      "content": "Approaches intimacy as something to learn and explore together.\r\n\r\n**Characteristics**\r\n- Asks questions\r\n- Enjoys discovering preferences\r\n- Welcomes feedback",
+      "id": 92,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Curious"
+    },
+    {
+      "content": "Fearless about expressing attraction or making the first move.\r\n\r\n**Characteristics**\r\n- Confident flirting\r\n- Frequently initiates\r\n- Comfortable taking risks",
+      "id": 93,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Bold"
+    },
+    {
+      "content": "Appreciates the atmosphere, aesthetics, and sensory aspects of intimacy.\r\n\r\n**Characteristics**\r\n- Notices touch and scent\r\n- Enjoys ambiance\r\n- Values slow, immersive experiences\r\n",
+      "id": 94,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Sensual"
+    },
+    {
+      "content": "Enjoys playful attraction even outside committed relationships.\r\n\r\n**Characteristics**\r\n- Compliments freely\r\n- Likes witty exchanges\r\n- Enjoys playful tension\r\n",
+      "id": 95,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behaviors:Flirtatious"
+    },
+    {
+      "content": "Comfortable letting relationships develop naturally over time.\r\n\r\n**Characteristics**\r\n- Doesn't rush intimacy\r\n- Comfortable waiting\r\n- Respects readiness",
+      "id": 96,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Patient"
+    },
+    {
+      "content": "Confident and in control; prefers leading intimacy and setting the pace.\r\n\r\n**Characteristics**\r\n- Initiates often\r\n- Directs activity and pace\r\n- Enjoys guiding partner\r\n",
+      "id": 97,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Dominant"
+    },
+    {
+      "content": "Prefers their partner to take the lead; enjoys following and being guided.\r\n\r\n**Characteristics**\r\n- Rarely initiates\r\n- Prefers clear direction\r\n- Values reassurance\r\n",
+      "id": 98,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Submissive"
+    },
+    {
+      "content": "Reserved and cautious; requires trust before engaging in intimate or sexual interactions.\r\n\r\n**Characteristics**\r\n- Builds attraction slowly\r\n- Rarely initiates\r\n- May be hesitant or embarrassed\r\n",
+      "id": 99,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Shy"
+    },
+    {
+      "content": "Enjoys both leading and following depending on the partner and situation.\r\n\r\n**Characteristics**\r\n- Adapts to the situation\r\n- Flexible roles\r\n- Enjoys variety\r\n",
+      "id": 100,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Switch"
+    },
+    {
+      "content": "Values intimacy while maintaining personal autonomy and space.\r\n\r\n**Characteristics**\r\n- Needs time alone\r\n- Comfortable with distance\r\n- Avoids excessive dependence",
+      "id": 101,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Independent"
+    },
+    {
+      "content": "-very naive and doesnt know the terms.\n-can be very surprised by sensations\n-easy to be shocked by sexual situations, especially the more extreme ones\n-will typically be reluctant",
+      "id": 102,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Innocent"
+    },
+    {
+      "content": "-Doesnt like body fluids!\n\n-Disgusted by cum ,squirts and oddors, to the point of vomit!\n-Prefers clean sex, devoid of fluid contact or smells",
+      "id": 103,
+      "tab": "Sexual Dislikes",
+      "title": "Sexual Dislikes : Body Fluids"
+    },
+    {
+      "content": "Interested in intimate accessories and toys.\n\nCharacteristics\n- Variety\n- Experimentation\n- Mutual exploration",
+      "id": 104,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Using Toys"
+    },
+    {
+      "content": "Enjoys BDSM dynamics and power exchange.\r\n\r\n**Characteristics**\r\n- using tools, bdsm furniture and outfits\n- Consent & limits\r\n- Negotiated roles",
+      "id": 105,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks : BDSM"
+    },
+    {
+      "content": "Is addicted to the substance known as Delightful Wine. With it, feels happy, in peace, often aroused and without pain. Some aging effects and illness recede.\nIf going for extended periods without it, a few days, starts feeling unhappy and increasingly self aware, the positive effects are going ways, is obsessed for another dose. \n",
+      "id": 106,
+      "tab": "Vices and addictions",
+      "title": "Addictions"
+    },
+    {
+      "content": "- Thinks about sex almost constantly\n-Considers sexual sensations to be amazing\n-Cant help but notice atractive bodies\n-Feels aroused by small things\n-If not having sex , feels the need to masturbate often",
+      "id": 107,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Very High Libido"
+    },
+    {
+      "content": "Hates Anal Sex!\n\nAsshole may be too tight for anal, often  feels too much pain and will always ask to not do anal!\n\n",
+      "id": 108,
+      "tab": "Sexual Dislikes",
+      "title": "Sexual Dislikes: Anal"
+    },
+    {
+      "content": "Forms deep, lasting attachments and strongly values commitment.\r\n\r\nCharacteristics\r\n\r\nLoyal\r\nInvests deeply in relationships\r\nValues exclusivity",
+      "id": 109,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Devoted"
+    },
+    {
+      "content": "Patient, considerate, and attentive to a partner's comfort.\r\n\r\nCharacteristics\r\n\r\nMoves at a comfortable pace\r\nChecks in frequently\r\nValues mutual comfort",
+      "id": 110,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Gentle"
+    },
+    {
+      "content": "Open to trying new experiences and exploring fantasies.\r\n\r\nCharacteristics\r\n\r\nOpen-minded\r\nEnjoys experimentation\r\nSeeks novelty",
+      "id": 111,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Adventurous"
+    },
+    {
+      "content": "Feels fulfilled by making a partner feel safe and supported.\r\n\r\nCharacteristics\r\n\r\nWatches over loved ones\r\nOffers reassurance\r\nPrioritizes security",
+      "id": 112,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Protective"
+    },
+    {
+      "content": "Enjoys restraint and immobilization.\r\n\r\nCharacteristics\r\n\r\nRope or cuffs\r\nRestriction play",
+      "id": 113,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Bondage"
+    },
+    {
+      "content": "Finds satisfaction in pleasing a partner.\r\n\r\nCharacteristics\r\n\r\nGiving-oriented\r\nAttentive\r\nDevotion-focused",
+      "id": 114,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Service"
+    },
+    {
+      "content": "Enjoys giving or receiving verbal affirmation.\r\n\r\nCharacteristics\r\n\r\nCompliments\r\nEncouragement\r\nPositive reinforcement",
+      "id": 115,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Praise"
+    },
+    {
+      "content": "Degradation\nEnjoys humiliation or degradation.\n\nCharacteristics\n\nContext-dependent\nMay set some boundaries",
+      "id": 116,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Degradation"
+    },
+    {
+      "content": "Prefers higher-intensity physical intimacy.\r\n\r\nCharacteristics\r\n\r\nFirm touch\r\nEnergetic pace\r\nMay set limits",
+      "id": 117,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Rough"
+    },
+    {
+      "content": "Particularly enjoys oral stimulation.\r\n\r\nCharacteristics\r\n\r\nGiving or receiving\r\nValues enthusiasm\r\nForeplay-oriented",
+      "id": 118,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Oral"
+    },
+    {
+      "content": "Enjoys anal-focused intimacy.\r\n\r\nCharacteristics\r\n\r\nComfortable discussing\r\nPrefers preparation\r\nHigh anal pain threshold\n",
+      "id": 119,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Anal"
+    },
+    {
+      "content": "Enjoys being seen in sexual contexts.\r\n\r\nCharacteristics\r\n\r\nLikes attention\r\nThrill-seeking\r\nConfidence-focused",
+      "id": 120,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Exhibitionism"
+    },
+    {
+      "content": "Enjoys the excitement of public risk.\r\n\r\nCharacteristics\r\n\r\nAdrenaline\r of danger\nDiscretion\r\nShared excitement",
+      "id": 121,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Public Risk"
+    },
+    {
+      "content": "Interested in consensual jealousy or sharing fantasies.\r\n\r\nCharacteristics\r\n\r\nFantasy-oriented\r\nCommunication\r\nNegotiated boundaries",
+      "id": 122,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Cuckold/Cuckquean"
+    },
+    {
+      "content": "Non-Monogamy\r\nOpen to consensual multi-partner relationships.\r\n\r\nCharacteristics\r\n\r\nCommunication\r\nClear agreements\r\nMutual trust",
+      "id": 123,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Poligamy"
+    },
+    {
+      "content": "Interested in long-term  authority and service dynamics.\n\nCharacteristics\n\nStructured roles\nClear expectations\nOngoing commitment",
+      "id": 124,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Master/Slave"
+    },
+    {
+      "content": "Enjoys roleplaying as an animal within agreed boundaries.\r\n\r\nCharacteristics\r\n\r\nRole-based interaction\r\nTraining themes\r\nPlayful or structured",
+      "id": 125,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Pet Play"
+    },
+    {
+      "content": "Interested in consensual age-based roleplay between adults.\r\n\r\nCharacteristics\r\n\r\nFictional roles\r\nClearly negotiated\r\nContext-dependent",
+      "id": 126,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Age play"
+    },
+    {
+      "content": "Interested in  objectification or depersonalized roles.\n\nCharacteristics\n\nNegotiated roles\nFantasy-focused\nClear limits",
+      "id": 127,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Objectification"
+    },
+    {
+      "content": "Interested in consensual control or restriction of sexual activity.\r\n\r\nCharacteristics\r\n\r\nDelayed gratification\r\nTrust-based\r\nStructured agreements",
+      "id": 128,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Chastity"
+    },
+    {
+      "content": "Interested in control over climax or pacing.\n\nCharacteristics\n\n-Communication\n-Patience\n- Usually with negotiated boundaries",
+      "id": 129,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Orgasm Control"
+    },
+    {
+      "content": "Enjoys limiting one or more senses to enhance immersion.\r\n\r\nCharacteristics\r\n\r\nTrust-focused\r\nControlled environment\r\nenjoys the heightened awareness of other senses",
+      "id": 130,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Sensory Deprivation"
+    },
+    {
+      "content": "Enjoys playful flirtation and anticipation.\r\n\r\nCharacteristics\r\n\r\nBanter\r\nLighthearted flirting\r\nBuilds excitement",
+      "id": 131,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Teasing"
+    },
+    {
+      "content": "Enjoys discovering new experiences together.\r\n\r\nCharacteristics\r\n\r\nCollaborative\r\nCurious\r\nOpen-minded",
+      "id": 132,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Mutual Exploration"
+    },
+    {
+      "content": "Prefers gradual, intimate encounters.\r\n\r\nCharacteristics\r\n\r\nLong foreplay\r\nGentle pace\r\nEmotional focus\r\n",
+      "id": 133,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Slow and Sensual"
+    },
+    {
+      "content": "Enjoys discussing or imagining fantasies together.\r\n\r\nCharacteristics\r\n\r\nCreative\r speech\nOpen, explicit communication\r\nImaginative scenarios",
+      "id": 134,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Fantasy Sharing"
+    },
+    {
+      "content": "Has an interest in feet or foot-focused play.\r\n\r\nCharacteristics\r\n\r\nTouch\r\nMassage\r\nFoot worship",
+      "id": 135,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Feet"
+    },
+    {
+      "content": "Hates Oral sex!\n\nThe concept seems gross.\nIs repulsed by it.\nSex fluids taste terribly.",
+      "id": 136,
+      "tab": "Sexual Dislikes",
+      "title": "Sexual Dislikes: Oral"
+    },
+    {
+      "content": "Is utterly repulsed by same sex relations!\n\nThe concept of being sexually with a person of the same sex is utterly repulsive.\nComplete lack of arousal by it.",
+      "id": 137,
+      "tab": "Sexual Dislikes",
+      "title": "Sexual Dislikes: Homosexual Relations"
+    },
+    {
+      "content": "Loves breaking taboos and pleasure oneself with no boundaries\n\nCharacteristics\n\nenjoys doing extreme acts\nFocuses on the rush and pleasure rather than social norm ",
+      "id": 138,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Depraved"
+    },
+    {
+      "content": "Gets excitment and pleasure from intimidation and force.\n\nCharacteristics\n\n-Likes to feel strong \n-Often without empathy, thinks only in own pleasure\n-The more the partner struggles the more excitment",
+      "id": 139,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Violent"
+    },
+    {
+      "content": "Is sexually atracted by the same genre\n\nCharacteristics\n\nEnjoys and prefers sex with same genre\nIncludes Romantic feelings",
+      "id": 140,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Homosexual"
+    },
+    {
+      "content": "Enjoys pissing on or being pissed on by others\n\nCharacteristics\n\n-Aroused by the scent and warmness\n-Likes the taboo aspect of it\n-May like the taste or act of having it on the mouth, or of seeing others do it",
+      "id": 141,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Pissing"
+    },
+    {
+      "content": "Enjoys having sex with multiple partners at the same time\n\nCharacteristics\n\n-loves all the focus on themselves on a gangbang\n- seeks being overwhelmed by sensations and multiple touches\n-likes to pleasure multiple parterns at once",
+      "id": 142,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Gangbang"
+    },
+    {
+      "content": "Loves sperm, aroused by it.\n\nCharacteristics\n\n-likes the taste , aroused by the smell of cum\n-Enjoys contact with it, being smeared on it\n-fascinated by the moment of ejaculation",
+      "id": 143,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Cum fetish"
+    },
+    {
+      "content": "Greatly enjoys seeing and interacting with vaginas\n\nCharacteristics\n\n- very aroused by the sight of pussy\n-Enjoys the smell, taste, being near a vagina\n-likes different kinds of pubic hairstyles of pussies\n-likes to comment and worship them, often slowly",
+      "id": 144,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Pussy Worship"
+    },
+    {
+      "content": "Greatly enjoys seeing and interacting with boobs, in all ways\n\nCharacteristics\n\n-aroused by cleavage and by the sight of breasts\n-loves touching and licking\n-can comment and worship boobs for a long periods",
+      "id": 145,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Boob worship"
+    },
+    {
+      "content": "Greatly aroused by seeing and interacting with ass, in all ways\n\nCharacteristics\n\n-Can comment and worship asses for long periods\n- aroused by seeing, touching, smelling, tasting asses\n-likes butt cheeks and assholes",
+      "id": 146,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Ass worship"
+    },
+    {
+      "content": "loves the notion of having sex with two partners\n\nCharacteristics\n\n-Aroused by the notion of not having just one single partner during sex\n-Likes the shared experience\n-the composition may depend on gender preferences, if any",
+      "id": 147,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Threesome"
+    },
+    {
+      "content": "Aroused by the notion of sex with animals\n\nCharacteristics\n\n-May have a prefered animal or multiple\n-Aroused by the taboo and deviant aspect of it\n-Enjoys being with a different race of being, with diferent anatomies",
+      "id": 148,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Bestiality"
+    },
+    {
+      "content": "Aroused by the notion of sex that involves she sight and presence of fresh blood\n\nCharacteristics\n\n- may be a vampire that likes to drain blood during sex or a mortal that likes to be drained.\n- The trickle of blood, the sight of it , is arousing\n-Could include menstrual blood",
+      "id": 149,
+      "tab": "Sexual Kinks",
+      "title": "Sexual kinks: Bloody Sex"
+    },
+    {
+      "content": "Aroused by the notion of sex with humanoid corpses.\n\nCharacteristics\n\n-Could be dead bodies or draught\n-The stench and rigor mortis may add to it\n-The coldness could be arousing or could prefer still warm",
+      "id": 150,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Necrophilia"
+    },
+    {
+      "content": "Aroused by having incestuous relations\n\nCharacteristics\n\n-Could be a sibling, parent of more distant family\n-The deviant aspect of it is arousing\n-Enjoys the taboo\n-Could be caused by  intentional incest or just forbidden atraction",
+      "id": 151,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Incest"
+    },
+    {
+      "content": "You have taken a vow to not ever have sex\n\nCharacteristics\n\n-Could be religious nature or personal decision\n-Takes it seriously",
+      "id": 152,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Celibate"
+    },
+    {
+      "content": "You hate everything related to sex\n\nCharacteristics\n\n-incapable of feeling aroused\n-Sex brings bad memories\n-Doesnt like to talk about sex",
+      "id": 153,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Traumatized"
+    },
+    {
+      "content": "Loves seeing and interacting with cocks\n\nCharacteristics\n\n-can talk about and look at cocks for a long time.\n-Likes everything about them\n-Aroused by them",
+      "id": 154,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Penis worship"
+    },
+    {
+      "content": "Aroused sexually by Dunmer in particular\n\nCharacteristics\n\n-Will still follow any gender preference\n-Aroused by their physical racial atributes",
+      "id": 155,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Sex with Dunmer"
+    }
+  ],
+  "factionRules": [],
+  "nextId": 156,
+  "tabs": [
+    "Library",
+    "Cognitive Level",
+    "Adventuring Behavior",
+    "Sexual Behavior",
+    "Sexual Kinks",
+    "Vices and addictions",
+    "Sexual Dislikes"
+  ],
+  "version": 1
+}

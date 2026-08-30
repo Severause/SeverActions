@@ -1,6 +1,6 @@
 customCategory: arrest
 name: OrderJailed
-description: "The Jarl or magistrate, having heard out the case with the prisoner kneeling on the hall's stone floor, points to the cell door — 'Take them down.' Only valid when a prisoner stands before the speaker after a DispatchGuardToArrest brought them in for judgment."
+description: "Use only when a prisoner stands before the speaker for judgment after a DispatchGuardToArrest brought them in. The Jarl or magistrate finds against the prisoner and sends them down to the cells."
 questEditorId: SeverActions
 scriptName: SeverActions_ArrestJudgment
 executionFunctionName: OrderJailed_Execute

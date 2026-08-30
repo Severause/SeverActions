@@ -1,6 +1,6 @@
 customCategory: crafting
 name: BrewPotion
-description: "The speaker heads to the nearest alchemy lab, grinds the ingredients, decants the brew, and hands the finished bottle off to the one who needs it — a healing draught for a wounded friend, a fortifying tonic before a job, an antidote ground out in a back-room apothecary."
+description: "Brew a potion at an alchemy lab and give the finished bottle to someone — a healing draught for a wounded friend, an antidote, a fortifying tonic. NOT for cooking food (use CookMeal) or smithing (use CraftItem)."
 questEditorId: SeverActions
 scriptName: SeverActions_Crafting
 executionFunctionName: BrewPotion_Internal

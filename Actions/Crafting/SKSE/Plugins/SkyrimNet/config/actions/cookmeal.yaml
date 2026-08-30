@@ -1,6 +1,6 @@
 customCategory: crafting
 name: CookMeal
-description: "The speaker steps over to the cookpot, fires the spit, ladles out a portion when it's done, and brings it across to the one waiting — venison stew at a wayside camp, an apple cabbage broth at the inn, sweetrolls baked at the hearth and pressed into a child's hand."
+description: "Cook food at a cookpot or spit and serve it to someone — venison stew at a wayside camp, a broth at the inn, sweetrolls at the hearth. NOT for brewing potions (use BrewPotion)."
 questEditorId: SeverActions
 scriptName: SeverActions_Crafting
 executionFunctionName: CookMeal_Internal

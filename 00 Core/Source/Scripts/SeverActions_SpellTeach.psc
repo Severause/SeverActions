@@ -47,7 +47,7 @@ Float Property FailureDifficultyMult = 1.0 Auto Hidden
 {Multiplier for failure chance (0.5 = easier, 2.0 = harder). MCM adjustable.}
 
 ObjectReference Property PendingCleanupCreature = None Auto Hidden
-{Internal: creature spawned by failed Conjuration, auto-cleaned after 30s}
+{Internal: creature spawned by failed Conjuration, auto-cleaned after 10s (partial success) / 30s (full failure)}
 
 ; Visual FX
 EffectShader Property SpellLearnedFXS Auto
@@ -231,7 +231,8 @@ Function _ApplyExhaustion(Actor learner, Spell akSpell)
     endif
     
     Int difficulty = GetSpellDifficulty(akSpell)
-    Float maxMagicka = learner.GetActorValue("Magicka")
+    ; MAX magicka is what we want here -- GetActorValue returns CURRENT (already-drained) magicka; GetBaseActorValue is the vanilla-safe maximum.
+    Float maxMagicka = learner.GetBaseActorValue("Magicka")
     Float drainAmount = maxMagicka * ExhaustionPercentage * (1.0 + (difficulty * 0.25))
     
     learner.DamageActorValue("Magicka", drainAmount)
@@ -271,37 +272,28 @@ EndFunction
 ; FADE TO BLACK FUNCTIONS
 ; =============================================================================
 
-; v3.5 fade-to-black update — Game.FadeOutGame with long-duration animation.
+; Fade-to-black via Game.FadeOutGame with a long-duration animation.
+; The three-IMOD pattern works under stock Skyrim but Community Shaders'
+; replacement post-process drops the IMOD stage (Apply calls fire but never
+; reach the final tonemap). FadeOutGame routes through Bethesda's high-level
+; fade machinery (sleep / wait / hit-the-bed path), which CS lets through,
+; but it doesn't hold black — the screen releases when the animation
+; duration elapses.
 ;
-; The previous three-IMOD pattern works under stock Skyrim but
-; Community Shaders' replacement post-process drops the IMOD stage —
-; the Apply calls fire but never reach the final tonemap.
+; The trick: make the fade-out duration LONG enough to span the whole
+; spell-teach sequence. While the animation is in-flight the screen is held
+; in its interpolated state — never completes, never releases; _EndFadeToBlack
+; interrupts with the reverse animation to bring it back. The screen
+; progressively darkens over LongFadeOutSeconds rather than snapping at 1s,
+; reading as "the scene dims while the teacher concentrates".
 ;
-; Game.FadeOutGame routes through Bethesda's high-level fade machinery
-; (sleep / wait / hit-the-bed path) which CS lets through. BUT
-; FadeOutGame doesn't hold black after its animation completes; the
-; screen releases when the animation duration elapses.
+; Do not reach for the alternatives: a snap-and-hold doesn't hold, and an
+; OnUpdate refresh loop re-animates every refresh (flicker). FadeOutGame
+; locks player controls during the transition, which is correct here — the
+; player shouldn't be wandering mid-lesson.
 ;
-; The trick: make the fade-out animation duration LONG enough to span
-; the whole spell-teach sequence. While the animation is in-flight,
-; the screen is held in its current interpolated state — never reaches
-; completion, never releases. _EndFadeToBlack interrupts with the
-; reverse animation when we want to bring the screen back.
-;
-; Visual: screen progressively darkens over LongFadeOutSeconds rather
-; than snapping at 1s. For a spell-teach lesson this reads as a
-; "scene grows dim while the teacher concentrates" effect. Tune
-; via the property below if a snappier vs slower transition is desired.
-;
-; v3.5a/b iterations attempted: snap-and-hope-it-holds (didn't), and
-; an OnUpdate refresh loop (every refresh re-animated → flicker).
-; Long-duration animation is the simplest path that actually holds.
-;
-; Trade-off: FadeOutGame locks player controls during the transition.
-; For spell-teach that's correct — the player shouldn't be wandering.
-;
-; The IMOD properties stay declared and bindable in CK for a future
-; revert if needed; they're not referenced by the current bodies.
+; The IMOD properties stay declared and bindable in CK for a future revert;
+; they're not referenced by the current bodies.
 
 ; Long enough to cover the full lesson at default difficulty (~5-15s).
 ; If the lesson runs longer than this, the animation will complete and
@@ -489,11 +481,11 @@ Function _ApplyConjurationFailure(Actor learner, Int difficulty, Int outcome)
             ; Full failure: hostile creature, player must deal with it
             creature.StartCombat(learner)
             PendingCleanupCreature = creature as ObjectReference
-            RegisterForSingleUpdate(30.0)
+            ChronoArm(30.0)
         else
             ; Partial success: non-hostile, brief apparition before lesson resumes
             PendingCleanupCreature = creature as ObjectReference
-            RegisterForSingleUpdate(10.0)
+            ChronoArm(10.0)
         endif
     endif
 
@@ -575,9 +567,19 @@ Function _ApplyAlterationFailure(Actor learner, Int difficulty, Int outcome)
         if difficulty >= 4
             paralyzeTime = 5.0
         endif
+        ; Crash safety: persist the pending reset BEFORE paralyzing. A bare
+        ; SetActorValue + blocking Wait + reset bakes Paralysis=1 into the
+        ; actor (possibly the PLAYER) forever if the game crashes, quits, or
+        ; a save is loaded from inside the window -- a suspended Utility.Wait
+        ; stack is not guaranteed to survive, but a registered single update
+        ; is, and Maintenance() force-clears leftovers on load.
+        StorageUtil.FormListAdd(Self, "SeverSpellTeach_PendingParalyze", learner, false)
+        StorageUtil.SetFloatValue(learner, "SeverSpellTeach_ParalyzeUntil", Utility.GetCurrentRealTime() + paralyzeTime)
         learner.SetActorValue("Paralysis", 1.0)
+        ChronoArm(paralyzeTime + 0.5)
         Utility.Wait(paralyzeTime)
-        learner.SetActorValue("Paralysis", 0.0)
+        ; Normal path: reset + unpersist. The OnUpdate sweep then no-ops.
+        _ClearPendingParalysis(learner)
     endif
 EndFunction
 
@@ -638,9 +640,89 @@ Function _CleanupSpawnedCreature()
     endif
 EndFunction
 
-Event OnUpdate()
+Function ChronoArm(Float afSeconds)
+    {Arm this script's one-shot chronometer tick - replaces the FORM-keyed
+     RegisterForSingleUpdate (canonical explanation: the Chronometer block in
+     SeverActionsNativeExt2.psc + the CLAUDE.md lesson). Event name AND
+     callback name are unique per script - both, always. Re-arm replaces the
+     pending tick; ticks do NOT survive save/load (load paths re-arm); at
+     most one already-in-flight wake can land after Cancel/Clear, so keep
+     the handler state-guarded.}
+    RegisterForModEvent("SeverActions_Tick_SpellTeach", "OnChronoTick_SpellTeach")
+    SeverActionsNativeExt2.Chrono_Request("SeverActions_Tick_SpellTeach", afSeconds)
+EndFunction
+
+Event OnChronoTick_SpellTeach(String eventName, String strArg, Float numArg, Form sender)
+    ; Shared single-update channel: the conjuration-creature despawn AND the
+    ; paralysis-reset safety net both arm this event. Both passes are
+    ; idempotent, so whichever deadline fires first can safely run both.
     _CleanupSpawnedCreature()
+    _SweepPendingParalysis(false)
 EndEvent
+
+; =============================================================================
+; PARALYSIS RESET SAFETY NET - crash-safe recovery for _ApplyAlterationFailure
+; =============================================================================
+
+Function Maintenance()
+    {Load-time recovery. Force-clears any paralysis reset left pending by a
+     crash/quit/save made inside the failure-paralysis window. Real-time
+     deadlines from a previous session are meaningless after a load, so
+     sweep everything rather than leave an actor stuck at Paralysis=1.
+     Called by SeverActions_Init's load path (InitializeSpellTeachSystem).}
+    ; Chronometer: one idempotent wake on load - runs the creature-despawn
+    ; and paralysis sweeps once in case their deadline tick was pending at
+    ; the save (chronometer ticks do not survive save/load).
+    ChronoArm(1.0)
+    _SweepPendingParalysis(true)
+EndFunction
+
+Function _SweepPendingParalysis(Bool abForce)
+    {Reset Paralysis on every actor whose pending window has expired (or on
+     all of them when abForce). Re-arms the tick for windows still open.}
+    Int i = StorageUtil.FormListCount(Self, "SeverSpellTeach_PendingParalyze")
+    if i <= 0
+        return
+    endif
+
+    Float now = Utility.GetCurrentRealTime()
+    Float nextWait = 0.0
+    while i > 0
+        i -= 1
+        Actor pending = StorageUtil.FormListGet(Self, "SeverSpellTeach_PendingParalyze", i) as Actor
+        if !pending
+            ; Entry went stale (actor unloaded/deleted) - drop it.
+            StorageUtil.FormListRemoveAt(Self, "SeverSpellTeach_PendingParalyze", i)
+        else
+            Float deadline = StorageUtil.GetFloatValue(pending, "SeverSpellTeach_ParalyzeUntil", 0.0)
+            if abForce || now >= deadline
+                _ClearPendingParalysis(pending)
+            else
+                Float remaining = deadline - now
+                if nextWait == 0.0 || remaining < nextWait
+                    nextWait = remaining
+                endif
+            endif
+        endif
+    endwhile
+
+    if nextWait > 0.0
+        ; A window is still open (this update fired early, e.g. armed by the
+        ; creature-cleanup path) - keep the safety net armed for it.
+        ChronoArm(nextWait + 0.1)
+    endif
+EndFunction
+
+Function _ClearPendingParalysis(Actor akActor)
+    {Reset the failure paralysis and unpersist its pending marker. Safe to
+     call more than once for the same actor.}
+    if !akActor
+        return
+    endif
+    akActor.SetActorValue("Paralysis", 0.0)
+    StorageUtil.UnsetFloatValue(akActor, "SeverSpellTeach_ParalyzeUntil")
+    StorageUtil.FormListRemove(Self, "SeverSpellTeach_PendingParalyze", akActor, true)
+EndFunction
 
 ; =============================================================================
 ; NARRATION SYNC - Wait for DirectNarration audio to finish before continuing
@@ -704,6 +786,27 @@ Function TransferSpell_Execute(Actor teacher, Actor learner, Spell akSpell)
     {Unified spell transfer execution with failure system}
     if !teacher || !learner || !akSpell
         return
+    endif
+
+    ; --- One-handed-spell fix -------------------------------------------------
+    ; The spell was resolved by NAME against the TEACHER's known spells, and
+    ; magic overhauls distribute NPCs hand-locked copies: MAG_FireboltRightHand
+    ; carries the RightHand equip slot while the tome's MAG_Firebolt carries
+    ; EitherHand - and BOTH display as Firebolt. Handing the teacher's copy
+    ; straight to the player gave them a spell they could only ever hold in one
+    ; hand (no off-hand, no dual-cast). Swap to the tome-taught version.
+    ;
+    ; PLAYER ONLY on purpose. For an NPC learner the teacher's exact variant is
+    ; the right thing to copy: overhauls pair a hand-locked spell with the perk
+    ; that lets that NPC cast it, and substituting a different variant pulls in
+    ; a perk requirement they do not have. NPC casting already routes through
+    ; GetUnrestrictedVariantForCast, which grants the perk alongside.
+    if learner == Game.GetPlayer()
+        Spell learnable = SeverActionsNative.GetLearnableSpellVariant(akSpell) as Spell
+        if learnable && learnable != akSpell
+            Debug.Trace("[SeverActions_SpellTeach] Teaching the player the unrestricted variant of "                 + akSpell.GetName() + " instead of the teacher's one-handed copy")
+            akSpell = learnable
+        endif
     endif
 
     String spellName = akSpell.GetName()
@@ -923,6 +1026,15 @@ Function TeachSpell(Actor akActor, String spellName)
         return
     endif
 
+    ; Resolve to the tome-taught, either-hand version BEFORE the already-knows
+    ; check - otherwise a player who owns the real Firebolt still passed this
+    ; gate (they lack the teacher's RightHand copy) and sat through a whole
+    ; lesson that TransferSpell_Execute then refused.
+    Spell learnable = SeverActionsNative.GetLearnableSpellVariant(akSpell) as Spell
+    if learnable
+        akSpell = learnable
+    endif
+
     ; Check if player already knows it
     if player.HasSpell(akSpell)
         SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
@@ -1003,4 +1115,76 @@ String Function _DifficultyName(Int difficulty)
     else
         return "Master"
     endif
+EndFunction
+
+; =============================================================================
+; SHOUT TEACHING (dev142) - the way of the Voice, freely given
+; -----------------------------------------------------------------------------
+; The Greybeards (or any NPC whose EFFECTIVE record carries Shouts - own
+; record, or the template chain's when the NPC is templated for Spells;
+; SpellDB::EffectiveShoutSource resolves it and the can_teach_shouts
+; decorator gates the action on exactly that, issue #411) teach the
+; player ONE Word of Power per lesson: the next word of the named Shout the
+; player does not yet know. A master's gift includes the understanding -
+; TeachWord AND UnlockWord, no dragon soul spent - mirroring MQ105, where
+; the Greybeards share their knowledge of Whirlwind Sprint outright. Word
+; state is player-global (the same flags word walls set), so wall-learned
+; and master-taught words compose; three lessons complete a Shout.
+; =============================================================================
+
+Function TeachShout(Actor akActor, String shoutName)
+    SkyrimNetApi.SetActionCooldown("teachshout", 10)
+
+    Actor player = Game.GetPlayer()
+
+    Form shoutForm = SeverActionsNativeExt.Native_FindShoutOnActor(akActor, shoutName)
+    if !shoutForm
+        SkyrimNetApi.RegisterEvent("shout_teach_failed", \
+            akActor.GetDisplayName() + " does not know a Shout called " + shoutName + ".", \
+            akActor, player)
+        return
+    endif
+    Shout akShout = shoutForm as Shout
+    if !akShout
+        return
+    endif
+
+    Form wordForm = SeverActionsNativeExt.Native_Shout_GetNextWord(shoutForm)
+    if !wordForm
+        SkyrimNetApi.RegisterEvent("shout_teach_failed", \
+            player.GetDisplayName() + " already knows all three words of " + akShout.GetName() + ".", \
+            akActor, player)
+        return
+    endif
+    WordOfPower word = wordForm as WordOfPower
+    if !word
+        return
+    endif
+
+    String wordName = SeverActionsNativeExt.Native_Shout_WordName(wordForm)
+
+    ; The gift: the word AND its understanding. TeachWord is what a wall
+    ; does; UnlockWord is what a dragon soul does - a master grants both.
+    Game.TeachWord(word)
+    Game.UnlockWord(word)
+    if !player.HasSpell(akShout)
+        player.AddShout(akShout)
+    endif
+
+    Int known = SeverActionsNativeExt.Native_Shout_KnownWordCount(shoutForm)
+    String progress = "the first word of " + akShout.GetName()
+    if known >= 3
+        progress = "the final word - " + akShout.GetName() + " is now wholly theirs"
+    elseif known == 2
+        progress = "the second word of " + akShout.GetName()
+    endif
+
+    SkyrimNetApi.DirectNarration("*" + akActor.GetDisplayName() + " speaks " + wordName + \
+        ", slowly, and its meaning settles into " + player.GetDisplayName() + \
+        "'s mind - " + progress + ", freely given, no dragon soul demanded.*", \
+        akActor, player)
+    SkyrimNetApi.RegisterEvent("shout_word_taught", \
+        akActor.GetDisplayName() + " taught " + player.GetDisplayName() + " the word " + \
+        wordName + " of the Shout " + akShout.GetName() + ".", \
+        akActor, player)
 EndFunction

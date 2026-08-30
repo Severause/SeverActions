@@ -1,5 +1,5 @@
 name: AssignHome
-description: "The follower marks this place as somewhere they belong — a room above the Bannered Mare, the upstairs of Breezehome, a homestead at Lakeview Manor. When the road parts and they're dismissed, this is where they'll head back to."
+description: "Assign the follower a home — the place they head back to when dismissed. Use when {{ player.name }} tells the follower where to live, or the follower claims a place as theirs in dialogue."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: AssignHome
@@ -9,10 +9,17 @@ parameterMapping:
     description: the follower putting down roots
   - type: dynamic
     name: locationName
-    description: "the place to call home (e.g. 'Breezehome', 'Lakeview Manor', 'Bannered Mare')"
+    description: "name of the place, taken from the dialogue — usually where they are standing. Use a place actually mentioned; do not invent one."
 enabled: true
 defaultPriority: 5
 eligibilityRules:
+  - conditions:
+      - decoratorName: "is_sever_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
   - conditions:
       - decoratorName: "get_faction_rank"
         arguments: ["currentActor", "SexLabAnimatingFaction"]

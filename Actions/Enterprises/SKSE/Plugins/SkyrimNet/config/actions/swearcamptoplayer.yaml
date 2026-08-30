@@ -1,0 +1,65 @@
+customCategory: employment
+name: SwearCampToPlayer
+description: "Use ONLY when the speaker is the LEADER of an outlaw camp and has just AGREED, in this conversation, that their camp will serve {{ player.name }} — a bargain struck between equals, not a surrender. The whole camp comes over: they keep their ground and their work, and a share of what they take goes to {{ player.name }} as their patron. This is a major, hard-to-undo commitment. Call it only once the leader has actually said yes to terms. Do NOT call it for a leader who is still weighing it, still demanding a toll, or merely being friendly, and never for someone who does not lead the camp — their word does not bind anyone else."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: SwearCampToPlayer
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the camp leader agreeing that their camp will serve {{ player.name }}
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      # Feature gate. Disabling camp takeover empties this decorator, which
+      # removes the action from the eligible list entirely — rather than
+      # leaving it offered and silently refused by the native.
+      - decoratorName: "sever_camp_takeover"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Custom decorators are string-compared — never gate on a JSON bool.
+      # "wild" = an ordinary camp that has not sworn and has not lost its chief.
+      - decoratorName: "sever_camp_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "wild"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Only the chief can sign the camp over. The native refuses a non-leader
+      # too; this keeps the action from being offered at all.
+      - decoratorName: "sever_camp_is_leader"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # rank < 0 — NOT is_in_faction. SexLab/OStim leave an NPC stuck at rank -1
+      # after a scene, and a rank-blind check would gate this off permanently.
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} agreed that their camp will serve {{ player.name }}"

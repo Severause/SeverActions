@@ -1,6 +1,6 @@
-customCategory: enterprises
+customCategory: employment
 name: ThugStandDown
-description: "Use ONLY when you are one of the hired thugs confronting {{ player.name }} in an ambush, and the exchange has given you a real reason to back off - they have paid you off, intimidated you, convinced you the job is not worth your neck, or talked you down. Calling this lowers everyone's weapons and you all leave {{ player.name }} unharmed. Someone the player wronged paid you to do this - you owe them nothing if the price or the risk no longer adds up. Do NOT call this if you still mean to fight, and never out of an ordinary conversation - it ONLY resolves the ambush peacefully."
+description: "Use only when the speaker is one of the hired thugs confronting {{ player.name }} in an ambush, and the exchange has given them a real reason to back off - {{ player.name }} paid them off, intimidated them, or talked them down. Everyone lowers their weapons and leaves {{ player.name }} unharmed. The thugs owe their employer nothing once the price or the risk no longer adds up. Do not call this if the speaker still means to fight, and never out of an ordinary conversation - it only resolves the ambush peacefully."
 questEditorId: SeverActions
 scriptName: SeverActions_Travel
 executionFunctionName: ThugStandDown_Execute

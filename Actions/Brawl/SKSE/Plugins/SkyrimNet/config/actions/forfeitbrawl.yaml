@@ -1,6 +1,6 @@
 customCategory: brawl
 name: ForfeitBrawl
-description: "The speaker spits blood, lifts a hand, and yields the brawl — pride dented but pride intact, knowing when they're beat. The other fighter wins; both stand down, no weapons drawn, no real harm done."
+description: "Yield and end an ongoing brawl the speaker is losing. Both fighters stand down; no one is killed. For surrendering in real combat, use Yield."
 questEditorId: SeverActions
 scriptName: SeverActions_Brawl
 executionFunctionName: ForfeitBrawl_Execute

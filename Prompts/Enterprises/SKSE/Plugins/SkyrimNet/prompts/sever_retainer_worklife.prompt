@@ -24,8 +24,46 @@ Whose journal this is: {{ npc.name }} ({{ npc.race }}{% if npc.gender %}, {{ npc
 THE ENTRY IS ABOUT THEIR WEEK OF VENTURE WORK — not their old occupation. If the bio names an ordinary day-job (barmaid, shopkeeper), that's backdrop only.
 
 The work: {{ job }} — {{ jobDesc }}{% if location and location != "" %}, operating out of {{ location }}{% endif %}.
+{% set onRoad = default(travelingWithPlayer, false) %}
+{% if onRoad %}
+THIS WEEK THEY WERE ON THE ROAD AT {{ playerName }}'S SIDE — the week's work WAS the traveling: roads, camps, watches, whatever trouble found {{ playerName }}. Write the entry from THAT week (the escort's-eye view of it), not from a posting they weren't at. The settlement facts below still shaped their pay and mood.
+{% endif %}
+{% if guardCharge and guardCharge != "" %}
+{% if guardChargeCaptive %}
+Their posting is a JAILER'S: {{ guardCharge }} is a CAPTIVE they are holding, not a ward they protect. The week is watch-duty over a prisoner — keeping them fed and held, refusing pleas, staying alert for escape attempts. Do not write this as protection or friendship; it is custody.
+{% else %}
+Their posting is PERSONAL: they are the bodyguard of {{ guardCharge }} — shadowing them through the day, standing watch while they work and sleep. The week is shaped by their charge: {{ guardCharge }}'s habits, moods, errands, and any trouble that came near them.
+{% if existsIn(chargeOf, "isRetainer") %}
+{{ guardCharge }} also works for {{ playerName }} — as a {{ chargeOf.job }}, and lately {{ chargeOf.mood }}{% if chargeOf.coerced %}, held on coerced terms they did not choose{% endif %}. So this week they watched that work happen up close: what it takes out of {{ guardCharge }}, whether it goes well, what they think of it. They have an opinion about it by now.
+{% endif %}
+{% endif %}
+{% endif %}
+{% if existsIn(guardedBy, 0) %}
+SOMEONE STANDS OVER THEM. {{ playerName }} has posted {% for g in guardedBy %}{{ g.name }} — a {{ g.job }}, {{ g.mood }} — to {% if g.combatTrade %}guard{% else %}attend{% endif %} them{% if not loop.is_last %}; also {% endif %}{% endfor %}: every working day, at their shoulder. This is NOT background: write what a week under that feels like from THEIR side.
+- On fair terms it can be reassurance, company, a second pair of hands, even friendship — or it can chafe, depending on the person.
+- On COERCED terms (tribute, or held outright) it is a WATCHER, not a protector: privacy gone, every move seen, any thought of leaving measured against them. Do not sanitize that.
+- Name them. They are a person the entry has every reason to mention.
+{% endif %}
+{% if existsIn(crewmates, 0) %}
+THEY DO NOT WORK ALONE. Also posted at {% if location and location != "" %}{{ location }}{% else %}the same place{% endif %}: {% for c in crewmates %}{{ c.name }} ({{ c.job }}, {{ c.mood }}{% if c.status and c.status != "" %}, {{ c.status }}{% endif %}{% if c.coerced %}, there under duress{% endif %}){% if not loop.is_last %}, {% endif %}{% endfor %}.
+- These are the people they see every day. The week happened AROUND them — a shared shift, a favor, a quarrel, someone covering for someone, an in-joke, a resentment.
+- A crewmate having a hard week (troubled, jailed, coerced, low spirits) is the kind of thing that shows up in someone else's journal. So is a good one.
+- Do NOT force it every week — some weeks are solitary even in company. But when a crewmate belongs in the entry, they are the FIRST choice for "withNpc" over any random local.
+{% endif %}
 The arrangement: {{ arrangementDesc }}
-How they feel toward {{ playerName }} right now: {{ mood }} (status: {{ status }}).
+How they feel toward {{ playerName }} right now: {{ mood }}{% if moraleTrend and moraleTrend != "" %} and {{ moraleTrend }}{% endif %} (status: {{ status }}).
+{% if grievance and grievance != "" %}
+What is eating at them (let this color the whole entry — it is the season the week happened in): {{ grievance }}
+{% endif %}
+{% if noticeGiven %}
+THEY HAVE HAD ENOUGH: they have told {{ playerName }} (or resolved to show them) that one more week like this ends it — a consensual worker means to quit; a coerced one is openly defiant. The entry should carry that resolve.
+{% endif %}
+{% if watchedClosely %}
+They tried to run once and were caught — they are watched closely now, and they know it. Fear and biding patience, not open defiance.
+{% endif %}
+{% if awaitingTalk %}
+{{ playerName }} has sent word they mean to come and talk about the work. The wait colors the week — hope, dread, or rehearsed words, per their mood and the arrangement.
+{% endif %}
 
 {# How they came to this work + what's happened since — a hire under duress
    should bleed into how they write; a fence's arrest should haunt the week. #}
@@ -62,12 +100,26 @@ Recent memories (draw on what bears on the work or on {{ playerName }}):
 {% endif %}
 {% endif %}
 
-What the week's settlement actually was (game mechanics — these set the SHAPE and FEELING of the week; do NOT quote them, list them, or itemize them):
+What the week's settlement was on the books (BOOKKEEPING LINES — {{ retainerName }} never saw these. They set the week's SHAPE and FEELING, never its words: do not quote them, itemize them, or reuse their vocabulary — no "escrow", no "arrears", no "purse", no percentages, no gold figures):
 {{ weekFacts }}
 
 {% if previousStory and previousStory != "" %}
 LAST WEEK'S ENTRY (do NOT repeat it — different opening, different focus, a different beat of the work; the weeks should not blur together):
 {{ previousStory }}
+{% endif %}
+
+{% if existsIn(stewardVisit, "stewardName") %}
+A STEWARD CAME OUT THIS WEEK — treat as CANON: {{ stewardVisit.stewardName }}, who keeps {% if stewardVisit.hold != "" %}{{ stewardVisit.hold }}{% else %}the hold{% endif %}'s books for {{ playerName }}, travelled out and spent a day or two here looking the work over in person. Ordinary business, not a summons and not a collection — but somebody was watching this week, and how that sat with them (seen at last, or checked up on) is worth a beat.
+{% endif %}
+{% if existsIn(stewardTrip, "retainerName") %}
+THEY WENT OUT ON THE ROAD THIS WEEK — treat as CANON: as the hold's steward they walked out to {{ stewardTrip.retainerName }}{% if existsIn(stewardTrip, "retainerJob") and stewardTrip.retainerJob != "" %}, the {{ stewardTrip.retainerJob }}{% endif %}{% if existsIn(stewardTrip, "retainerPlace") and stewardTrip.retainerPlace != "" %}, at {{ stewardTrip.retainerPlace }}{% endif %}, and spent a day or two there before coming back to the books. The journey and what they found are fair subject for this week's entry.
+{% endif %}
+{% if existsIn(recentLifeEvents, 0) %}
+THEIR LIFE OUTSIDE THE WORK lately (from their day-to-day life, oldest first — treat these as CANON; the entry may nod to them or carry their mood, but must NEVER contradict them):
+{% for e in recentLifeEvents %}
+- {{ e }}
+{% endfor %}
+(If one of these left a mark — a night in jail, a fight, a loss, a romance — let its shadow fall on this week's entry rather than pretending it never happened. But the ENTRY is still about the week of work; the life events are its weather, not its subject.)
 {% endif %}
 [ end system ]
 
@@ -77,11 +129,21 @@ Write {{ retainerName }}'s journal entry for this week of their work as a {{ job
 
 WRITE A DIARY, NOT A LEDGER:
 - Capture the BROAD STROKES of the week — its rhythm, its weight, the worst of it and any small relief — and above all how it sat with them. Not one transaction; the week.
-- Lead with feeling or state, NOT with an object or a gift. Do NOT anchor the entry on an item a patron or customer gave them — most weeks shouldn't name a specific object at all. The goods in the facts are incidental; coin and trinkets are only worth a line if they MEAN something (resentment at the cut owed, a thing kept out of spite, a debt paid).
-- Let personality and mood drive the voice: short and bitter when worn down, wry when coping, quietly proud when it went well. Vary the opening every week.
+- Lead with feeling or state, NOT with an object or a gift. Do NOT anchor the entry on an item a patron or customer gave them — most weeks shouldn't name a specific object at all.
+- THE HAUL IS ROUTINE. Goods going to the hold's wares chest or fence cache are simply how the work ends every week — never a delivery scene, never an inventory, never the subject. At most a passing clause ("the ore went down to the chest with the rest"); most weeks, don't mention it at all. The ONE exception: a "PILFERED from a client" fact is a real beat — something was taken, and how they feel about that (nerve, guilt, thrill, the client who won't notice) is fair game.
+- THE MONEY IS NOT THE STORY. Never write the books' words: no "escrow", no "arrears", no "purse", no percentages, no gold figures, no "the wage came due". The character never saw a ledger line — they lived a week. When pay genuinely weighs on them it sounds like "what I owe him" or "what's left after his share" — one thread of the week, never its opening, its subject, or its closing beat. READ THE SPLIT RIGHT: the facts name "the house cut" (what {{ playerName }} takes) and what THIS worker "kept" — the worker keeps the REST, usually the larger share. A low house cut means they were treated WELL; never write a small cut as being bled dry. EXCEPTION: when the week's EVENT was money (robbed, wages unpaid, a windfall), write the money plainly — in their words, still never the books'.
+- {{ playerName }} does not appear in every entry. Most weeks the boss never crosses the page at all — no name, no share, no wage. And if this entry could be pasted under another retainer's name and still make sense, it has FAILED: ground it in what only THIS worker lived — their task, their place, their crew, their charge.
+- Let personality and mood drive the voice: short and bitter when worn down, wry when coping, quietly proud when it went well.
+- BANNED OPENINGS: never begin the entry with "Another week", "Another seven days", "One more week", or any "Another ..." construction — and never open by restating that a week of work happened. The reader knows. Find a first sentence only THIS person could have written about THIS week.
+{% if openingMove and openingMove != "" %}
+- THIS WEEK'S OPENING ANGLE — begin the entry {{ openingMove }}. It is a starting point, not a script: enter the week from that angle in their own voice, then go wherever the week actually went.
+{% endif %}
+{% if storyCenter and storyCenter != "" %}
+- THIS WEEK'S CENTER: {{ storyCenter }}. The center is a lens, not the whole entry — let the week's facts flow through it. If the facts carry an INCIDENT line or a real loss, THAT is the center instead; ignore the given one.
+{% endif %}
 
 SHOW THE REALITY — DON'T SANITIZE IT:
-- The arrangement carries the emotional truth; honor it. A TRIBUTE/coerced worker writes under duress — the dread, the swallowed anger, the indignity, the exhaustion, the private defiances, the grim arithmetic of what's left after {{ playerName }}'s cut. Do not smooth it over.
+- The arrangement carries the emotional truth; honor it. An INDENTURED/coerced worker writes under duress — the dread, the swallowed anger, the indignity, the exhaustion, the private defiances, the weariness of working for someone else's gain. Do not smooth it over.
 - A courtesan's trade, a fence's risk, a coerced worker's fear are adult realities of this world. Render them honestly and humanly — within the tone/content settings above, be truthful, never coy, never clinical, never gratuitous.
 - If the facts show a SETBACK or LOSS (robbed, dice, a guard's "fine", spoiled stock, dead trade, unpaid wages), that IS the week — write how it landed on them.
 - If the facts contain an **INCIDENT** line (a cave-in narrowly escaped, a client who turned rough, a fight, a buyer who was a guard's informant, a rare rich strike), THAT is the notable event of the week — build the entry around it and let it carry its weight, fear, or relief. Don't bury it under routine.
@@ -94,14 +156,15 @@ NAMED ENCOUNTER (optional, ~1 week in 4 — most weeks, the people are nameless)
 
 A LETTER TO {{ playerName }} (optional, RARE — only when the week genuinely warrants sending word):
 - MOST weeks, leave "letter" and "letterSubject" EMPTY. A routine week does not move anyone to pay a courier.
-- ONLY when something this week would actually make {{ retainerName }} write to {{ playerName }} — a setback or loss they must flag, trouble closing in (heat, a near-arrest, mounting arrears, a threat), a decision they want {{ playerName }} to weigh in on, or news worth the coin of a courier — write a SHORT letter (2-4 sentences) FROM {{ retainerName }} TO {{ playerName }}, addressing them directly ("you"). It is a deliberate message, NOT a copy of the diary: state the matter plainly and what they want (to meet, a decision, a warning, simply to be heard).
+- Do NOT sign the "letter" or add a closing name — the courier system signs it with {{ retainerName }}'s name automatically. Write only the body.
+- ONLY when something this week would actually make {{ retainerName }} write to {{ playerName }} — a setback or loss they must flag, trouble closing in (heat, a near-arrest, wages gone unpaid, a threat), a decision they want {{ playerName }} to weigh in on, or news worth the coin of a courier — write a SHORT letter (2-4 sentences) FROM {{ retainerName }} TO {{ playerName }}, addressing them directly ("you"). It is a deliberate message, NOT a copy of the diary: state the matter plainly and what they want (to meet, a decision, a warning, simply to be heard).
 - It must fit the arrangement and mood: a coerced/TRIBUTE worker writes guarded, clipped, or bitter; a loyal partner writes plainly and warm. NEVER break character or name anyone traveling with {{ playerName }}. Honor the tone/content settings above.
-- "letterSubject": a short hand-written title for the note (e.g. "Concerning the Coin", "A Word, When You Can", "Do Not Tarry"). Empty when "letter" is empty.
-- "letterMatter": the CONCRETE thing behind the letter, stated plainly in 1-2 sentences (this is private and is NEVER shown to the player as the note — it is what {{ retainerName }} actually means to raise once {{ playerName }} arrives). The "letter" itself stays deliberately vague ("I'll say the rest to your face"); "letterMatter" is the substance it withholds — name the actual problem, choice, threat, or news (e.g. "A rival fence has muscled onto my turf and demands a third of every take; I need you to decide whether we pay him, push back, or fold the operation."). Specific, grounded in this week's facts, never vague. Empty when "letter" is empty.
+- "letterSubject": a short hand-written title for the note, 2-6 in-world words naming what it concerns — invent a fresh one each week, never reuse a title. Empty when "letter" is empty.
+- "letterMatter": the CONCRETE thing behind the letter, stated plainly in 1-2 sentences (this is private and is NEVER shown to the player as the note — it is what {{ retainerName }} actually means to raise once {{ playerName }} arrives). The "letter" itself stays deliberately vague ("I'll say the rest to your face"); "letterMatter" is the substance it withholds — name the actual problem, choice, threat, or news, and what they want {{ playerName }} to do about it. Specific, grounded in this week's facts, never vague. Empty when "letter" is empty.
 
 {% if deliverRaiseLetter %}
 THIS WEEK THE LETTER IS REQUIRED — {{ retainerName }} IS SENDING WORD ABOUT THEIR PAY:
-- {{ retainerName }} has decided to put their terms to {{ playerName }} directly. The "letter" field MUST be filled this week (do NOT leave it empty), and the diary "story" should carry the weight of working up to send it.
+- {{ retainerName }} has decided to put their terms to {{ playerName }} directly. The "letter" field MUST be filled this week (do NOT leave it empty), and the diary "story" should carry the weight of working up to send it. This is a pay week — the ask IS the story, so the money rules above bend: the story may center on the terms and what they mean, still in their own words (no book-keeping vocabulary, no quoted figures).
 {% if raiseAsk.coerced %}
 - This is a COERCED arrangement: the letter is NOT a polite request — it is guarded, clipped, or quietly defiant. They are pushing back against the cut they are forced to hand over and want {{ playerName }} to EASE the terms so they keep more — asking to keep about {{ raiseAsk.toTheirSharePct }}% of the take instead of {{ raiseAsk.fromTheirSharePct }}%. Do not make them grovel; the resentment is the point.
 {% elif raiseAsk.kind == "wage" %}
@@ -109,7 +172,15 @@ THIS WEEK THE LETTER IS REQUIRED — {{ retainerName }} IS SENDING WORD ABOUT TH
 {% else %}
 - They are asking for a bigger share of what the venture earns — to keep about {{ raiseAsk.toTheirSharePct }}% instead of {{ raiseAsk.fromTheirSharePct }}%. Write the ask in their voice, fitting their mood.
 {% endif %}
-- "letterSubject": a fitting hand-written title (e.g. "Concerning My Wages", "A Fair Share", "What I'm Owed"). "letterMatter": state the exact terms they want, plainly, in 1-2 sentences.
+- "letterSubject": a fresh hand-written title naming the ask. "letterMatter": state the exact terms they want, plainly, in 1-2 sentences.
+{% endif %}
+
+{% if deliverCaughtLetter %}
+THIS WEEK THE LETTER IS REQUIRED — {{ retainerName }} WAS CAUGHT SKIMMING:
+- {{ playerName }} came ON-SITE unannounced and went through the books. The skim — {{ caughtAudit.skimPct }}% of the take — was found.{% if caughtAudit.recoveredGold > 0 %} {{ caughtAudit.recoveredGold }} gold was taken back on the spot.{% else %} There was nothing left to recover.{% endif %} The skim is over.
+- The "letter" field MUST be filled this week (do NOT leave it empty): 2-4 sentences FROM {{ retainerName }} TO {{ playerName }} reacting to being caught — written in the aftermath of the confrontation, the words they couldn't find while {{ playerName }} stood over the books. Tone follows the arrangement and their mood: a coerced worker's cornered defiance, a partner's shame, a schemer's smooth excuses, a proud worker's fury at being doubted — NEVER groveling unless that is genuinely who they are.
+- The diary "story" is the audit week itself — the moment {{ playerName }} walked in and opened the books, and how it felt from inside the catch.
+- "letterSubject": a fresh hand-written title fitting the confession. "letterMatter": the plain substance — the exact amount recovered (or that nothing was left to recover) and that the skim has ended, 1-2 sentences.
 {% endif %}
 
 Respond with ONLY this JSON. Compact. First-person diary voice in "story". No explanation:

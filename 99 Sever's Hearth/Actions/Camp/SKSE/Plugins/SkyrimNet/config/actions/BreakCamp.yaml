@@ -1,6 +1,6 @@
 customCategory: camp
 name: BreakCamp
-description: "Break down the active camp. Snuffs the fire, packs up the tent and bedroll, and stows gear back in the Camp Kit. Use when the player or companions want to move on from a campsite, or when the camp must be abandoned. Only valid outside combat."
+description: "Break down the active camp: snuff the fire, pack the tent and bedroll, stow the gear. Use when the party is leaving the campsite for good or the camp must be abandoned."
 questEditorId: SeversHearth
 scriptName: SeversHearth_Camp
 executionFunctionName: BreakCamp
@@ -16,7 +16,13 @@ eligibilityRules:
         arguments: ["currentActor"]
         comparisonOperator: "=="
         expectedValue: false
+      # current_camp is a STRING decorator: non-empty = a camp stands. Without
+      # this gate BreakCamp was offered with no camp to break (P0-14).
+      - decoratorName: "current_camp"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
     logicalOperator: "AND"
     required: true
-eventString: "The camp is broken down."
+eventString: "{{ npc.name }} breaks down the camp."
 isShortLived: true

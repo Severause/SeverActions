@@ -1,0 +1,26 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" or render_mode == "dialogue_target" or render_mode == "target" %}
+{% if isValidActor(actorUUID) %}
+{% set is_collector = is_tax_collector(actorUUID) %}
+{% set authority = is_guard_or_authority(actorUUID) %}
+{% if is_collector == "" and authority != "" %}
+{% set audit_state = tax_audit_state(actorUUID) %}
+{% if audit_state != "" %}
+{% set hold = sever_hold_name(actorUUID) %}
+## The Imperial Fiscal Levy (what the courts have been told)
+{% if audit_state == "casebuilding" or audit_state == "approaching" %}
+General Cassius Vero of the Imperial Treasury is in Skyrim under an Imperial revenue writ, quartered at Dragonsreach with two Legates and twelve soldiers. The Treasury is restoring the Emperor's taxation across the province: enterprise incomes are assessed weekly and the collected share lands in each hold's own court treasury — the holds profit, and every court knows it.
+
+The writ is Treasury business, above hold authority: no Jarl's warrant reaches it, and it can be appealed to nobody nearer than the Ruby Throne. The Final Audit is sent when the Empire has already decided how a matter ends; stories of where the detail has been before are told with the door shut, and nobody checks them — retell them only vaguely, in your own words.{% if hold == "Whiterun" %} The detail are guests of this court: this character has seen them at their work, and knows the present case concerns the largest undeclared fortune in the province.{% else %} Word from Whiterun: the detail is building its first great enforcement case against the largest undeclared fortune in the province.{% endif %} This character measures every word said within the General's hearing, stays well clear of the Empire's ledger, and does not miss the coin flowing into their own hold's treasury.
+{% elif audit_state == "demanding" %}
+The Treasury writ carried by General Cassius Vero has been served — on {{ player.name }}, the largest undeclared fortune in the province and the first great test of the Empire's restored taxation. The courts know an assessment of back-taxes has been made and that the General awaits payment. This character watches how it lands with real interest: if the Levy collects, the Emperor's due is fact again in Skyrim, and the weekly tax already flowing into the holds' own treasuries flows on with teeth behind it. Treasury business is above hold authority, no local warrant hangs on it, and the wise course is to stand well clear and be seen to be neutral.
+{% elif audit_state == "paid" %}
+{{ player.name }} paid the Treasury's assessment in full, coin counted in front of witnesses — and with it the Empire's restored taxation stopped being a proclamation and became fact. The courts took note. This character regards {{ player.name }} as someone who can produce a very large sum on demand — solvent, consequential, and back in the Empire's good ledger — and regards the weekly enterprise tax reaching their own hold's treasury as the way of things now.
+{% elif audit_state == "dead" %}
+General Cassius Vero of the Imperial Treasury is dead — killed in Skyrim rather than paid, and the courts all know it, whatever is officially said. The writ died with him and no local warrant followed; it is the Empire's grievance to pursue, not the holds'. The taxation he came to restore did not die with him — the assessments still run and the holds still receive their share — but the Empire's enforcer is gone, and this character speaks of it carefully: an Imperial General cut down over the Emperor's due is the kind of news that travels, and nobody wants to be quoted on it.
+{% elif audit_state == "refused" %}
+The Imperial Final Audit ended in refusal and blood, and the courts know it. {{ player.name }} turned the Emperor's due away; whatever remains of the Treasury detail is no longer collecting. The taxation itself grinds on — the weekly assessments still reach the holds' treasuries — but its great enforcement case is a corpse, and no hold warrant hangs on any of it: Treasury business, above hold authority. This character understands perfectly well what {{ player.name }} now is to the Empire, and weighs every courtesy accordingly.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

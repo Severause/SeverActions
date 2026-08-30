@@ -1,0 +1,22 @@
+name: SetFollowDistance
+description: "Change how closely the speaker trails {{ player.name }} while following: 'close' keeps them at {{ player.name }}'s side, 'normal' gives comfortable travelling room (the default). Use when {{ player.name }} asks a companion to stay closer or give them space. NOT for having them stay put — use CompanionWait."
+questEditorId: SeverActions
+scriptName: SeverActions_Follow
+executionFunctionName: SetFollowDistance
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the companion whose follow distance changes
+  - type: dynamic
+    name: distance
+    description: "'close' (stick to {{ player.name }}'s side) or 'normal' (the default spacing)"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_sever_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} adjusts how closely they follow"

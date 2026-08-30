@@ -1,0 +1,54 @@
+customCategory: employment
+name: CollectFromSteward
+description: "Use when {{ player.name }} collects the hold's takings from the speaker — their appointed STEWARD. The steward keeps a vault holding everything the hold's retainers have paid in since the last collection; this hands the whole vault to {{ player.name }} in one go. The game transfers the gold automatically — do NOT call GiveGold. The steward's 'Steward of the hold' context states what the vault currently holds; if it is empty, just say so in character and don't call this. This is separate from CollectFromRetainer, which covers the steward's own personal earnings."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: CollectFromSteward
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the steward handing over the hold vault
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      # steward_vault_pending is a STRING decorator ("1" when this steward's
+      # vault holds gold) - the has_pending_payout pattern for stewards.
+      # Without it the only guard was descriptive text stage 2 may never
+      # render. Deploys together with the DLL that registers it.
+      - decoratorName: "steward_vault_pending"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # is_steward returns "" (not a steward) or the hold's name.
+      - decoratorName: "is_steward"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} handed the hold's takings over to {{ player.name }}"

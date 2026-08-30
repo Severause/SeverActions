@@ -13,10 +13,9 @@ Scriptname SeverActionsNativeExt Hidden
  "Static function X not found on object SeverActionsNative" + "Class
  SeverActionsNative overflowed the static count field while linking."
 
- This class holds the most recent native-function additions (HealerPoll +
- CellCatchup, 20 functions total) so the main SeverActionsNative class stays
- comfortably under the engine limit. Future native subsystems should extend
- this class (or new sibling classes) rather than the main one.}
+ This class holds native-function additions that would otherwise push the main
+ SeverActionsNative class past the engine limit. It is itself near the cap now,
+ so new native subsystems extend the sibling SeverActionsNativeExt2 class.}
 
 ; ============================================================================
 ; HEALER POLL — Native combat-tick subsystem for the "healer" combat style
@@ -204,13 +203,12 @@ Actor[] Function Native_Jailed_GetAll() Global Native
 {Return the roster as a Papyrus array. Capped at 128 entries (Papyrus array limit).}
 
 ; =============================================================================
-; CRAFTING ORCHESTRATOR (PR A — SKELETON ONLY)
+; CRAFTING ORCHESTRATOR
 ; Native port of SeverActions_Crafting.psc::_Execute. Mirrors the Travel
 ; orchestrator's shape (handle-based session, InputEvent heartbeat tick,
-; completion ModEvent). PR A registers the surface and the package-override
-; spike below; the full state machine lands in PR B+C.
+; completion ModEvent). Full state machine (see CraftingOrchestrator.h).
 ;
-; Concurrency model (PR B+C): queue. Only one craft session is active in any
+; Concurrency model: queue. Only one craft session is active in any
 ; non-terminal state at a time because the crafting aliases on the SeverActions
 ; quest (ForgeAlias, CrafterAlias, etc.) are quest-scoped singletons.
 ; Subsequent Craft_Begin calls enqueue and run serially. Proper fix
@@ -261,9 +259,9 @@ String Function Craft_GetWorkstationType(Int handle) Global Native
 {Returns the workstation type label ("forge"/"cooking pot"/"oven"/"alchemy lab")
  for the given handle, or empty string.}
 
-; ---- SPIKE — preserved from PR A for empirical testing of DispatchStaticCall.
-; Will be removed once PR B+C is proven stable and we know whether the
-; ModEvent shim or the direct-dispatch path is the long-term answer.
+; ---- SPIKE — preserved from PR A for empirical testing of DispatchStaticCall
+; (whether C++ can invoke ActorUtil.AddPackageOverride directly). Kept as a
+; console-drivable probe; not on the orchestrator's live path.
 
 Bool Function Craft_SpikePackageOverride(Actor akActor, Package akPackage, Int priority, Int flags) Global Native
 {Spike: test whether DispatchStaticCall can invoke ActorUtil.AddPackageOverride
@@ -317,6 +315,228 @@ Bool Function Native_IsDeviousDevice(Form akForm) Global Native
  devices so we never unequip a DD out from under its own script (which leaves
  the rendered armor invisible while the token stays locked). Keyword-based, no
  hard DD dependency, works on SE and VR.}
+
+Function Native_UnequipItemNow(Actor akActor, Form akItem) Global Native
+{Pause-safe unequip (armor only). Papyrus UnequipItem routes through the
+ engine actor-task queue, which does NOT process while the game is paused
+ (PrismaUI menu) - the op silently defers and fires on unpause, against
+ whatever is worn THEN. A wardrobe preset round-trip queued the old
+ preset's unequips and stripped the re-applied outfit at menu close.
+ This lands synchronously (ActorEquipManager applyNow) regardless of
+ pause state. Use in ANY worn-mutation path reachable from the paused
+ PrismaUI menu; harmless no-op if the item is not worn.}
+
+Function Native_EquipItemNow(Actor akActor, Form akItem) Global Native
+{Pause-safe equip (armor only) - see Native_UnequipItemNow. forceEquip
+ semantics: the engine keeps our item choice, no best-armor re-eval.}
+
+Function Native_Preview_NotifyWornChanged(Actor akActor) Global Native
+{Wardrobe preview integrity. Call at the END of any COMMITTED worn mutation
+ that can run while the PrismaUI wardrobe is open (ApplyOutfitPreset both
+ paths). Re-baselines the actor's open preview session so the menu-close
+ revert keeps the new outfit instead of restoring a stale snapshot (the
+ naked-wardrobe-exit bug), and re-bakes the mannequin viewer for actors a
+ viewport already showed (replaces the frontend's fixed-delay rebake that
+ raced the async apply and served stale cached frames). No-op when the
+ actor has no preview session and no prior bake.}
+
+Function LinkedRef_SetPermanent(Actor akActor, ObjectReference akTarget, Keyword akKeyword) Global Native
+{Permanent LinkedRef variant (LREF cosave v3): exempt from PackageManager's
+ 30-day staleness prune. Use for set-once anchors that must outlive long
+ stretches of game time - work markers, guard-protectee links, jail sandbox
+ anchors. Explicit LinkedRef_Clear/ClearAll still removes them. Re-Setting
+ the same actor+keyword with the plain LinkedRef_Set does NOT demote the
+ permanence (promote-only).}
+
+; =============================================================================
+; KIDNAP SYSTEM (KidnapStore, cosave 'KDNP')
+; =============================================================================
+
+Function Native_Kidnap_SetEnabled(Bool enabled) Global Native
+{Push the EnableKidnapActions toggle to the native flag backing the
+ sever_kidnap_enabled decorator. Session-only; re-push on load.}
+
+Function Native_Restrain_SetEnabled(Bool enabled) Global Native
+{Push the EnableRestrainAction toggle to the native flag backing the
+ sever_restrain_enabled decorator (default ON). Session-only; re-push on load.}
+
+
+Bool Function Native_Kidnap_IsEnabled() Global Native
+
+; Atomic check-and-claim: creates the entry ONLY if the victim is free AND the
+; kidnapper has no active victim (one mutex hold - closes the check-then-Begin
+; race). The checked variant is mandatory: an unchecked create would clobber a
+; live captive record (losing kidnapper/phase/hold marker/ransom) and let one
+; kidnapper hold two victims. abIsRestraint stamps the restraint flag in the
+; same hold. Bool return says whether the claim was taken.
+Bool Function Native_Kidnap_BeginIfFree(Actor victim, Actor kidnapper, String destLabel, Bool abIsRestraint) Global Native
+; Atomic re-key for MoveCaptive: only if the entry is currently HELD and the
+; escort has no other active victim. Preserves markerID + consequence state.
+Bool Function Native_Kidnap_RekeyIfHeld(Actor victim, Actor escort, String destLabel) Global Native
+; Atomic compare-and-set phase transition (closes read-then-act phase races).
+Bool Function Native_Kidnap_TryAdvancePhase(Actor victim, Int fromPhase, Int toPhase) Global Native
+; Overwrite the narrated destination label (binds without a destination).
+Function Native_Kidnap_SetDestLabel(Actor victim, String label) Global Native
+
+Function Native_Kidnap_SetPhase(Actor victim, Int phase) Global Native
+{1=grabbing, 2=transport, 3=held.}
+
+Function Native_Kidnap_SetHeld(Actor victim, ObjectReference marker) Global Native
+{Phase 3 + remembers the placed BoundCaptiveMarker for release cleanup.}
+
+Function Native_Kidnap_CaptureAVs(Actor victim, Float aggression, Float confidence) Global Native
+{Idempotent original-AV capture (arrest pattern) so release restores them.}
+
+Float Function Native_Kidnap_GetOrigAggression(Actor victim) Global Native
+{-1 = never captured.}
+
+Float Function Native_Kidnap_GetOrigConfidence(Actor victim) Global Native
+
+Int Function Native_Kidnap_GetPhase(Actor victim) Global Native
+{0 = not a kidnap victim.}
+
+Actor Function Native_Kidnap_GetKidnapper(Actor victim) Global Native
+
+ObjectReference Function Native_Kidnap_GetMarker(Actor victim) Global Native
+
+Function Native_Kidnap_Clear(Actor victim) Global Native
+
+Actor Function Native_Kidnap_FindVictimOf(Actor kidnapper) Global Native
+
+Actor[] Function Native_Kidnap_ListVictims() Global Native
+{All actors with an active kidnap entry (load-recovery iteration).}
+
+Actor Function Native_Kidnap_FindActorByName(String name) Global Native
+{GLOBAL form-table actor lookup (exact > prefix > substring, case-insensitive)
+ so off-screen named NPCs resolve. Skips the player and dead actors.}
+
+; -- KDNP v2 entry fields (StorageUtil migration, V2 Slice 0) --
+
+Function Native_Kidnap_SetDestAnchor(Actor victim, ObjectReference anchor) Global Native
+{The resolved destination marker (travel arrival point). Cosaved.}
+
+ObjectReference Function Native_Kidnap_GetDestAnchor(Actor victim) Global Native
+
+String Function Native_Kidnap_GetDestLabel(Actor victim) Global Native
+{The destination name given at Begin (used by the leg-2 slot fallback).}
+
+Function Native_Kidnap_SetAliasMode(Actor victim, Bool aliasMode) Global Native
+{True while the kidnap rides the arrest dispatch aliases.}
+
+Bool Function Native_Kidnap_GetAliasMode(Actor victim) Global Native
+
+Function Native_Kidnap_SetLegDeadline(Actor victim, Float deadline) Global Native
+{Game-time deadline for the active leg (wait menu advances it).}
+
+Float Function Native_Kidnap_GetLegDeadline(Actor victim) Global Native
+
+Function Native_Kidnap_SetMarkerSchema(Actor victim, Int schema) Global Native
+{2 = force-persistent hold marker; v1-loaded entries default 1 (heal fires).}
+
+Int Function Native_Kidnap_GetMarkerSchema(Actor victim) Global Native
+
+; -- KDNP v6 alias-held captivity --
+; The SeverActions_CaptiveQuest pool slot (0..15) whose ReferenceAlias holds
+; this victim's kneel sit package; -1 = no alias (the priority-95 ActorUtil
+; override is the fallback hold). Cosaved.
+Function Native_Kidnap_SetAliasIndex(Actor victim, Int aliasIndex) Global Native
+
+Int Function Native_Kidnap_GetAliasIndex(Actor victim) Global Native
+
+Int Function Native_Kidnap_BumpOffscreenTicks(Actor victim, Bool reset) Global Native
+{Transient watchdog counter: reset=false increments and returns the new
+ value; reset=true zeroes it. Not cosaved.}
+
+Int Function Native_Kidnap_BumpNoTravelStrikes(Actor victim, Bool reset) Global Native
+
+Function Native_SceneBound_Set(Actor akActor, Bool bound) Global Native
+{Flag/unflag an actor as mid-encounter setup (the NSFW add-on stamps both
+ partners of a pairing). Suppresses TravelToPlace so they can't keep walking
+ off to start the scene. TTL-backstopped; cleared on revert.}
+
+; Travel exterior intent: true exactly once after a ResolveDestination whose
+; phrase carried an exterior place-prefix (outside/beside/near/in front of
+; <place>). DoTravelToPlace consumes it to stop AT the entrance instead of
+; following the door inside.
+Bool Function Native_TravelExteriorIntent(Actor akActor) Global Native
+
+Bool Function Native_SceneBound_IsBound(Actor akActor) Global Native
+
+Bool Function Native_IsListedCustomAI(Actor akActor) Global Native
+{True if this actor's base name or EditorID appears in
+ SeverActions_CustomAI_DISTR.ini - the SPID-independent half of custom-AI
+ follower detection. Matches by NAME too, so renamed-EditorID forks
+ (Kaidan Extended Edition etc.) are covered even where the SPID line isn't.}
+
+Function Native_Trespass_SetLLMMode(Bool enabled) Global Native
+{LLM-driven trespass: when on, the vanilla warn-follow trespass reaction is
+ suppressed and occupants get SkyrimNet context instead (event + the
+ sever_trespass_context decorator). Restore on load from StorageUtil.}
+
+Bool Function Native_Trespass_IsLLMMode() Global Native
+{Read the current LLM-trespass toggle (the value pushed by Native_Trespass_SetLLMMode).}
+
+; -- KDNP v3 consequences (V2 Slice 1) --
+; Flag bit values (Native_Kidnap_SetFlag/GetFlag): 1 = grab witnessed,
+; 2 = disappearance gossip fired, 4 = search party fired. Keep in sync with
+; KidnapStore::Flag.
+
+Function Native_Kidnap_SetGrabInfo(Actor victim, Faction crimeFaction, Float grabTime) Global Native
+{Stamp the grab record: the victim's home-hold crime faction (bounty jurisdiction) + game time seized. Set ONCE at the first grab — guard on GetGrabTime() == 0 so MoveCaptive re-takes keep the original record.}
+
+Faction Function Native_Kidnap_GetGrabFaction(Actor victim) Global Native
+
+Float Function Native_Kidnap_GetGrabTime(Actor victim) Global Native
+{0.0 = no grab record (pre-v3 entry or never seized).}
+
+Function Native_Kidnap_SetFlag(Actor victim, Int flag, Bool value) Global Native
+
+Bool Function Native_Kidnap_GetFlag(Actor victim, Int flag) Global Native
+
+Bool Function Native_Kidnap_IsGrabWitnessed(Actor kidnapper, Actor victim, Float radius) Global Native
+{IsTheftWitnessed minus the victim — a loaded, awake, non-follower third party with line-of-sight to the kidnapper within radius.}
+
+
+; -- KDNP v4 ransom (V2 Slice 2) --
+; Ransom states: 0 = none, 1 = pending (awaiting the steward's answer),
+; 2 = paid (release expected), 3 = refused. Keep in sync with
+; KidnapStore::RansomState.
+
+Function Native_Kidnap_SetRansom(Actor victim, Int amount, Float demandTime) Global Native
+{Record a ransom demand (sets state to pending). Cosaved.}
+
+Function Native_Kidnap_SetRansomState(Actor victim, Int aiState) Global Native
+
+Int Function Native_Kidnap_GetRansomState(Actor victim) Global Native
+
+Int Function Native_Kidnap_GetRansomAmount(Actor victim) Global Native
+
+Float Function Native_Kidnap_GetRansomTime(Actor victim) Global Native
+
+Function Native_Kidnap_RequestRansomLetter(Actor victim, Bool paid, String stewardName = "") Global Native
+{Request the steward's LLM-written ransom reply (sever_letter_writer prompt;
+ templated fallback on any failure). Queues it as the victim's pending
+ courier letter — the paced courier pump delivers it via OnVentureLetter,
+ so the caller dispatches nothing.}
+
+Function Native_Kidnap_RequestRansomReopenLetter(Actor victim, String stewardName = "", Bool abAbandon = false) Global Native
+{After a refused ransom whose hired steel was spent to no effect: the
+ steward's letter (LLM-written, templated fallback, enforced signature,
+ fine paper) - either humbled reopening of negotiation, or (abAbandon) the
+ cold write-off ending the matter for good. Rides the same courier pump.}
+
+; -- KDNP v5 captivity life (V2 Slice 3) --
+
+Function Native_Kidnap_SetHomeMarker(Actor victim, ObjectReference marker) Global Native
+{Persistent marker dropped at the victim's pre-grab spot — the escape
+ destination. Cosaved; set once at the first grab.}
+
+ObjectReference Function Native_Kidnap_GetHomeMarker(Actor victim) Global Native
+
+Float Function Native_Kidnap_TickUnguarded(Actor victim, Bool guarded, Float now) Global Native
+{One guard-watch tick: guarded resets the clock, unguarded accrues game
+ hours since the last tick (first tick after load just stamps). Returns
+ the accumulated unguarded hours.}
 
 Bool Function Native_Outfit_HasSituationPreset(Actor akActor, String situation) Global Native
 {Phase 1: true if actor has a non-empty preset mapped to the given situation.}
@@ -419,6 +639,20 @@ Float Function Native_ModifyMood(Actor akActor, Float delta) Global Native
 Bool Function Native_GetSandboxing(Actor akActor) Global Native
 {Check if actor is in our sandbox state. Replaces StorageUtil("SeverActions_IsSandboxing").}
 
+; Every CASUAL follower - hasFollowPkg set but never registered as a companion.
+; Used to re-verify each against SkyrimNetApi.HasPackage, because hasFollowPkg is
+; OUR bookkeeping and goes stale if anything removes the package by a route that
+; doesn't run our clear (SkyrimNet cleanup, ClearAllPackages, a mod, an
+; interrupted script). A stale flag makes cell catch-up teleport an NPC who
+; stopped following long ago.
+Actor[] Function Native_GetCasualFollowers() Global Native
+
+Actor[] Function Native_GetDeadTrackedFollowers() Global Native
+{The DEAD tracked followers (isFollower && IsDead) in ONE native call - the inverse of Native_GetActiveFollowerRoster's live filter. A follower that dies stays tracked until Papyrus purges it after the grace period, so death cleanup needs this while the active roster excludes them. Replaces CheckDeadFollowers' per-tick OutfitSlots scan; also catches deaths of followers past the alias-slot cap.}
+
+Actor[] Function Native_GetActiveFollowerRoster() Global Native
+{The complete active-follower roster in ONE native call: every FollowerDataStore entry with isFollower, resolved, alive, minus the player. Already deduplicated (map keys are unique). Replaces GetAllFollowers' three-source Papyrus scan - the cell scan and alias sweep were strict subsets of the cosave walk, since every source filtered through Native_GetIsFollower, which reads that same store.}
+
 Bool Function Native_GetIsFollower(Actor akActor) Global Native
 {Per-actor roster check. Replaces StorageUtil(KEY_IS_FOLLOWER).}
 
@@ -457,6 +691,56 @@ Returns actors at or below leavingThreshold so Papyrus can fire the SkyrimNet pe
 Int Function Native_AmbientBanter_FireToLLM(Float hearingRadius, Float pairRadius, Int maxPairs) Global Native
 {Scan for banter-eligible pairs, build the LLM context JSON in C++, dispatch via SkyrimNet's native PublicSendCustomPromptToLLM. Returns: >0 pair count dispatched (request in flight), 0 no candidates / hostile cell, -1 bridge unavailable. Fires SeverActions_AmbientBanterReady ModEvent when the LLM responds (numArg: 1.0 = event prepared, 0.0 = silence/failure).}
 
+Form Function Native_FindShoutOnActor(Actor akTeacher, String shoutName) Global Native
+{Fuzzy-match a Shout name against the teacher's BASE shout list (dev142) -
+ the Greybeards teach because their record genuinely carries the Shout.
+ None when they don't know it. Same match ladder as FindSpellOnActor.}
+
+Form Function Native_Shout_GetNextWord(Form akShout) Global Native
+{The first of the Shout's three Words of Power the player does NOT yet know
+ (player-global WOOP known flag - shared with word walls). None = all three
+ learned.}
+
+String Function Native_Shout_WordName(Form akWord) Global Native
+{Display name for a Word of Power: the dragon word plus its translation,
+ e.g. 'Fus (Force)'.}
+
+Int Function Native_Shout_KnownWordCount(Form akShout) Global Native
+{How many of the Shout's three words the player knows (0-3) - drives the
+ first/second/last-word narration in TeachShout.}
+
+Bool Function PrismaUI_OpenTradePrompt(Actor counterparty, Int gold, String counterpartyName, String itemName, Int qty, Bool playerBuys, Int timeoutMs) Global Native
+{Non-pausing trade confirm for BuyItem/SellItem when the PLAYER is a party
+ (dev141): shows exactly what changes hands - item, count, gold - with
+ Accept / Refuse / Refuse silently. Auto-timeout REFUSES (never moves the
+ player's gold or goods without a click). Fires SeverActions_TradeChoice
+ (strArg = choice, numArg = gold, sender = counterparty). Returns False if
+ the bridge is down or another prompt is open - fall back to SkyMessage.}
+
+Function PrismaUI_CloseTradePrompt() Global Native
+{Force-close the trade prompt (silent).}
+
+Bool Function PrismaUI_IsTradePromptOpen() Global Native
+{True while a trade prompt is on screen.}
+
+Bool Function PrismaUI_IsTradePromptAvailable() Global Native
+{True when PrismaUI is present and the trade prompt view initialized.}
+
+Bool Function Native_LLM_Dispatch(String promptName, String contextJson, String modEventName) Global Native
+{Generic LLM relay over the C++ bridge (dev132) — the replacement for direct
+ SkyrimNetApi.SendCustomPromptToLLM calls, whose Papyrus callback marshalling
+ truncates responses around ~1024 chars (the v3.11 off-screen-life lesson).
+ Dispatches promptName with the sever_background variant; when the LLM answers,
+ fires modEventName with strArg = the RAW response and numArg = 1.0 success /
+ 0.0 failure (sender None). RegisterForModEvent on the trigger path before
+ calling. Returns False without dispatching when the bridge is down, the
+ Background AI master toggle (llmCallsEnabled) is off, or the prompt file is
+ not installed — treat False like the old result < 0 branch.}
+
+; Native_IntimateHistory_Record moved to SeverActionsNativeExt2 (PR #442
+; review, Ext was at the 499/511 native-function cap), then removed entirely —
+; main tracks no intimate history; only the surfacing gates remain on Ext2.
+
 String Function Native_AmbientBanter_GetReadyEventJson() Global Native
 {After SeverActions_AmbientBanterReady fires with numArg=1.0, returns the pre-built gamemaster_dialogue event JSON to pass to SkyrimNetApi.RegisterEvent. Empty string = nothing ready (silence cycle, parse failure, actor not found).}
 
@@ -481,7 +765,7 @@ Function Native_AmbientBanter_ClearReady() Global Native
 ;
 ; Options bitfield: 0=none | 1=require LOS | 2=return home on fail |
 ;                   4=abort on degraded actor state | 8=skip preflight |
-;                   16=no recovery
+;                   16=no recovery | 32=quiet (no Traveler_NN objective / map marker)
 
 Int Function Travel_Begin(Actor akActor, ObjectReference akDestination, Keyword akKeyword, Float arrivalThreshold, String callbackTag, Int options, Int maxDurationSeconds, Int speed) Global Native
 {Begin a travel session. Returns a handle (>0) on success, 0 on rejection.
@@ -572,6 +856,11 @@ Function PrismaUI_SetCampThreats(String warning) Global Native
 Function PrismaUI_SetCampMarked(Bool marked) Global Native
 {Push the camp's "marker on world map?" state so the Survival page renders
  the right Mark/Unmark button label.}
+
+Function PrismaUI_SetCampSandboxPref(Bool enabled) Global Native
+{Mirror Sever's Hearth's cosaved SandboxOnEstablish property so the SA
+ Settings page shows the real value. Hearth calls this on load and on
+ every toggle; the first call also marks the camp system as present.}
 
 ; ─── Migrated from SeverActionsNative (511-limit) ─────────────────────────
 ; ArrivalMonitor (9), StuckDetector (13), AmbientBanter scan+pair queries (8),
@@ -826,6 +1115,15 @@ Function Native_Bounty_Set(Faction crimeFaction, Int amount) Global Native
 Int Function Native_Bounty_Mod(Faction crimeFaction, Int delta) Global Native
 {Atomically add delta. Returns the new total. Drops to 0 / clears when new total <= 0.}
 
+; v3 offender axis: charge a specific NPC own tracked bounty instead of the
+; player. akOffender None (or the player) routes to the player entries -
+; the classic API above stays player-scoped.
+Int Function Native_Bounty_ModFor(Actor akOffender, Faction crimeFaction, Int delta) Global Native
+Int Function Native_Bounty_GetFor(Actor akOffender, Faction crimeFaction) Global Native
+Function Native_Bounty_AddEventFor(Actor akOffender, Faction crimeFaction, Int delta, String crimeType, String holdName) Global Native
+{Metadata only: append a crime event row (type/hold/delta) to the offender's
+ ring for the ledger timeline. Never changes the amount - pair with ModFor.}
+
 Function Native_Bounty_Clear(Faction crimeFaction) Global Native
 {Remove the bounty entry for this faction.}
 
@@ -839,9 +1137,8 @@ Int Function Native_Bounty_GetTotal() Global Native
 {Return the sum of all tracked bounties across every hold.}
 
 ; ── Atomic paired-array snapshot API ─────────────────────────────────────
-; The legacy `GetAllFactions` + `GetAllAmounts` pair (removed in this
-; refactor) took independent snapshots and could desync if a mutator ran
-; between the two calls. Use this explicit 3-call pattern instead:
+; Two independent snapshot calls could desync if a mutator ran between them.
+; Use this explicit index-aligned 3-call pattern instead:
 ;
 ;   Int n = SeverActionsNativeExt.Native_Bounty_SnapshotAll()
 ;   Faction[] facs    = SeverActionsNativeExt.Native_Bounty_GetSnapshotFactions()
@@ -895,6 +1192,11 @@ Bool Function IsRefOwnedByNonPlayer(ObjectReference ref) Global Native
 
 Bool Function IsTheftWitnessed(Actor thief, Float radius) Global Native
 {True if a loaded, alive, awake, non-follower actor within radius has line-of-sight to the thief. Gates the SA theft bounty so unseen looting is free.}
+
+String Function Native_Loot_DescribeContents(ObjectReference source, Int maxNotable) Global Native
+{Human-readable inventory summary for the Search actions — named entries
+ sorted by unit value (capped at maxNotable), gold as a total, a "sundry
+ lesser goods" tail when truncated. Empty string = truly empty.}
 
 Int Function PickUpItemSilent(Actor akActor, ObjectReference itemRef) Global Native
 {Move a world-item ref into akActor's inventory WITHOUT Activate (no vanilla theft alarm); best-effort flags owned items stolen + records stolenValue/crimeFaction. Returns count moved. Use ONLY for owned items — unowned pickups should Activate (preserves extras, raises no crime).}
@@ -1247,14 +1549,117 @@ Function Native_SetLifeSummary(Actor akActor, String value) Global Native
 String Function Native_GetWorkLocationName(Actor akActor) Global Native
 Function Native_SetWorkLocationName(Actor akActor, String value) Global Native
 
+; ─── Truce eligibility probe (Phase 1) ──────────────────────────────────────
+; READ-ONLY. Reports whether an actor would be pacified by the Truce layer and,
+; if not, which of the five gates refused them (running-quest alias / unique /
+; essential / frenzied / quest-scoped faction / not in an enabled faction).
+; Mutates nothing - this exists so the gates can be verified in-game before any
+; of them is wired to actually change behaviour.
+String Function Native_Truce_ExplainActor(Actor akActor, Bool abNecromancers, Bool abForsworn, Bool abVampires) Global Native
+
+; Same, for whoever is under the crosshair - look at a bandit and read the
+; verdict. Vampires additionally require the PLAYER to be a vampire; passing
+; abVampires=true when they are not still reports them out of scope.
+String Function Native_Truce_ExplainTarget(Bool abNecromancers, Bool abForsworn, Bool abVampires) Global Native
+
+; Sweep every loaded actor within afRadius and log a verdict for each one that
+; is IN SCOPE (out-of-scope actors are skipped so the log isn't buried in
+; chickens). Returns a one-line summary. This is the Phase 1 test surface -
+; one call reads a whole camp.
+String Function Native_Truce_ExplainNearby(Float afRadius, Bool abNecromancers, Bool abForsworn, Bool abVampires) Global Native
+
+; ─── Camp probes (camp takeover, Phase 1) ───────────────────────────────────
+; Report every camp the sweep has discovered: name, state, member count, and
+; who leads it. Read-only.
+String Function Native_Camp_Probe() Global Native
+
+; Freeze respawn for the camp you are standing in. Sets kNeverResets on the
+; camp's encounter zone (the flag that ACTUALLY governs repopulation) and
+; Location.cleared (so the map agrees). Both originals are recorded so
+; Native_Camp_ThawHere restores them exactly.
+String Function Native_Camp_FreezeHere() Global Native
+
+; Undo the freeze for the camp you are standing in.
+String Function Native_Camp_ThawHere() Global Native
+
+; ─── Truce controls (Phase 2) ───────────────────────────────────────────────
+; Master switch. Turning it OFF immediately restores every actor the sweep has
+; pacified - it never leaves a world full of docile bandits behind.
+Function Native_Truce_SetEnabled(Bool abEnabled) Global Native
+
+; Which faction groups are in scope. Bandits are always on when the feature is
+; enabled; these three are the opt-ins. Vampires additionally require the
+; PLAYER to be a vampire - passing true when they are not is simply ignored.
+Function Native_Truce_SetScope(Bool abNecromancers, Bool abForsworn, Bool abVampires) Global Native
+
+; Include named camp leaders / bosses. ON by default - the chief is the NPC
+; most worth negotiating with. Quest/essential/frenzied gates still apply.
+Function Native_Truce_SetIncludeLeaders(Bool abInclude) Global Native
+
+; Include actors a RUNNING quest is currently using. ON by default: camp chiefs
+; are very often radiant quest targets, and refusing them meant the one NPC
+; worth talking to was the one who charged you. Attacking still breaks the truce
+; for the whole camp, so kill/clear objectives play out as vanilla. Turn OFF if
+; a quest that needs an NPC to attack FIRST stalls.
+Function Native_Truce_SetIncludeQuestNPCs(Bool abInclude) Global Native
+
+; Sweep radius in units (clamped 512-12000; default 4000).
+Function Native_Truce_SetRadius(Float afRadius) Global Native
+
+; How many actors are pacified right now - the size of the restore ledger.
+Int Function Native_Truce_PacifiedCount() Global Native
+
+; Panic button / uninstall path: hand every pacified actor their original
+; aggression back immediately.
+Function Native_Truce_RestoreAll() Global Native
+
 String Function Native_GetPlayLocationName(Actor akActor) Global Native
 Function Native_SetPlayLocationName(Actor akActor, String value) Global Native
 
-; ─── v15: dedicated work-pool slot (decoupled from the 40 home slots) ─────
-; Index 0-63 into WorkAnchorList / WorkPackageList; -1 = no work assignment.
-Int Function Native_AcquireWorkSlot(Actor akActor) Global Native
-Int Function Native_GetWorkSlot(Actor akActor) Global Native
-Function Native_ReleaseWorkSlot(Actor akActor) Global Native
+; ─── v16: schedule alias pools (alias-based schedule architecture) ────────
+; Per-NPC per-type ReferenceAlias index inside the three 200-alias schedule
+; quests (SeverActions_SchedHome/Work/RelaxQuest). aiSchedType mirrors the
+; FollowerManager SCHEDULE_* ints: 0=home, 1=work, 2=relax/play. -1 = the NPC
+; holds no alias of that type. The quest aliases are the enforcement; these
+; indices are the FLWD bookkeeping that survives save/load for verification,
+; pool-usage display, and drift repair.
+Int Function Native_GetSchedAliasIndex(Actor akActor, Int aiSchedType) Global Native
+Function Native_SetSchedAliasIndex(Actor akActor, Int aiSchedType, Int aiIndex) Global Native
+
+; One-way Route B -> alias migration flag (store-global, cosaved). Flips once,
+; atomically, BEFORE the first migration fill batch (design doc §4).
+Bool Function Native_GetAliasesMigrated() Global Native
+Function Native_SetAliasesMigrated(Bool abMigrated) Global Native
+
+; Pool usage snapshot for MCM/board status: Int[3] = {homeUsed, workUsed, relaxUsed}.
+Int[] Function Native_GetSchedPoolUsage() Global Native
+
+; ─── v17: per-follower work-hours override ─────────────────────────────
+; Game hours 0-24, sentinel -1 = inherit the global WORK window. Supports
+; wraparound (start > end = night shift) and 24h duty (0-24). Evaluated
+; BEFORE Relax wherever the windows overlap.
+Function Native_SetWorkHoursOverride(Actor akActor, Float afStart, Float afEnd) Global Native
+Function Native_ClearWorkHoursOverride(Actor akActor) Global Native
+Float Function Native_GetWorkHoursOverrideStart(Actor akActor) Global Native
+Float Function Native_GetWorkHoursOverrideEnd(Actor akActor) Global Native
+
+; ─── v18: follow alias pool (SeverActions_FollowQuest) ─────────────────
+; Companion's ReferenceAlias index inside the 200-alias follow quest
+; (Follower_000..199), -1 = not alias-held (legacy CK slot / overflow /
+; casual follow). The alias's CK packages (Close above V2) re-apply natively
+; on cell load, closing the overflow route's 3D-unload gap; these indices
+; are the FLWD bookkeeping for verification + the load-time adoption sweep.
+Int Function Native_GetFollowAliasIndex(Actor akActor) Global Native
+Function Native_SetFollowAliasIndex(Actor akActor, Int aiIndex) Global Native
+
+; ─── v19: guard alias pool (SeverActions_GuardQuest) ───────────────────
+; Guard-mode retainer's ReferenceAlias index inside the 50-alias guard quest
+; (Guard_00..49), -1 = not alias-held (override assist / not guard mode).
+; The alias's GuardBodyguard package (FollowTargetKW-driven) re-applies
+; natively on cell load, replacing the prio-110 override assist that drops
+; on 3D unload; the override stays as the pool-exhaustion fallback.
+Int Function Native_GetGuardAliasIndex(Actor akActor) Global Native
+Function Native_SetGuardAliasIndex(Actor akActor, Int aiIndex) Global Native
 
 ; ─── T1-D.1: Active arrest singleton (player quest FSM state) ─────────
 ; Replaces 7 SeverActions_ActiveArrest* StorageUtil keys keyed by
@@ -1395,14 +1800,6 @@ Actor[] Function Native_ScanPlayerCellForLiveActors() Global Native
 ; ============================================================================
 ; PERIODIC CELL-SCAN NATIVES (perf — replaces per-tick Papyrus GetNumRefs loops)
 ; ============================================================================
-
-Function Native_Survival_UpdateNearby(Int maxCount, Float maxDist) Global Native
-{Scan the player's parent cell and seed the native nearby-NPC survival map.
- Replaces SeverActions_Survival.UpdateNearbyNPCs's GetNumRefs(43) + GetNthRef
- + IsDead/IsPlayerTeammate/distance filter loop. maxCount mirrors the old
- `i < 25` budget (counts every actor ref examined, player/dead included);
- maxDist is the inclusion radius in raw game units (old loop used 4096.0).
- Calls InitNearbyNPC on each qualifying actor entirely in C++.}
 
 Function Native_Survival_SetEnabled(Bool abEnabled) Global Native
 {Push the survival master-switch state to the native store. When false, the
@@ -1551,105 +1948,33 @@ Bool Function PrismaUI_IsCommissionPromptAvailable() Global Native
 {Returns True if the bridge is initialized AND the view finished its DOM-ready \
 handshake. Check before calling PrismaUI_OpenCommissionPrompt.}
 
-; ── Enterprises (off-screen labor/economy) — Phase 1 debug surface ──────────
-; See ENTERPRISES.md. These are temporary debug hooks for proving the weekly
-; settlement loop in logs; the real action/UI surface comes later.
+; Pay off a NAMED offender's bounty through a guard/authority the player is
+; talking to (follower/NPC tracked bounties AND Enterprises fence illicit
+; bounties, resolved by name in the guard's hold). Returns gold paid (>0),
+; 0 = nobody by that name wanted here, -1 = matched but can't afford.
+Int Function Native_PayHoldBountyByName(Actor akGuard, String asOffenderName) Global Native
 
-Function Venture_DebugAdd(Actor akAssignee, Int job, Int arrangement, Int wageWeekly) Global Native
-{Hire a test retainer. job: 0 Miner 1 Merchant 2 Alchemist 3 Farmer 4 Fence 5 Mercenary 6 Escort. \
-arrangement: 0 Employed 1 Partnership 2 Vassalage (coerced) 3 Sworn. wageWeekly applies to Employed/Sworn.}
+; Read-only: how much a named offender owes in the guard's hold (0 = none).
+; Seeds the confirm popup without paying.
+Int Function Native_ResolveHoldBountyByName(Actor akGuard, String asOffenderName) Global Native
 
-Function Venture_DebugRemove(Actor akAssignee) Global Native
-{Remove a retainer (debug cleanup / re-hire).}
+; Non-pausing confirm popup for the bounty payment (mirrors CollectPayment /
+; arrest prompts). Returns true if the overlay opened - the choice arrives via
+; the SeverActions_BountyPayChoice ModEvent. False = caller pays directly.
+Bool Function PrismaUI_OpenBountyPrompt(Actor akGuard, Int aiAmount, String asOffenderName, Int aiTimeoutMs) Global Native
+Function PrismaUI_CloseBountyPrompt() Global Native
+Bool Function PrismaUI_IsBountyPromptOpen() Global Native
+Bool Function PrismaUI_IsBountyPromptAvailable() Global Native
 
-Function Venture_ForceSettle() Global Native
-{Force every active venture due and run a settlement pass now (logs each step).}
-
-Function Venture_Collect(Actor akAssignee) Global Native
-{Grant one retainer's pending escrow (gold + goods) to the player and clear it.}
-
-Function Venture_CollectAll() Global Native
-{Collect pending escrow from every retainer.}
-
-Function Venture_PayAllArrears() Global Native
-{Pay back-wages across the roster, cheapest-first, clearing as many retainers as the player's purse can fully cover.}
-
-Function Venture_Bail(Actor akAssignee) Global Native
-{Pay a jailed fence retainer's bounty from the player's gold to free them early.}
-
-Function Venture_ForceArrest(Actor akAssignee) Global Native
-{Debug: deterministically arrest+jail a retainer now (seeds a test bounty if none).}
-
-Bool Function Venture_Hire(Actor akAssignee, String asJob, String asArrangement) Global Native
-{Hire an NPC as a retainer. Job/arrangement are free text (normalized natively). Returns false on unparseable job or if already a retainer.}
-
-Function Venture_PayArrears(Actor akAssignee) Global Native
-{Pay a retainer's owed back-wages from the player's gold; clearing it restores good standing.}
-
-Function Venture_Dismiss(Actor akAssignee) Global Native
-{End a retainer's service (amicable — no exit theft). Returns false if not a retainer.}
-
-Int Function Venture_Count() Global Native
-{Number of active ventures.}
-
-Bool Function Venture_IsRetainer(Actor akActor) Global Native
-{True if this actor is currently one of the player's retainers. Used to gate the assign-retainer popup (offered only for non-retainers).}
-
-Actor Function Venture_GetAssigneeAt(Int index) Global Native
-{The retainer actor at a stable index (0..Venture_Count()-1). None if out of range or not loadable. Use with Venture_Count() to enumerate/pick retainers.}
-
-String Function Venture_LetterSubject(Actor akRetainer) Global Native
-{Pending courier-letter subject for this retainer ("" if none). Queued by the worklife story gen; pull on the SeverActions_VentureLetter ModEvent.}
-
-String Function Venture_LetterBody(Actor akRetainer) Global Native
-{Pending courier-letter body for this retainer ("" if none).}
-
-String Function Venture_LetterReason(Actor akRetainer) Global Native
-{Pending courier-letter reason tag for this retainer.}
-
-Function Venture_ClearLetter(Actor akRetainer) Global Native
-{Drop the pending courier letter for this retainer (call after dispatching).}
-
-Function Venture_DebugRequestLetter(Actor akRetainer) Global Native
-{DEBUG: force an LLM-generated letter from this retainer; dispatches a courier when the model returns. Tests the real settlement->letter->courier path.}
-
-Bool Function Venture_DebugForceAmbush() Global Native
-{DEBUG: force a retainer-grudge thug ambush right now, bypassing the delay/cooldown/location gates. Picks an armed grudge, else arms one on any deserter, else conscripts any venture entry. Fires SeverActions_VentureAmbush so the thugs spawn on the player. Returns false only if there are no venture entries at all.}
-
-Function Venture_RegisterAmbushThug(Actor akThug) Global Native
-{Mark a spawned actor as part of the live ambush standoff, so the is_ambush_thug decorator gates the Stand Down / Attack actions to them. Cleared on resolve.}
-
-Function Venture_ClearAmbushThugs() Global Native
-{Clear the live-ambush thug roster (call when the standoff resolves - stood down, attacked, or failed).}
-
-String Function Venture_AmbushTaunt(Actor akDeserter) Global Native
-{Short spoken opener for the lead thug's DirectNarration - names who sent them and why (templated from the deserter's grievance).}
-
-Function Venture_StageThugDirective(Actor akThug, Actor akDeserter) Global Native
-{Stage a 'hold and parley, wait for the player's reply, resolve via stand-down/attack' directive as a high-importance memory on a spawned ambush thug, so they don't swing on the first word.}
-
-Function Venture_Dump() Global Native
-{Log a summary of every venture (escrow, purse, arrears, heat, loyalty, status).}
-
-Function Venture_SetEnabled(Bool abEnabled) Global Native
-{Enable/disable the autonomous weekly settlement heartbeat.}
-
-Function Venture_SetStoryCap(Int aiCap) Global Native
-{Max weekly work-life vignettes (LLM calls) generated per settle batch. -1 = Auto (~40% of the active roster, min 1, cap 12); 0 = off (income still settles, no vignettes); 1-12 = a fixed max. Skipped retainers rotate in over following weeks (least-recently-storied first).}
-
-Function Venture_SetRaisesEnabled(Bool abEnabled) Global Native
-{Master toggle for retainer raise requests (Living payroll Phase B). When off, retainers never ask for a raise and never skim — income settles flat. Boot-synced + live-pushed from PrismaUI Settings.}
-
-Function Venture_SetAmbushesEnabled(Bool abEnabled) Global Native
-{Master toggle for retainer grudges (desertion consequences). When off, a wronged desertion arms no grudge and no thugs will come. Boot-synced + live-pushed from PrismaUI Settings.}
 
 ; ── Quest Awareness (spillover from SeverActionsNative; 511-fn cap) ──────
 Function Native_QuestAwareness_SetEnabled(Bool abEnabled) Global Native
 {Master toggle for the v8+ fast-path quest-awareness summary LLM call (AutoQuestAwareness). When false, quest stage events still track storage but fire no SendCustomPromptToLLM("sever_quest_awareness"). Boot-synced + live-pushed from PrismaUI Settings. (The prompt-presence guard is automatic in C++.)}
 
 ; ── Letters (courier deliveries) ────────────────────────────────────────
-Form Function Letter_DeliverToCourier(Actor akSender, Actor akCourier, String asSubject, String asBody, String asReason) Global Native
-{Archive + title a pool letter and place it in the COURIER's inventory so they can hand it over with the give animation. Returns the book form (None on failure) for the caller to drive the hand-over.}
+Form Function Letter_DeliverToCourier(Actor akSender, Actor akCourier, String asSubject, String asBody, String asReason, String asSenderName = "") Global Native
+{Archive + title a pool letter and place it in the COURIER's inventory so they can hand it over with the give animation. Returns the book form (None on failure) for the caller to drive the hand-over.
+ asSenderName is the fallback attribution: a letter writer is by definition away, so their ref may be unloaded by delivery time. Pass a name snapshotted while they were known-good and the letter still says who it is from.}
 
 Int Function Letter_Count() Global Native
 {Number of archived letters.}
@@ -1659,6 +1984,13 @@ Int Function Letter_LatestId() Global Native
 
 Int Function Letter_DebugDeliverTest() Global Native
 {DEBUG: deliver a hardcoded test letter on a vanilla note so the reading loop is testable from the console.}
+
+; ── Survival: party-larder auto-eat ──────────────────────────────────────
+; Move one unit of the cheapest suitable food (cooked preferred, then raw)
+; from whichever party member carries it (player included) into the
+; follower's pack. Returns the food Form, or None when the party carries
+; no food at all.
+Form Function Native_Survival_PullFoodFromParty(Actor akFollower) Global Native
 
 ; ── Courier (letter delivery NPC) ───────────────────────────────────────
 Actor Function Courier_Spawn(Actor akTarget, Float afDistance) Global Native

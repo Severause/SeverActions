@@ -67,10 +67,44 @@ SeverActions_Survival Property SurvivalScript Auto
 ; =============================================================================
 
 Function InitializeDiaryEvents()
-{Register for the diary entry selection ModEvent. Called by Init on each game load.}
+{Register for the diary viewer ModEvents. Called by Init on each game load.}
+    ; Chronometer: BookReader persists in the save, but a pending tick does
+    ; not - re-arm the reading monitor on load or a session spanning a save
+    ; would sit silent forever (the old engine registration resumed itself).
+    If BookReader != None
+        ChronoArm(BookReadingUpdateInterval)
+    EndIf
     RegisterForModEvent("SeverActions_DiaryEntrySelected", "OnDiaryEntrySelected")
+    RegisterForModEvent("SeverActions_DiaryCancelled", "OnDiaryCancelled")
+    ; Loot autonomy: the native CombatSpoilsScanner pings this after the
+    ; player's combat ends with notable spoils on the fallen. Registered on
+    ; every load (trigger-path rule) — no other SA script claims this event.
+    RegisterForModEvent("SeverActions_CombatSpoils", "OnCombatSpoils")
     Debug.Trace("[SeverActions_Loot] Registered for diary selection events")
 EndFunction
+
+Event OnCombatSpoils(String eventName, String strArg, Float numArg, Form sender)
+    {Native CombatSpoilsScanner: the player's combat just ended and the
+     fallen carry something worth a look. One glance event so nearby NPCs
+     can loot on their own initiative (or covet, or moralize).}
+    If strArg == ""
+        Return
+    EndIf
+    SkyrimNetApi.RegisterEvent("combat_spoils", \
+        "The fighting is over. Worthwhile spoils lie on the fallen — " + strArg + ".", \
+        Game.GetPlayer(), None)
+EndEvent
+
+Event OnDiaryCancelled(String eventName, String strArg, Float numArg, Form sender)
+    {Player closed the diary viewer without picking an entry. Release the
+     reader slot — BookReader is a saved quest property, and leaving it set
+     made ReadBook_IsEligible return false for every NPC permanently.}
+    If BookReader != None
+        Debug.Trace("[SeverActions_Loot] Diary viewer cancelled - releasing BookReader")
+        BookReader = None
+        BookReadingStartTime = 0.0
+    EndIf
+EndEvent
 
 ; =============================================================================
 ; AI PACKAGE PROPERTIES
@@ -161,15 +195,15 @@ EndFunction
 ; =============================================================================
 
 ObjectReference Function GetContainerByRefID(String refIdStr)
-{Convert a RefID string to an ObjectReference. Accepts decimal or hex format.}
+{Convert a RefID string to an ObjectReference. Decimal format only.}
     if refIdStr == ""
         return None
     endif
-    
-    ; Parse the RefID - handles both decimal ("463155") and hex ("0x71193")
+
+    ; Parse the RefID as decimal (e.g. "463155")
     int refId = refIdStr as int
     if refId == 0 && refIdStr != "0"
-        ; Try parsing as hex if decimal conversion failed
+        ; Decimal parse failed - bail (no hex fallback)
         Debug.Trace("[SeverActions_Loot] Failed to parse RefID as decimal: " + refIdStr)
         return None
     endif
@@ -267,15 +301,130 @@ Function LootContainer_Execute(Actor akActor, String containerName, String items
 
     String displayName = akContainer.GetBaseObject().GetName()
 
-    ; Locked containers aren't free-looted — refuse and narrate so the smith/NPC
-    ; reacts ("it's locked"). No lockpick mechanic; this just gates the take.
+    ; Locked containers get a lockpicking attempt (skill vs lock level) —
+    ; key-only locks and failed picks narrate and gate the take.
     if akContainer.IsLocked()
-        SkyrimNetApi.RegisterEvent("container_locked", akActor.GetDisplayName() + " went for " + displayName + ", but it's locked.", akActor, None)
-        return
+        if !WalkToReference(akActor, akContainer)
+            SkyrimNetApi.RegisterEvent("container_unreachable", akActor.GetDisplayName() + " couldn't reach " + displayName, akActor, None)
+            return
+        endif
+        if !TryPickLock(akActor, akContainer, displayName)
+            return
+        endif
     endif
 
     Debug.Trace("[SeverActions_Loot] " + akActor.GetDisplayName() + " looting container: " + displayName)
     LootRef_Helper(akActor, akContainer, IdleSearchingChest, 2.5, displayName, "container", "took", itemsToTake)
+EndFunction
+
+Bool Function TryPickLock(Actor akActor, ObjectReference akContainer, String displayName)
+    {Loot autonomy: a locked container is no longer a flat refusal — the NPC
+     works the lock. Key-only locks (level 255) never yield. Chance =
+     30 + Lockpicking skill - lock level, clamped 5..95; success unlocks the
+     ref for good (it IS open now), failure narrates and the LLM may retry.
+     No vanilla crime either way — the value-scaled witnessed-theft bounty
+     on the CONTENTS remains the consequence that matters.}
+    Int lockLevel = akContainer.GetLockLevel()
+    if lockLevel >= 255
+        SkyrimNetApi.RegisterEvent("container_locked", \
+            akActor.GetDisplayName() + " tried " + displayName + ", but it needs its key — no pick will turn that lock.", akActor, None)
+        return false
+    endif
+    ; Mercer-at-Snow-Veil treatment (user request): kneel and work the lock
+    ; with the vanilla IdleLockPick (Skyrim.esm 0x0BB051), resolved by FormID
+    ; so no ESP property fill is needed. Plays for the attempt regardless of
+    ; outcome - the roll resolves "while" they work the picks.
+    Idle lockIdle = Game.GetFormFromFile(0x000BB051, "Skyrim.esm") as Idle
+    if lockIdle
+        PlayAnimationAndWait(akActor, lockIdle, 3.0)
+        ResetToDefaultIdle(akActor)
+        Utility.Wait(0.2)
+    endif
+    Int skill = akActor.GetAV("Lockpicking") as Int
+    Int chance = 30 + skill - lockLevel
+    if chance < 5
+        chance = 5
+    elseif chance > 95
+        chance = 95
+    endif
+    if Utility.RandomInt(0, 99) < chance
+        akContainer.Lock(false)
+        SkyrimNetApi.RegisterEvent("lock_picked", \
+            akActor.GetDisplayName() + " worked the lock on " + displayName + " open.", akActor, None)
+        return true
+    endif
+    SkyrimNetApi.RegisterEvent("lockpick_failed", \
+        akActor.GetDisplayName() + " tried to pick the lock on " + displayName + " and couldn't turn it.", akActor, None)
+    return false
+EndFunction
+
+; =============================================================================
+; ACTIONS: SearchContainer / SearchCorpse — the EYES of the loot system
+; =============================================================================
+
+Function SearchContainer_Execute(Actor akActor, String containerName)
+    {Loot autonomy: walk over, rummage, and surface what's INSIDE as an
+     event — so the NPC (and the LLM behind them) can decide what's worth
+     taking with a follow-up loot call, instead of grabbing blind.}
+    if !akActor || containerName == ""
+        return
+    endif
+    ObjectReference akContainer = SeverActionsNative.FindNearbyContainer(akActor, containerName, 1000.0)
+    if !akContainer
+        SkyrimNetApi.RegisterEvent("container_not_found", akActor.GetDisplayName() + " couldn't find a " + containerName + " nearby", akActor, None)
+        return
+    endif
+    String displayName = akContainer.GetBaseObject().GetName()
+    if !WalkToReference(akActor, akContainer)
+        SkyrimNetApi.RegisterEvent("container_unreachable", akActor.GetDisplayName() + " couldn't reach " + displayName, akActor, None)
+        return
+    endif
+    if akContainer.IsLocked()
+        if !TryPickLock(akActor, akContainer, displayName)
+            return
+        endif
+    endif
+    if IdleSearchingChest
+        PlayAnimationAndWait(akActor, IdleSearchingChest, 2.5)
+    endif
+    ResetToDefaultIdle(akActor)
+    _FireSearchEvent(akActor, akContainer, displayName, "container_searched", "searches")
+EndFunction
+
+Function SearchCorpse_Execute(Actor akActor, String corpseName)
+    {Loot autonomy: pat down a corpse and surface what they carry as an
+     event — the decide-then-take half of looting the dead.}
+    if !akActor || corpseName == ""
+        return
+    endif
+    Actor akCorpse = SeverActionsNativeExt.FindNearestDeadByName(akActor, corpseName, 4096.0)
+    if !akCorpse || !akCorpse.IsDead()
+        SkyrimNetApi.RegisterEvent("corpse_not_found", akActor.GetDisplayName() + " couldn't find " + corpseName, akActor, None)
+        return
+    endif
+    String displayName = akCorpse.GetDisplayName()
+    if !WalkToReference(akActor, akCorpse)
+        SkyrimNetApi.RegisterEvent("corpse_unreachable", akActor.GetDisplayName() + " couldn't reach " + displayName, akActor, None)
+        return
+    endif
+    if IdleLootBody
+        PlayAnimationAndWait(akActor, IdleLootBody, 3.0)
+    endif
+    ResetToDefaultIdle(akActor)
+    _FireSearchEvent(akActor, akCorpse, displayName, "corpse_searched", "searches the body of")
+EndFunction
+
+Function _FireSearchEvent(Actor akActor, ObjectReference akSource, String displayName, String eventKind, String verb)
+    {Shared tail of the two Search actions: describe the contents and teach
+     the model its follow-up options in the same breath.}
+    String contents = SeverActionsNativeExt.Native_Loot_DescribeContents(akSource, 10)
+    if contents == ""
+        SkyrimNetApi.RegisterEvent(eventKind, akActor.GetDisplayName() + " " + verb + " " + displayName + " — nothing there worth taking.", akActor, None)
+    else
+        SkyrimNetApi.RegisterEvent(eventKind, \
+            akActor.GetDisplayName() + " " + verb + " " + displayName + ". Inside: " + contents + ". They can now take specific items by name, a whole category (weapons, armor, jewelry, potions, food, ingredients, books, soul gems, ammo, scrolls, gems), the valuables, the gold, or all of it.", \
+            akActor, None)
+    endif
 EndFunction
 
 ; =============================================================================
@@ -323,10 +472,6 @@ Function LootCorpse_Execute(Actor akActor, String corpseName, String itemsToTake
     LootRef_Helper(akActor, akCorpse, IdleLootBody, 3.0, displayName, "corpse", "looted", itemsToTake)
 EndFunction
 
-; Shared body for LootContainer_Execute / LootCorpse_Execute: walk to target,
-; play idle, hand off to native ProcessLoot, fire either a "<kind>_looted" or
-; "<kind>_unreachable" event. The two callers only differ in animation, verb,
-; and event prefix.
 ; Add a SeverActions TRACKED bounty for a witnessed theft recorded by the last
 ; ProcessLoot / PickUpItemSilent. Vanilla crime is never raised — owned-goods
 ; taking is silent at the engine level, so this is the only consequence, and
@@ -346,12 +491,18 @@ Function ApplyTheftBounty(Actor akActor, String displayName)
     if !crimeFaction
         return
     endif
-    SeverActionsNativeExt.Native_Bounty_Mod(crimeFaction, stolenValue)
-    SeverActionsNativeExt.Native_Bounty_AddEvent(crimeFaction, stolenValue, "theft", "")
-    Debug.Notification("Bounty: +" + stolenValue + " gold (theft witnessed)")
+    ; The DOER carries the bounty (user decision): a follower seen taking
+    ; owned goods charges their own tracked bounty, not the player's.
+    SeverActionsNativeExt.Native_Bounty_ModFor(akActor, crimeFaction, stolenValue)
+    SeverActionsNativeExt.Native_Bounty_AddEventFor(akActor, crimeFaction, stolenValue, "theft", "")
+    Debug.Notification("Bounty: +" + stolenValue + " gold on " + akActor.GetDisplayName() + " (theft witnessed)")
     SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " was seen taking owned goods from " + displayName + " - a " + stolenValue + " gold tracked bounty was added.", akActor, Game.GetPlayer())
 EndFunction
 
+; Shared body for LootContainer_Execute / LootCorpse_Execute: walk to target,
+; play idle, hand off to native ProcessLoot, fire either a "<kind>_looted" or
+; "<kind>_unreachable" event. The two callers only differ in animation, verb,
+; and event prefix.
 Function LootRef_Helper(Actor akActor, ObjectReference akTarget, Idle anim, Float animDuration, String displayName, String kind, String verb, String itemsToTake)
     if !akActor || !akTarget
         return
@@ -812,9 +963,20 @@ Function BringItem_Execute(Actor akActor, Actor akTarget, String itemType)
             if IdlePickUpItem
                 PlayAnimationAndWait(akActor, IdlePickUpItem, 1.5)
             endif
-            akActor.AddItem(itemBase, 1, true)
-            nearbyItem.Disable()
-            nearbyItem.Delete()
+            ; Same owned-item theft contract as PickUpItem_Execute (PR #184).
+            ; The old AddItem + Disable + Delete here was the reason this
+            ; action shipped DISABLED: it duplicated the base into inventory
+            ; and destroyed the world ref with NO ownership check - a free,
+            ; unpunished steal of any owned item (and it stripped enchant/
+            ; temper extras from unowned ones by not using Activate).
+            ; Owned -> silent native transfer + SA tracked bounty if witnessed;
+            ; unowned -> Activate (preserves extras, no crime to raise).
+            if SeverActionsNativeExt.IsRefOwnedByNonPlayer(nearbyItem)
+                SeverActionsNativeExt.PickUpItemSilent(akActor, nearbyItem)
+                ApplyTheftBounty(akActor, itemName)
+            else
+                nearbyItem.Activate(akActor)
+            endif
 
             if WalkToReference(akActor, akTarget)
                 if IdleGive
@@ -1158,12 +1320,16 @@ Returns false if someone is already reading (prevents re-triggering).}
     endif
 
     if bookName == ""
-        ; No specific book requested — check if they have any books
-        return SeverActionsNative.HasBooks(akActor)
+        ; No specific book requested — their pack, or the player's (borrow)
+        return SeverActionsNative.HasBooks(akActor) || SeverActionsNative.HasBooks(Game.GetPlayer())
     endif
 
-    ; Check if the named book is in their inventory
+    ; The named book: their own pack first, then the player's — reading is
+    ; non-destructive, so a book the player carries is borrowable in place.
     Form bookForm = SeverActionsNative.FindBookInInventory(akActor, bookName)
+    if !bookForm
+        bookForm = SeverActionsNative.FindBookInInventory(Game.GetPlayer(), bookName)
+    endif
     return bookForm != None
 EndFunction
 
@@ -1182,17 +1348,24 @@ naturally first (e.g. "What shall I read?") and the player drives the conversati
         return
     endif
 
-    ; Find the book in inventory
+    ; Find the book — their own pack first, then the player's (user
+    ; decision): reading is non-destructive, so the form is resolved in
+    ; place with no transfer; GetBookText only needs the base form.
     Form bookForm = None
+    Bool borrowed = false
     if bookName != ""
         bookForm = SeverActionsNative.FindBookInInventory(akActor, bookName)
+        if !bookForm
+            bookForm = SeverActionsNative.FindBookInInventory(Game.GetPlayer(), bookName)
+            borrowed = bookForm != None
+        endif
     endif
 
     if !bookForm
         ; No book found by that name
         String npcName = akActor.GetDisplayName()
         if bookName != ""
-            SkyrimNetApi.RegisterEvent("book_not_found", npcName + " looked for '" + bookName + "' but doesn't have it", akActor, None)
+            SkyrimNetApi.RegisterEvent("book_not_found", npcName + " looked for '" + bookName + "' but neither they nor " + Game.GetPlayer().GetDisplayName() + " is carrying it", akActor, None)
         else
             SkyrimNetApi.RegisterEvent("book_not_found", npcName + " has no books to read", akActor, None)
         endif
@@ -1211,8 +1384,12 @@ naturally first (e.g. "What shall I read?") and the player drives the conversati
         if SeverActionsNative.PrismaUI_IsAvailable()
             Debug.Trace("[SeverActions_Loot] ReadBook: Diary detected - opening diary viewer for '" + actualBookName + "'")
             SeverActionsNative.PrismaUI_OpenDiaryViewerForBook(bookForm, akActor)
-            ; Store reader reference so the ModEvent handler can use it
+            ; Store reader reference so the ModEvent handler can use it.
+            ; Arm the start time too — the eligibility stale-state timeout
+            ; only reclaims the slot when StartTime > 0, so the diary path
+            ; used to wedge ReadBook forever if the cancel event was missed.
             BookReader = akActor
+            BookReadingStartTime = Utility.GetCurrentRealTime()
             return
         endif
         Debug.Trace("[SeverActions_Loot] ReadBook: Diary detected but PrismaUI not available - falling back to normal read")
@@ -1226,7 +1403,15 @@ naturally first (e.g. "What shall I read?") and the player drives the conversati
         return
     endif
 
-    Debug.Trace("[SeverActions_Loot] ReadBook: " + npcName + " reading '" + actualBookName + "' (" + StringUtil.GetLength(bookText) + " chars)")
+    Debug.Trace("[SeverActions_Loot] ReadBook: " + npcName + " reading '" + actualBookName + "' (" + StringUtil.GetLength(bookText) + " chars, borrowed=" + borrowed + ")")
+
+    ; Borrow flavor — a one-line scene beat so both characters know whose
+    ; book this is. Fires before the reading-mode narration below.
+    if borrowed
+        SkyrimNetApi.RegisterEvent("book_borrowed", \
+            npcName + " borrows '" + actualBookName + "' from " + Game.GetPlayer().GetDisplayName() + "'s pack.", \
+            akActor, Game.GetPlayer())
+    endif
 
     ; Set book reading state — Papyrus only tracks the reader and start time;
     ; title/text live in StorageUtil (below) so prompts can read them via
@@ -1280,7 +1465,7 @@ naturally first (e.g. "What shall I read?") and the player drives the conversati
 
     ; Start auto-continue loop — monitors speech queue and nudges NPC to keep reading
     BookReadingLastNarrationTime = Utility.GetCurrentRealTime()
-    RegisterForSingleUpdate(BookReadingUpdateInterval)
+    ChronoArm(BookReadingUpdateInterval)
 EndFunction
 
 Function ClearBookReadingState()
@@ -1365,7 +1550,7 @@ Event OnDiaryEntrySelected(string eventName, string strArg, float numArg, Form s
 
     ; Start auto-continue loop
     BookReadingLastNarrationTime = Utility.GetCurrentRealTime()
-    RegisterForSingleUpdate(BookReadingUpdateInterval)
+    ChronoArm(BookReadingUpdateInterval)
 EndEvent
 
 Function StopReading_Execute(Actor akActor)
@@ -1382,7 +1567,19 @@ EndFunction
 ; BOOK READING AUTO-CONTINUE LOOP
 ; =============================================================================
 
-Event OnUpdate()
+Function ChronoArm(Float afSeconds)
+    {Arm this script's one-shot chronometer tick - replaces the FORM-keyed
+     RegisterForSingleUpdate (canonical explanation: the Chronometer block in
+     SeverActionsNativeExt2.psc + the CLAUDE.md lesson). Event name AND
+     callback name are unique per script - both, always. Re-arm replaces the
+     pending tick; ticks do NOT survive save/load (load paths re-arm); at
+     most one already-in-flight wake can land after Cancel/Clear, so keep
+     the handler state-guarded.}
+    RegisterForModEvent("SeverActions_Tick_Loot", "OnChronoTick_Loot")
+    SeverActionsNativeExt2.Chrono_Request("SeverActions_Tick_Loot", afSeconds)
+EndFunction
+
+Event OnChronoTick_Loot(String eventName, String strArg, Float numArg, Form sender)
     ; Only active during book reading — monitors speech queue and nudges NPC to keep reading
     if BookReader == None
         return
@@ -1425,7 +1622,7 @@ Event OnUpdate()
     endif
 
     ; Keep looping while reading is active
-    RegisterForSingleUpdate(BookReadingUpdateInterval)
+    ChronoArm(BookReadingUpdateInterval)
 EndEvent
 
 ; =============================================================================

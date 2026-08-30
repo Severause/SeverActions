@@ -1,5 +1,5 @@
 name: SetCombatStyle
-description: "{{ player.name }} gives the companion clear marching orders on how to fight from now on — 'hold the line', 'hang back with the bow', 'stick by me and patch wounds'. The companion adjusts their stance, drawn weapon, and discipline to match."
+description: "{{ player.name }} tells the companion how to fight from now on — hold the front, hang back at range, or focus on keeping allies healed. The companion adjusts their stance, drawn weapon, and discipline to match."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: SetCombatStyle
@@ -9,7 +9,7 @@ parameterMapping:
     description: the companion taking the new orders
   - type: dynamic
     name: style
-    description: "how they're meant to fight. One of: aggressive, defensive, ranged, healer, balanced, melee, berserker, tank, archer, mage, spellsword, battlemage, champion, brawler, companion. 'healer' makes them a restoration-focused support — adds heal spells, hangs back, force-casts on hurt allies."
+    description: "how they fight. One of: aggressive (presses hard), defensive (holds and counters), ranged/archer (bow, hangs back), healer (restoration support - heals hurt allies, hangs back), balanced (mixed, sensible default), melee (weapons up close), berserker (reckless all-out), tank (soaks hits up front), mage (spells at range), spellsword (blade + spell), battlemage (armored caster), champion (duelist, seeks the strongest foe), brawler (fists), companion (the vanilla default style - NOT a special mode for companions), coward (non-combatant: flees, never fights - a scholar or bard, not a cautious fighter). Passing anything else reverts them to no combat style."
 enabled: true
 defaultPriority: 5
 eligibilityRules:

@@ -1,0 +1,54 @@
+customCategory: economy
+name: RepayDebt
+description: "The speaker pays back some or all of a debt THEY owe — gold moves to the creditor and the books settle. Use when the speaker offers to pay their own tab, loan, or slate. Amount 0 (or omitted) pays everything owed; the payment can never exceed the debt. NOT for collecting what is owed TO the speaker (use CollectPayment), NOT for a no-strings gift (use GiveGold), NOT for working a debt down without coin (use ReduceDebt)."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: RepayDebt_Execute
+parameterMapping:
+  - type: speaker
+    name: akDebtor
+    description: the actor paying back what they owe
+  - type: dynamic
+    name: akCreditor
+    description: "the actor they owe (their name)"
+  - type: dynamic
+    name: aiAmount
+    description: "gold to pay — a whole number, or 0 to pay everything owed (default 0)"
+    optional: true
+    default: 0
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      # get_faction_rank, not is_in_faction: RemoveFromFaction sets rank -1
+      # (layered override) rather than erasing membership, so a rank-blind
+      # check reads a former debtor as one forever. Only rank >= 0 is a
+      # live debtor. Same fix class as the creditor gates (reducedebt).
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SeverActions_DebtorFaction"]
+        comparisonOperator: ">="
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} pays coin toward their debt to {{ akCreditor }}"

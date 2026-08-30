@@ -1,6 +1,6 @@
 customCategory: economy
 name: GiveGold
-description: "The speaker chooses to hand over coin freely — a gift, a generous tip, a finder's fee, or a reward for a job well done. Nothing is expected in return."
+description: "Coin moves FROM the speaker TO someone else — a gift, a generous tip, a finder's fee, a reward, a refund, or settling up for goods already handed over. Use this whenever the speaker is the one paying and no more specific action fits. Buying goods in the same breath (coin one way, goods the other) is BuyItem; paying back a recorded debt is RepayDebt. NEVER CollectPayment — that takes gold FROM the other party."
 questEditorId: SeverActions
 scriptName: SeverActions_Currency
 executionFunctionName: GiveGold_Execute

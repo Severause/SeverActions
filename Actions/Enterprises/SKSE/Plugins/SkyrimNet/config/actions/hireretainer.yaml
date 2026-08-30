@@ -1,19 +1,19 @@
-customCategory: enterprises
+customCategory: employment
 name: HireRetainer
-description: "Use when the conversation has led the speaker to AGREE to work for {{ player.name }} running an off-screen venture — a mine, a shop or trade stall, an alchemy bench, a farm, a fencing operation, a mercenary contract, guard duty, lumber work, or working as a courtesan (selling companionship). The speaker becomes a 'retainer' who produces gold and goods every week while {{ player.name }} is away. The agreement may be WILLING or COERCED (a tribute arrangement extracted under pressure still counts as agreement). This opens a brief prompt for {{ player.name }} to confirm where they'll work and the terms. Only call once both sides have settled on WHAT work they'll do and HOW the money flows. Do NOT call it for vague musings, for someone who already works for {{ player.name }}, or to recruit a combat follower (that is a separate action)."
+description: "Use when the conversation has led the speaker to AGREE to work for {{ player.name }} running an off-screen venture — a mine, a shop or trade stall, an alchemy bench, a farm, a fencing operation, a mercenary contract, guard duty, lumber work, a forge (blacksmith), hunting and trapping, a brewhouse or meadery, a tannery, or working as a courtesan (selling companionship). The speaker becomes a 'retainer' who produces gold and goods every week while {{ player.name }} is away. The agreement may be WILLING or COERCED (a tribute arrangement extracted under pressure still counts as agreement). This opens a brief prompt for {{ player.name }} to confirm where they'll work and the terms. Only call once both sides have settled on WHAT work they'll do and HOW the money flows. Do NOT call it for vague musings, for someone who already works for {{ player.name }}, or to recruit a combat follower (that is a separate action)."
 questEditorId: SeverActions
 scriptName: SeverActions_Currency
 executionFunctionName: HireRetainer
 parameterMapping:
   - type: speaker
     name: akActor
-    description: the NPC agreeing to become the player's retainer
+    description: the NPC agreeing to become {{ player.name }}'s retainer
   - type: dynamic
     name: job
-    description: "the work they agreed to do. One of: miner, merchant, alchemist, farmer, fence, mercenary, courtesan, guard, lumberjack. (Fence = moving and laundering stolen goods on the black market — illegal, draws the law over time. Courtesan = selling companionship, a prostitute/escort. Mercenary = sellsword/contracts; Guard = standing watch / gate duty; Lumberjack = felling timber at a mill.)"
+    description: "the work they agreed to do. One of: miner, merchant, alchemist, farmer, fence, mercenary, courtesan, guard, lumberjack, blacksmith, hunter, brewer, tanner. (Fence = moving and laundering stolen goods on the black market — illegal, draws the law over time. Courtesan = selling companionship, a prostitute/escort. Mercenary = sellsword/contracts; Guard = standing watch / gate duty; Lumberjack = felling timber at a mill; Blacksmith = forge work, arms and armor; Hunter = game, pelts and trapping; Brewer = mead/ale/wine; Tanner = hides into leather.)"
   - type: dynamic
     name: arrangement
-    description: "how the money works. One of: employed (the player pays a fixed weekly wage and keeps all output), partnership (no wage; the player and the retainer split what they earn, an even 50/50 by default), vassalage (a COERCED arrangement — they hand the player a cut under duress, not by choice; use for someone extorted, conquered, or shaken down; also accepts 'tribute'), sworn (the player pays a weekly wage for their SERVICE ALONE with no goods or gold produced — use this for a kept guard, bodyguard, or household servant who is paid simply to be in the player's service), enslaved (a COERCED and UNPAID arrangement — no wage and no earnings; they are held against their will and made to serve however the player wishes; use only when the person has been enslaved/taken captive, not for any consensual hire; also accepts 'slave', 'thrall', 'captive'). Default to employed for a normal willing hire; use vassalage only when the agreement was extracted under threat; use sworn when the work produces nothing to sell (e.g. a guard paid only to stand watch); use enslaved only for an outright captive held without pay."
+    description: "how the money works. One of: employed (player pays a fixed weekly wage and keeps all output), partnership (no wage; earnings split 50/50), tribute (COERCED — they hand {{ player.name }} a cut under duress; accepts 'indentured', 'vassalage'), sworn (wage for service alone — a kept guard, bodyguard, or servant; accepts 'retained'), enslaved (COERCED and UNPAID captive; accepts 'slave', 'thrall', 'captive'). Default 'employed' for a normal willing hire."
 enabled: true
 defaultPriority: 5
 eligibilityRules:

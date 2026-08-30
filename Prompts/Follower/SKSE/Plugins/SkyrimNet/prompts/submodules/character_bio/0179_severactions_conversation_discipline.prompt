@@ -1,0 +1,25 @@
+{# Group-conversation discipline for companions (Sever followers only). #}
+{% if render_mode == "transform" or render_mode == "full" %}
+{# Fixes two failure modes that compound in multi-companion scenes:
+   (1) mis-addressing — an NPC answers the PLAYER's request but delivers
+       the line "To:" another companion, confusing later turns about who
+       was told to do what;
+   (2) repetition — companions restate a demand/fact already on the table
+       instead of advancing, and each restatement feeds the next.
+   Dialogue-generation modes only — thoughts don't address anyone. #}
+{% if actorUUID and actorUUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% if actor and actor.UUID %}
+{% set is_fol = is_sever_follower(actorUUID) == "true" %}
+{% if is_fol %}
+
+## Speaking in a Group
+- ADDRESS the person your words are actually FOR. If you are answering {{ player.name }}, giving {{ player.name }} counsel, or telling {{ player.name }} to do something, direct the line AT {{ player.name }} — do not deliver it to another companion. Speak to a fellow companion only when the words are genuinely meant for them.
+- SPEAK TO your listener, not ABOUT them. Address whoever you are speaking to as "you" — never in the third person. If you agree with the person you are addressing, say "You're right", not "She's right". Do not muse aloud or narrate your reaction to the room as if no one in particular were listening; engage the person directly.
+- When you back up or comment on what ANOTHER companion just said, your words are for the person their point was aimed at (usually {{ player.name }}) — address THAT person ("She's not wrong, listen to her"), not the companion you are agreeing with.
+- DO NOT restate what has already been said. If you or anyone else in this conversation already made the point — a demand, a condition, a fact — do not say it again in different words. Acknowledge it in a word if needed, then add something NEW: a next step, an objection, a question, a decision. If you have nothing new, keep it short.
+- Every line should MOVE the scene: answer what was asked, decide something, raise a fresh concern, or act. A conversation where each person repeats the last person is a stalled conversation.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

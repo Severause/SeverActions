@@ -70,9 +70,9 @@ Function ModifyArousal_Execute(Actor akActor, Float amount)
     slaMainScr main = Quest.GetQuest("sla_Main") as slaMainScr
 
     If sla && main
-        ; Use UpdateActorExposure to add the delta directly to the exposure component.
-        ; Previously used SetActorExposure(GetActorArousal + amount) which treated total
-        ; arousal as the base, causing exposure to balloon when other sources were high.
+        ; Add the delta directly to the exposure component via UpdateActorExposure.
+        ; SetActorExposure(GetActorArousal + amount) would treat total arousal as the
+        ; base, ballooning exposure when other sources are high.
         sla.UpdateActorExposure(akActor, amount as Int)
         main.UpdateSingleActorArousal(akActor)
 

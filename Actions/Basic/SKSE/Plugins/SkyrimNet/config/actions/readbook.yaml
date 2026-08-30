@@ -1,16 +1,16 @@
 customCategory: items
 name: ReadBook
-description: "The speaker pulls a book or note out of their pack and reads it aloud — by the fire at camp, leaning against the inn's railing, sitting in a quiet corner of a library. Reading continues until told to stop."
+description: "Read a book or note aloud from the speaker's or {{ player.name }}'s pack; reading continues until StopReading. The book's real text appears only after this action fires — until then, roleplay opening the book and finding the page; never recite, quote, or invent its contents."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: ReadBook_Execute
 parameterMapping:
-  - type: dynamic
+  - type: speaker
     name: akActor
     description: the actor cracking open the book
   - type: dynamic
     name: bookName
-    description: the exact title of the book or note (the speaker must already be carrying it)
+    description: the exact title of the book or note (carried by the speaker or by {{ player.name }})
 enabled: true
 eligibilityRules:
   - conditions:

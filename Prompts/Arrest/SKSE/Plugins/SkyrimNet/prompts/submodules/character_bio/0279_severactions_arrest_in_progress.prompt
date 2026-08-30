@@ -43,7 +43,7 @@
    a generic offense. Empty (and silent) for any non-fence arrest. #}
 {% set fenceCharge = fence_crime_notice(currentPrisoner.uuid) %}
 {% if fenceCharge != "" %}
-**Reason for this arrest:** {{ prisonerName }} is wanted for {{ fenceCharge }} {{ actor.name }} knows this is the charge and should make the reason clear — this is no mere curfew or vagrancy matter.
+**Reason for this arrest:** {{ prisonerName }} is wanted for {{ fenceCharge }}. {{ actor.name }} knows the charge and should make it clear — this is no mere curfew or vagrancy matter.
 {% endif %}
 {% if arrestState == 4 %}
 ## ESCORT PLEA — LISTENING TO PRISONER

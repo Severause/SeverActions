@@ -1,0 +1,32 @@
+customCategory: employment
+name: NegotiateTerms
+description: "Use when {{ player.name }} HAGGLES with this retainer over the terms they asked for — meeting them partway rather than agreeing outright or turning them down. Splits the difference: about half the wage increase they wanted, or half the movement on their share. They take it, the pressing stops, and goodwill improves a little (less than a full grant, far better than a refusal). Only call when {{ player.name }} clearly counter-offers or proposes a compromise — a lower figure than asked, or splitting the difference. A flat yes is GrantRetainerRaise; flatly dismissing them is BrushOffRetainer. Requires an outstanding request — never call it to open a negotiation the retainer hasn't started."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: NegotiateTerms
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the retainer {{ player.name }} is haggling terms with
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # has_raise_ask is non-empty ONLY while a raise ask is outstanding —
+      # string-compared, never bool. Narrower than retainer_grievance (which
+      # also covers hearings and plain grudges): there is nothing to split the
+      # difference on unless they actually asked for something.
+      - decoratorName: "has_raise_ask"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ player.name }} haggled {{ actor.name }} down to a compromise on their terms"

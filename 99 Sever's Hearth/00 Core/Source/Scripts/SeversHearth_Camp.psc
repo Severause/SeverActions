@@ -22,7 +22,7 @@ ScriptName SeversHearth_Camp extends Quest
 ;
 ; Runtime: ActorUtil.AddPackageOverride / RemovePackageOverride (PapyrusUtil)
 ; apply the package directly to each occupant. PapyrusUtil is a near-universal
-; soft dep (required by SkyUI MCM, SexLab, NFF). If the package isn't picked
+; soft dep (required by SexLab; bundled with many frameworks, incl. NFF). If the package isn't picked
 ; or PapyrusUtil isn't loaded, the layer no-ops silently and the camp
 ; lifecycle still works (followers fall back to their normal AI).
 ;
@@ -35,6 +35,14 @@ Package Property CampSandboxPackage Auto
 {User-created Sandbox package, picked from CK's dropdown. None = layer disabled.
 
 Applied at runtime via PapyrusUtil's ActorUtil.AddPackageOverride.}
+
+Bool Property SandboxOnEstablish = True Auto
+{User preference: sandbox the establishing follower + nearby teammates when
+ a camp goes up. Toggled from SeverActions' Settings page via the
+ SeverActions_PrismaCampSandboxPref ModEvent; cosaved here (script property).
+ Off = camps still work, followers just keep their normal AI until sent to
+ camp explicitly (GoToCamp arrival sandboxing is a deliberate command and
+ stays independent of this toggle).}
 
 ; ── IntelEngine "the camp" travel integration ────────────────────────────
 ; User creates a BGSLocation record in CK:
@@ -132,8 +140,8 @@ Float Property FireBlockRadius = 50.0 Auto Hidden
  Smaller than tent radius — the fire footprint is tighter.}
 
 ; ── Player-driven camp placement (live ghost preview) ───────────────────
-; Transient positioning state. Not meaningful across saves — OnPlayerLoadGame
-; resets it (the native ghost refs don't survive a reload).
+; Transient positioning state. Not meaningful across saves — the post-load
+; "postload" camp tick resets it (the native ghost refs don't survive a reload).
 Int PlacementMode = 0                ; 0 = idle, 1 = positioning the ghost
 Float PlacementRotateOffset = 0.0    ; Q/E rotation dialed on top of facing (deg)
 Int PlacementConfirmKey = 28         ; resolved Activate key, or Enter on collision
@@ -147,26 +155,12 @@ Event OnInit()
     RegisterCampEvents()
 EndEvent
 
-Event OnPlayerLoadGame()
-    RegisterCampEvents()
-    ; Cosave survives saves but PrismaUI doesn't — re-pin the dashboard
-    ; rest-stop + camp badge if the player loaded into an active camp.
-    ; Sandboxed-actor tracking is a per-script instance array (also
-    ; cosave-backed via the Auto Hidden properties) so the badge count
-    ; reflects the original session's occupants.
-    If Native_Camp_IsActive()
-        _PinCampRestStop()
-        Debug.Trace("[SeversHearth] OnPlayerLoadGame: re-pinned active camp")
-    EndIf
-    ; A save taken mid-placement loads back with the transient ghost gone
-    ; (native preview state resets on reload). Tear down the dangling Papyrus
-    ; side so controls/keys/update don't stay stuck.
-    If PlacementMode != 0
-        PlacementMode = 0
-        _EndPlacementInput()
-        UnregisterForUpdate()
-    EndIf
-EndEvent
+; Load-time recovery: Quest scripts never receive OnPlayerLoadGame, so
+; SeversHearthNative fires a one-shot SeversHearth_CampTick with
+; strArg="postload" ~3s after kPostLoadGame; the "postload" branch at the top
+; of OnCampTickEvent below handles recovery. Reusing the already-registered
+; tick event means existing saves get the recovery without any new
+; RegisterForModEvent.
 
 Function RegisterCampEvents()
     {Idempotent — RegisterForModEvent is safe to call multiple times for
@@ -190,8 +184,21 @@ Function RegisterCampEvents()
     ; dispatched followers (WaitingForPlayer=1) when they reach the fire,
     ; so they don't engine-teleport with the player later.
     RegisterForModEvent("SeverActions_TravelComplete", "OnTravelCompleteFromSA")
+    ; Settings-page toggle for sandbox-on-establish (SA fires, we own the
+    ; cosaved value). Registered on the trigger path per the ModEvent rule.
+    RegisterForModEvent("SeverActions_PrismaCampSandboxPref", "OnPrismaCampSandboxPref")
+    ; Mirror the current preference into SA's UI-facing native so the
+    ; Settings toggle shows the cosaved truth after every load.
+    SeverActionsNativeExt.PrismaUI_SetCampSandboxPref(SandboxOnEstablish)
     Debug.Trace("[SeversHearth] Registered camp tick + PrismaUI button + follower lifecycle ModEvents")
 EndFunction
+
+Event OnPrismaCampSandboxPref(string eventName, string strArg, float numArg, Form sender)
+    {SeverActions Settings page toggled sandbox-on-establish.}
+    SandboxOnEstablish = (strArg == "true")
+    SeverActionsNativeExt.PrismaUI_SetCampSandboxPref(SandboxOnEstablish)
+    Debug.Trace("[SeversHearth] SandboxOnEstablish = " + SandboxOnEstablish)
+EndEvent
 
 Event OnFollowerCalledByPlayer(string eventName, string strArg, float numArg, Form sender)
     {SeverActions fires this when the player issues a recruit/follow/wait
@@ -201,11 +208,27 @@ Event OnFollowerCalledByPlayer(string eventName, string strArg, float numArg, Fo
      Dismiss intentionally does NOT fire this — a dismissed follower is
      supposed to stay where they are (often that IS the camp).}
     Actor a = sender as Actor
-    If !a || !_IsAlreadySandboxed(a)
+    If !a
         Return
     EndIf
-    Debug.Trace("[SeversHearth] OnFollowerCalledByPlayer: releasing " + a.GetDisplayName() + " (verb=" + strArg + ")")
-    _ReleaseFromCampSandbox(a)
+    If _IsAlreadySandboxed(a)
+        Debug.Trace("[SeversHearth] OnFollowerCalledByPlayer: releasing " + a.GetDisplayName() + " (verb=" + strArg + ")")
+        _ReleaseFromCampSandbox(a)
+    ElseIf SkyrimNetApi.HasPackage(a, "CampSandbox")
+        ; Orphaned override — applied but missing from tracking (save/load
+        ; edge, travel-handoff race). The SkyrimNet registration is the
+        ; detector: it only exists when _ApplyCampSandbox ran. Release the
+        ; package so a player follow/recruit call always breaks the camp pin.
+        Debug.Trace("[SeversHearth] OnFollowerCalledByPlayer: releasing ORPHANED camp sandbox on " + a.GetDisplayName() + " (verb=" + strArg + ")")
+        If CampSandboxPackage
+            ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
+        EndIf
+        SkyrimNetApi.UnregisterPackage(a, "CampSandbox")
+        If a.GetAV("WaitingForPlayer") == 1.0
+            a.SetAV("WaitingForPlayer", 0)
+        EndIf
+        a.EvaluatePackage()
+    EndIf
 EndEvent
 
 Event OnPrismaToggleCampMarker(string eventName, string strArg, float numArg, Form sender)
@@ -318,13 +341,26 @@ EndEvent
 
 Event OnPrismaTravelToCamp(string eventName, string strArg, float numArg, Form sender)
     {PrismaUI: Travel to Camp button. Follower-only — routes either a single
-     follower (strArg = formID hex) or every player teammate in the player's
-     cell (strArg = "all"). Player-targeted travel doesn't fit the use case
-     ("send Lydia ahead while I finish here") so it's not supported here.}
+     follower (payload = formID hex) or every player teammate in the player's
+     cell (payload = "all"). Player-targeted travel doesn't fit the use case
+     ("send Lydia ahead while I finish here") so it's not supported here.
+
+     SA's PrismaUIActionHandler prepends "<actorName-or-formID>|" to every
+     strArg before sending (same encoding OnPrismaToggleCampMarker handles),
+     so what arrives is "0|all" or "0|A1B2C3". This handler used to compare
+     the RAW strArg — "all" never matched and HexToInt parsed the leading
+     "0", so BOTH branches silently no-opped on every click (2026-07 button
+     audit). Strip through the first "|" before dispatching.}
     If !Native_Camp_IsActive()
         Return
     EndIf
-    If strArg == "all"
+    ; Extract the payload after the "|" (SA's encoding convention).
+    String payload = strArg
+    Int payloadPipe = StringUtil.Find(strArg, "|")
+    If payloadPipe >= 0
+        payload = StringUtil.Substring(strArg, payloadPipe + 1, 0)
+    EndIf
+    If payload == "all"
         Actor PlayerRef = Game.GetPlayer()
         If !PlayerRef
             Return
@@ -348,13 +384,13 @@ Event OnPrismaTravelToCamp(string eventName, string strArg, float numArg, Form s
         EndWhile
         Debug.Notification("Sent " + dispatched + " follower" + PluralS(dispatched) + " to camp.")
     Else
-        ; Single follower: strArg is the formID in hex string form.
+        ; Single follower: payload is the formID in hex string form.
         ; Defer the parse to SA's native HexToInt — ~10000x faster than the
         ; equivalent Papyrus character loop, and the result is bit-for-bit
         ; identical to what the dispatcher encoded with snprintf("%X", fid).
-        Int formID = SeverActionsNative.HexToInt(strArg)
+        Int formID = SeverActionsNative.HexToInt(payload)
         If formID == 0
-            Debug.Trace("[SeversHearth] OnPrismaTravelToCamp: invalid strArg '" + strArg + "'")
+            Debug.Trace("[SeversHearth] OnPrismaTravelToCamp: invalid payload '" + strArg + "'")
             Return
         EndIf
         Form f = Game.GetFormEx(formID)
@@ -605,7 +641,9 @@ EndFunction
 ; Post-commit bookkeeping — mirrors the tail of _EstablishCampFlow (minus the
 ; cinematic fade / single-follower sandbox; the fan-out covers all teammates).
 Function _FinishCommit(Actor PlayerRef)
-    _FanOutSandboxToTeammates(PlayerRef, 1000.0)
+    If SandboxOnEstablish
+        _FanOutSandboxToTeammates(PlayerRef, 1000.0)
+    EndIf
     Native_Camp_SetPhase(2)          ; CampPhase::Active
     _PinCampRestStop()
     Native_Camp_ForceTick()
@@ -682,13 +720,11 @@ EndFunction
 ; ============================================================================
 
 Function _EstablishCampFlow(Actor follower, Actor PlayerRef)
-    ; Re-register event handlers every Establish. Saves made before a new
-    ; event handler was added bind to the OLD script signature on load —
-    ; OnInit/OnPlayerLoadGame fire against the cached binding set, so newly-
-    ; added events (e.g. OnPrismaToggleCampMarker, OnFollowerCalledByPlayer)
-    ; silently never fire on existing saves. Calling RegisterCampEvents here
-    ; refreshes the bindings every camp lifecycle without requiring a new game.
-    ; RegisterForModEvent is idempotent so this is safe to call repeatedly.
+    ; Re-register event handlers every Establish. On a save made before a new
+    ; event handler existed, newly-added events (e.g. OnPrismaToggleCampMarker,
+    ; OnFollowerCalledByPlayer) never fire until re-registered. RegisterForModEvent
+    ; is idempotent, so refreshing the bindings each camp lifecycle is safe and
+    ; needs no new game.
     RegisterCampEvents()
 
     Float angleZ = PlayerRef.GetAngleZ()
@@ -729,10 +765,12 @@ Function _EstablishCampFlow(Actor follower, Actor PlayerRef)
 
     ; AI sandbox transitions happen during the dim window so package
     ; override + EvaluatePackage churn isn't visible.
-    If cinematic
-        _ApplyCampSandbox(follower)
+    If SandboxOnEstablish
+        If cinematic
+            _ApplyCampSandbox(follower)
+        EndIf
+        _FanOutSandboxToTeammates(PlayerRef, 1000.0)
     EndIf
-    _FanOutSandboxToTeammates(PlayerRef, 1000.0)
 
     ; Flip to Active so the survival tick can start firing.
     Native_Camp_SetPhase(2)  ; CampPhase::Active
@@ -869,10 +907,9 @@ Bool Property UseFadeToBlack = True Auto Hidden
 ; "twilight closes over the camp" effect rather than a hard cut. Tune
 ; via the property below if a snappier vs slower transition is desired.
 ;
-; v1d-5 attempted to keep the fade snappy via an OnUpdate refresh loop
-; that re-applied FadeOutGame every 0.5s. That made the screen flicker
-; on every refresh (each call re-animated rather than holding), so it's
-; gone in v1d-6.
+; Do not re-apply FadeOutGame on an OnUpdate refresh loop to keep the fade
+; snappy — each call re-animates rather than holding, which flickers the
+; screen on every refresh.
 Float Property FadeOutSeconds = 6.0 Auto Hidden
 Float Property FadeInSeconds  = 1.5 Auto Hidden
 
@@ -902,7 +939,7 @@ EndFunction
 ; ============================================================================
 ; Sandbox helpers
 ;
-; PO3 PapyrusExtenderSSE exposes AddPackageOverride/RemovePackageOverride as
+; PapyrusUtil's ActorUtil exposes AddPackageOverride/RemovePackageOverride as
 ; globals taking (Actor, Package, ...) — fills the gap left by vanilla, which
 ; has no Papyrus surface for runtime package overrides. We pass the Package
 ; Form directly; no EditorID string lookup, no SkyrimNet round-trip.
@@ -910,8 +947,8 @@ EndFunction
 ; EvaluatePackage forces immediate AI re-evaluation so the transition happens
 ; during the fade, not on the next vanilla tick (which can be many seconds).
 ;
-; Both helpers no-op silently if CampSandboxPackage is None or po3 isn't
-; loaded — camp lifecycle stays robust regardless.
+; Both helpers no-op silently if CampSandboxPackage is None or PapyrusUtil
+; isn't loaded — camp lifecycle stays robust regardless.
 ; ============================================================================
 
 Function _ApplyCampSandbox(Actor occupant)
@@ -957,6 +994,14 @@ Function _ApplyCampSandbox(Actor occupant)
 
     ActorUtil.AddPackageOverride(occupant, CampSandboxPackage, 100, 0)
     occupant.EvaluatePackage()
+    ; Mirror into SkyrimNet so the camp sandbox is visible in its webui /
+    ; in-game package UI — same dual-apply pattern SA's furniture action uses
+    ; (SeverActions_UseFurniture). The PO3 override above stays authoritative
+    ; for timing; SkyrimNet queues its own application asynchronously. Key =
+    ; EditorID 'CampSandboxPackage' minus the 'Package' suffix. Not persistent:
+    ; camp state is per-session. It also doubles as the orphan detector in
+    ; OnFollowerCalledByPlayer.
+    SkyrimNetApi.RegisterPackage(occupant, "CampSandbox", 100, 0, false)
     SandboxedActorTracking[SandboxedActorCount] = occupant
     SandboxedActorCount += 1
 EndFunction
@@ -975,6 +1020,7 @@ Function _ReleaseFromCampSandbox(Actor a)
     If CampSandboxPackage
         ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
     EndIf
+    SkyrimNetApi.UnregisterPackage(a, "CampSandbox")
     ; Clear the wait flag — symmetric with the WaitingForPlayer=1 we set in
     ; _ApplyCampSandbox. Resume vanilla follower behavior.
     a.SetAV("WaitingForPlayer", 0)
@@ -1037,10 +1083,9 @@ EndFunction
 ; cell-scan in CampPlacement.h which finds every IsPlayerTeammate() actor
 ; within radius — works across vanilla / NFF / AFT / UFO / Inigo / Lucien
 ; without needing per-framework integration, because IsPlayerTeammate is
-; the canonical flag every framework respects.
-;
-; Prior version used PO3's GetCommandedActors which only returned vanilla-
-; commanded actors and missed NFF-managed followers in particular.
+; the canonical flag every framework respects. PO3's GetCommandedActors is
+; not used: it returns only vanilla-commanded actors and misses NFF-managed
+; followers.
 ;
 ; Called by both establish flows so player-driven camps also populate.
 Function _FanOutSandboxToTeammates(Actor playerRef, Float maxDistance)
@@ -1088,6 +1133,7 @@ Function _ClearCampSandbox()
             If CampSandboxPackage
                 ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
             EndIf
+            SkyrimNetApi.UnregisterPackage(a, "CampSandbox")
             ; Clear the wait flag — they should resume normal follower
             ; behavior now that the camp is breaking down.
             a.SetAV("WaitingForPlayer", 0)
@@ -1180,6 +1226,30 @@ Float Property CampOccupantMaxDistance = 700.0 Auto Hidden
 {Actors farther than this from the camp center don't get tick restoration.}
 
 Event OnCampTickEvent(string eventName, string strArg, float numArg, Form sender)
+    ; One-shot post-load recovery fired by the native at kPostLoadGame.
+    ; Does what the old (dead) OnPlayerLoadGame handler intended: refresh
+    ; ModEvent bindings, re-pin the SA camp badge/rest-stop (the SA-side
+    ; CampStatus singleton is session-transient — without this the Survival
+    ; page showed no camp and no Break Camp button after a game restart),
+    ; and tear down stale mid-placement state. Skips the needs-restoration
+    ; pulse below so loading at camp doesn't grant free warmth.
+    If strArg == "postload"
+        RegisterCampEvents()
+        If Native_Camp_IsActive()
+            _PinCampRestStop(False)
+            Debug.Trace("[SeversHearth] Post-load repin: restored camp badge")
+        EndIf
+        ; A save taken mid-placement loads back with the transient ghost gone
+        ; (native preview state resets on reload). Tear down the dangling
+        ; Papyrus side so controls/keys/update don't stay stuck.
+        If PlacementMode != 0
+            PlacementMode = 0
+            _EndPlacementInput()
+            UnregisterForUpdate()
+        EndIf
+        Return
+    EndIf
+
     If !Native_Camp_IsActive() || !_SeverActionsInstalled()
         Return
     EndIf
@@ -1217,10 +1287,13 @@ Event OnCampTickEvent(string eventName, string strArg, float numArg, Form sender
 
     Debug.Trace("[SeversHearth] CampTick: restored " + restored + " occupants at camp")
 
-    ; Push live camp meta + threats to the SeverActions Survival page. These
-    ; are safe to call repeatedly — SA stores them in a singleton mutex-guarded
-    ; struct. Cleared automatically when SetCampStatus(false) fires on break.
-    _PushCampMetaToPrisma()
+    ; Re-pin the full camp UI state (badge + rest-stop + meta) every tick —
+    ; not just the meta. Safe to call repeatedly — SA stores it all in a
+    ; mutex-guarded singleton; cleared when SetCampStatus(false) fires on
+    ; break. Doubles as a self-heal if the one-shot post-load repin ever
+    ; races Papyrus event-registration restore and gets lost. False = skip
+    ; the threat-scan kick (CampThreatWatch drives threats natively).
+    _PinCampRestStop(False)
 EndEvent
 
 Function _PushCampMetaToPrisma()
@@ -1247,9 +1320,11 @@ Bool Function _IsActorAtCamp(Actor a, Float cx, Float cy, Float cz, Float maxDis
     Return (dx * dx + dy * dy + dz * dz) <= (maxDist * maxDist)
 EndFunction
 
-Function _PinCampRestStop()
+Function _PinCampRestStop(Bool kickThreatScan = true)
     {Set the dashboard rest-stop label AND the Survival page camp badge.
-     Called after a successful EstablishCamp. No-op if SeverActions
+     Called after a successful EstablishCamp (kickThreatScan=true) and from
+     the camp tick / post-load repin (False — CampThreatWatch drives threats
+     natively, no need to re-scan every 60s). No-op if SeverActions
      isn't installed.}
     If !_SeverActionsInstalled()
         Return
@@ -1271,10 +1346,12 @@ Function _PinCampRestStop()
     ; Seed meta immediately so the Survival page detail section has real
     ; data on first render, not 60s later on the first tick.
     _PushCampMetaToPrisma()
-    ; Kick a fresh threat scan — CampThreatWatch otherwise waits for the
-    ; next combat / cell-attach event, which won't fire for latent hostiles
-    ; that were already nearby when the camp was pitched.
-    Native_Camp_KickThreatScan()
+    If kickThreatScan
+        ; Kick a fresh threat scan — CampThreatWatch otherwise waits for the
+        ; next combat / cell-attach event, which won't fire for latent hostiles
+        ; that were already nearby when the camp was pitched.
+        Native_Camp_KickThreatScan()
+    EndIf
 
     Debug.Trace("[SeversHearth] Pinned rest stop + camp badge: '" + label + "' (" + occupants + " occupants)")
 EndFunction

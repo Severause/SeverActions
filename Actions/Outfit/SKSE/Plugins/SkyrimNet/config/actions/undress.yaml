@@ -1,6 +1,6 @@
 customCategory: outfit
 name: Undress
-description: "The speaker pulls off everything they're wearing — unbuckling armor at the end of a long day, stripping down for a wash at a pool, peeling off road-stained clothes before bed. All equipped armor and clothing comes off."
+description: "Take off all equipped armor and clothing. Use when the speaker strips down — for bed, a wash, or when told to undress. For removing only specific pieces, use UnequipArmor instead."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: Undress_Execute

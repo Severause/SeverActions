@@ -1,6 +1,6 @@
 customCategory: economy
 name: BuyItem
-description: "The speaker is buying something here and now — coin one way, goods the other, settled in the same breath. A patron paying the barkeep for the meal, a traveler picking up arrows from a fletcher, a hunter handing over pelts and walking off with what they came for."
+description: "The speaker is buying something here and now — coin one way, goods the other, settled in the same breath. A patron paying the barkeep for the meal, a traveler picking up arrows from a fletcher, a collector paying for a rare book. NOT for selling — use SellItem."
 questEditorId: SeverActions
 scriptName: SeverActions_Currency
 executionFunctionName: BuyItem_Execute
@@ -10,10 +10,10 @@ parameterMapping:
     description: the actor handing over the coin to take the goods
   - type: dynamic
     name: akSeller
-    description: the actor whose goods are being bought — the merchant at the counter, the fletcher, the trader on the road
+    description: the actor whose goods are being bought — the merchant at the counter, the fletcher, the trader on the road, or the player when the speaker is buying FROM the player. Must be a DIFFERENT actor than the buyer.
   - type: dynamic
     name: asItemName
-    description: name of the item the buyer is taking (fuzzy-matched against the seller's personal inventory and, for shopkeepers, their merchant chest)
+    description: the item's name EXACTLY as it appears in the game's inventory, in the game's own language — never translate it to English on a localized game. Fuzzy-matched against the seller's personal inventory (the player's included) and, for shopkeepers, their merchant chest.
   - type: dynamic
     name: aiQuantity
     description: how many units of the item (1 for a single piece)

@@ -47,7 +47,9 @@ Int Property MaxPollsInFlight = 30 AutoReadOnly          ; 15s cap on charge+rel
 ; By the time we get here the engine should already be evaluating the
 ; cast package with the correct spell and target in place. We do NOT call
 ; EvaluatePackage here — bosn's reference plugin doesn't either; the alias
-; fill in the dispatcher is what triggers re-eval.
+; fill in the dispatcher is what triggers re-eval. (The dispatcher itself
+; already force-called EvaluatePackage right after the fill, since ForceRefTo
+; alone is unreliable — see SeverActions_SpellCast.psc.)
 Bool Function StartCastTracking(Spell akSpell, ObjectReference akTarget, Bool bDualCasting, Bool bUseMagicka, Bool bHealToFull, Bool bMarkerIsTarget)
     Actor caster = GetActorRef()
     SeverActionsNative.Native_OutfitSlot_Log("[SpellCastAlias] StartCastTracking caster=" + caster + " spell=" + akSpell + " target=" + akTarget)
@@ -220,8 +222,16 @@ Function CleanupCast()
     ; of Firebolt = three "Firebolt" entries in their spell list, visible
     ; in PrismaUI's Spells page. The clone has no other reason to exist
     ; outside this single cast lifecycle.
+    ; ONLY remove when the dispatcher actually cast from a clone. When
+    ; Native_CloneSpellForCast failed, _DispatchOneCast fell back to the
+    ; ORIGINAL spell -- RemoveSpell here would permanently delete the NPC's
+    ; real spell. The dispatcher records the choice in SeverSpellCast_WasCloned
+    ; at clone time; read + unset it here so it lives exactly one cast.
     If caster && spellToCast
-        caster.RemoveSpell(spellToCast)
+        If StorageUtil.GetIntValue(caster, "SeverSpellCast_WasCloned", 0) == 1
+            caster.RemoveSpell(spellToCast)
+        EndIf
+        StorageUtil.UnsetIntValue(caster, "SeverSpellCast_WasCloned")
     EndIf
 
     ; Disable + delete the aim marker if we placed one
@@ -236,6 +246,12 @@ Function CleanupCast()
     If TargetAlias
         TargetAlias.Clear()
     EndIf
+
+    ; Null the per-cast state so a belt-and-suspenders CleanupCast call
+    ; before StartCastTracking has re-seeded it (e.g. its precondition-fail
+    ; path) can't act on the PREVIOUS cast's spell/marker.
+    spellToCast = None
+    targetIsMarker = false
 
     UnregisterForUpdate()
 

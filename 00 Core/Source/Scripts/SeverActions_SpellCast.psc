@@ -103,6 +103,7 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
     If !slot
         SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] FindFreeSlot returned None - all 4 slots busy")
         SkyrimNetApi.DirectNarration(akCaster.GetDisplayName() + " is too busy to cast right now.", akCaster)
+        _AbortCastCleanup(akCaster, akTarget, bMarkerIsTarget, None)
         Return false
     EndIf
     SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] _DispatchOneCast: assigned slot " + slot + " to " + akCaster.GetDisplayName())
@@ -115,6 +116,7 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
         If spellCost > akCaster.GetActorValue("Magicka")
             SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] " + akCaster.GetDisplayName() + " low magicka (" + akCaster.GetActorValue("Magicka") + " < " + spellCost + ") - abort")
             SkyrimNetApi.DirectNarration(akCaster.GetDisplayName() + " doesn't have enough magicka to cast that.", akCaster)
+            _AbortCastCleanup(akCaster, akTarget, bMarkerIsTarget, None)
             Return false
         EndIf
     EndIf
@@ -126,6 +128,7 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
     Package livePackage = GetPackageForSlot(slot)
     If !livePackage
         SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] could not resolve live SlotPackage for slot " + slot)
+        _AbortCastCleanup(akCaster, akTarget, bMarkerIsTarget, None)
         Return false
     EndIf
     slotAlias.SlotPackage = livePackage
@@ -139,6 +142,7 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
     ; casters stay in state=0. The clone has the casting perk dropped and
     ; equipSlot set to EitherHand, mirroring bosn's clonePackageSpell.
     Spell castSpell = SeverActionsNativeExt.Native_CloneSpellForCast(akCaster, akSpell, bDualCasting)
+    Bool usedClone = (castSpell != None)
     If !castSpell
         SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] CloneSpellForCast returned None - falling back to original")
         castSpell = akSpell
@@ -146,8 +150,23 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
         SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] cloned spell: " + castSpell)
     EndIf
 
+    ; Record clone-vs-original for CleanupCast. RemoveSpell there must fire
+    ; ONLY for a runtime clone -- on the fallback-to-original path it would
+    ; permanently delete the NPC's real spell. Set/unset here (exactly once
+    ; per cast) so a stale flag from an earlier cast can never leak in.
+    If usedClone
+        StorageUtil.SetIntValue(akCaster, "SeverSpellCast_WasCloned", 1)
+    Else
+        StorageUtil.UnsetIntValue(akCaster, "SeverSpellCast_WasCloned")
+    EndIf
+
     If !SeverActionsNativeExt.Native_InjectSpellIntoPackage(livePackage, castSpell)
         SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] Native_InjectSpellIntoPackage returned false - abort")
+        Spell cloneToRemove = None
+        If usedClone
+            cloneToRemove = castSpell
+        EndIf
+        _AbortCastCleanup(akCaster, akTarget, bMarkerIsTarget, cloneToRemove)
         Return false
     EndIf
     SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] spell injected: " + castSpell)
@@ -185,6 +204,22 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
     ; so heal-to-full and other downstream logic uses the same form the
     ; engine sees in the package.
     Return slotAlias.StartCastTracking(castSpell, akTarget, bDualCasting, bUseMagicka, bHealToFull, bMarkerIsTarget)
+EndFunction
+
+; Failure cleanup for _DispatchOneCast early returns. Before StartCastTracking
+; arms the alias, nothing else owns the resources we created, so an early
+; abort must release them here: delete the aim marker we placed (otherwise
+; every failed untargeted cast leaks a persistent XMarker in the cell) and
+; pull the runtime spell clone back off the caster if one was already added.
+Function _AbortCastCleanup(Actor akCaster, ObjectReference akTarget, Bool bMarkerIsTarget, Spell akClone)
+    If bMarkerIsTarget && akTarget
+        akTarget.Disable()
+        akTarget.Delete()
+    EndIf
+    If akClone && akCaster
+        akCaster.RemoveSpell(akClone)
+        StorageUtil.UnsetIntValue(akCaster, "SeverSpellCast_WasCloned")
+    EndIf
 EndFunction
 
 ; Returns the live Package record for the given slot alias. Hard-codes the
@@ -277,7 +312,10 @@ ObjectReference Function PlaceAimMarker(Actor akCaster)
     If !marker
         return None
     EndIf
-    Float angle = akCaster.GetAngleZ() * 0.0174533  ; degrees to radians
+    ; Papyrus Math.Sin/Math.Cos take DEGREES, not radians -- pass GetAngleZ
+    ; straight through. (Converting to radians first made Sin~0/Cos~1, so
+    ; every untargeted cast fired due north regardless of facing.)
+    Float angle = akCaster.GetAngleZ()
     Float dx = MaxAimDistance * Math.Sin(angle)
     Float dy = MaxAimDistance * Math.Cos(angle)
     marker.MoveTo(akCaster, dx, dy, akCaster.GetHeight() - 35.0)

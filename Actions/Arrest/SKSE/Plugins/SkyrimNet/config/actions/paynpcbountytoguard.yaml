@@ -1,0 +1,37 @@
+customCategory: arrest
+name: PayNpcBountyToGuard
+description: "Use when {{ player.name }} pays a guard or hold authority to clear another person's bounty — a follower, a fence, anyone on the hold's wanted list. This is a legal bounty settlement: use it instead of CollectPayment, which is for merchant tabs. The offender need not be present. For {{ player.name }}'s own bounty, the arrest/pay-fine flow applies."
+questEditorId: SeverActions
+scriptName: SeverActions_ArrestBounty
+executionFunctionName: PayNpcBountyToGuard_Internal
+parameterMapping:
+  - type: speaker
+    name: akGuard
+    description: the guard, jarl, steward, or housecarl taking the payment
+  - type: dynamic
+    name: offenderName
+    description: "full display name of the wanted person whose bounty {{ player.name }} is paying off (from the hold's wanted list)"
+enabled: true
+defaultPriority: 8
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_guard_or_authority"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "hold_wanted_npcs"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

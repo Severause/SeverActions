@@ -1,6 +1,6 @@
 customCategory: outfit
 name: UnequipArmor
-description: "The speaker takes off specific pieces of what they're wearing — pulling off a helmet that's been chafing all day, peeling away bloody gauntlets, unstrapping a heavy cuirass to breathe easier. Remove one or more named items they currently have on; comma-separate for multiple. For stripping down to the skin use Undress instead."
+description: "The speaker takes off specific pieces of what they're wearing — pulling off a helmet that's been chafing all day, peeling away bloody gauntlets, unstrapping a heavy cuirass to breathe easier. Remove one or more named items they currently have on (any gear, not just armor); comma-separate for multiple. For stripping down to the skin use Undress instead."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: UnequipMultipleItems_Execute

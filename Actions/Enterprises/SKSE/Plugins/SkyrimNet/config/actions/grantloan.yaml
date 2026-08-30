@@ -1,0 +1,29 @@
+customCategory: employment
+name: GrantLoan
+description: "Use when {{ player.name }} AGREES to lend this retainer (the speaker) the coin they asked for. The 'In the Player's Service' context will state that they have asked for a loan and are waiting on an answer. This moves real money: the gold leaves {{ player.name }}'s purse now, and the retainer pays it back out of their OWN weekly earnings over the following weeks — {{ player.name }}'s cut of the venture is untouched. Only call when {{ player.name }} clearly commits to lending it; a sympathetic 'that's hard to hear' is not a yes. Do NOT call GiveGold as well — the game moves the coin. The loan fails silently if {{ player.name }} lacks the gold."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: GrantLoan
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the retainer being lent the coin they asked for
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # has_loan_ask returns the amount asked for; "" when nothing is pending.
+      # Custom decorators are string-compared, so gate on empty vs non-empty.
+      - decoratorName: "has_loan_ask"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

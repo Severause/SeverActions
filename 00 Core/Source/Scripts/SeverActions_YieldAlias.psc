@@ -8,13 +8,13 @@ Scriptname SeverActions_YieldAlias extends ReferenceAlias
     makes them persistent — the engine won't recycle or despawn them when
     the player crosses cells.
 
-    Phase 7 (Option B): the old OnLoad re-apply (re-zero Aggression + re-add
-    SeverSurrenderedFaction on every 3D-load) moved to native YieldMonitor,
-    which sinks TESObjectLoadedEvent and covers ALL tracked actors via the
-    cosave-backed entry map. This script keeps only the OnDeath slot-cleanup
-    + monitor-unregister so the slot can be reused by another yielded NPC.
+    The 3D-load re-apply (re-zero Aggression + re-add SeverSurrenderedFaction on
+    every 3D-load) is owned by native YieldMonitor, which sinks
+    TESObjectLoadedEvent and covers ALL tracked actors via the cosave-backed
+    entry map. This script keeps only the OnDeath slot-cleanup +
+    monitor-unregister so the slot can be reused by another yielded NPC.
 
-    CK Setup is unchanged:
+    CK Setup:
     - 5 ReferenceAlias slots on the SeverActions quest (YieldSlot00-04)
     - Optional, Allow Reuse, Initially Cleared
     - This script attached to each
@@ -22,7 +22,7 @@ Scriptname SeverActions_YieldAlias extends ReferenceAlias
 
 Event OnDeath(Actor akKiller)
     {When the yielded NPC dies, free the alias slot and clean up tracking.
-     The 3D-load re-apply that used to be in OnLoad now lives in native
+     The 3D-load re-apply lives in native
      YieldMonitor::ProcessEvent(TESObjectLoadedEvent).}
     Actor npc = self.GetActorRef()
     If npc

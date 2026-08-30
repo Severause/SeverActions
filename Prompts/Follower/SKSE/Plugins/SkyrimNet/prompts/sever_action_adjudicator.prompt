@@ -1,0 +1,34 @@
+[ system ]
+You are adjudicating whether an NPC's just-announced plan should actually proceed, based on the short conversation it started. {{ initiator }} told {{ addressee }} they were {{ plan }}. Read the exchange and decide the outcome. Output ONLY a JSON object.
+
+## The plan
+
+{{ initiator }} intends to go through with {{ plan }} right now.
+{% if reason and reason != "" %}
+Why: {{ reason }}
+{% endif %}
+
+## What was said
+
+{% set transcript = default(transcript, []) %}
+{% if length(transcript) > 0 %}
+{% for line in transcript %}
+- {{ line }}
+{% endfor %}
+{% else %}
+(No conversation was captured.)
+{% endif %}
+[ end system ]
+
+[ user ]
+Decide the outcome of the exchange above.
+
+- "go" — nothing in the conversation stopped the plan: {{ addressee }} agreed, accepted, was indifferent, or the talk never turned to refusal. This is the default whenever you are unsure.
+- "blocked" — {{ addressee }} clearly refused, declined the offer, talked {{ initiator }} out of it, or {{ initiator }} plainly changed their mind.
+- "deferred" — they agreed to do it LATER, or differently, rather than right now.
+
+Respond with ONLY one of these JSON objects. No explanation. One line:
+{% raw %}{"verdict": "go"}{% endraw %}
+{% raw %}{"verdict": "blocked"}{% endraw %}
+{% raw %}{"verdict": "deferred"}{% endraw %}
+[ end user ]

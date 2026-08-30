@@ -15,7 +15,7 @@
 {% if familiarity %}
 {# World-knowledge name gate. Substring test against the per-NPC-filtered text. #}
 {% set wk_text = get_world_knowledge(actorUUID) %}
-{% set knows_name_via_world = wk_text and player.name in wk_text %}
+{% set knows_name_via_world = wk_text and contains(wk_text, player.name) %}
 
 {# ═══════════════════════════════════════════════════════════════════ #}
 {# SECTION 0: TEMPORAL CONTEXT — how long since last encounter        #}
@@ -31,6 +31,35 @@
 {% else %}{% set time_desc = "a day or two" %}
 {% endif %}
 {% endif %}
+
+{# When the FIRST conversation happened (decorator stamps it on first contact). #}
+{% set first_ago = familiarity.firstMetDaysAgo %}
+{% set first_desc = "" %}
+{% if first_ago != null %}
+{% if first_ago < 1 %}{% set first_desc = "only today" %}
+{% elif first_ago < 2 %}{% set first_desc = "yesterday" %}
+{% elif first_ago <= 7 %}{% set first_desc = "a few days ago" %}
+{% elif first_ago <= 30 %}{% set first_desc = "some weeks ago" %}
+{% else %}{% set first_desc = "a long time ago" %}
+{% endif %}
+{% endif %}
+
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# SECTION 0b: INTIMATE HISTORY (IntimateHistoryStore via decorator)    #}
+{# Consent-split bond classification (NSFW sibling's rule): assault     #}
+{# when forced is all or >=2/3 of the history, fraught when mixed,      #}
+{# lovers at 3+ consensual, intimate at 1+. Counts never render - NPCs  #}
+{# do not recite numbers. Tier-independent: bodies know what words      #}
+{# haven't built.                                                       #}
+{# ═══════════════════════════════════════════════════════════════════ #}
+{# Intimate-history rendering RETIRED on main (owner direction 2026-08-22):
+   tracking lives solely on the NSFW sibling's SexualHistoryStore; main keeps
+   only the 0046 consent-posture section. intim_bond / intim_ago_desc stay
+   DEFINED (empty) so every tier-line branch below keeps its shape — they all
+   collapse to the no-history wording, and the "what lies between you" block
+   never renders. If a cross-plugin feed ever lands, re-derive them here. #}
+{% set intim_bond = "" %}
+{% set intim_ago_desc = "" %}
 
 {# ═══════════════════════════════════════════════════════════════════ #}
 {# SECTION 1: SHARED GUILD DETECTION                                  #}
@@ -85,24 +114,24 @@ You are both members of {{ shared_guild }} and you have a settled impression of 
 - You can speak with the warmth of guild connection plus the weight of what you already think of them.
 - Let your impression shape your manner, not just the bare fact of shared membership.
 {% else %}
-You are both members of {{ shared_guild }}, but you have not had a direct conversation with this person.
-- You may have seen them around or heard their name mentioned by other members.
-- Treat them as a fellow member you haven't met properly yet — warmer than a complete outsider, but don't assume familiarity beyond the guild connection.
+You are both members of {{ shared_guild }}, but you have never had a direct conversation with this person.
+- You don't know them — only that they wear the same colors. Treat them as an unproven fellow member: warmer than a complete outsider, but don't assume you've met, and don't invent shared history.
 {% if knows_name_via_world %}- The name **{{ player.name }}** is one you have heard tied to deeds beyond the guild. You may use it, but you do not know them personally — only their reputation.
 {% endif %}
 {% endif %}
 {% elif familiarity.tier == "passing" %}
-You are both members of {{ shared_guild }} and have exchanged words before, but you don't know this person's name.
-- You recognize their face from around the guild, and they yours.
-- Address them by what you can observe — their role, appearance, or a general greeting.
-- If they introduce themselves or their name comes up, you can use it going forward.
+You are both members of {{ shared_guild }} and have exchanged a word or two before — no more than that.
+- {% if intim_bond == "" %}You wouldn't claim to know them, and you don't know their name.{% else %}You've barely spoken, and you don't know their name — but words are not all there is between you (see below).{% endif %} Address them by what you can observe — their role, appearance, or a general greeting.
+- If they introduce themselves or their name comes up, you can use it going forward.{% if first_desc != "" %}
+- You first exchanged words {{ first_desc }}.{% endif %}
 {% if time_desc != "" %}- It has been {{ time_desc }} since your last encounter.
 {% endif %}
 {% elif familiarity.tier == "met_once" %}
 You are both members of {{ shared_guild }} and have spoken a few times.
 - You recognize them as a fellow member and know their name.
 - You have a sense of who they are within the guild, but your personal connection is still developing.
-- You can speak with the easy familiarity of shared membership — guild business, mutual acquaintances, recent goings-on.
+- You can speak with the easy familiarity of shared membership — guild business, mutual acquaintances, recent goings-on.{% if first_desc != "" %}
+- You first met {{ first_desc }}.{% endif %}
 {% if time_desc != "" %}- It has been {{ time_desc }} since you last spoke.
 {% endif %}
 {% elif familiarity.tier == "acquainted" %}
@@ -137,19 +166,26 @@ You have not spoken with this person directly. Default to a stranger's manner in
 - Default to indirect address (their bearing, gear, role) unless an introduction or your character description establishes the name.
 - If memories, recent events, or other context elsewhere in this prompt clearly establish recognition, trust that signal — but don't invent familiarity that isn't grounded there.
 {% endif %}
-{% elif familiarity.tier == "passing" %}
-You have spoken to this person before, but you do not know their name.
-- You may recognize their face or voice from a previous encounter.
-- Do not use their name — you haven't learned it yet. Address them by observation (appearance, gear, role) or a general greeting.
-- If they introduce themselves or their name comes up naturally, you can use it going forward.
+{% elif familiarity.tier == "passing" and knows_name %}
+You have crossed paths with this person before, and the name **{{ player.name }}** has since reached you — from talk of their deeds, not from them.
+- You may use the name, but you do not know them personally; what you know is reputation.
 - You are not strangers, but you are not familiar either — brief, polite, and somewhat guarded.
+{% if time_desc != "" %}- It has been {{ time_desc }} since your last encounter.
+{% endif %}
+{% elif familiarity.tier == "passing" %}
+You have exchanged a word or two with this person — {% if intim_bond == "" %}nothing that counts as a meeting.{% else %}barely a word, but words are not all there is between you (see below).{% endif %}
+- {% if intim_bond == "" %}You'd not claim to know them, and you do not know their name.{% else %}You do not know their name.{% endif %} Address them by observation (appearance, gear, role) or a general greeting.
+- If they introduce themselves or their name comes up naturally, you can use it going forward.
+- Brief and polite; somewhat guarded is natural.{% if first_desc != "" %}
+- You first exchanged words {{ first_desc }}.{% endif %}
 {% if time_desc != "" %}- It has been {{ time_desc }} since your last encounter.
 {% endif %}
 {% elif familiarity.tier == "met_once" %}
 You have spoken to this person a few times before. You recognize them.
 - You know their name and have a general impression of them.
 - Polite and somewhat familiar, but you don't know them well yet.
-- You may reference that you've talked before, but don't assume deep knowledge of their life or motivations.
+- You may reference that you've talked before, but don't assume deep knowledge of their life or motivations.{% if first_desc != "" %}
+- You first met {{ first_desc }}.{% endif %}
 {% if time_desc != "" %}- It has been {{ time_desc }} since you last spoke.
 {% endif %}
 {% elif familiarity.tier == "acquainted" %}
@@ -165,6 +201,48 @@ You know this person well after many conversations. You have a strong sense of w
 - Your opinions about them are well-formed — let past interactions and impressions shape how you engage.
 {% if time_desc != "" %}- It has been {{ time_desc }} since you last crossed paths.
 {% endif %}
+{% endif %}
+{% endif %}
+
+{# 3A-guard: NPCs at these tiers have not tracked a numeric count of
+   encounters. The prose above is deliberately qualitative ("a word or
+   two"); this stops the model concretizing it into a specific number. #}
+{% if familiarity.tier == "stranger" or familiarity.tier == "passing" %}
+- You do not keep a running tally of your encounters with this person. Never state or imply a specific number of times you have met, seen, or spoken with them.
+{% endif %}
+
+{# ─── 3A-bis: INTIMATE HISTORY (renders only when a history exists) ─── #}
+{% if intim_bond != "" %}
+
+### What Lies Between You
+{% if intim_bond == "lovers" %}
+You and {{ player.name }} have been lovers{% if intim_ago_desc != "" %} — most recently {{ intim_ago_desc }}{% endif %}. Whatever words you have or haven't exchanged, your bodies know each other well; they are already past the usual walls with you.
+{% elif intim_bond == "intimate" %}
+You have been intimate with {{ player.name }}{% if intim_ago_desc != "" %}, most recently {{ intim_ago_desc }}{% endif %}. That history stands between you now: they are warmer than a stranger to you, whatever the conversation count says.
+{% elif intim_bond == "fraught" %}
+Your history with {{ player.name }} is tangled: you have been intimate, but not all of it was freely given. Desire and wariness both live here — let them color how guarded or drawn you are, and do not pretend the wrong never happened.
+{% else %}
+What happened between you and {{ player.name }} was not by choice{% if intim_ago_desc != "" %} — {{ intim_ago_desc }}{% endif %}. You have not forgotten it: fear, resentment, or cold wariness is warranted. Do not greet them as a stranger, but do not soften either; let that history harden how you treat them.
+{% endif %}
+{% endif %}
+
+{# ─── 3A-ter: PERSONA GUIDANCE (when the NPC has sexual-preference bio
+   blocks OR works a courtesan-type trade. sever_intimate_persona's content
+   is already printed by 0040 — flag only; sever_intimate_trade is printed
+   here since nothing else renders it) ─── #}
+{% set persona_flag = sever_intimate_persona(actorUUID) %}
+{% set persona_trade = sever_intimate_trade(actorUUID) %}
+{% if (persona_flag and persona_flag != "") or (persona_trade and persona_trade != "") %}
+{% if persona_trade and persona_trade != "" %}
+
+{{ persona_trade }}
+{% endif %}
+{% if persona_flag and persona_flag != "" and persona_trade and persona_trade != "" %}
+- Your inclinations are written in your profile above, and your trade says the rest — both are part of who you are. Let them color how you read this person: a courtesan appraises openly and professionally, a libertine warms quickly, a chaste temperament stays guarded. They shape your manner; never recite them aloud.
+{% elif persona_flag and persona_flag != "" %}
+- Your inclinations are written in your profile above — they are part of who you are. Let them color how you read this person: a courtesan appraises openly and professionally, a libertine warms quickly, a chaste temperament stays guarded. They shape your manner; never recite them aloud.
+{% else %}
+- Your trade is part of who you are. Let it color how you read this person: a courtesan appraises openly and professionally; warmth and appraisal are stock-in-trade, not confession. Never recite the terms of it unprompted.
 {% endif %}
 {% endif %}
 

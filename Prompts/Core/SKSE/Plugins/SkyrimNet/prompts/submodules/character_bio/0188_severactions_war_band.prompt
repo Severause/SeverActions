@@ -1,0 +1,18 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# SeverActions war band — the armed company at the player's back, shown to
+   BYSTANDERS only (band members get their own camp voice from 0187).
+   sever_war_band is player-state prose; "" when nobody stands with them.
+   render_mode gate stays on line 1 (SkyrimNet best-practice lint). #}
+{% if actorUUID and actorUUID != 0 %}
+{% set warband = sever_war_band(actorUUID) %}
+{% if warband != "" %}
+{% if sever_camp_mustered(actorUUID) != "1" %}
+## The Company They Keep
+{{ warband }}
+- You don't know who these fighters are or where they came from. All you have is what your eyes tell you: armed, easy about it, and following one person's lead.
+- Let it weigh on you the way it would weigh on anyone. Most folk get careful around that much steel — softer voice, fairer price, shorter argument. A guard stays civil but starts counting heads. Someone bold might still push their luck; they just know exactly what they are pushing against.
+- Nothing about them says rampage — no drawn weapons, no threats. It is the quiet kind of dangerous, and quiet is worse.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

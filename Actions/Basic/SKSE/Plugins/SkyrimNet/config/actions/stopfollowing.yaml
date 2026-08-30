@@ -1,5 +1,5 @@
 name: StopFollowing
-description: "The speaker stops trailing after {{ player.name }} — pulls up short at the city gate, parts ways at a crossroads, decides they've gone far enough. They go back to their own business."
+description: "Stop following {{ player.name }}: the speaker parts ways and returns to their own business. Use only when the speaker is currently following and is dismissed, told to part ways, or chooses to stop."
 questEditorId: SeverActions
 scriptName: SeverActions_Follow
 executionFunctionName: StopFollowing

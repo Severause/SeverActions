@@ -1,0 +1,30 @@
+customCategory: employment
+name: BrushOffRetainer
+description: "Use when {{ player.name }} dismisses, mocks, threatens, or waves away this retainer's grievance TO THEIR FACE — especially when the retainer was expecting to be heard out (a talk was arranged, or they raised their complaint directly) and {{ player.name }}'s response is cold, dismissive, or contemptuous. This is the failure outcome of the hearing: it wounds worse than silence — the retainer hardens, may give notice on the spot, and a coerced retainer may turn openly defiant. Do NOT call this for neutral small talk or when {{ player.name }} sincerely engages with the complaint (that is ReassureRetainer). One of the two at most per conversation."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: BrushOffRetainer
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the retainer whose grievance was dismissed
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # retainer_grievance is non-empty when they hold a grievance OR a
+      # Send-Word hearing is armed — string-compared, never a bool.
+      - decoratorName: "retainer_grievance"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ player.name }} brushed aside {{ actor.name }}'s grievance about their work"

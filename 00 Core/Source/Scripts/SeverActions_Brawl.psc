@@ -13,13 +13,15 @@ Scriptname SeverActions_Brawl extends Quest
 ; ============================================================================
 
 Faction Property DGIntimidateFaction Auto
-{Vanilla DGIntimidateFaction — Skyrim.esm 0x0005C84D. Set via CK on the alias
+{Vanilla DGIntimidateFaction — Skyrim.esm 0x0004CFA6. Set via CK on the alias
  properties. The kSpecialCombat flag on this faction is what routes brawl
  damage to bleedout instead of death.}
 
 CombatStyle Property csWEBrawler Auto
-{Vanilla brawler combat style — Skyrim.esm 0x10555D. Swapped onto NPC actor
- bases for the duration of a brawl so combat AI prefers unarmed.}
+{Vanilla brawler combat style — Skyrim.esm 0x10555D. Applied PER-REFERENCE
+ (ExtraCombatStyle on the actor) for the duration of a brawl so combat AI
+ prefers unarmed — never written to the NPC base: base writes corrupt shared
+ bases and are ignored on templated NPCs.}
 
 Float Property PendingChallengeExpiry = 60.0 Auto
 {How long (real-time seconds) a challenge stays pending before auto-expiring.}
@@ -32,7 +34,7 @@ Float Property ChallengeFollowDistance = 3000.0 Auto
  further than this from target, monitor fires expiry with reason="distance".}
 
 Float Property PopupPollIntervalSec = 0.5 Auto
-{How often OnUpdate polls SkyMessage for the player's Accept/Decline answer.}
+{How often the chronometer tick polls SkyMessage for the player's Accept/Decline answer.}
 
 Float Property TrackOnlyRerecruitDelay = 1.5 Auto
 {Seconds after a brawl ends before we auto-re-recruit any tracking-only follower
@@ -50,7 +52,7 @@ Float Property PendingPopupStartTime = 0.0 Auto Hidden
 ; triggered from a PrismaUI menu (e.g. the Actions page), that menu still holds
 ; focus for a beat after it closes, so PrismaUI_OpenBrawlPrompt is suppressed.
 ; Rather than drop to the SkyMessage box, we retry the overlay a few times via
-; OnUpdate until focus is released.
+; the chronometer tick until focus is released.
 Form Property PendingOverlayChallenger = None Auto Hidden
 Int Property OverlayRetryCount = 0 Auto Hidden
 
@@ -62,7 +64,7 @@ Int Property OverlayRetryCount = 0 Auto Hidden
 ; SeverBrawl_ChallengeTime    - Float (Utility.GetCurrentRealTime() of issue)
 ; SeverBrawl_LastWinner       - Form (most recent brawl winner against this actor)
 ; SeverBrawl_LastLoser        - Form (most recent brawl loser against this actor)
-; SeverBrawl_LastEndReason    - Int (1=Bleedout, 2=Forfeit, 3=WalkedAway, 4=Broken)
+; SeverBrawl_LastEndReason    - Int (1=Bleedout, 2=Forfeit, 3=WalkedAway, 4=Broken, 5=Abort, 6=ForfeitSheathed - player dropped their fists)
 ; SeverBrawl_LastEndTime      - Float (Utility.GetCurrentGameTime() of end)
 
 ; ============================================================================
@@ -83,10 +85,63 @@ Event OnInit()
     RegisterForModEvent("SeverBrawl_Started", "OnBrawlStarted")
     RegisterForModEvent("SeverActions_BrawlChallengeExpired", "OnChallengeExpired")
     RegisterForModEvent("SeverActions_BrawlChallengeChoice", "OnBrawlPromptChoice")
+    RegisterForModEvent("SeverBrawl_Rekick", "OnBrawlRekick")
+    RegisterForModEvent("SeverBrawl_HandsClean", "OnBrawlHandsClean")
     PushBrawlConfigToNative()
 EndEvent
 
-Event OnPlayerLoadGame()
+Event OnBrawlHandsClean(String eventName, String strArg, Float numArg, Form sender)
+    {A brawl participant just had a SPELL equipped mid-fight (wardrobe/equip
+     mods re-equip behind us, and the player's own strip natively reports
+     ok=false on hand spells). Native routes spell equips here because a
+     SpellItem is not a TESBoundObject - UnequipObject cannot touch it -
+     while Papyrus UnequipSpell provably works on NPCs AND the player.}
+    Actor a = sender as Actor
+    If !a
+        Return
+    EndIf
+    Int hand = 0
+    While hand < 2
+        Spell sp = a.GetEquippedSpell(hand)
+        If sp
+            a.UnequipSpell(sp, hand)
+            Debug.Trace("[SeverBrawl] HandsClean: unequipped " + sp.GetName() + " from " + a.GetDisplayName() + " (hand " + hand + ")")
+        EndIf
+        hand += 1
+    EndWhile
+EndEvent
+
+Event OnBrawlRekick(String eventName, String strArg, Float numArg, Form sender)
+    {The engagement watchdog found the pair not yet in mutual combat at half
+     its window: re-issue StartCombat. Exists for the NFF-release race - the
+     dismissal that frees an NFF brawler tears its alias down ASYNCHRONOUSLY,
+     so the Begin-time StartCombat can fire while the suppression is still
+     seated. Opponent rides strArg as signed decimal + GetFormEx, never the
+     float numArg (the 2^24 FormID precision trap).}
+    Actor a = sender as Actor
+    Actor b = Game.GetFormEx(strArg as Int) as Actor
+    If a && b && !a.IsDead() && !b.IsDead()
+        Debug.Trace("[SeverBrawl] Rekick: re-issuing StartCombat " + a.GetDisplayName() + " <-> " + b.GetDisplayName())
+        ; Only NPCs kick - the engine refuses Actor.StartCombat on the player
+        ; outright ("Actor is the player, cannot start combat", field log).
+        If a != Game.GetPlayer()
+            a.StartCombat(b)
+        EndIf
+        If b != Game.GetPlayer()
+            b.StartCombat(a)
+        EndIf
+    EndIf
+EndEvent
+
+Function OnGameLoaded()
+    {Load-time recovery. Called by SeverActions_Init.RunLoadRecovery() on
+     every load — Quest scripts NEVER receive OnPlayerLoadGame, so recovery must
+     be driven from here: re-register the popup choice listener, restore
+     brawl-stripped teammate flags, and re-push the native brawl config.}
+    ; Chronometer: one idempotent wake on load - re-primes the popup poll /
+    ; rerecruit drain if a brawl flow was mid-flight at the save (pending
+    ; ticks do not survive save/load the way engine registrations did).
+    ChronoArm(1.0)
     ; Auto-property defaults are baked into existing saves, so a save created
     ; before this value changed keeps the old (slower) delay. Force the current
     ; intended value on every load so the tuning applies to in-progress games,
@@ -96,6 +151,8 @@ Event OnPlayerLoadGame()
     RegisterForModEvent("SeverBrawl_Started", "OnBrawlStarted")
     RegisterForModEvent("SeverActions_BrawlChallengeExpired", "OnChallengeExpired")
     RegisterForModEvent("SeverActions_BrawlChallengeChoice", "OnBrawlPromptChoice")
+    RegisterForModEvent("SeverBrawl_Rekick", "OnBrawlRekick")
+    RegisterForModEvent("SeverBrawl_HandsClean", "OnBrawlHandsClean")
     PushBrawlConfigToNative()
     ; Drop any stale popup state from before the save was taken — SkyMessage's
     ; messageBoxId is process-lifetime so it's invalid after a reload.
@@ -107,6 +164,25 @@ Event OnPlayerLoadGame()
     If SeverActionsNative.PrismaUI_IsBrawlPromptOpen()
         SeverActionsNative.PrismaUI_CloseBrawlPrompt()
     EndIf
+    ; Challenge-state reconciliation (audit #419). The native expiry monitor
+    ; is deliberately non-cosaved and wiped on revert, but the challenger's
+    ; follow package + LinkedRef DO survive the save (LREF is cosave-restored)
+    ; and so do the StorageUtil challenge keys - so a challenge interrupted by
+    ; a save left the challenger trailing the target FOREVER with no expiry
+    ; able to fire. StorageUtil.GetFormValue survives on the actors
+    ; themselves, so sweep via the tracked list the challenge writes.
+    Int ci = StorageUtil.FormListCount(self, "SeverBrawl_OpenChallengers")
+    While ci > 0
+        ci -= 1
+        Actor ch = StorageUtil.FormListGet(self, "SeverBrawl_OpenChallengers", ci) as Actor
+        If ch
+            Actor tgt = StorageUtil.GetFormValue(ch, "SeverBrawl_ChallengeTo") as Actor
+            Debug.Trace("[SeverBrawl] OnGameLoaded: clearing stale challenge " + ch.GetDisplayName())
+            StopChallengeFollow(ch)
+            ClearChallengeState(ch, tgt)
+        EndIf
+    EndWhile
+    StorageUtil.FormListClear(self, "SeverBrawl_OpenChallengers")
     ; Mid-brawl save safety: brawls are deliberately not persisted in the
     ; native cosave, but our StorageUtil "SeverBrawl_WasTeammate" markers
     ; (set when we stripped IsPlayerTeammate on a brawling follower) do
@@ -118,9 +194,9 @@ Event OnPlayerLoadGame()
     ; save landed inside the TrackOnlyRerecruitDelay window, the
     ; RegisterForSingleUpdate didn't carry over. Re-schedule now.
     If StorageUtil.FormListCount(self, "SeverBrawl_PendingRerecruit") > 0
-        RegisterForSingleUpdate(TrackOnlyRerecruitDelay)
+        ChronoArm(TrackOnlyRerecruitDelay)
     EndIf
-EndEvent
+EndFunction
 
 Function PushBrawlConfigToNative()
     If DGIntimidateFaction
@@ -178,8 +254,29 @@ Function ChallengeBrawl_Execute(Actor akChallenger, Actor akTarget)
             + akChallenger.IsInCombat() + " target=" + akTarget.IsInCombat() + ")")
         Return
     EndIf
+    ; Re-entrancy (audit #419): a challenger with a pending OUTBOUND challenge
+    ; must cancel it before issuing a new one - the native monitor is keyed by
+    ; challenger FormID, so a second Begin silently overwrites the first and
+    ; the abandoned target's expiry never fires. Cancel-and-proceed rather
+    ; than reject: the LLM re-challenging someone new is a legitimate change
+    ; of mind, it just has to be bookkept.
+    Actor priorTarget = StorageUtil.GetFormValue(akChallenger, "SeverBrawl_ChallengeTo") as Actor
+    If priorTarget && priorTarget != akTarget
+        Debug.Trace("[SeverBrawl] Cancelling prior challenge " + akChallenger.GetDisplayName() + " -> " + priorTarget.GetDisplayName())
+        StopChallengeFollow(akChallenger)
+        ClearChallengeState(akChallenger, priorTarget)
+    EndIf
+    ; Post-brawl cooldown (audit #419): reject a challenge while either party is
+    ; still within the post-brawl cooldown window Cooldown_Set writes at brawl end.
+    If SeverActionsNativeExt.Cooldown_IsActive(akChallenger) || SeverActionsNativeExt.Cooldown_IsActive(akTarget)
+        Debug.Trace("[SeverBrawl] Challenge REJECTED: post-brawl cooldown active")
+        Return
+    EndIf
 
     ; Always record the pending challenge state — every branch reads it.
+    ; Also list the challenger on the quest so the load sweep can find open
+    ; challenges without scanning the world (audit #419).
+    StorageUtil.FormListAdd(self, "SeverBrawl_OpenChallengers", akChallenger, False)
     StorageUtil.SetFormValue(akChallenger, "SeverBrawl_ChallengeTo", akTarget)
     StorageUtil.SetFormValue(akTarget, "SeverBrawl_ChallengeFrom", akChallenger)
     Float now = Utility.GetCurrentRealTime()
@@ -190,7 +287,7 @@ Function ChallengeBrawl_Execute(Actor akChallenger, Actor akTarget)
         akChallenger.GetDisplayName() + " challenged " + akTarget.GetDisplayName() + " to a brawl", \
         akChallenger, akTarget)
 
-    ; Branch 1 — target is the player → SkyMessage popup.
+    ; Branch 1 — target is the player → popup (PrismaUI → SkyMessage → notification).
     If akTarget == Game.GetPlayer()
         ShowPlayerChallengePopup(akChallenger)
         Return
@@ -203,7 +300,7 @@ Function ChallengeBrawl_Execute(Actor akChallenger, Actor akTarget)
 EndFunction
 
 ; ============================================================================
-; PLAYER-TARGET POPUP (SkyMessage)
+; PLAYER-TARGET POPUP (PrismaUI → SkyMessage → notification)
 ; ============================================================================
 
 Function ShowPlayerChallengePopup(Actor akChallenger, Bool abIsRetry = false)
@@ -212,13 +309,18 @@ Function ShowPlayerChallengePopup(Actor akChallenger, Bool abIsRetry = false)
        2. SkyMessage non-blocking popup (fallback if PrismaUI absent).
        3. Debug.Notification (last resort if both are absent — challenge
           still auto-expires via the native monitor).
-     abIsRetry: true when re-entered from OnUpdate's overlay defer-retry, so the
-     retry counter is preserved instead of reset.}
+     abIsRetry: true when re-entered from OnChronoTick_Brawl's overlay defer-retry,
+     so the retry counter is preserved instead of reset.}
 
     ; Fresh challenge (not a retry) resets the overlay-retry budget.
     If !abIsRetry
         OverlayRetryCount = 0
     EndIf
+
+    ; Belt-and-suspenders: guarantee the choice listener is live before the
+    ; popup opens (idempotent — RegisterForModEvent dedups). Covers any save
+    ; where neither OnInit nor Init's load router ran this session.
+    RegisterForModEvent("SeverActions_BrawlChallengeChoice", "OnBrawlPromptChoice")
 
     String challengerName = akChallenger.GetDisplayName()
 
@@ -245,7 +347,7 @@ Function ShowPlayerChallengePopup(Actor akChallenger, Bool abIsRetry = false)
         Int timeoutMs = (PendingChallengeExpiry * 1000) as Int
         If SeverActionsNative.PrismaUI_OpenBrawlPrompt(akChallenger, challengerName, timeoutMs)
             ; Choice arrives asynchronously via OnBrawlPromptChoice. No
-            ; OnUpdate poll needed — the native bridge owns the timer and
+            ; chronometer-tick poll needed — the native bridge owns the timer and
             ; ModEvent dispatch.
             OverlayRetryCount = 0
             PendingOverlayChallenger = None
@@ -260,7 +362,7 @@ Function ShowPlayerChallengePopup(Actor akChallenger, Bool abIsRetry = false)
         If OverlayRetryCount < 6
             OverlayRetryCount += 1
             PendingOverlayChallenger = akChallenger
-            RegisterForSingleUpdate(0.25)
+            ChronoArm(0.25)
             Debug.Trace("[SeverBrawl] ShowPlayerChallengePopup: overlay suppressed (a view has focus); deferring retry " + OverlayRetryCount + "/6")
             Return
         EndIf
@@ -276,13 +378,13 @@ Function ShowPlayerChallengePopup(Actor akChallenger, Bool abIsRetry = false)
         PendingPopupId = boxId
         PendingPopupChallenger = akChallenger
         PendingPopupStartTime = Utility.GetCurrentRealTime()
-        RegisterForSingleUpdate(PopupPollIntervalSec)
+        ChronoArm(PopupPollIntervalSec)
         Debug.Trace("[SeverBrawl] ShowPlayerChallengePopup: SkyMessage fallback engaged")
         Return
     EndIf
 
     ; Tier 3 — no popup mod installed. Notify and let expiry handle it.
-    Debug.Notification(challengerName + " challenges you to a brawl. (Install PrismaUI or Papyrus MessageBox for the prompt; otherwise the challenge will lapse.)")
+    Debug.Notification(challengerName + " challenges you to a brawl. Speak to them to accept or decline. (Install PrismaUI or Papyrus MessageBox for a proper prompt.)")
 EndFunction
 
 Event OnBrawlPromptChoice(String asEventName, String asChoice, Float afNumArg, Form akSender)
@@ -302,7 +404,19 @@ Event OnBrawlPromptChoice(String asEventName, String asChoice, Float afNumArg, F
     EndIf
 EndEvent
 
-Event OnUpdate()
+Function ChronoArm(Float afSeconds)
+    {Arm this script's one-shot chronometer tick - replaces the FORM-keyed
+     RegisterForSingleUpdate (canonical explanation: the Chronometer block in
+     SeverActionsNativeExt2.psc + the CLAUDE.md lesson). Event name AND
+     callback name are unique per script - both, always. Re-arm replaces the
+     pending tick; ticks do NOT survive save/load (load paths re-arm); at
+     most one already-in-flight wake can land after Cancel/Clear, so keep
+     the handler state-guarded.}
+    RegisterForModEvent("SeverActions_Tick_Brawl", "OnChronoTick_Brawl")
+    SeverActionsNativeExt2.Chrono_Request("SeverActions_Tick_Brawl", afSeconds)
+EndFunction
+
+Event OnChronoTick_Brawl(String eventName, String strArg, Float numArg, Form sender)
     ; Process any pending track-only re-recruits first — independent of the
     ; popup-poll loop so both can coexist. Cheap when no queue is pending
     ; (single FormListCount read).
@@ -335,7 +449,7 @@ Event OnUpdate()
     EndIf
 
     If !SkyMessage.IsMessageResultAvailable(PendingPopupId)
-        RegisterForSingleUpdate(PopupPollIntervalSec)
+        ChronoArm(PopupPollIntervalSec)
         Return
     EndIf
 
@@ -433,7 +547,11 @@ Event OnChallengeExpired(String eventName, String strArg, Float numArg, Form sen
     If challenger
         StopChallengeFollow(challenger)
     EndIf
-    DeclineBrawl_Execute(target)
+    ; Pass the RESOLVED challenger explicitly (audit #419): the target's
+    ; single ChallengeFrom slot may already hold a NEWER challenger, and the
+    ; no-arg path would decline THAT still-live challenge and misattribute
+    ; the brawl_declined event to the wrong pair.
+    DeclineBrawl_Execute(target, challenger)
 EndEvent
 
 ; ============================================================================
@@ -516,6 +634,19 @@ Function AcceptBrawl_Execute(Actor akAccepter, Actor akChallenger = None)
     StripTeammateForBrawl(challenger)
     StripTeammateForBrawl(akAccepter)
 
+    ; NFF-teardown settle (field: round 1 vs round 2). The strip above may
+    ; have just dismissed an NFF brawler, and that teardown is ASYNCHRONOUS -
+    ; round 1 engaged one second after release and died as NFF finished
+    ; letting go, while a manual re-fire against the already-dismissed actor
+    ; stuck immediately. Give the framework a beat BEFORE StartCombat below.
+    ; Placed AFTER the strips because the WasNFF marker is what the strip
+    ; sets - checking it before Begin read a key that did not exist yet.
+    ; Only paid when an NFF release actually happened this accept.
+    If StorageUtil.GetIntValue(challenger, "SeverBrawl_WasNFF", 0) == 1 || StorageUtil.GetIntValue(akAccepter, "SeverBrawl_WasNFF", 0) == 1
+        Debug.Trace("[SeverBrawl] Accept: NFF release in flight - settling 2.0s before combat")
+        Utility.Wait(2.0)
+    EndIf
+
     ; Give the native-side hand-slot unequip + sheath a tick to settle
     ; before kicking combat. Without this, StartCombat can race the engine's
     ; hand-state refresh and the actor draws back into a half-equipped pose
@@ -527,6 +658,8 @@ Function AcceptBrawl_Execute(Actor akAccepter, Actor akChallenger = None)
     ; native side already attempted this with the correct BGSEquipSlot, but
     ; some NPC-base loadouts have the spell re-attached at combat-start;
     ; this catches that re-equip window.
+    ; Both fighters, both hands. HandsClean handles mid-fight wardrobe
+    ; re-equips; this belt just covers brawl START.
     Int hand = 0
     While hand < 2
         Spell rhSpell = challenger.GetEquippedSpell(hand)
@@ -565,6 +698,14 @@ Function DeclineBrawl_Execute(Actor akDecliner, Actor akChallenger = None)
    2. Direct: caller names the challenger explicitly (dialogue context).
  Either way: clear state, drop follow package, stop the native expiry
  monitor, fire a SkyrimNet brawl_declined event.}
+    ; Re-entrancy (review finding): Accept sleeps ~2.25s between Brawl_Begin
+    ; and StartCombat (the NFF settle), and Papyrus yields on Wait - a
+    ; Decline landing in that window would narrate a decline for a brawl
+    ; that is actually mid-start. Mirror Accept's own guard.
+    If akDecliner && SeverActionsNativeExt.Brawl_IsActive(akDecliner)
+        Debug.Trace("[SeverBrawl] Decline ignored: " + akDecliner.GetDisplayName() + " is mid-brawl")
+        Return
+    EndIf
 
     If !akDecliner
         Return
@@ -623,8 +764,8 @@ EndFunction
 ; restore at brawl-end doesn't surface as a spurious re-onboarding.
 ;
 ; Markers live in StorageUtil per-actor (SeverBrawl_WasTeammate=1) and in a
-; per-quest formlist (SeverBrawl_StrippedTeammates) used by
-; OnPlayerLoadGame to recover from mid-brawl saves.
+; per-quest formlist (SeverBrawl_StrippedTeammates) used by the load path
+; (RestoreStrippedTeammatesAfterReload) to recover from mid-brawl saves.
 
 Function StripTeammateForBrawl(Actor a)
     If !a || a == Game.GetPlayer()
@@ -641,6 +782,51 @@ Function StripTeammateForBrawl(Actor a)
         StorageUtil.FormListAdd(self, "SeverBrawl_StrippedTeammates", a, False)
         a.SetPlayerTeammate(false, false)
         Debug.Trace("[SeverBrawl] StripTeammateForBrawl: cleared IsPlayerTeammate on " + a.GetDisplayName())
+    EndIf
+    ; NFF release (Idolaf field report): stripping the teammate flag is NOT
+    ; enough for an NFF-managed brawler - NFF holds them in its own quest
+    ; ALIAS, and its aggro suppression / never-fight-the-player behaviour
+    ; rides that seat regardless of any flag we clear. StartCombat against
+    ; the player was silently dropped and the watchdog aborted at 10s, twice.
+    ; There is no off-switch for the suppression from our side, so route
+    ; through NFF's own controller per the standing rule: dismiss for the
+    ; fight, and RestoreTeammateAfterBrawl re-recruits (RegisterFollower ->
+    ; NFFRecruit) via the existing PendingRerecruit queue. WasNFF marks the
+    ; re-recruit, because after the dismissal IsTrackOnlyFollower may no
+    ; longer answer true for this actor.
+    If SeverActionsNativeExt2.Native_IsNFFManaged(a)
+        SeverActions_FollowerManager fmStrip = SeverActions_FollowerManager.GetInstance()
+        If fmStrip
+            ; PRIMARY route (owner's suggestion): NFF's OWN spar mechanic.
+            ; nwsFF_SparFac membership is how NFF exempts a follower from its
+            ; protection logic during ITS spars - joining it uses the designed
+            ; door instead of dismissing through the whole framework. Fallback
+            ; when the property is absent (older NFF): dismiss for the fight,
+            ; re-recruited at restore via PendingRerecruit.
+            ; FIELD RESULT (Idolaf, three rounds): the spar faction alone is
+            ; NOT the whole exemption. With it applied, combat engaged exactly
+            ; once and NFF killed the combat state within seconds every time
+            ; after - its spar flow evidently sets script-side state we cannot
+            ; reach from outside. So DISMISSAL is the primary (the alias seat
+            ; is the one lever that provably ends its suppression), and the
+            ; faction join stays as a harmless belt for the teardown window.
+            ; The existing PendingRerecruit machinery re-seats NFF at brawl
+            ; end either way.
+            Faction sparFac = fmStrip.NFFSparFaction()
+            If sparFac
+                StorageUtil.SetIntValue(a, "SeverBrawl_NFFSparFac", 1)
+                a.AddToFaction(sparFac)
+            EndIf
+            StorageUtil.SetIntValue(a, "SeverBrawl_WasNFF", 1)
+            ; SILENT, and canonical: decompiling nwsFollower_Sparring proves
+            ; dismissal-for-the-fight is NFF's OWN spar mechanism (SparPrep
+            ; dismisses, SparEnd RecruitActions back) - this is not a
+            ; workaround, it is the framework's sanctioned flow, with its own
+            ; silent (-1, 0) dismissal arguments.
+            fmStrip.NFFDismiss(a, true)
+            fmStrip.InvalidateTrackOnlyCache(a)
+            Debug.Trace("[SeverBrawl] StripTeammateForBrawl: released " + a.GetDisplayName() + " from NFF for the brawl (dismissal primary, sparFac=" + (sparFac != None) + ")")
+        EndIf
     EndIf
 EndFunction
 
@@ -664,9 +850,27 @@ Function RestoreTeammateAfterBrawl(Actor a)
         ; SetCompanion uses) re-engages the framework. Full-SA followers stay
         ; registered through the brawl, so the flag restore above is all they need.
         SeverActions_FollowerManager fm = SeverActions_FollowerManager.GetInstance()
-        If fm && fm.IsTrackOnlyFollower(a)
+        ; Spar-faction route: just leave NFF's spar faction again. No dismiss
+        ; happened, so no re-recruit is owed. We remove the membership OURSELVES
+        ; rather than calling the controller's SparEnd - that function services
+        ; NFF's own spar flow, whose state we never entered.
+        If StorageUtil.GetIntValue(a, "SeverBrawl_NFFSparFac", 0) == 1
+            StorageUtil.UnsetIntValue(a, "SeverBrawl_NFFSparFac")
+            If fm
+                Faction sparFacR = fm.NFFSparFaction()
+                If sparFacR
+                    a.RemoveFromFaction(sparFacR)
+                    Debug.Trace("[SeverBrawl] RestoreTeammateAfterBrawl: " + a.GetDisplayName() + " leaves NFF's spar faction")
+                EndIf
+            EndIf
+        EndIf
+        Bool wasNFF = StorageUtil.GetIntValue(a, "SeverBrawl_WasNFF", 0) == 1
+        If wasNFF
+            StorageUtil.UnsetIntValue(a, "SeverBrawl_WasNFF")
+        EndIf
+        If fm && (wasNFF || fm.IsTrackOnlyFollower(a))
             StorageUtil.FormListAdd(self, "SeverBrawl_PendingRerecruit", a, False)
-            Debug.Trace("[SeverBrawl] RestoreTeammateAfterBrawl: queued track-only re-recruit for " + a.GetDisplayName())
+            Debug.Trace("[SeverBrawl] RestoreTeammateAfterBrawl: queued re-recruit for " + a.GetDisplayName() + " (wasNFF=" + wasNFF + ")")
         EndIf
 
         Debug.Trace("[SeverBrawl] RestoreTeammateAfterBrawl: restored IsPlayerTeammate on " + a.GetDisplayName())
@@ -674,7 +878,7 @@ Function RestoreTeammateAfterBrawl(Actor a)
 EndFunction
 
 Function ProcessPendingRerecruit()
-{Runs from OnUpdate after the TrackOnlyRerecruitDelay window. Walks the
+{Runs from OnChronoTick_Brawl after the TrackOnlyRerecruitDelay window. Walks the
  SeverBrawl_PendingRerecruit formlist and calls RegisterFollower on each
  queued track-only follower — unconditionally. Every actor in this queue was
  stripped for the brawl and is tracking-only, so their framework treated the
@@ -718,14 +922,42 @@ Function RestoreStrippedTeammatesAfterReload()
         If a && a != Game.GetPlayer() && !a.IsDead()
             a.SetPlayerTeammate(true, false)
             StorageUtil.UnsetIntValue(a, "SeverBrawl_WasTeammate")
+            ; Spar-faction cleanup on the load path too - the StorageUtil
+            ; marker persists, and factions persist in the save.
+            If StorageUtil.GetIntValue(a, "SeverBrawl_NFFSparFac", 0) == 1
+                StorageUtil.UnsetIntValue(a, "SeverBrawl_NFFSparFac")
+                SeverActions_FollowerManager fmSpar = SeverActions_FollowerManager.GetInstance()
+                If fmSpar
+                    Faction sparFacL = fmSpar.NFFSparFaction()
+                    If sparFacL
+                        a.RemoveFromFaction(sparFacL)
+                    EndIf
+                EndIf
+            EndIf
+            ; The flag alone does not re-seat a track-only follower - their
+            ; owning framework (NFF et al.) already emptied its alias during
+            ; the strip window, and restoring a bool does not refill it. The
+            ; sibling path (RestoreTeammateAfterBrawl) has queued this
+            ; re-recruit since the "re-recruited then lost tracking again"
+            ; fix; this reload path just never got it (issue #412 S1).
+            SeverActions_FollowerManager fm = SeverActions_FollowerManager.GetInstance()
+            If fm && fm.IsTrackOnlyFollower(a)
+                StorageUtil.FormListAdd(self, "SeverBrawl_PendingRerecruit", a, False)
+                Debug.Trace("[SeverBrawl] RestoreStrippedTeammatesAfterReload: queued track-only re-recruit for " + a.GetDisplayName())
+            EndIf
         EndIf
         i += 1
     EndWhile
     StorageUtil.FormListClear(self, "SeverBrawl_StrippedTeammates")
+    ; Drain immediately: the tick delay window exists to let a live brawl
+    ; finish cleanly, but on the load path there is no brawl - the strip
+    ; markers only survive a save made MID-brawl, and the brawl itself did not.
+    ProcessPendingRerecruit()
 EndFunction
 
 Function ClearChallengeState(Actor a, Actor b)
     If a
+        StorageUtil.FormListRemove(self, "SeverBrawl_OpenChallengers", a, True)
         StorageUtil.UnsetFormValue(a, "SeverBrawl_ChallengeTo")
         StorageUtil.UnsetFormValue(a, "SeverBrawl_ChallengeFrom")
         StorageUtil.UnsetFloatValue(a, "SeverBrawl_ChallengeTime")
@@ -798,10 +1030,10 @@ Event OnBrawlEnded(String eventName, String strArg, Float numArg, Form sender)
     EndIf
 
     ; If any tracking-only followers got queued for re-recruit in the restore
-    ; calls above, schedule the OnUpdate that processes them after the external
+    ; calls above, schedule the tick that processes them after the external
     ; framework has settled its dismiss state.
     If StorageUtil.FormListCount(self, "SeverBrawl_PendingRerecruit") > 0
-        RegisterForSingleUpdate(TrackOnlyRerecruitDelay)
+        ChronoArm(TrackOnlyRerecruitDelay)
     EndIf
 
     ; Clear active-mirror flags on both sides. By the time we get here the
@@ -809,9 +1041,20 @@ Event OnBrawlEnded(String eventName, String strArg, Float numArg, Form sender)
     ; either party returns None — we have to use what we know from sender +
     ; the last-result natives.
     Actor senderActor = sender as Actor
+    ; Capture the opponent from the sender's mirror BEFORE clearing it. On
+    ; the abort path (reason 5) winner/loser are both None, so the opponent
+    ; is only reachable through this mirror -- clearing just sender/winner/
+    ; loser left the opponent's SeverBrawl_Active=1 stuck forever and
+    ; prompts kept telling that NPC they were mid-brawl. Redundant (and
+    ; harmless) on the other reason paths where it matches winner/loser.
+    Actor senderOppMirror = None
+    If senderActor
+        senderOppMirror = StorageUtil.GetFormValue(senderActor, "SeverBrawl_Opponent") as Actor
+    EndIf
     ClearActiveMirror(senderActor)
     ClearActiveMirror(winner)
     ClearActiveMirror(loser)
+    ClearActiveMirror(senderOppMirror)
 
     Debug.Trace("[SeverBrawl] OnBrawlEnded reason=" + reason + " winner=" + winner + " loser=" + loser)
 
@@ -842,9 +1085,25 @@ Event OnBrawlEnded(String eventName, String strArg, Float numArg, Form sender)
         reasonName = "broken_to_combat"
     ElseIf reason == 5
         reasonName = "aborted"
+    ElseIf reason == 6
+        reasonName = "forfeit - lowered their fists"
     EndIf
 
-    If winner && loser
+    If winner && loser && reason == 6
+        ; Sheathe-forfeit: the persistent line says HOW they gave up, so the
+        ; NPC can react to the gesture itself (no words were spoken).
+        SkyrimNetApi.RegisterEvent("brawl_ended", \
+            loser.GetDisplayName() + " lowered their fists and sheathed mid-brawl, conceding to " + winner.GetDisplayName() + " without a word", \
+            winner, loser)
+    ElseIf winner && loser && reason == 3
+        ; Walked away: no concession happened - the fighters just drifted
+        ; apart until the engine dropped combat. Native now fills both handles
+        ; deterministically (A/B, not victor/vanquished), so word it neutral:
+        ; nobody beat anybody, the thing simply fizzled.
+        SkyrimNetApi.RegisterEvent("brawl_ended", \
+            "the brawl between " + winner.GetDisplayName() + " and " + loser.GetDisplayName() + " fizzled out - they drifted apart with no clear winner", \
+            winner, loser)
+    ElseIf winner && loser
         SkyrimNetApi.RegisterEvent("brawl_ended", \
             winner.GetDisplayName() + " beat " + loser.GetDisplayName() + " in a brawl (" + reasonName + ")", \
             winner, loser)
@@ -861,7 +1120,7 @@ Event OnBrawlEnded(String eventName, String strArg, Float numArg, Form sender)
     ; reacting to the loss). Only fires for clean outcomes (knockout /
     ; forfeit). Reason 4 (broken_to_combat) skips this — the brawl
     ; escalated into real combat and AttackTarget_Execute takes over below.
-    If winner && loser && (reason == 1 || reason == 2)
+    If winner && loser && (reason == 1 || reason == 2 || reason == 6)
         String narration = ""
         If reason == 1
             ; Knockout — loser hit bleedout. They're on the ground catching
@@ -872,9 +1131,24 @@ Event OnBrawlEnded(String eventName, String strArg, Float numArg, Form sender)
             ; Forfeit — loser voluntarily gave up. Less battered, more
             ; pragmatic.
             narration = "*" + loser.GetDisplayName() + " backs off with a hand raised, breathing hard. They've called it - " + winner.GetDisplayName() + " wins this one.*"
+        ElseIf reason == 6
+            ; Sheathe-forfeit — no words, just the gesture. The WINNER is
+            ; the one who has to read it: the player dropped their fists
+            ; and stood down.
+            narration = "*" + loser.GetDisplayName() + " lowers their fists and steps back, hands open - no words, but the meaning is plain. " + winner.GetDisplayName() + " has won this one.*"
         EndIf
         If narration != ""
-            SkyrimNetApi.DirectNarration(narration, loser, winner)
+            ; Speaker must be an actor SkyrimNet will voice. The loser is the
+            ; natural reactor — but when the loser is the PLAYER (sheathe-
+            ; forfeit always; knockout/forfeit when the player lost), SkyrimNet
+            ; does not voice the player and silently drops the narration (the
+            ; dropped-fists dead-air report, 2026-08-24). Flip to the winner:
+            ; they read the gesture and answer it.
+            If loser == Game.GetPlayer()
+                SkyrimNetApi.DirectNarration(narration, winner, loser)
+            Else
+                SkyrimNetApi.DirectNarration(narration, loser, winner)
+            EndIf
         EndIf
     EndIf
 

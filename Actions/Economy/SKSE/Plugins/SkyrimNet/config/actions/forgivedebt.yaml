@@ -1,6 +1,6 @@
 customCategory: economy
 name: ForgiveDebt
-description: "Wipe a tab clean. The speaker lets the other person off the hook for what they owed — a kindness, a favor returned in spirit, or simply giving up on collecting."
+description: "Cancel EVERY debt the other person owes the speaker, all tabs at once, with no gold changing hands — a deliberate act of mercy or giving up on collecting entirely. NEVER call this to acknowledge a payment: payments settle their own debts automatically, and calling this after one would erase the person's OTHER unrelated debts too. To waive only part of what is owed, use ReduceDebt instead."
 questEditorId: SeverActions
 scriptName: SeverActions_Debt
 executionFunctionName: ForgiveDebt_Execute
@@ -21,10 +21,14 @@ eligibilityRules:
     logicalOperator: "AND"
     required: true
   - conditions:
-      - decoratorName: "is_in_faction"
+      # get_faction_rank, not is_in_faction: RemoveFromFaction sets rank -1
+      # (layered override), it does not erase membership — a rank-blind check
+      # reads a former creditor as one forever. Only rank >= 0 is a live
+      # creditor. Mirrors reducedebt.yaml's documented fix.
+      - decoratorName: "get_faction_rank"
         arguments: ["currentActor", "SeverActions_CreditorFaction"]
-        comparisonOperator: "=="
-        expectedValue: true
+        comparisonOperator: ">="
+        expectedValue: 0
     logicalOperator: "AND"
     required: true
   - conditions:

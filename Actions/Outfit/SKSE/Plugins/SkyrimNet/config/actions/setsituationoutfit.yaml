@@ -1,6 +1,6 @@
 customCategory: outfit
 name: SetSituationOutfit
-description: "The speaker sets a standing rule for one part of their life — 'when we're in town I dress decent', 'on the road I wear my armor', 'at home it's the wool dress', 'nightclothes for bed'. They'll change into the assigned outfit automatically whenever that situation comes up."
+description: "Set a standing rule: the speaker automatically changes into a saved outfit whenever one situation begins — 'town', 'adventure', 'home', or 'sleep'. Use when the speaker decides or is told to always wear a given outfit for a situation."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: SetSituationPreset_Execute
@@ -15,7 +15,7 @@ parameterMapping:
     name: presetName
     description: "the saved outfit they'll wear in that situation"
 enabled: true
-eventString: "{{ actor.name }} assigns their {{ presetName }} outfit for {{ situation }} situations"
+eventString: "{{ actor.name }} now wears their {{ presetName }} outfit whenever {{ situation }} comes"
 eligibilityRules:
   - conditions:
       - decoratorName: "is_in_combat"

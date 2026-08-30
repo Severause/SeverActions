@@ -1,5 +1,5 @@
 Scriptname SeverActions_ArrestJudgment Extends Quest
-{Phase-6 judgment hold subsystem (Wave 5b extraction).
+{Phase-6 judgment hold subsystem.
 
  After a guard brings a prisoner back to the sender (the original NPC who
  ordered the arrest), the sender can:
@@ -72,7 +72,7 @@ Function StartJudgment()
          actions, so the busy flag must sit on them.
        - Player sender: mark the GUARD. The _Execute functions accept the
          guard as a valid caller "acting on the player's behalf" (see
-         OrderRelease_Execute:173 / OrderJailed_Execute:237), but since
+         OrderRelease_Execute / OrderJailed_Execute), but since
          the player doesn't drive SkyrimNet's action selection, eligibility
          runs against the guard as the actual LLM speaker — so the busy
          flag must sit on the guard for that case.}
@@ -184,9 +184,10 @@ Function CheckJudgmentProgress()
         prisoner.EvaluatePackage()
     EndIf
 
-    ; Still waiting for sender's decision — re-arm OnUpdate via parent's loop.
-    ; The parent's OnUpdate is the actual update tick; we don't register here
-    ; because that would conflict with the parent's per-state cadence.
+    ; Still waiting for sender's decision — the parent's chronometer tick
+    ; (OnChronoTick_Arrest → CheckDispatchProgress → CheckJudgmentProgress) is the
+    ; actual update tick; we don't arm one here because that would conflict with
+    ; the parent's per-state cadence.
 EndFunction
 
 ; =============================================================================
@@ -371,6 +372,17 @@ Function EndJudgment(Bool released)
         ; Clear every reference alias the arrest / dispatch FSM uses.
         ArrestScript.ClearAllArrestAliases()
 
+        ; PHANTOM-ARREST FIX (2026-08-04 user report): ClearDispatchState only
+        ; resets the SCRIPT variables - the cosaved dispatch context (native
+        ; ARDC record: per-guard entry + active-guard singleton) is cleared
+        ; ONLY by ClearPersistedDispatchState, which CompleteDispatch and
+        ; CancelDispatch call and every EndJudgment branch forgot. A dispatch
+        ; that ended through a judgment left active=<guard> in EVERY
+        ; subsequent cosave, so every load rebuilt Phase 6 from it, the
+        ; resumed timer timed out, and a phantom judgment re-ran - forever,
+        ; any number of saves later. Must run BEFORE ClearDispatchState,
+        ; which nulls the DispatchGuard it needs.
+        ArrestScript.ClearPersistedDispatchState()
         ArrestScript.ClearDispatchState()
     Else
         ; --- JAIL: Hand off to standard escort pipeline ---
@@ -391,6 +403,9 @@ Function EndJudgment(Bool released)
             ; Set up standard arrest state for escort via the cross-script accessor
             ArrestScript.SetCurrentArrestSlots(guard, prisoner, jailMarker, jailName)
 
+            ; See the release branch above - the persisted context must go too,
+            ; and must go first.
+            ArrestScript.ClearPersistedDispatchState()
             ArrestScript.ClearDispatchState()
 
             ; Clear every reference alias before escort re-fills them.
@@ -443,6 +458,8 @@ Function EndJudgment(Bool released)
             ; Clear every reference alias the arrest / dispatch FSM uses.
             ArrestScript.ClearAllArrestAliases()
 
+            ; See the release branch above.
+            ArrestScript.ClearPersistedDispatchState()
             ArrestScript.ClearDispatchState()
         EndIf
     EndIf

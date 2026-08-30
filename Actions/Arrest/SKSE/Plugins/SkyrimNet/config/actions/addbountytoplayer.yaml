@@ -1,6 +1,6 @@
 customCategory: arrest
 name: AddBountyToPlayer
-description: "The guard logs a fresh crime against the player's name in this hold — a stabbing in the market square, coin lifted from a merchant's purse, a knife pulled in the wrong tavern. Use this FIRST when the speaker witnessed a crime, since ArrestPlayer needs an existing bounty to bite. Guards may also stack bounty at their own discretion for backtalk, threats, or suspicious behavior."
+description: "Use this first when the speaker witnessed {{ player.name }} commit a crime — ArrestPlayer only works once a bounty exists on the books. The guard logs the crime against {{ player.name }}'s name in this hold. Guards may also stack bounty at their own discretion for backtalk, threats, or suspicious behavior."
 questEditorId: SeverActions
 scriptName: SeverActions_ArrestBounty
 executionFunctionName: AddBountyToPlayer_Internal
@@ -10,7 +10,7 @@ parameterMapping:
     description: the guard writing the charge into the books
   - type: dynamic
     name: bountyAmount
-    description: "how much gold the offense is worth on the books — assault 40-200, theft 75-300, murder 1000-3000, trespass 75-150, pickpocket 25-175"
+    description: "how much gold the offense is worth on the books — assault 40-200, theft 75-300, murder 1000-3000, trespass 75-150, pickpocket 25-175, contempt 25-100, abuse_of_power 50-250"
   - type: dynamic
     name: crimeType
     description: "what they're being charged with: assault, theft, murder, trespass, pickpocket, contempt, or abuse_of_power"

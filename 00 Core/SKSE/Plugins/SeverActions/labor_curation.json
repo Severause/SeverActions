@@ -1,0 +1,1904 @@
+{
+  "comment": "Curated NPC labor seed for EmploymentRegistry. block = workers that must never seed (heuristic false positives). assign = authoritative worker->employer edges: the nine start-of-game jarl courts (UESP-verified), famous shop/inn staff, and a reviewed vanilla draft. Rows tagged origin:'modlist' are NPCs from the author's dev load order, not base game + DLC — they resolve there and drop harmlessly (dropped-unresolved) everywhere else; the tag is informational only, the parser ignores it. 2026-08-01 pass: removed self-employ/mangled/reversed-ownership rows, deduped generic-name workers, fixed two employer names that could never resolve (Jarl Siddgeir -> Siddgeir, Jarl Skald -> Skald the Elder).",
+  "_famousNote": [
+    "Saadia/Mikael/Olfina Gray-Mane -> Hulda @ The Bannered Mare (Whiterun). Src: UESP Skyrim:The_Bannered_Mare infobox (Publican Hulda, Worker Saadia, Bard Mikael) + notes (Olfina class Food vendor, works the inn).",
+    "Sigurd -> Belethor @ Belethor's General Goods (Whiterun). Src: SkyrimNet bio sigurd_D73 ('employee at Belethor's General Goods').",
+    "Imedhnain -> Lisbet @ Arnleif and Sons Trading Company (Markarth). Src: SkyrimNet bio imedhnain_8EB ('assistant shopkeeper ... serving under the Nord owner Lisbet').",
+    "Lisette -> Corpulus Vinius @ The Winking Skeever (Solitude). Src: UESP Skyrim:The_Winking_Skeever infobox (Proprietor Corpulus Vinius, Bard Lisette; 'the bard employed at the tavern').",
+    "Orgnar/Sven -> Delphine @ Sleeping Giant Inn (Riverwood). Src: UESP Skyrim:Sleeping_Giant_Inn infobox (Publican Delphine, Innkeeper Orgnar, Bard Sven).",
+    "Muiri -> Bothela @ The Hag's Cure (Markarth). Src: UESP Skyrim:The_Hag's_Cure infobox (Proprietor Bothela, Assistant Muiri).",
+    "Talen-Jei -> Keerava @ The Bee and Barb (Riften). Src: UESP Skyrim:The_Bee_and_Barb infobox (Publican Keerava, Bartender Talen-Jei).",
+    "Tacitus Sallustius -> Ghorza gra-Bagol @ Markarth smithy. Src: UESP Skyrim:Understone_Keep ('Ghorza gra-Bagol, who runs the public smithy for Markarth, and her assistant Tacitus Sallustius').",
+    "Aicantar -> Calcelmo @ Understone Keep excavation. Src: UESP Skyrim:Understone_Keep ('Calcelmo's workstation, where he is aided by Aicantar')."
+  ],
+  "block": [
+    "Heimskr",
+    "Shadowmere"
+  ],
+  "assign": [
+    {
+      "worker": "Proventus Avenicci",
+      "employer": "Balgruuf the Greater",
+      "role": "steward",
+      "workplace": "Dragonsreach",
+      "wage": 200
+    },
+    {
+      "worker": "Irileth",
+      "employer": "Balgruuf the Greater",
+      "role": "housecarl",
+      "workplace": "Dragonsreach",
+      "wage": 175
+    },
+    {
+      "worker": "Farengar Secret-Fire",
+      "employer": "Balgruuf the Greater",
+      "role": "court wizard",
+      "workplace": "Dragonsreach",
+      "wage": 200
+    },
+    {
+      "worker": "Fianna",
+      "employer": "Balgruuf the Greater",
+      "role": "servant",
+      "workplace": "Dragonsreach",
+      "wage": 90
+    },
+    {
+      "worker": "Gerda",
+      "employer": "Balgruuf the Greater",
+      "role": "servant",
+      "workplace": "Dragonsreach",
+      "wage": 90
+    },
+    {
+      "worker": "Falk Firebeard",
+      "employer": "Elisif the Fair",
+      "role": "steward",
+      "workplace": "Blue Palace",
+      "wage": 200
+    },
+    {
+      "worker": "Bolgeir Bearclaw",
+      "employer": "Elisif the Fair",
+      "role": "housecarl",
+      "workplace": "Blue Palace",
+      "wage": 175
+    },
+    {
+      "worker": "Sybille Stentor",
+      "employer": "Elisif the Fair",
+      "role": "court wizard",
+      "workplace": "Blue Palace",
+      "wage": 200
+    },
+    {
+      "worker": "Odar",
+      "employer": "Elisif the Fair",
+      "role": "cook",
+      "workplace": "Blue Palace",
+      "wage": 110
+    },
+    {
+      "worker": "Erdi",
+      "employer": "Elisif the Fair",
+      "role": "servant",
+      "workplace": "Blue Palace",
+      "wage": 90
+    },
+    {
+      "worker": "Una",
+      "employer": "Elisif the Fair",
+      "role": "servant",
+      "workplace": "Blue Palace",
+      "wage": 90
+    },
+    {
+      "worker": "Jorleif",
+      "employer": "Ulfric Stormcloak",
+      "role": "steward",
+      "workplace": "Palace of the Kings",
+      "wage": 200
+    },
+    {
+      "worker": "Galmar Stone-Fist",
+      "employer": "Ulfric Stormcloak",
+      "role": "housecarl",
+      "workplace": "Palace of the Kings",
+      "wage": 175
+    },
+    {
+      "worker": "Wuunferth the Unliving",
+      "employer": "Ulfric Stormcloak",
+      "role": "court wizard",
+      "workplace": "Palace of the Kings",
+      "wage": 200
+    },
+    {
+      "worker": "Yrsarald Thrice-Pierced",
+      "employer": "Ulfric Stormcloak",
+      "role": "military advisor",
+      "workplace": "Palace of the Kings",
+      "wage": 175
+    },
+    {
+      "worker": "Sifnar Ironkettle",
+      "employer": "Ulfric Stormcloak",
+      "role": "cook",
+      "workplace": "Palace of the Kings",
+      "wage": 110
+    },
+    {
+      "worker": "Raerek",
+      "employer": "Igmund",
+      "role": "steward",
+      "workplace": "Understone Keep",
+      "wage": 200
+    },
+    {
+      "worker": "Faleen",
+      "employer": "Igmund",
+      "role": "housecarl",
+      "workplace": "Understone Keep",
+      "wage": 175
+    },
+    {
+      "worker": "Calcelmo",
+      "employer": "Igmund",
+      "role": "court wizard",
+      "workplace": "Understone Keep",
+      "wage": 200
+    },
+    {
+      "worker": "Legate Emmanuel Admand",
+      "employer": "Igmund",
+      "role": "military advisor",
+      "workplace": "Understone Keep",
+      "wage": 175
+    },
+    {
+      "worker": "Anton Virane",
+      "employer": "Igmund",
+      "role": "cook",
+      "workplace": "Understone Keep",
+      "wage": 120
+    },
+    {
+      "worker": "Rondach",
+      "employer": "Igmund",
+      "role": "kitchen assistant",
+      "workplace": "Understone Keep",
+      "wage": 90
+    },
+    {
+      "worker": "Voada",
+      "employer": "Igmund",
+      "role": "kitchen assistant",
+      "workplace": "Understone Keep",
+      "wage": 90
+    },
+    {
+      "worker": "Moth gro-Bagol",
+      "employer": "Igmund",
+      "role": "court blacksmith",
+      "workplace": "Understone Keep",
+      "wage": 140
+    },
+    {
+      "worker": "Anuriel",
+      "employer": "Laila Law-Giver",
+      "role": "steward",
+      "workplace": "Mistveil Keep",
+      "wage": 200
+    },
+    {
+      "worker": "Unmid Snow-Shod",
+      "employer": "Laila Law-Giver",
+      "role": "housecarl",
+      "workplace": "Mistveil Keep",
+      "wage": 175
+    },
+    {
+      "worker": "Wylandriah",
+      "employer": "Laila Law-Giver",
+      "role": "court wizard",
+      "workplace": "Mistveil Keep",
+      "wage": 200
+    },
+    {
+      "worker": "Gonnar Oath-Giver",
+      "employer": "Laila Law-Giver",
+      "role": "military advisor",
+      "workplace": "Mistveil Keep",
+      "wage": 175
+    },
+    {
+      "worker": "Aslfur",
+      "employer": "Idgrod Ravencrone",
+      "role": "steward",
+      "workplace": "Highmoon Hall",
+      "wage": 200
+    },
+    {
+      "worker": "Gorm",
+      "employer": "Idgrod Ravencrone",
+      "role": "housecarl",
+      "workplace": "Highmoon Hall",
+      "wage": 175
+    },
+    {
+      "worker": "Legate Taurinus Duilis",
+      "employer": "Idgrod Ravencrone",
+      "role": "military advisor",
+      "workplace": "Highmoon Hall",
+      "wage": 175
+    },
+    {
+      "worker": "Nenya",
+      "employer": "Siddgeir",
+      "role": "steward",
+      "workplace": "Jarl's Longhouse (Falkreath)",
+      "wage": 200
+    },
+    {
+      "worker": "Helvard",
+      "employer": "Siddgeir",
+      "role": "housecarl",
+      "workplace": "Jarl's Longhouse (Falkreath)",
+      "wage": 175
+    },
+    {
+      "worker": "Legate Skulnar",
+      "employer": "Siddgeir",
+      "role": "military advisor",
+      "workplace": "Jarl's Longhouse (Falkreath)",
+      "wage": 175
+    },
+    {
+      "worker": "Malur Seloth",
+      "employer": "Korir",
+      "role": "steward",
+      "workplace": "Jarl's Longhouse (Winterhold)",
+      "wage": 200
+    },
+    {
+      "worker": "Kai Wet-Pommel",
+      "employer": "Korir",
+      "role": "military advisor",
+      "workplace": "Jarl's Longhouse (Winterhold)",
+      "wage": 175
+    },
+    {
+      "worker": "Madena",
+      "employer": "Skald the Elder",
+      "role": "court wizard",
+      "workplace": "The White Hall",
+      "wage": 200
+    },
+    {
+      "worker": "Jod",
+      "employer": "Skald the Elder",
+      "role": "housecarl",
+      "workplace": "The White Hall",
+      "wage": 175
+    },
+    {
+      "worker": "Frorkmar Banner-Torn",
+      "employer": "Skald the Elder",
+      "role": "military advisor",
+      "workplace": "The White Hall",
+      "wage": 175
+    },
+    {
+      "worker": "Bulfrek",
+      "employer": "Skald the Elder",
+      "role": "servant",
+      "workplace": "The White Hall",
+      "wage": 90
+    },
+    {
+      "worker": "Saadia",
+      "employer": "Hulda",
+      "role": "barmaid",
+      "workplace": "The Bannered Mare",
+      "wage": 120
+    },
+    {
+      "worker": "Mikael",
+      "employer": "Hulda",
+      "role": "bard",
+      "workplace": "The Bannered Mare",
+      "wage": 90
+    },
+    {
+      "worker": "Olfina Gray-Mane",
+      "employer": "Hulda",
+      "role": "barmaid",
+      "workplace": "The Bannered Mare",
+      "wage": 120
+    },
+    {
+      "worker": "Sigurd",
+      "employer": "Belethor",
+      "role": "shop assistant",
+      "workplace": "Belethor's General Goods",
+      "wage": 120,
+      "job": 1
+    },
+    {
+      "worker": "Imedhnain",
+      "employer": "Lisbet",
+      "role": "shop assistant",
+      "workplace": "Arnleif and Sons Trading Company",
+      "wage": 120,
+      "job": 1
+    },
+    {
+      "worker": "Lisette",
+      "employer": "Corpulus Vinius",
+      "role": "bard",
+      "workplace": "The Winking Skeever",
+      "wage": 90
+    },
+    {
+      "worker": "Orgnar",
+      "employer": "Delphine",
+      "role": "barkeeper",
+      "workplace": "Sleeping Giant Inn",
+      "wage": 110
+    },
+    {
+      "worker": "Sven",
+      "employer": "Delphine",
+      "role": "bard",
+      "workplace": "Sleeping Giant Inn",
+      "wage": 90,
+      "frag": "491"
+    },
+    {
+      "worker": "Muiri",
+      "employer": "Bothela",
+      "role": "alchemist's assistant",
+      "workplace": "The Hag's Cure",
+      "wage": 120,
+      "job": 2
+    },
+    {
+      "worker": "Talen-Jei",
+      "employer": "Keerava",
+      "role": "bartender",
+      "workplace": "The Bee and Barb",
+      "wage": 110
+    },
+    {
+      "worker": "Tacitus Sallustius",
+      "employer": "Ghorza gra-Bagol",
+      "role": "blacksmith's assistant",
+      "workplace": "Markarth smithy",
+      "wage": 120
+    },
+    {
+      "worker": "Aicantar",
+      "employer": "Calcelmo",
+      "role": "apprentice",
+      "workplace": "Understone Keep",
+      "wage": 120
+    },
+    {
+      "worker": "adelaisa vendicci",
+      "employer": "vittoria vici",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "East Empire Company"
+    },
+    {
+      "worker": "adisla",
+      "employer": "Captain Lonely-Gale",
+      "role": "farmhand",
+      "wage": 90,
+      "workplace": "Hlaalu Farm",
+      "job": 3
+    },
+    {
+      "worker": "aduri sarethi",
+      "employer": "avrusa sarethi",
+      "role": "farmhand",
+      "wage": 90,
+      "workplace": "Sarethi Farm",
+      "job": 3
+    },
+    {
+      "worker": "anoriath",
+      "employer": "elrindir",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Drunken Huntsman"
+    },
+    {
+      "worker": "arah",
+      "employer": "hadring",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Nightgate Inn",
+      "origin": "modlist"
+    },
+    {
+      "worker": "arisse",
+      "employer": "faida",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Four Shields Tavern",
+      "job": 1
+    },
+    {
+      "worker": "arlina",
+      "employer": "Kjeld",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "arnynne",
+      "employer": "Geldis Sadri",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "asbjorn fire-tamer",
+      "employer": "balimund",
+      "role": "smith",
+      "wage": 140,
+      "workplace": "Scorched Hammer",
+      "job": 1
+    },
+    {
+      "worker": "asteria",
+      "employer": "firir",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Old Hroldan Inn",
+      "origin": "modlist"
+    },
+    {
+      "worker": "avram shazir",
+      "employer": "Auryen Morellus",
+      "role": "guard",
+      "wage": 130,
+      "job": 7,
+      "origin": "modlist"
+    },
+    {
+      "worker": "badnir",
+      "employer": "Thorgar",
+      "role": "inn staff",
+      "wage": 110,
+      "job": 1
+    },
+    {
+      "worker": "balag jo",
+      "employer": "Ainethach",
+      "role": "smith",
+      "wage": 140,
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "balagog gro-nolob",
+      "employer": "Emperor Titus Mede II",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "baldarich",
+      "employer": "Frida",
+      "role": "mercenary",
+      "wage": 150,
+      "job": 5,
+      "origin": "modlist"
+    },
+    {
+      "worker": "banning",
+      "employer": "cedran",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Markarth Stables"
+    },
+    {
+      "worker": "bartender",
+      "employer": "falvis",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Tall Mast Tavern",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "bassianus axius",
+      "employer": "Klimmek",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "battle-born servant",
+      "employer": "Olfrid Battle-Born",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "the Battle-Born",
+      "origin": "modlist"
+    },
+    {
+      "worker": "belchimac",
+      "employer": "Ainethach",
+      "role": "miner",
+      "wage": 110,
+      "job": 0
+    },
+    {
+      "worker": "black-briar mercenary",
+      "employer": "Maven Black-Briar",
+      "role": "guard",
+      "wage": 130,
+      "job": 7
+    },
+    {
+      "worker": "black-briar servant",
+      "employer": "Maven Black-Briar",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "blaise",
+      "employer": "Katla",
+      "role": "farmhand",
+      "wage": 90,
+      "job": 3
+    },
+    {
+      "worker": "bodil",
+      "employer": "beitild",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Iron-Breaker Mine"
+    },
+    {
+      "worker": "borgny",
+      "employer": "leigelf",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "bradyn",
+      "employer": "Ralis Sedarys",
+      "role": "miner",
+      "wage": 110,
+      "job": 0,
+      "origin": "modlist"
+    },
+    {
+      "worker": "brelas",
+      "employer": "Elenwen",
+      "role": "servant",
+      "wage": 100,
+      "workplace": "Thalmor Embassy"
+    },
+    {
+      "worker": "briana",
+      "employer": "falvis",
+      "role": "trader",
+      "wage": 140,
+      "workplace": "Tall Mast Tavern",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "captain aquilius",
+      "employer": "Calcelmo",
+      "role": "guard",
+      "wage": 130,
+      "job": 7,
+      "origin": "modlist"
+    },
+    {
+      "worker": "catarina",
+      "employer": "jonna",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Moorside Inn",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "cecilia",
+      "employer": "jonna",
+      "role": "staff",
+      "wage": 100,
+      "workplace": "Moorside Inn",
+      "origin": "modlist"
+    },
+    {
+      "worker": "claire",
+      "employer": "elrindir",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Drunken Huntsman",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "constance michel",
+      "employer": "Grelod the Kind",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "cosnach",
+      "employer": "Lisbet",
+      "role": "porter",
+      "wage": 150,
+      "workplace": "Arnleif and Sons Trading Company",
+      "job": 5
+    },
+    {
+      "worker": "deeja",
+      "employer": "vittoria vici",
+      "role": "staff",
+      "wage": 100,
+      "workplace": "East Empire Company"
+    },
+    {
+      "worker": "deirdre",
+      "employer": "Hrokkar",
+      "role": "courtesan",
+      "wage": 130,
+      "job": 6,
+      "origin": "modlist"
+    },
+    {
+      "worker": "delacourt",
+      "employer": "valga vinicia",
+      "role": "bard",
+      "wage": 90,
+      "workplace": "Dead Man's Drink",
+      "origin": "modlist"
+    },
+    {
+      "worker": "delvin mallory",
+      "employer": "mercer frey",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Thieves Guild"
+    },
+    {
+      "worker": "deminia",
+      "employer": "Signar Iron-Blood",
+      "role": "farmhand",
+      "wage": 90,
+      "workplace": "the Iron-Blood",
+      "job": 3,
+      "origin": "modlist"
+    },
+    {
+      "worker": "derkeethus",
+      "employer": "Annekke Crag-Jumper",
+      "role": "miner",
+      "wage": 110,
+      "workplace": "Goldenrock Mine",
+      "job": 0
+    },
+    {
+      "worker": "devran",
+      "employer": "Maven Black-Briar",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Maven Black-Briar",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "dianna",
+      "employer": "falvis",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Tall Mast Tavern",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "dirassi",
+      "employer": "Maven Black-Briar",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "dirge",
+      "employer": "Vekel the Man",
+      "role": "guard",
+      "wage": 130,
+      "job": 7
+    },
+    {
+      "worker": "donnel",
+      "employer": "Thonar Silver-Blood",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Treasury House",
+      "origin": "modlist"
+    },
+    {
+      "worker": "dravynea the stoneweaver",
+      "employer": "Kjeld",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "dro marash",
+      "employer": "Ahkari",
+      "role": "guard",
+      "wage": 130,
+      "job": 7
+    },
+    {
+      "worker": "duraz",
+      "employer": "firir",
+      "role": "mercenary",
+      "wage": 150,
+      "workplace": "Old Hroldan Inn",
+      "job": 5,
+      "origin": "modlist"
+    },
+    {
+      "worker": "eddvia jucani",
+      "employer": "hulgard",
+      "role": "staff",
+      "wage": 100,
+      "workplace": "Northern Arms",
+      "origin": "modlist"
+    },
+    {
+      "worker": "eimar",
+      "employer": "Sabjorn",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "elanneh",
+      "employer": "Corpulus Vinius",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Winking Skeever",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "elira",
+      "employer": "Keerava",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Bee and Barb",
+      "origin": "modlist"
+    },
+    {
+      "worker": "elise",
+      "employer": "Hrokkar",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "enchanter brecius",
+      "employer": "Thorina",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "endon",
+      "employer": "mercer frey",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Thieves Guild"
+    },
+    {
+      "worker": "enya",
+      "employer": "firir",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Old Hroldan Inn",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "erik",
+      "employer": "Rorik",
+      "role": "farmhand",
+      "wage": 90,
+      "job": 3
+    },
+    {
+      "worker": "erikur s servant",
+      "employer": "Erikur",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Erikur's",
+      "origin": "modlist"
+    },
+    {
+      "worker": "evelyna",
+      "employer": "ambarys rendar",
+      "role": "bard",
+      "wage": 90,
+      "workplace": "New Gnisis Cornerclub",
+      "origin": "modlist"
+    },
+    {
+      "worker": "faryl atheron",
+      "employer": "Bolfrida Brandy-Mug",
+      "role": "farmhand",
+      "wage": 90,
+      "workplace": "Brandy-Mug Farm",
+      "job": 3
+    },
+    {
+      "worker": "fastred",
+      "employer": "boti",
+      "role": "farmhand",
+      "wage": 90,
+      "workplace": "Fellstar Farm",
+      "job": 3
+    },
+    {
+      "worker": "freya",
+      "employer": "delphine",
+      "role": "courtesan",
+      "wage": 130,
+      "workplace": "Sleeping Giant Inn",
+      "job": 6,
+      "origin": "modlist"
+    },
+    {
+      "worker": "fruki",
+      "employer": "leigelf",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Quicksilver Mine"
+    },
+    {
+      "worker": "garthe",
+      "employer": "Elda Early-Dawn",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Candlehearth Hall",
+      "origin": "modlist"
+    },
+    {
+      "worker": "gautierre manor guard",
+      "employer": "Simund Gautierre",
+      "role": "guard",
+      "wage": 130,
+      "job": 7,
+      "origin": "modlist"
+    },
+    {
+      "worker": "drovas relvi",
+      "employer": "Geldis Sadri",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "The Retching Netch"
+    },
+    {
+      "worker": "gloth",
+      "employer": "Severio Pelagia",
+      "role": "farmhand",
+      "wage": 90,
+      "workplace": "Pelagia Farm",
+      "job": 3
+    },
+    {
+      "worker": "gray-mane servant",
+      "employer": "Eorlund Gray-Mane",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "hathrasil",
+      "employer": "Mulush gro-Shugurz",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Markarth Smelter"
+    },
+    {
+      "worker": "herna",
+      "employer": "Ambarys Rendar",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "hjara",
+      "employer": "Elda Early-Dawn",
+      "role": "barmaid",
+      "wage": 120,
+      "workplace": "Candlehearth Inn",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "hjoromir",
+      "employer": "Delphine",
+      "role": "trader",
+      "wage": 140,
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "hod",
+      "employer": "gerdur",
+      "role": "miller",
+      "wage": 100,
+      "workplace": "Riverwood's",
+      "job": 8
+    },
+    {
+      "worker": "horm",
+      "employer": "Katla",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Solitude Stables",
+      "origin": "modlist"
+    },
+    {
+      "worker": "hreinn",
+      "employer": "frabbi",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Silver-Blood Inn"
+    },
+    {
+      "worker": "hrimfaxi",
+      "employer": "dellingr",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Hoarfrost Stables",
+      "origin": "modlist"
+    },
+    {
+      "worker": "hroki",
+      "employer": "frabbi",
+      "role": "barmaid",
+      "wage": 120,
+      "workplace": "Silver-Blood Inn",
+      "job": 1
+    },
+    {
+      "worker": "indaryn",
+      "employer": "Maven Black-Briar",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "ingarte",
+      "employer": "Jonna",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Moorside Inn",
+      "origin": "modlist"
+    },
+    {
+      "worker": "ingun black-briar",
+      "employer": "elgrim",
+      "role": "alchemist",
+      "wage": 120,
+      "workplace": "Elgrim's Elixirs",
+      "job": 2
+    },
+    {
+      "worker": "ironheart cave barkeep",
+      "employer": "Hrokkar",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "jailer",
+      "employer": "fort pale pass quartermaster",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Fort Pale Pass",
+      "origin": "modlist"
+    },
+    {
+      "worker": "jane",
+      "employer": "Thoring",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Windpeak Inn",
+      "origin": "modlist"
+    },
+    {
+      "worker": "jaspar gaerston",
+      "employer": "lisella",
+      "role": "miner",
+      "wage": 110,
+      "workplace": "Dawnstar's",
+      "job": 0,
+      "origin": "modlist"
+    },
+    {
+      "worker": "jawanan",
+      "employer": "Fihada",
+      "role": "smith",
+      "wage": 140,
+      "workplace": "Fletcher",
+      "job": 1
+    },
+    {
+      "worker": "jervar",
+      "employer": "Skulvar Sable-Hilt",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Whiterun Stables"
+    },
+    {
+      "worker": "jessica",
+      "employer": "Mralki",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Frostfruit Inn",
+      "origin": "modlist"
+    },
+    {
+      "worker": "johan",
+      "employer": "falvis",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "the Tall Mast Tavern",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "joncis",
+      "employer": "falvis",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Tall Mast Tavern",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "julienne lylvieve",
+      "employer": "Faida",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Four Shields Tavern",
+      "job": 1
+    },
+    {
+      "worker": "jurgens",
+      "employer": "falvis",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Tall Mast Tavern",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "kalstar",
+      "employer": "Elda Early-Dawn",
+      "role": "inn staff",
+      "wage": 110,
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "kara delight",
+      "employer": "Ambarys Rendar",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "New Gnisis Cornerclub",
+      "origin": "modlist"
+    },
+    {
+      "worker": "kharag gro-shurkul",
+      "employer": "Hjorunn",
+      "role": "miller",
+      "wage": 100,
+      "job": 8
+    },
+    {
+      "worker": "kitty misa",
+      "employer": "Mralki",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Frostfruit Inn",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "krissa",
+      "employer": "Jonna",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Moorside Inn",
+      "origin": "modlist"
+    },
+    {
+      "worker": "kust",
+      "employer": "Runil",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "lamia",
+      "employer": "Kleppr",
+      "role": "miner",
+      "wage": 110,
+      "job": 0,
+      "origin": "modlist"
+    },
+    {
+      "worker": "leifur",
+      "employer": "Aeri",
+      "role": "miller",
+      "wage": 100,
+      "job": 8
+    },
+    {
+      "worker": "lenoril",
+      "employer": "candariel",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Smiling Salmon Fishery",
+      "origin": "modlist"
+    },
+    {
+      "worker": "lilia",
+      "employer": "sabjorn",
+      "role": "trader",
+      "wage": 140,
+      "workplace": "Honningbrew Meadery",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "lillith maiden-loom",
+      "employer": "Skulvar Sable-Hilt",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Whiterun Stables"
+    },
+    {
+      "worker": "lindyth",
+      "employer": "sabjorn",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Honningbrew Meadery",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "liviane",
+      "employer": "elrindir",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Drunken Huntsman",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "lodi",
+      "employer": "Vittoria Vici",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "luaffyn",
+      "employer": "Elda Early-Dawn",
+      "role": "bard",
+      "wage": 90
+    },
+    {
+      "worker": "lulanne",
+      "employer": "Elda Early-Dawn",
+      "role": "farmhand",
+      "wage": 90,
+      "workplace": "Candlehearth Hall",
+      "job": 3,
+      "origin": "modlist"
+    },
+    {
+      "worker": "lurbuk",
+      "employer": "jonna",
+      "role": "bard",
+      "wage": 90,
+      "workplace": "Moorside Inn"
+    },
+    {
+      "worker": "lyne",
+      "employer": "Hulda",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "lynette",
+      "employer": "Elda Early-Dawn",
+      "role": "inn staff",
+      "wage": 110,
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "lynly star-sung",
+      "employer": "wilhelm",
+      "role": "barmaid",
+      "wage": 120,
+      "workplace": "Vilemyr Inn",
+      "job": 1
+    },
+    {
+      "worker": "mabrelle",
+      "employer": "delphine",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Sleeping Giant Inn",
+      "origin": "modlist"
+    },
+    {
+      "worker": "malborn",
+      "employer": "Elenwen",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Thalmor Embassy"
+    },
+    {
+      "worker": "mallus maccius",
+      "employer": "sabjorn",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Honningbrew Meadery"
+    },
+    {
+      "worker": "malthyr elenil",
+      "employer": "Ambarys Rendar",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "New Gnisis Cornerclub"
+    },
+    {
+      "worker": "marsus",
+      "employer": "falvis",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Tall Mast Tavern",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "maul",
+      "employer": "Maven Black-Briar",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "maven s bodyguard",
+      "employer": "Maven Black-Briar",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "mery",
+      "employer": "Ambarys Rendar",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "New Gnisis Cornerclub",
+      "origin": "modlist"
+    },
+    {
+      "worker": "michelle",
+      "employer": "Mralki",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Frostfruit Inn",
+      "origin": "modlist"
+    },
+    {
+      "worker": "miraette",
+      "employer": "Corpulus Vinius",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Winking Skeever",
+      "origin": "modlist"
+    },
+    {
+      "worker": "mulush gro-shugurz",
+      "employer": "Thonar Silver-Blood",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "museum guard",
+      "employer": "Auryen Morellus",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "nana ildene",
+      "employer": "Thonar Silver-Blood",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "narri",
+      "employer": "valga vinicia",
+      "role": "barmaid",
+      "wage": 120,
+      "workplace": "Dead Man's Drink",
+      "job": 1
+    },
+    {
+      "worker": "natsumi",
+      "employer": "Faida",
+      "role": "trader",
+      "wage": 140,
+      "workplace": "Four Shields Tavern",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "nils",
+      "employer": "Elda Early-Dawn",
+      "role": "inn staff",
+      "wage": 110,
+      "job": 1
+    },
+    {
+      "worker": "niluva hlaalu",
+      "employer": "Maven Black-Briar",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Black-Briar Meadery"
+    },
+    {
+      "worker": "nimriel",
+      "employer": "Severio Pelagia",
+      "role": "farmhand",
+      "wage": 90,
+      "workplace": "Pelagia Farm",
+      "job": 3
+    },
+    {
+      "worker": "nord henchman",
+      "employer": "Hrokkar",
+      "role": "courtesan",
+      "wage": 130,
+      "job": 6,
+      "origin": "modlist"
+    },
+    {
+      "worker": "ogmund",
+      "employer": "frabbi",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Silver-Blood Inn"
+    },
+    {
+      "worker": "okapi",
+      "employer": "Ainethach",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "omluag",
+      "employer": "Mulush gro-Shugurz",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Markarth Smelter"
+    },
+    {
+      "worker": "paola",
+      "employer": "jonna",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Moorside Inn",
+      "origin": "modlist"
+    },
+    {
+      "worker": "peragorn",
+      "employer": "Unmid Snow-Shod",
+      "role": "farmhand",
+      "wage": 90,
+      "workplace": "Snow-Shod Farm",
+      "job": 3,
+      "origin": "modlist"
+    },
+    {
+      "worker": "rachel",
+      "employer": "Thoring",
+      "role": "barmaid",
+      "wage": 120,
+      "workplace": "Windpeak Inn",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "razelan",
+      "employer": "vittoria vici",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "East Empire Company"
+    },
+    {
+      "worker": "rebecca",
+      "employer": "Siddgeir",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "redguard henchman",
+      "employer": "Hrokkar",
+      "role": "guard",
+      "wage": 130,
+      "job": 7,
+      "origin": "modlist"
+    },
+    {
+      "worker": "renod even-toned",
+      "employer": "bentior",
+      "role": "bard",
+      "wage": 90,
+      "workplace": "Restful Watchman",
+      "origin": "modlist"
+    },
+    {
+      "worker": "reunald",
+      "employer": "Iddra",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Braidwood Inn",
+      "origin": "modlist"
+    },
+    {
+      "worker": "rexus",
+      "employer": "Amaund Motierre",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "ridene",
+      "employer": "Vekel the Man",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "rignar",
+      "employer": "Count Desilus Carvain",
+      "role": "staff",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "rikve",
+      "employer": "hagbar",
+      "role": "trader",
+      "wage": 140,
+      "workplace": "Hagbar's Dry Goods",
+      "job": 1
+    },
+    {
+      "worker": "rinori imaryn",
+      "employer": "ambarys rendar",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "New Gnisis Cornerclub",
+      "origin": "modlist"
+    },
+    {
+      "worker": "roggi knot-beard",
+      "employer": "Kjeld",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Steamscorch Mine"
+    },
+    {
+      "worker": "romlyn dreth",
+      "employer": "maven black-briar",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Black-Briar Meadery"
+    },
+    {
+      "worker": "roxelle",
+      "employer": "Ambarys Rendar",
+      "role": "bard",
+      "wage": 90,
+      "origin": "modlist"
+    },
+    {
+      "worker": "ruanne",
+      "employer": "Skald the Elder",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "rune",
+      "employer": "mercer frey",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Thieves Guild"
+    },
+    {
+      "worker": "saeliah",
+      "employer": "Geldis Sadri",
+      "role": "bard",
+      "wage": 90,
+      "workplace": "Retching Netch",
+      "origin": "modlist"
+    },
+    {
+      "worker": "sannlith",
+      "employer": "Keerava",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "scouts-many-marshes",
+      "employer": "Torbjorn Shatter-Shield",
+      "role": "staff",
+      "wage": 100,
+      "workplace": "Windhelm's"
+    },
+    {
+      "worker": "shadr",
+      "employer": "Hofgrir Horse-Crusher",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Riften Stables"
+    },
+    {
+      "worker": "shalistra",
+      "employer": "Corpulus Vinius",
+      "role": "trader",
+      "wage": 140,
+      "workplace": "Winking Skeever",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "silvia",
+      "employer": "sabjorn",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Honningbrew Meadery",
+      "origin": "modlist"
+    },
+    {
+      "worker": "skuli",
+      "employer": "firir",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Old Hroldan Inn",
+      "origin": "modlist"
+    },
+    {
+      "worker": "slitter",
+      "employer": "Mogrul",
+      "role": "guard",
+      "wage": 130,
+      "job": 7
+    },
+    {
+      "worker": "stalleo s bodyguard",
+      "employer": "Stalleo",
+      "role": "guard",
+      "wage": 130,
+      "job": 7
+    },
+    {
+      "worker": "stands-in-shallows",
+      "employer": "Torbjorn Shatter-Shield",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "stephanie",
+      "employer": "haran",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Frozen Hearth",
+      "origin": "modlist"
+    },
+    {
+      "worker": "suleen",
+      "employer": "Corpulus Vinius",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "susanna the wicked",
+      "employer": "Elda Early-Dawn",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Candlehearth Hall"
+    },
+    {
+      "worker": "suvaris atheron",
+      "employer": "Torbjorn Shatter-Shield",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Windhelm's"
+    },
+    {
+      "worker": "svana far-shield",
+      "employer": "haelga",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "sylphiron",
+      "employer": "Lisbet",
+      "role": "staff",
+      "wage": 100,
+      "workplace": "Arnleif and Sons Trading"
+    },
+    {
+      "worker": "tamda",
+      "employer": "hulda",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Bannered Mare",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "tatriana",
+      "employer": "Vekel the Man",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Ragged Flagon",
+      "origin": "modlist"
+    },
+    {
+      "worker": "teeba-ei",
+      "employer": "Sorli the Builder",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "tellevi",
+      "employer": "Ainethach",
+      "role": "miner",
+      "wage": 110,
+      "job": 0,
+      "origin": "modlist"
+    },
+    {
+      "worker": "telura atheron",
+      "employer": "Suvaris Atheron",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "the Gray Quarter",
+      "origin": "modlist"
+    },
+    {
+      "worker": "thane charlotte",
+      "employer": "Marla",
+      "role": "trader",
+      "wage": 140,
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "thrynn",
+      "employer": "Maven Black-Briar",
+      "role": "worker",
+      "wage": 100
+    },
+    {
+      "worker": "tulvur",
+      "employer": "Torsten Cruel-Sea",
+      "role": "farmhand",
+      "wage": 90,
+      "job": 3
+    },
+    {
+      "worker": "tuula",
+      "employer": "Valga Vinicia",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Dead Man's Drink",
+      "origin": "modlist"
+    },
+    {
+      "worker": "tythis ulen",
+      "employer": "Bolli",
+      "role": "trader",
+      "wage": 140,
+      "workplace": "Riften Fishery",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "ulla",
+      "employer": "Thoring",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "umana",
+      "employer": "Sulla Trebatius",
+      "role": "mercenary",
+      "wage": 150,
+      "job": 5
+    },
+    {
+      "worker": "ungrien",
+      "employer": "maven black-briar",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Black-Briar Meadery"
+    },
+    {
+      "worker": "urma gra-shazur",
+      "employer": "bentior",
+      "role": "guard",
+      "wage": 130,
+      "workplace": "Restful Watchman",
+      "job": 7,
+      "origin": "modlist"
+    },
+    {
+      "worker": "valasca",
+      "employer": "haran",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Frozen Hearth",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "vald",
+      "employer": "Mercer Frey",
+      "role": "guard",
+      "wage": 130,
+      "job": 7
+    },
+    {
+      "worker": "valindor",
+      "employer": "bolli",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Riften Fishery"
+    },
+    {
+      "worker": "varnius junius",
+      "employer": "faida",
+      "role": "farmhand",
+      "wage": 90,
+      "workplace": "Four Shields Tavern",
+      "job": 3
+    },
+    {
+      "worker": "veresa mentedius",
+      "employer": "janus mentedius",
+      "role": "farmhand",
+      "wage": 90,
+      "workplace": "Farmer's Bounty Mercantile",
+      "job": 3,
+      "origin": "modlist"
+    },
+    {
+      "worker": "veronica",
+      "employer": "Elda Early-Dawn",
+      "role": "inn staff",
+      "wage": 110,
+      "workplace": "Candlehearth Hall",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "vesta",
+      "employer": "Nepos the Nose",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "viania",
+      "employer": "Mralki",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Frostfruit Inn",
+      "origin": "modlist"
+    },
+    {
+      "worker": "violet",
+      "employer": "Hulda",
+      "role": "inn staff",
+      "wage": 110,
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "viriya",
+      "employer": "Bolli",
+      "role": "worker",
+      "wage": 100,
+      "origin": "modlist"
+    },
+    {
+      "worker": "vivienne onis",
+      "employer": "angeline morrard",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Angeline's Aromatics"
+    },
+    {
+      "worker": "vyliana",
+      "employer": "hulda",
+      "role": "trader",
+      "wage": 140,
+      "workplace": "the Bannered Mare",
+      "job": 1,
+      "origin": "modlist"
+    },
+    {
+      "worker": "willem",
+      "employer": "Skaggi Scar-Face",
+      "role": "miner",
+      "wage": 110,
+      "job": 0
+    },
+    {
+      "worker": "wujeeta",
+      "employer": "bolli",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Riften Fishery"
+    },
+    {
+      "worker": "yanne",
+      "employer": "Geldis Sadri",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Retching Netch",
+      "origin": "modlist"
+    },
+    {
+      "worker": "yarbrough",
+      "employer": "Mralki",
+      "role": "worker",
+      "wage": 100,
+      "workplace": "Frostfruit Inn",
+      "origin": "modlist"
+    },
+    {
+      "worker": "leonara arius",
+      "employer": "Katla",
+      "role": "farmhand",
+      "workplace": "Katla's Farm",
+      "wage": 90,
+      "job": 3
+    },
+    {
+      "worker": "addvild",
+      "employer": "Vulwulf Snow-Shod",
+      "role": "farmhand",
+      "workplace": "Snow-Shod Farm",
+      "wage": 90,
+      "job": 3
+    }
+  ]
+}

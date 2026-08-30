@@ -47,7 +47,7 @@ Event OnEnterBleedout()
     {Healer self-bleedout fail-safe (Katana pattern).
      If this follower is in healer mode AND the bleedout cheat-heal toggle
      is on, force-restore HP so they don't die alone with no one to help.
-     Rate-limited via a 60-second game-time cooldown so combat stays
+     Rate-limited via a 60-second real-time cooldown so combat stays
      consequential — multiple bleedouts within 60s won't all be healed.
 
      Doesn't cover non-healer followers (vanilla bleedout) or the player
@@ -64,7 +64,7 @@ Event OnEnterBleedout()
         Return
     EndIf
 
-    ; 60-second game-time cooldown — prevents looping if HP drains again.
+    ; 60-second real-time cooldown — prevents looping if HP drains again.
     Float now = Utility.GetCurrentRealTime()
     Float lastFired = StorageUtil.GetFloatValue(akActor, "SeverFollower_HealerBleedoutLast", 0.0)
     If lastFired > 0.0 && (now - lastFired) < 60.0
@@ -119,8 +119,10 @@ Event OnObjectUnequipped(Form akBaseObject, ObjectReference akReference)
         ; StorageUtil mirror still written by phase-4 callers; this reader is
         ; the first to flip and stop depending on the mirror staying in sync.
         If IsSlotPresetActive(follower) || SeverActionsNativeExt.Native_Outfit_IsLockActive(follower)
-            ; Record unequip for burst detection (C++ timestamps it)
-            SeverActionsNative.Native_Outfit_RecordExternalUnequip(follower)
+            ; Record unequip for burst detection (C++ timestamps it). Form-aware:
+            ; C++ also classifies whether this burst is nothing but helm/shield
+            ; removals, which drives the combat-gear yield in OnUpdate.
+            SeverActionsNativeExt2.Native_Outfit_RecordExternalChange(follower, akBaseObject, true)
 
             ; Start/reset debounce timer — if more unequips arrive before it fires,
             ; RegisterForSingleUpdate resets the countdown automatically.
@@ -189,7 +191,9 @@ Event OnObjectEquipped(Form akBaseObject, ObjectReference akReference)
     EndIf
 
     ; Non-preset armor entered the worn set — debounce-reapply the preset.
-    SeverActionsNative.Native_Outfit_RecordExternalUnequip(follower)
+    ; isUnequip=false poisons the combat-gear yield for this burst: a foreign
+    ; item ARRIVING is never a helm/shield removal, so enforcement proceeds.
+    SeverActionsNativeExt2.Native_Outfit_RecordExternalChange(follower, akBaseObject, false)
     RegisterForSingleUpdate(ReequipDebounceSeconds)
 EndEvent
 
@@ -229,9 +233,19 @@ Event OnUpdate()
         Return
     EndIf
 
+    ; Combat-gear yield: an external mod (FollowerLivePackage) removed ONLY
+    ; helm/shield gear while out of combat — that is a choice, not a strip.
+    ; Leave it off instead of forcing it back on; the mod re-equips for combat
+    ; itself, and a burst touching any body gear still enforces as before.
+    ; Applies to BOTH the slot-preset and legacy-lock paths below.
+    If SeverActionsNativeExt2.Native_Outfit_ShouldYieldCombatGear(follower)
+        Debug.Trace("[SeverActions_OutfitAlias] Combat-gear yield - leaving helm/shield off for " + follower.GetDisplayName())
+        Return
+    EndIf
+
     ; SLOT PRESET path: re-apply via DirectEquip if a slot preset is active.
-    ; (Used to short-circuit here on the assumption that SetOutfit self-enforces;
-    ; that's no longer true with the wardrobe/blank-outfit pattern.)
+    ; The wardrobe/blank-outfit pattern means SetOutfit does not self-enforce,
+    ; so we reapply here rather than short-circuit.
     If IsSlotPresetActive(follower)
         Int activeIdx = SeverActionsNative.Native_OutfitSlot_GetActivePreset(follower)
         If activeIdx >= 0
@@ -259,12 +273,10 @@ Function ReequipIfLocked()
     {Direct re-equip for cell transitions — no debounce needed here since
      cell loads aren't caused by external mods stripping actors.
 
-     Slot-preset path: We used to short-circuit on the assumption that
-     SetOutfit(presetOutfit) would let the engine self-enforce. That changed
-     when the apply path moved to DirectEquipPreset (atomic C++ equip with
-     SetOutfit(blank)). So now: if a slot preset is active, RE-RUN the
-     atomic equip on cell load. The chest is the persistent wardrobe and
-     still has the items.}
+     Slot-preset path: the apply path uses DirectEquipPreset (atomic C++ equip
+     with SetOutfit(blank)), which does not self-enforce on cell load. So if a
+     slot preset is active, RE-RUN the atomic equip on cell load. The chest is
+     the persistent wardrobe and still has the items.}
     Actor follower = self.GetActorRef()
     If !follower || follower.IsDead()
         Return
@@ -334,26 +346,16 @@ Bool Function IsSlotPresetActive(Actor follower)
      check by OnLoad/OnCellLoad/OnUpdate handlers to call DirectEquipPreset
      (chest-canonical re-equip) instead of the legacy lock-list reapply.
 
-     Historical note: an earlier design relied on SetOutfit() so the engine
-     self-enforced on cell load and this alias was a no-op. That changed
-     when the apply path moved to the wardrobe pattern (SetOutfit calls were
-     removed — see SeverActions_OutfitSlot.ApplyPresetBySlot). Cell-load
-     re-application now runs through this alias.}
+     The wardrobe pattern has no SetOutfit() calls for the engine to
+     self-enforce on cell load (see SeverActions_OutfitSlot.ApplyPresetBySlot),
+     so cell-load re-application runs through this alias.}
     If !follower
         Return False
     EndIf
-    ; Phase 3: native slot store is the source of truth for active preset idx.
-    ; activePresetIdx >= 0 means a slot preset is active. Replaces the stale-
-    ; prone StorageUtil mirror that drifted whenever a C++ apply path ran
-    ; without the Papyrus mirror catching up.
+    ; Native slot store is the source of truth for the active preset idx
+    ; (activePresetIdx >= 0 means a slot preset is active). The StorageUtil
+    ; mirror it replaced drifted whenever a C++ apply path ran without the
+    ; Papyrus mirror catching up.
     Return SeverActionsNative.Native_OutfitSlot_GetActivePreset(follower) >= 0
 EndFunction
-
-; IsSuspendedWithWatchdog removed in the C1 cleanup.
-; The function gated on a SeverOutfit_Suspended StorageUtil key that Phase 5
-; stopped writing — leaving it as a permanent false-return that did nothing
-; useful at every callsite. The four callsites already followed it with a
-; direct Native_Outfit_IsNativeSuspended() check (the watchdog lives in the
-; native store now), so removing this wrapper is purely a cleanup with no
-; behaviour change. Kept the comment as a breadcrumb in case anyone greps.
 

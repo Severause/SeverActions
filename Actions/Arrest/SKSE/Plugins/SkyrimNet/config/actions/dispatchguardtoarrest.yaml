@@ -1,6 +1,6 @@
 customCategory: arrest
 name: DispatchGuardToArrest
-description: "The guard sets off across the hold to track down a named suspect and bring them in — riding out to a bandit hideout, walking down to the docks for a fence, knocking at a farmer's door. If a sender is named, the prisoner is hauled back to them for judgment rather than straight to the jail."
+description: "The guard sets off across the hold to track down a named suspect and bring them in — riding out to a bandit hideout, walking down to the docks for a fence, knocking at a farmer's door. If a sender is named, the prisoner is hauled back to them for judgment rather than straight to the jail. Use only for a suspect who is NOT in the current scene — for a suspect standing here, use ArrestNPC or ArrestPlayer."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: DispatchGuardToArrest_Execute

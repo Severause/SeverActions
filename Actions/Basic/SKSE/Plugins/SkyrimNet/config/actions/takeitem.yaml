@@ -1,6 +1,6 @@
 customCategory: items
 name: TakeItem
-description: "The speaker accepts something out of another's hands — coin counted at the bar, a key surrendered, an heirloom pressed into theirs as a gift, a borrowed sword returned. The item moves from the giver's pack into the speaker's."
+description: "Use when the speaker accepts an item from someone — coin counted at the bar, a key surrendered, a borrowed sword returned. The item moves from the giver's pack into the speaker's. NOT for giving — use GiveItem."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: TakeItem_Execute
@@ -10,13 +10,13 @@ parameterMapping:
     description: the actor reaching out to take the item
   - type: dynamic
     name: akTarget
-    description: the actor whose hands the item is leaving — the player, a merchant at the counter, a relative passing something down
+    description: the actor whose hands the item is leaving — {{ player.name }}, a merchant at the counter, a relative passing something down
   - type: dynamic
     name: itemName
     description: the name of the item being taken (e.g. "Iron Sword", "Health Potion", "Family Heirloom")
   - type: dynamic
     name: aiCount
-    description: how many units to take (default 1)
+    description: "how many units to take — a positive whole number (default 1)"
     optional: true
     default: 1
 enabled: true

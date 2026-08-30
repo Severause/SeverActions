@@ -1,5 +1,5 @@
 name: TransferOwnership
-description: "The speaker formally hands over a property to the player — the deed, the keys, the right to call it home. A Jarl granting a hall after a great service, a tavern owner ceding the inn to its new keeper, a spouse signing over their shared home. Only those with the standing to give it can: its direct owner, a member of its owning faction, or the Jarl of the hold it stands in."
+description: "The speaker formally hands over a property to {{ player.name }} — the deed, the keys, the right to call it home. A Jarl granting a hall after a great service, a tavern owner ceding the inn to its new keeper, a spouse signing over their shared home. Only those with the standing to give it can: its direct owner, a member of its owning faction, or the Jarl of the hold it stands in."
 questEditorId: SeverActions
 scriptName: SeverActions_Property
 executionFunctionName: TransferOwnership
@@ -9,7 +9,38 @@ parameterMapping:
     description: the actor with authority to grant the property — its current owner, a member of its owning faction, or the Jarl whose hold contains it
   - type: dynamic
     name: propertyName
+    # optional is load-bearing: "leave empty" invites the LLM to omit the
+    # key entirely, which used to abort execution at SkyrimNet's
+    # missing-parameter check — the deed was never transferred.
+    optional: true
+    default: ""
     description: name of the property being granted (e.g. 'Bannered Mare', 'Breezehome', 'Honeyside'). Leave empty to grant whatever building the speaker is currently standing in.
-eventString: "{{ actor.name }} has transferred ownership of {{ propertyName }} to {{ player.name }}"
+# default() guards the render when the LLM omitted propertyName — optional
+# defaults are injected into the Papyrus call only, not the eventString vars.
+eventString: "{{ actor.name }} has transferred ownership of {{ default(propertyName, \"their property\") }} to {{ player.name }}"
 enabled: true
-priority: 5
+# was `priority:` — an unknown key SkyrimNet silently ignores; defaultPriority
+# is the parsed name (5 happened to match the fallback, so no behavior change).
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

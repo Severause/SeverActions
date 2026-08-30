@@ -1,6 +1,6 @@
 customCategory: economy
 name: CollectPayment
-description: "Take payment that's owed and ready to be paid — a tab settled at the bar, goods just changing hands, a job finished and the purse coming out."
+description: "Take gold that is owed TO the speaker and ready to be paid — a tab settled at the bar, a fee for a finished job. Gold moves FROM the other party TO the speaker, never the reverse. NEVER use when the speaker is the one paying: the speaker buying goods is BuyItem, the speaker handing over coin is GiveGold, the speaker settling their own debt is RepayDebt. Gold only, no goods: NOT for selling an item (use SellItem), NOT for coin taken by threat (use ExtortGold)."
 questEditorId: SeverActions
 scriptName: SeverActions_Currency
 executionFunctionName: CollectPayment_Execute

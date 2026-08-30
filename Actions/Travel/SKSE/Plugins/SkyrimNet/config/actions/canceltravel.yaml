@@ -1,6 +1,9 @@
-customCategory: travel
+# NOTE: deliberately NO customCategory — a customCategory turns this into a
+# nested action reachable only through a matching cat_*.yaml container, and no
+# cat_travel container exists (TravelToPlace is top-level for the same reason).
+# With one it was never offered to the LLM at all.
 name: CancelTravel
-description: "The speaker thinks better of the road they were about to take — changes mind at the gate, decides the inn is fine after all, settles back into the chair by the fire. Any pending travel is called off and they stay right where they are."
+description: "Calls off a trip the speaker had decided to make. Use ONLY when a departure was decided in this conversation and the speaker now changes their mind and stays — the travel is cancelled and they remain where they are. Not for talking about places, and not for a trip that was never decided."
 questEditorId: SeverActions
 scriptName: SeverActions_Travel
 executionFunctionName: CancelTravel
@@ -8,9 +11,30 @@ parameterMapping:
   - type: speaker
     name: akNPC
     description: the actor who's no longer going anywhere
+  # SkyrimNet requires the mapping count to equal the FULL Papyrus parameter
+  # count, defaults included — CancelTravel(Actor, Bool restoreFollower = true)
+  # is 2 VM params, so this static pad is load-bearing (with 1 mapping the
+  # dispatch was rejected before the call).
+  - type: static
+    value: true
+    name: restoreFollower
+    description: restore their following job after the trip is called off
 enabled: true
 defaultPriority: 7
 eligibilityRules:
+  - conditions:
+      # sever_is_traveling is a STRING decorator ("1" while a journey is
+      # live) - string-compared, gate on != "". Removes this action from
+      # every action list where nobody is traveling (it was always
+      # eligible; the native is a safe no-op, but the tokens were paid on
+      # every selection). New-decorator rule: this YAML and the DLL that
+      # registers sever_is_traveling must deploy together.
+      - decoratorName: "sever_is_traveling"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
   - conditions:
       - decoratorName: "is_in_combat"
         arguments: ["currentActor"]

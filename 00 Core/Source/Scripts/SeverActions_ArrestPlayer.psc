@@ -17,8 +17,8 @@ Scriptname SeverActions_ArrestPlayer Extends Quest
               └─clear──────┤          ▼          └─clear─    ▼
                            ▼      Combat                  HandlePersuade
                         Vanilla   ResistArrestFaction      (timer + follow)
-                          Jail    set; OnUpdate watches      │
-                                  for combat end →           │
+                          Jail    set; native monitor        │
+                                  watches for combat end →    │
                                   re-absorb bounty           ▼
                                                   CheckPersuasionProgress
                                                   (timeout / distance)
@@ -31,9 +31,10 @@ Scriptname SeverActions_ArrestPlayer Extends Quest
                                           Clear bounty   Show menu w/o
                                           + release      Persuade option
 
- This script runs its OWN OnUpdate so the persuasion timer and post-resist
- combat cleanup are independent of the arrest.psc update loop. arrest.psc's
- OnUpdate no longer carries InPersuasionMode / ResistArrestFaction branches.
+ The persuasion timer and post-resist combat cleanup are owned by the native
+ PersuasionMonitor / ResistArrestMonitor, which fire ModEvents this script
+ handles — independent of the arrest.psc update loop, which does not carry
+ InPersuasionMode / ResistArrestFaction branches.
 
  Wired YAML actions (scriptName: SeverActions_ArrestPlayer):
    - arrestplayer.yaml         → ArrestPlayer_Internal
@@ -67,16 +68,16 @@ Int ConfrontingBounty           ; Bounty amount at time of confrontation
 Bool PersuadeAttempted          ; True if player already tried persuade (can't retry)
 Bool PaymentFailed              ; True if player tried to pay/bribe but couldn't afford it
 Bool InPersuasionMode           ; True if currently in persuasion conversation
-Float PersuasionStartTime       ; DEPRECATED in Phase 2.2 — left declared so existing saves don't trip a missing-var lookup. Native PersuasionMonitor owns the start time now.
+Float PersuasionStartTime       ; Kept declared so existing saves don't trip a missing-var lookup. Native PersuasionMonitor owns the start time; nothing reads this.
 
 Float LastArrestTime            ; Real time when last arrest confrontation started (for cooldown)
 Faction ResistArrestFaction     ; Tracks which faction's vanilla crime gold needs cleanup after resist combat
-Float ResistArrestStartTime     ; DEPRECATED post-Phase 2.1 — native ResistArrestMonitor owns the watchdog clock now. Field kept declared so existing saves' VMAD lookups don't fail, and still cleared to 0 in OnResistCombatEndedEvent for tidiness. No live consumer.
+Float ResistArrestStartTime     ; Kept declared so existing saves' VMAD lookups don't fail; cleared to 0 in OnResistCombatEndedEvent for tidiness. Native ResistArrestMonitor owns the watchdog clock; nothing reads this.
 Float Property ResistMaxWaitSeconds = 600.0 Auto
 {Hard upper bound on the post-resist combat-end poll. After 10 minutes of
  real-time still showing IsInCombat()==true, we assume the player has hit a
  combat lock-out (hostile script, stuck NPC, ESS bug) and force-clear the
- ResistArrestFaction state so the OnUpdate loop stops ticking. Configurable
+ ResistArrestFaction state so the native monitor stops ticking. Configurable
  via MCM if a user has a particularly long combat scenario.}
 
 ; =============================================================================
@@ -94,11 +95,13 @@ Function Maintenance()
         EndIf
     EndIf
 
-    ; Register for game-load so we can re-arm OnUpdate / native trackers if a
+    ; Register for game-load so we can re-arm the native trackers if a
     ; save was made while persuasion or post-resist-combat tracking was active.
-    ; Script vars survive saves; the OnUpdate registration and the native
-    ; PersuasionMonitor entry do not.
-    RegisterForModEvent("OnPlayerLoadGame", "OnPlayerLoadGame")
+    ; Script vars survive saves; the native PersuasionMonitor / ResistArrestMonitor
+    ; entries do not.
+    ; No OnPlayerLoadGame registration here — nothing ever sends that ModEvent.
+    ; Load recovery routes through SeverActions_Init.RunLoadRecovery() →
+    ; OnGameLoaded() below.
 
     ; Phase 2.2 — native persuasion monitor signals timeout/distance/death
     ; via ModEvent instead of the Papyrus OnUpdate poll.
@@ -113,11 +116,14 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_ArrestPromptChoice", "OnArrestPromptChoiceEvent")
 EndFunction
 
-Event OnPlayerLoadGame()
+Function OnGameLoaded()
     {Re-arm this script's tracking if its FSM state is non-clean on load.
      Without this, a save+load during persuasion silently freezes the
      timer, and a save+load during post-resist combat leaves the vanilla
-     crime gold un-reabsorbed (ResistArrestFaction never gets cleared).}
+     crime gold un-reabsorbed (ResistArrestFaction never gets cleared).
+     Called by SeverActions_Init.RunLoadRecovery() — Quest scripts NEVER
+     receive OnPlayerLoadGame, and the ModEvent by that name was never
+     sent by anything, so the old handler was doubly dead.}
 
     ; Persuasion: re-seed the native monitor. PersuasionStartTime is no longer
     ; tracked in Papyrus — the simplest correct behavior on load is to grant
@@ -141,18 +147,40 @@ Event OnPlayerLoadGame()
         EndIf
         SeverActionsNative.Native_Resist_Begin(ResistMaxWaitSeconds)
     EndIf
-EndEvent
 
-Event OnUpdate()
+    ; Chronometer (review PR #423): the prompt re-open watchdog was the one
+    ; converted loop whose only load recovery was the ENGINE timer's save
+    ; persistence — a save taken mid-confrontation (prompt open or Esc-
+    ; dismissed) reloaded with ConfrontingGuard set, no pending tick, and
+    ; nothing to ever re-show the prompt: the player-arrest FSM wedged.
+    ; Same idempotent conditional re-arm the sibling scripts got; the tick
+    ; handler is fully state-guarded, so a stale-state wake no-ops.
+    If ConfrontingGuard != None && !InPersuasionMode
+        ChronoArm(2.0)
+    EndIf
+EndFunction
+
+Function ChronoArm(Float afSeconds)
+    {Arm this script's one-shot chronometer tick - replaces the FORM-keyed
+     RegisterForSingleUpdate (canonical explanation: the Chronometer block in
+     SeverActionsNativeExt2.psc + the CLAUDE.md lesson). Event name AND
+     callback name are unique per script - both, always. Re-arm replaces the
+     pending tick; ticks do NOT survive save/load (load paths re-arm); at
+     most one already-in-flight wake can land after Cancel/Clear, so keep
+     the handler state-guarded.}
+    RegisterForModEvent("SeverActions_Tick_ArrestPlayer", "OnChronoTick_ArrestPlayer")
+    SeverActionsNativeExt2.Chrono_Request("SeverActions_Tick_ArrestPlayer", afSeconds)
+EndFunction
+
+Event OnChronoTick_ArrestPlayer(String eventName, String strArg, Float numArg, Form sender)
     {Re-open watchdog for the PrismaUI arrest prompt. Fired ~2s after the
      prompt was opened. If the player Esc-dismissed the overlay but hasn't
      made a choice yet (ConfrontingGuard still set, no persuasion in flight),
      re-show the prompt so the FSM can't get stranded. Otherwise keep
      polling — the 60s JS drain bar is the hard upper bound either way.
 
-     This is the only consumer of OnUpdate on this script — Phase 2.1/2.2
-     migrated persuasion + resist polling to native event-driven monitors,
-     so we own the OnUpdate channel exclusively here.}
+     Phase 2.1/2.2 migrated persuasion + resist polling to native
+     event-driven monitors, so this watchdog is the script's only tick.}
 
     If ConfrontingGuard == None
         ; FSM cleared — nothing to watch.
@@ -172,7 +200,7 @@ Event OnUpdate()
 
     If SeverActionsNative.PrismaUI_IsArrestPromptOpen()
         ; Player still has the prompt visible — keep watching.
-        RegisterForSingleUpdate(2.0)
+        ChronoArm(2.0)
         Return
     EndIf
 
@@ -212,7 +240,7 @@ Event OnArrestPromptChoiceEvent(String asEventName, String asChoice, Float afBou
 
     ; Player engaged with the prompt — stop the re-open watchdog. Handlers
     ; below will either fully clear state or set up their own follow-ups.
-    UnregisterForUpdate()
+    SeverActionsNativeExt2.Chrono_Cancel("SeverActions_Tick_ArrestPlayer")
 
     If ArrestScript
         ArrestScript.DebugMsg("ArrestPromptChoice: " + asChoice)
@@ -265,14 +293,11 @@ EndFunction
 ; =============================================================================
 ; POST-RESIST COMBAT-END HANDLER — wired via ModEvent from ResistArrestMonitor
 ; =============================================================================
-; Phase 2.1 migration: the legacy OnUpdate poll on this script polled
-; Game.GetPlayer().IsInCombat() once per real second to detect combat-end
-; and re-absorb vanilla crime gold into the tracked bounty system. The
-; native ResistArrestMonitor now sinks TESCombatEvent directly and fires
+; The native ResistArrestMonitor sinks TESCombatEvent directly and fires
 ; SeverActions_ResistCombatEnded the instant the player transitions to
 ; ACTOR_COMBAT_STATE::kNone — or, as a fallback, after ResistMaxWaitSeconds
-; of real time elapse (B16 combat-lockout safety net). OnUpdate is no
-; longer used on this script.
+; of real time elapse (combat-lockout safety net). It re-absorbs vanilla
+; crime gold into the tracked bounty system when combat ends.
 
 Event OnResistCombatEndedEvent(String asEventName, String asReason, Float afUnused, Form akSender)
     {Native ResistArrestMonitor fired. asReason is "combatEnd" (player
@@ -429,9 +454,9 @@ Function ShowPlayerArrestMenu()
             PaymentFailed, PersuadeAttempted, lowBounty, 60000)
         If opened
             ; Choice will arrive asynchronously via OnArrestPromptChoiceEvent.
-            ; Arm the re-open watchdog (see OnUpdate below) so an Escape-
+            ; Arm the re-open watchdog (see OnChronoTick_ArrestPlayer) so an Escape-
             ; dismissed prompt comes back instead of leaving the FSM wedged.
-            RegisterForSingleUpdate(2.0)
+            ChronoArm(2.0)
             Return
         EndIf
     EndIf
@@ -443,7 +468,12 @@ Function ShowPlayerArrestMenu()
             String bodyText = "You have a bounty of " + bounty + " gold in " + holdName + ". The guard won't accept payment attempts anymore."
             resultStr = SkyMessage.Show(bodyText, "Submit to Arrest", "Refuse", getIndex = true)
 
-            If resultStr == "0"
+            ; "" = no selection ever happened (SkyMessage not installed) -
+            ; must not fall into the resist default. Explicit "Refuse" ("1")
+            ; still resists.
+            If resultStr == ""
+                HandleNoSelection()
+            ElseIf resultStr == "0"
                 HandleSubmitToArrest()
             Else
                 HandleResistArrest()
@@ -453,7 +483,10 @@ Function ShowPlayerArrestMenu()
             String bodyText = "You have a bounty of " + bounty + " gold in " + holdName + ". Pay your fine or face the consequences."
             resultStr = SkyMessage.Show(bodyText, "Pay Fine (" + bounty + " gold)", "Refuse", getIndex = true)
 
-            If resultStr == "0"
+            ; "" = SkyMessage missing/aborted - defer, don't resist.
+            If resultStr == ""
+                HandleNoSelection()
+            ElseIf resultStr == "0"
                 HandlePayFine()
             Else
                 HandleResistArrest()
@@ -468,7 +501,11 @@ Function ShowPlayerArrestMenu()
             bodyText += " The guard has lost all patience. Submit or resist."
             resultStr = SkyMessage.Show(bodyText, "Submit to Arrest", "Resist Arrest", getIndex = true)
 
-            If resultStr == "0"
+            ; "" = SkyMessage missing/aborted - defer, don't resist.
+            ; Explicit "Resist Arrest" ("1") still resists.
+            If resultStr == ""
+                HandleNoSelection()
+            ElseIf resultStr == "0"
                 HandleSubmitToArrest()
             Else
                 HandleResistArrest()
@@ -479,7 +516,11 @@ Function ShowPlayerArrestMenu()
             bodyText += " The guard won't accept payment anymore."
             resultStr = SkyMessage.Show(bodyText, "Submit to Arrest", "Resist Arrest", "Persuade", getIndex = true)
 
-            If resultStr == "0"
+            ; "" = SkyMessage missing/aborted - defer. Without this it fell
+            ; into Persuade, an action the player never chose.
+            If resultStr == ""
+                HandleNoSelection()
+            ElseIf resultStr == "0"
                 HandleSubmitToArrest()
             ElseIf resultStr == "1"
                 HandleResistArrest()
@@ -492,7 +533,11 @@ Function ShowPlayerArrestMenu()
             bodyText += " The guard has lost patience. Make your choice now."
             resultStr = SkyMessage.Show(bodyText, "Submit to Arrest", "Resist Arrest", "Bribe (" + bribeCost + " gold)", getIndex = true)
 
-            If resultStr == "0"
+            ; "" = SkyMessage missing/aborted - defer. Without this it fell
+            ; into Bribe and could debit gold the player never agreed to.
+            If resultStr == ""
+                HandleNoSelection()
+            ElseIf resultStr == "0"
                 HandleSubmitToArrest()
             ElseIf resultStr == "1"
                 HandleResistArrest()
@@ -505,7 +550,10 @@ Function ShowPlayerArrestMenu()
             bodyText += " Submit to arrest or face the consequences."
             resultStr = SkyMessage.Show(bodyText, "Submit to Arrest", "Resist Arrest", "Bribe (" + bribeCost + " gold)", "Persuade", getIndex = true)
 
-            If resultStr == "0"
+            ; "" = SkyMessage missing/aborted - defer, don't auto-persuade.
+            If resultStr == ""
+                HandleNoSelection()
+            ElseIf resultStr == "0"
                 HandleSubmitToArrest()
             ElseIf resultStr == "1"
                 HandleResistArrest()
@@ -617,11 +665,10 @@ Function HandleResistArrest()
 
     ; Store resist faction so we can clean up vanilla crime gold after combat ends.
     ; We'll re-absorb it back into tracked bounty once combat settles. The
-    ; native ResistArrestMonitor (Phase 2.1) sinks TESCombatEvent and fires
+    ; native ResistArrestMonitor sinks TESCombatEvent and fires
     ; SeverActions_ResistCombatEnded the instant the player exits combat —
-    ; or after ResistMaxWaitSeconds for combat-lockout fallback. The
-    ; ResistArrestStartTime field is left written for save-recovery state
-    ; (OnPlayerLoadGame re-arms the native monitor when it's non-zero).
+    ; or after ResistMaxWaitSeconds for combat-lockout fallback. OnGameLoaded
+    ; re-arms the native monitor when ResistArrestFaction is non-None on load.
     ResistArrestFaction = ConfrontingFaction
     ResistArrestStartTime = Utility.GetCurrentRealTime()
     SeverActionsNative.Native_Resist_Begin(ResistMaxWaitSeconds)
@@ -629,16 +676,15 @@ Function HandleResistArrest()
     ; Make guard hostile. We deliberately do NOT bump Aggression — guards
     ; baseline at 1 (Aggressive) which is enough; ApplyTrackedBountyToVanilla
     ; above + StartCombat is what actually triggers the engagement.
-    ; Setting Aggression=2 used to risk persistence if combat ended abnormally
-    ; (no auto-restore on this path), so we just removed it.
+    ; Setting Aggression=2 would risk persistence if combat ended abnormally
+    ; (no auto-restore on this path).
     ConfrontingGuard.StartCombat(Game.GetPlayer())
 
     Debug.Notification("Bounty increased by " + ArrestScript.ResistBountyIncrease + " gold!")
 
     ClearPlayerConfrontationState()
-    ; Phase 2.1: no RegisterForSingleUpdate here any more — the native
-    ; ResistArrestMonitor (begun above via Native_Resist_Begin) drives
-    ; the cleanup via SeverActions_ResistCombatEnded ModEvent.
+    ; The native ResistArrestMonitor (begun above via Native_Resist_Begin)
+    ; drives the cleanup via the SeverActions_ResistCombatEnded ModEvent.
 EndFunction
 
 Function HandleBribe()
@@ -736,15 +782,37 @@ Function HandlePersuade()
     SeverActionsNative.Native_Persuasion_Begin(ConfrontingGuard, Game.GetPlayer(), ArrestScript.PersuasionTimeLimit, ArrestScript.PersuasionFollowDistance)
 EndFunction
 
+Function HandleNoSelection()
+    {SkyMessage.Show returned "" - no selection was ever made. This happens
+     when SkyMessage isn't installed (it's optional, and we only reach the
+     SkyMessage path when PrismaUI is ALSO unavailable): the call errors out
+     and yields the String default "". Before this branch existed, "" fell
+     into each dispatch's final Else and a missing soft dependency defaulted
+     the player into HandleResistArrest (+resist bounty, hostile guard).
+     Do NOT resist here. Notify the player of the guard's demand and stand
+     the confrontation down via the standard clear path; the guard can
+     re-confront once ArrestPlayerCooldown expires (LastArrestTime was set
+     when this confrontation started).}
+
+    If ArrestScript
+        ArrestScript.DebugMsg("Arrest menu returned no selection (SkyMessage missing or aborted) - deferring confrontation")
+    EndIf
+
+    If ConfrontingGuard != None
+        Debug.Notification(ConfrontingGuard.GetDisplayName() + " demands you pay your bounty or come along quietly.")
+    EndIf
+
+    ClearPlayerConfrontationState()
+EndFunction
+
 ; =============================================================================
 ; PERSUASION SYSTEM
 ; =============================================================================
 
-; Phase 2.2: CheckPersuasionProgress (38 LOC) deleted — replaced by
-; Native/src/PersuasionMonitor.h. The native monitor checks
-; timeout / distance / death once per real second and fires the
-; SeverActions_PersuasionFailed ModEvent. OnPersuasionFailedEvent (above)
-; routes the failure reason into the existing OnPersuasionFailed body.
+; Persuasion timing lives in Native/src/PersuasionMonitor.h: the native
+; monitor checks timeout / distance / death once per real second and fires
+; the SeverActions_PersuasionFailed ModEvent. OnPersuasionFailedEvent (above)
+; routes the failure reason into the OnPersuasionFailed body.
 
 ; =============================================================================
 ; PERSUASION ACTIONS — wired via acceptpersuasion.yaml + rejectpersuasion.yaml
@@ -922,10 +990,9 @@ Function CancelPlayerConfrontation()
 EndFunction
 
 Function ClearPlayerConfrontationState()
-    {Clear all player confrontation state.
-     Note: also unregisters this script's OnUpdate. The HandleResistArrest path
-     re-registers immediately afterward because it needs the post-resist tick
-     loop alive even after the confrontation state is cleared.}
+    {Clear all player confrontation state, end the native persuasion tracker,
+     close the PrismaUI arrest prompt if open, and cancel the re-open watchdog
+     tick.}
 
     ConfrontingGuard = None
     ConfrontingFaction = None
@@ -946,7 +1013,7 @@ Function ClearPlayerConfrontationState()
         SeverActionsNative.PrismaUI_CloseArrestPrompt()
     EndIf
 
-    UnregisterForUpdate()
+    SeverActionsNativeExt2.Chrono_Cancel("SeverActions_Tick_ArrestPlayer")
 EndFunction
 
 ; =============================================================================

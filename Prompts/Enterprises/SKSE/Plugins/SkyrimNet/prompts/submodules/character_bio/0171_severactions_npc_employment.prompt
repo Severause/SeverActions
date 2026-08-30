@@ -1,0 +1,20 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# SeverActions Enterprises — the NPC labor market: this NPC's own job working
+   for another NPC (npc_employer), or the workforce they employ themselves
+   (npc_workforce). Both return "" when they don't apply. The player's
+   retainers are retainer_status's surface — never this one. #}
+{% if actorUUID and actorUUID != 0 %}
+{% set npcJob = npc_employer(actorUUID) %}
+{% if npcJob != "" %}
+## Your Employment
+You {{ npcJob }}.
+- This is your ordinary living — speak of your work, your employer, and your pay as everyday facts of your life, not as anything unusual.
+{% endif %}
+{% set npcCrew = npc_workforce(actorUUID) %}
+{% if npcCrew != "" %}
+## Your Workforce
+{{ npcCrew }} work for you.
+- They are your employees — you pay their wages and their labor belongs to your business. You may speak of how they are working out, praise or grumble about them.
+{% endif %}
+{% endif %}
+{% endif %}

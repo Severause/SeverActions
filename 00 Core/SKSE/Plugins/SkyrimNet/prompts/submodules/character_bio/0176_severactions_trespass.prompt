@@ -1,0 +1,14 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# SeverActions - LLM-driven trespass context. Injected while this actor has
+   a live suppressed-trespass episode (the native TrespassMonitor denied the
+   vanilla warn-follow package and recorded them instead). render_mode gate
+   on line 1 per the SkyrimNet linter. #}
+{% if isValidActor(actorUUID) %}
+{% set trespass = sever_trespass_context(actorUUID) %}
+{% if trespass != "" %}
+
+### Intruder
+{{ trespass }}
+{% endif %}
+{% endif %}
+{% endif %}

@@ -106,11 +106,9 @@ The evidence is **inconclusive** — barely enough to justify the search.
 **CRITICAL INSTRUCTIONS FOR THIS JUDGMENT:**
 - {{ actor.name }} is holding {{ accusedName }} and awaiting {{ playerName }}'s decision.
 - {{ actor.name }} should address {{ playerName }} respectfully and await their command.
-- If {{ playerName }} indicates {{ accusedName }} should be released, or if {{ actor.name }} believes {{ playerName }} wants mercy, use **OrderRelease**.
-- If {{ playerName }} indicates {{ accusedName }} should be jailed, or wants them punished, use **OrderJailed**.
 - {{ actor.name }} MUST select the **Arrest** action category, then choose one of:
-    - **OrderRelease** — Release {{ accusedName }} on {{ playerName }}'s orders
-    - **OrderJailed** — Take {{ accusedName }} to jail on {{ playerName }}'s orders
+    - **OrderRelease** — release {{ accusedName }}: {{ playerName }} indicates mercy or release
+    - **OrderJailed** — take {{ accusedName }} to jail: {{ playerName }} wants them punished
 - DO NOT use any other action category during this judgment.
 - {{ actor.name }} should respond in character, acknowledging {{ playerName }}'s authority and carrying out their wishes.
 {% endif %}

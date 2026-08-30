@@ -1,13 +1,13 @@
 customCategory: arrest
 name: AcceptPersuasion
-description: "The guard, mid-confrontation over a fresh bounty, finds the player's argument actually holds water — a mistaken identity, a witness who lied, a story that adds up better than the warrant. They wave the player on, bounty forgiven. Only use during an active bounty persuasion when the speaker is genuinely convinced."
+description: "Use only during an active bounty confrontation, when {{ player.name }}'s argument genuinely convinces the guard — mistaken identity, a witness who lied, a story that adds up better than the warrant. The guard waves {{ player.name }} on and the bounty is forgiven."
 questEditorId: SeverActions
 scriptName: SeverActions_ArrestPlayer
 executionFunctionName: AcceptPersuasion_Internal
 parameterMapping:
   - type: speaker
     name: akGuard
-    description: the guard letting the player walk away free
+    description: the guard letting {{ player.name }} walk away free
 enabled: true
 defaultPriority: 9
 eligibilityRules:

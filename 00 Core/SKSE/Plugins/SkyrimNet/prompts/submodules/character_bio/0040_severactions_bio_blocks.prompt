@@ -1,0 +1,15 @@
+{% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" %}
+{# Bio Blocks - user-authored library blocks applied to this NPC (SeverActions
+   issue #425). Renders the custom_bio_blocks decorator: every library block
+   the player applied to this character, as "### Title" sections. Empty for
+   NPCs with no applied blocks. Ships with the SeverActionsNative DLL that
+   registers the decorator - never deploy one without the other. The
+   render_mode gate sits on line 1: SkyrimNet's best-practice linter scans
+   only the first 5 lines for it. #}
+{% if actorUUID and actorUUID != 0 %}
+{% set bio_blocks = custom_bio_blocks(actorUUID) %}
+{% if bio_blocks and bio_blocks != "" %}
+{{ bio_blocks }}
+{% endif %}
+{% endif %}
+{% endif %}

@@ -1,6 +1,6 @@
 customCategory: outfit
 name: ClearSituationOutfit
-description: "The speaker decides they no longer want a fixed outfit for one part of their life — no more dressing up automatically for town, no more changing into nightclothes at bedtime. They drop the standing rule for that situation and just wear whatever they happen to have on."
+description: "Drop the speaker's standing outfit rule for one situation — they stop changing automatically for it and wear whatever they have on. Use when the speaker is told to stop dressing for a situation, or decides to."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: ClearSituationPreset_Execute
@@ -12,7 +12,7 @@ parameterMapping:
     name: situation
     description: "which part of life they're freeing up: 'town', 'adventure', 'home', or 'sleep'"
 enabled: true
-eventString: "{{ actor.name }} clears their outfit assignment for {{ situation }} situations"
+eventString: "{{ actor.name }} stops dressing automatically for {{ situation }}"
 eligibilityRules:
   - conditions:
       - decoratorName: "is_in_combat"

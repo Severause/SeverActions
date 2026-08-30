@@ -1,6 +1,6 @@
 customCategory: arrest
 name: ArrestPlayer
-description: "The guard squares up to the player with a hand on their hilt — 'Hold there, citizen. The hold has a price on your head.' For light bounties the player can settle it on the spot or refuse; for heavier ones (over 300g) they can submit, resist, bribe, or try to talk their way out. Only works if a bounty already stands on the books — run AddBountyToPlayer first if the speaker just witnessed the crime."
+description: "Use to confront {{ player.name }} over an existing bounty: announce the price on their head and demand they answer for it. For light bounties {{ player.name }} can settle on the spot or refuse; over 300g they can submit, resist, bribe, or talk their way out. Only works if a bounty already stands — run AddBountyToPlayer first if the speaker just witnessed the crime."
 questEditorId: SeverActions
 scriptName: SeverActions_ArrestPlayer
 executionFunctionName: ArrestPlayer_Internal

@@ -12,8 +12,8 @@
    tuning max_items, the 3-per-RefID cap, or the user-exclusion sentinel
    format. #}
 {% if actorUUID and actorUUID != 0 %}
-{% set _in_sexlab = is_in_faction(actorUUID, "SexLabAnimatingFaction") %}
-{% set _in_ostim = is_in_faction(actorUUID, "OStimExcitementFaction") %}
+{% set _in_sexlab = get_faction_rank(actorUUID, "SexLabAnimatingFaction") >= 0 %}
+{% set _in_ostim = get_faction_rank(actorUUID, "OStimExcitementFaction") >= 0 %}
 {% if not _in_sexlab and not _in_ostim %}
 ## Nearby Objects
 {% if actorUUID and isValidActor(actorUUID) %}
@@ -27,15 +27,27 @@
 {% set max_items = 20 %}
 {% set items = [] %}
 {% set seen_refids = [] %}
+{% set item_names = [] %}
 {% for ref in nearby_refs %}
 {% set ref_tag = "," + ref.type + ":" + ref.subtype + "," %}
-{% if ref.name != "" and not (ref.subtype in excluded_subtypes) and not contains(user_excluded, ref_tag) and length(items) < max_items %}
+{% if ref.name != "" and not (ref.subtype in excluded_subtypes) and not contains(user_excluded, ref_tag) %}
 {% if not (ref.type == "furniture" and ref.position.meters == 0.0) %}
 {% set refid_str = to_string(ref.formID) %}
 {% set refid_count = count(seen_refids, refid_str) %}
 {% if refid_count < 3 %}
+{# Same-name LOOSE ITEMS stack into one line ("Carrot x6") — mirrors 0180;
+   the listed RefID is the nearest one, which is all a pickup action
+   needs. Items only: furniture/containers/doors keep one line each. #}
+{% if ref.type == "item" and (ref.name in item_names) %}
+{% set item_names = append(item_names, ref.name) %}
+{% set seen_refids = append(seen_refids, refid_str) %}
+{% elif length(items) < max_items %}
 {% set items = append(items, ref) %}
 {% set seen_refids = append(seen_refids, refid_str) %}
+{% if ref.type == "item" %}
+{% set item_names = append(item_names, ref.name) %}
+{% endif %}
+{% endif %}
 {% endif %}
 {% endif %}
 {% endif %}
@@ -45,7 +57,9 @@
 {% for type_name, type_items in grouped_items %}
 ### {{ type_name | capitalize }}
 {% for ref in type_items %}
-- {{ ref.name }} ({{ ref.position.meters }}m) RefID: {{ ref.formID }}{% if ref.type == "container" and ref.locked %} [locked]{% endif %}
+{% set stack = 1 %}
+{% if ref.type == "item" %}{% set stack = count(item_names, ref.name) %}{% endif %}
+- {{ ref.name }}{% if stack > 1 %} x{{ stack }}{% endif %} ({{ ref.position.meters }}m) RefID: {{ ref.formID }}{% if ref.type == "container" and ref.locked %} [locked]{% endif %}
 {% endfor %}
 {% endfor %}
 {% endif %}

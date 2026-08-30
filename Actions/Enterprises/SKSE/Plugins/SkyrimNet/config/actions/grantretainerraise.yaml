@@ -1,0 +1,30 @@
+customCategory: employment
+name: GrantRetainerRaise
+description: "Use when {{ player.name }} AGREES in conversation to pay this retainer better — granting a raise they asked for, making good on refused terms, or (on tribute terms) easing the cut they must hand over. This actually changes the terms: the wage or split moves, any skimming/withholding stops, and a notice to quit is withdrawn. Only call when {{ player.name }} clearly commits to better pay or easier terms — a vague 'we'll see' is not a grant (that is at best ReassureRetainer). Not for Enslaved retainers (they have no wage or cut to move)."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: GrantRetainerRaise
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the retainer whose pay or terms {{ player.name }} agreed to improve
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # retainer_grievance is non-empty when they hold a grievance, have a
+      # pending raise ask, or a hearing is armed — string-compared, never bool.
+      - decoratorName: "retainer_grievance"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ player.name }} agreed to better terms for {{ actor.name }}'s work"

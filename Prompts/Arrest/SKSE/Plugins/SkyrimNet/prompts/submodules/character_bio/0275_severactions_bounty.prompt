@@ -22,6 +22,23 @@
 {% set arrestState = get_script_property("SeverActions", "SeverActions_Arrest", "ArrestState") %}
 {% set hasActiveMode = (inPersuasionMode and isConfrontingGuard) or (dispatchPhase >= 1 and dispatchPhase <= 6) or (arrestState >= 1 and arrestState <= 4) %}
 {% if not hasActiveMode %}
+{# v3 offender axis: the actor's OWN bounty - any NPC, not just guards.
+   They know they are wanted, and it colors how openly they move. #}
+{% set ownBounty = own_bounty(actorUUID) %}
+{% if ownBounty != "" %}
+{% set actorOB = decnpc(actorUUID) %}
+## Wanted
+{{ actorOB.name }} is WANTED: a tracked bounty of {{ ownBounty }}. {{ actorOB.name }} knows this - guards may confront or arrest them for it, and the weight of it colors how openly they move and speak.
+{% endif %}
+{# Hold authorities (guard / Jarl / housecarl / steward) know who sits in
+   their hold's cells - roleplay fuel for court conversations. The hold
+   name is embedded in the decorator's return, so no separate resolution. #}
+{% set jailRoster = hold_jail_roster(actorUUID) %}
+{% if jailRoster != "" %}
+{% set actorJR = decnpc(actorUUID) %}
+## The Hold's Cells
+{{ actorJR.name }} knows who is presently locked up: {{ jailRoster }}. As an authority of the hold, {{ actorJR.name }} may speak of these prisoners, their crimes, and what should become of them.
+{% endif %}
 {# Hold-name resolution for display only. The actual bounty number comes
    from the tracked_bounty decorator, which goes through HoldResolver +
    BountyStore natively — so the faction list below is purely for the
@@ -34,6 +51,18 @@
    The decorator returns "" if the actor isn't a registered guard. #}
 {% set holdName = sever_hold_name(actorUUID) %}
 {% if holdName != "" %}
+{# v3 offender axis: NPCs wanted in THIS guard's hold - the guard knows
+   local bounties on people exactly as they know the player's. #}
+{% set wantedNpcs = hold_wanted_npcs(actorUUID) %}
+{% if wantedNpcs != "" %}
+{% set actorWN = decnpc(actorUUID) %}
+{% set wantedPlayer = decnpc(player.UUID) %}
+## Wanted in {{ holdName }}
+{{ actorWN.name }} knows of standing bounties in {{ holdName }} on: {{ wantedNpcs }}.
+- If one of them stands before {{ actorWN.name }}, they may confront them about the crime — demand they answer for it, pay it off, or face arrest.
+- If {{ wantedPlayer.name }} offers to pay off any of these bounties on someone's behalf, {{ actorWN.name }} takes the coin and clears it with the law using **PayNpcBountyToGuard** (naming the wanted person).
+- Never use a generic payment or CollectPayment for a bounty — those do not touch the law.
+{% endif %}
 {% if player and player.UUID and player.UUID != 0 %}
 {# tracked_bounty(actorUUID) -> integer-as-string; returns "" when the actor
    is not a registered guard or has no tracked bounty in their hold. The

@@ -1,6 +1,6 @@
 customCategory: combat
 name: CeaseFighting
-description: "The speaker lowers their weapon and calls for a truce mid-fight — recognizing a misunderstanding, sparing a friend caught on the wrong side, or just deciding the brawl has gone far enough. Both combatants stand down."
+description: "Call a truce in an ongoing fight — both combatants stand down. Use to stop a misunderstanding or spare someone the speaker does not want to kill. For ending a brawl, use ForfeitBrawl."
 questEditorId: SeverActions
 scriptName: SeverActions_Combat
 executionFunctionName: CeaseFire_Execute

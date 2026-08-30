@@ -6,23 +6,29 @@
 <title>SeverActions Travel Prompt</title>
 <style>
   :root {
-    --bg-panel: #1c1812;
-    --brass: #c9a866;
-    --border: #4a4036;
-    --border-accent: #6d5d40;
-    --text: #d8cdb6;
-    --text-dim: #9a8f7a;
-    --bg-input: #14110c;
+    /* Palette synced to the main menu's design tokens v2 ("The Ledger,
+       Illuminated") — this file stays standalone by design, so the values
+       are copied, not imported. */
+    --bg-panel: #1f1913;
+    --brass: #c9a45c;
+    --border: rgba(201, 164, 92, 0.14);
+    --border-accent: rgba(201, 164, 92, 0.30);
+    --text: #cfc1a5;
+    --text-dim: #948871;
+    --bg-input: #131009;
   }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%;
     background: transparent; overflow: hidden;
-    font-family: "Times New Roman", Georgia, serif; color: var(--text);
+    font-family: "Sitka Text", "Cambria", "Times New Roman", Georgia, serif; color: var(--text);
     -webkit-font-smoothing: antialiased;
   }
+  /* Sizing is rem-based so the popupScale setting (root font-size, set
+     by the bridge at open time) scales the whole card crisply. 1rem = the
+     authored 16px; the setting's default 110% is the requested bump. */
   #overlay {
-    position: fixed; right: 40px; bottom: 80px; width: 380px;
+    position: fixed; right: 40px; bottom: 80px; width: 23.75rem;
     opacity: 0; transform: translateY(8px);
     transition: opacity 180ms ease, transform 180ms ease;
   }
@@ -30,41 +36,48 @@
   .tp-card {
     background: var(--bg-panel); border: 1px solid var(--border-accent);
     border-radius: 6px; box-shadow: 0 18px 56px rgba(0,0,0,0.65);
-    padding: 16px 18px; display: flex; flex-direction: column; gap: 10px;
+    padding: 1rem 1.125rem; display: flex; flex-direction: column; gap: 0.625rem;
   }
   .tp-title {
-    font-size: 15px; letter-spacing: 1.2px; text-transform: uppercase;
+    font-size: 0.9375rem; letter-spacing: 1.2px; text-transform: uppercase;
     color: var(--brass); border-bottom: 1px solid rgba(201,168,102,0.2);
     padding-bottom: 8px;
   }
-  .tp-sub { font-size: 12px; color: var(--text-dim); font-style: italic; }
+  .tp-sub { font-size: 0.75rem; color: var(--text-dim); font-style: italic; }
   .tp-field { position: relative; }
   .tp-input {
-    width: 100%; padding: 8px 10px; background: var(--bg-input);
+    width: 100%; padding: 0.5rem 0.625rem; background: var(--bg-input);
     border: 1px solid var(--border); border-radius: 3px;
-    color: var(--text); font-size: 14px; font-family: inherit;
+    color: var(--text); font-size: 0.875rem; font-family: inherit;
   }
   .tp-suggest {
-    position: absolute; top: 38px; left: 0; right: 0; z-index: 5;
-    max-height: 170px; overflow-y: auto;
+    position: absolute; top: 2.375rem; left: 0; right: 0; z-index: 5;
+    max-height: 10.625rem; overflow-y: auto;
     background: var(--bg-panel); border: 1px solid var(--border-accent);
     border-radius: 3px; box-shadow: 0 12px 32px rgba(0,0,0,0.6);
     display: flex; flex-direction: column;
   }
   .tp-suggest-row {
-    text-align: left; padding: 6px 10px; background: none; border: none;
+    text-align: left; padding: 0.375rem 0.625rem; background: none; border: none;
     border-bottom: 1px solid rgba(201,168,102,0.08);
-    color: var(--text); font-size: 13px; cursor: pointer; font-family: inherit;
+    color: var(--text); font-size: 0.8125rem; cursor: pointer; font-family: inherit;
   }
   .tp-suggest-row:hover { background: rgba(201,168,102,0.12); color: var(--brass); }
-  .tp-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .tp-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
   .tp-btn {
-    padding: 6px 18px; background: rgba(0,0,0,0.25);
+    padding: 0.375rem 1.125rem; background: rgba(0,0,0,0.25);
     border: 1px solid var(--border); border-radius: 3px;
-    color: var(--text); font-size: 13px; cursor: pointer; font-family: inherit;
+    color: var(--text); font-size: 0.8125rem; cursor: pointer; font-family: inherit;
   }
   .tp-btn:hover { border-color: var(--border-accent); }
   .tp-btn--go { border-color: var(--brass); color: var(--brass); }
+  /* Keyboard/controller focus must be VISIBLE — the gamepad bridge drives
+     the popup with arrow keys + Enter, so focus is the cursor. */
+  .tp-btn:focus, .tp-suggest-row:focus {
+    outline: 2px solid var(--brass); outline-offset: 1px;
+    background: rgba(201,168,102,0.15);
+  }
+  .tp-input:focus { outline: 2px solid var(--brass); outline-offset: 1px; }
   .tp-timer { height: 3px; background: rgba(0,0,0,0.3); border-radius: 2px; overflow: hidden; }
   .tp-timer-fill { height: 100%; width: 100%; background: var(--brass); transition: width linear; }
 </style>
@@ -145,6 +158,59 @@
     goB.addEventListener('click', function () { if (destE.value.trim()) post('confirm'); });
     cancelB.addEventListener('click', function () { post('decline'); });
 
+    // ── Keyboard / controller navigation ────────────────────────────────
+    // The native GamepadUIBridge translates A→Enter, B→Escape, d-pad/stick→
+    // arrows. Focus is the cursor: default lands on Go (the destination is
+    // prefilled with the NPC's proposal, so one press of A confirms).
+    // Up from the buttons enters the text box for keyboard users; Up/Down
+    // inside the text box leaves it again — that was the trap where
+    // controller users got stuck with the caret and had to grab the mouse.
+    function suggestRows() {
+      return Array.prototype.slice.call(suggestE.querySelectorAll('.tp-suggest-row'));
+    }
+    document.addEventListener('keydown', function (e) {
+      var k = e.key;
+      // Escape dismisses silently — same contract as the native escape
+      // monitor. This DOM path is the one that works for VR controllers:
+      // PrismaVR delivers controller cancel as a key event to the view,
+      // where GetAsyncKeyState (the native monitor) never sees it.
+      if (k === 'Escape') { e.preventDefault(); post('dismiss'); return; }
+      if (k !== 'ArrowUp' && k !== 'ArrowDown' && k !== 'ArrowLeft' && k !== 'ArrowRight' && k !== 'Enter') return;
+      var f = document.activeElement;
+      var rows = suggestRows();
+
+      // Suggestion rows: Up/Down cycle, Enter picks (click handler fills)
+      var rowIdx = rows.indexOf(f);
+      if (rowIdx >= 0) {
+        if (k === 'ArrowDown') { e.preventDefault(); (rows[rowIdx + 1] || goB).focus(); }
+        else if (k === 'ArrowUp') { e.preventDefault(); (rows[rowIdx - 1] || destE).focus(); }
+        else if (k === 'Enter') { e.preventDefault(); destE.value = f.textContent; hideSuggest(); goB.focus(); }
+        return;
+      }
+
+      if (f === destE) {
+        // Left/Right keep native caret movement; Up/Down escape the box.
+        if (k === 'ArrowDown') { e.preventDefault(); if (rows.length) rows[0].focus(); else goB.focus(); }
+        else if (k === 'ArrowUp') { e.preventDefault(); goB.focus(); }
+        else if (k === 'Enter') { e.preventDefault(); if (destE.value.trim()) post('confirm'); }
+        return;
+      }
+
+      if (f === goB || f === cancelB) {
+        if (k === 'ArrowLeft' || k === 'ArrowRight') { e.preventDefault(); (f === goB ? cancelB : goB).focus(); }
+        else if (k === 'ArrowUp') { e.preventDefault(); destE.focus(); }
+        // Explicit activation: Ultralight does NOT perform the browser
+        // default of clicking a focused button on Enter, so the gamepad's
+        // A (translated to Enter) silently did nothing here.
+        else if (k === 'Enter') { e.preventDefault(); f.click(); }
+        return;
+      }
+
+      // Nothing focused yet — first arrow press lands on Go.
+      e.preventDefault();
+      goB.focus();
+    });
+
     window.receiveTravelPromptData = function (data) {
       data = data || {};
       posted = false;
@@ -152,7 +218,11 @@
       titleE.textContent = (data.npcName || 'Someone') + ' — where to?';
       destE.value = (data.namedPlace || '').toString();
       overlay.classList.add('show');
-      setTimeout(function () { destE.focus(); }, 60);
+      // Default focus goes to Go, NOT the text box: the destination arrives
+      // prefilled with the NPC's proposal, so the common case is one press of
+      // A/Enter to confirm. Autofocusing the input trapped controller users
+      // (caret ate the arrows and B closed the whole popup).
+      setTimeout(function () { goB.focus(); }, 60);
       // Drain timer — lapse = decline (no travel).
       var ms = parseInt(data.timeoutMs, 10) || 60000;
       timerFill.style.transition = 'none';

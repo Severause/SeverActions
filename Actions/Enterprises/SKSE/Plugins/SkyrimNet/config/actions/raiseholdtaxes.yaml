@@ -1,0 +1,27 @@
+name: RaiseHoldTaxes
+description: "Use when this jarl, in conversation with {{ player.name }}, is ANGERED, insulted, threatened, or seriously unimpressed — or concludes {{ player.name }}'s growing enterprises are getting away with too much — and decides to raise the hold's enterprise taxes as a consequence. The jarl must express this decision in their dialogue. This is a real punishment with lasting cost; do NOT call it for mild irritation or ordinary disagreement. Each raise adds ~5 points."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: RaiseHoldTaxes
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the jarl raising the taxes
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_jarl"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+eventString: "Jarl {{ actor.name }} raised the hold's taxes on {{ player.name }}'s enterprises"

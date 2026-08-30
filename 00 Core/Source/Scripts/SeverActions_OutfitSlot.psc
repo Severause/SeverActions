@@ -4,9 +4,11 @@ Scriptname SeverActions_OutfitSlot extends Quest
 
     Each managed NPC is assigned a slot index 0-49. Each slot has 8 preset
     indices, each backed by:
-        - A BGSOutfit record (legacy artifact — no longer used as the apply
-          mechanism; retained for FormList scaffolding compatibility)
-        - A LeveledItem placeholder (populated at apply-time from container)
+        - A BGSOutfit record (not the apply mechanism; retained for FormList
+          scaffolding compatibility)
+        - A LeveledItem placeholder (vestigial scaffolding for the ESP outfit
+          records; populated at build/migration/load time from the container,
+          NOT consumed by the equip path — DirectEquipPreset snapshots the chest)
         - An ObjectReference container (player-editable wardrobe storage)
     Plus one satchel container per slot (used only by guardian-container
     stow/restore for custom-follower compatibility).
@@ -53,10 +55,8 @@ EndFunction
 ; =============================================================================
 
 String Property KEY_PRESET_ACTIVE = "SeverOutfit_PresetActive" AutoReadOnly Hidden
-{Int: 1 if actor has an active preset, 0 if not. Read by OutfitAlias for short-circuit.}
-
-String Property KEY_SLOT_MIGRATION_VERSION = "SeverOutfit_SlotMigrationVersion" AutoReadOnly Hidden
-{Int: migration schema version. 0 = not migrated. 1 = migrated from legacy StorageUtil.}
+{Int: 1 if actor has an active preset, 0 if not. Legacy mirror, written for old
+ saves/external readers only — OutfitAlias's short-circuit reads native.}
 
 ; =============================================================================
 ; SLOT LIFECYCLE
@@ -624,20 +624,34 @@ Function RemovePresetItemsFromActor(Actor akActor, Int slotIdx, Int presetIdx)
         if item
             Int npcHas = akActor.GetItemCount(item)
             if npcHas > 0
-                if SeverActionsNative.Native_Blacklist_IsBlacklisted(item)
+                if SeverActionsNative.Native_Blacklist_IsBlacklisted(item) || SeverActionsNativeExt.Native_IsDeviousDevice(item)
                     ; Blacklist trumps everything. Don't delete, don't unequip.
                     ; The user said "leave this alone" — honor that strictly.
+                    ; Devious Devices get the same treatment: removing the
+                    ; rendered item outside the DD framework desyncs it from
+                    ; its locked token (device goes invisible, stays locked).
                     blacklistSkipped += 1
                 else
                     Bool isCatalog = SeverActionsNative.Native_OutfitSlot_IsCatalogSupplied(akActor, presetIdx, item)
                     if isCatalog
                         ; Catalog temp-copy: delete from actor. Chest still has source.
+                        ; Unequip-now first if worn - RemoveItem's implicit unequip
+                        ; can defer under menu pause like UnequipItem does.
+                        if akActor.IsEquipped(item)
+                            SeverActionsNativeExt.Native_UnequipItemNow(akActor, item)
+                        endif
                         akActor.RemoveItem(item, 1, true, None)
                         deletedCatalog += 1
                     else
                         ; User-owned: just unequip if equipped, leave in inventory.
+                        ; MUST be the pause-safe native: Papyrus UnequipItem defers
+                        ; under menu pause and the queued op fires at menu CLOSE
+                        ; against whatever is worn then - a preset round-trip
+                        ; (viper -> Thief -> viper) queued viper's unequips here and
+                        ; stripped the re-applied viper seconds after exiting the
+                        ; wardrobe (the naked-on-exit bug, second root cause).
                         if akActor.IsEquipped(item)
-                            akActor.UnequipItem(item, true, true)
+                            SeverActionsNativeExt.Native_UnequipItemNow(akActor, item)
                         endif
                         unequippedUserOwned += 1
                     endif
@@ -653,11 +667,10 @@ Function RemovePresetItemsFromActor(Actor akActor, Int slotIdx, Int presetIdx)
 EndFunction
 
 Function PopulateLvlItemFromContainer(Int slotIdx, Int presetIdx)
-    {Clear the LeveledItem and re-add one of each item in the container.
-     Flags UseAll + CalculateForEachItemInCount on the LvlItem ensure the engine
-     adds every entry when it resolves the outfit's LvlItem reference.
-     This is the function that must run on every kPostLoadGame â€” the ESP's
-     baseline LvlItem entries are empty, container contents are what persist.}
+    {Clear the LeveledItem and re-add one of each item in the container, keeping
+     the vestigial ESP LvlItem scaffolding in sync with the wardrobe chest. The
+     equip path (DirectEquipPreset) snapshots the chest directly and does NOT
+     consume this LvlItem — it is maintained only for the ESP outfit records.}
     LeveledItem lvl = SeverActionsNative.Native_OutfitSlot_GetLvlItem(slotIdx, presetIdx)
     ObjectReference chest = SeverActionsNative.Native_OutfitSlot_GetContainer(slotIdx, presetIdx)
     if !lvl || !chest
@@ -703,16 +716,16 @@ EndFunction
 ; =============================================================================
 
 Function ApplyPresetBySlot(Actor akActor, Int presetIdx)
-    {Apply a preset via SetOutfit trick. After this, the engine re-enforces
-     the preset on every cell load automatically â€” no re-equip loop needed.
+    {Apply a preset via the wardrobe pattern (NO SetOutfit - see the inline
+     comment below).
 
-     Flow (mirrors NFF's SwitchOutfit):
-        1. Move personal items to satchel (first-time only)
-        2. SetOutfit(BlankOutfit) + UnequipAll
-        3. PopulateLvlItem from container
-        4. SetOutfit(presetOutfit)
-        5. Mark preset active
-    }
+     Flow:
+        1. First apply: stow guardian containers. Swap: remove the outgoing
+           preset's items (ownership-aware, pause-safe unequips)
+        2. DirectEquipPreset - atomic native strip + add + equip + verify
+        3. Mark preset active on full success
+     Cell-load re-application is the OutfitAlias OnLoad handler, not the
+     engine DefaultOutfit.}
     if !akActor || akActor.IsDead() || presetIdx < 0 || presetIdx >= 8
         Log("ApplyPresetBySlot: Bad input (akActor=" + akActor + " presetIdx=" + presetIdx + ")")
         return
@@ -768,7 +781,7 @@ Function ApplyPresetBySlot(Actor akActor, Int presetIdx)
     ; First-time apply: stow any guardian containers (e.g. Daegon's custom
     ; outfit container) so their enforcing alias stops fighting our equip.
     ;
-    ; We DELIBERATELY no longer call MovePersonalItemsToSatchel here. Reason:
+    ; We DELIBERATELY do not stash the actor's other armor in a hidden satchel. Reason:
     ; with the wardrobe pattern, the chest is the source of truth for preset
     ; items — there's no need to stash the actor's other armor in a hidden
     ; satchel. DirectEquipPreset's strip phase unequips everything; items
@@ -831,12 +844,13 @@ Function ApplyPresetBySlot(Actor akActor, Int presetIdx)
 
     ; === COMMIT or REPORT ===
     ;
-    ; Native DirectEquipPreset now does slot-mask dedupe (first item per biped
-    ; slot wins) and respects the blacklist. So `verifiedEquipped < storedItemCount`
-    ; can mean two things:
-    ;   1. Intentional skip — slot conflict between preset items, or a preset
-    ;      item conflicts with a still-worn blacklisted piece. EXPECTED behavior.
-    ;   2. Engine race / item loss — partial cascade we couldn't stop.
+    ; Native DirectEquipPreset equips EVERY preset item (no intra-preset slot
+    ; dedupe — the old "first item per slot wins" heuristic was removed) but skips
+    ; items whose slot mask overlaps a blacklisted worn piece. So
+    ; `verifiedEquipped < storedItemCount` can mean two things:
+    ;   1. Blacklist-overlap skip — a preset item was withheld to avoid cascading
+    ;      a blacklisted worn piece off. EXPECTED behavior.
+    ;   2. Engine slot-cascade loss — partial cascade we couldn't stop.
     ;
     ; The success criterion is simpler now: did we equip ANYTHING?
     ;   - verifiedEquipped > 0 → success, mark active
@@ -845,7 +859,7 @@ Function ApplyPresetBySlot(Actor akActor, Int presetIdx)
     ;   - verifiedEquipped < 0 → hard native failure (chest gone, equip mgr
     ;     unavailable). Leave actor in whatever state, don't mark active.
     if verifiedEquipped > 0
-        ; Native only sets activePresetIdx on full equip (OutfitSlotStore.h:1098).
+        ; Native only sets activePresetIdx on full equip (OutfitSlotStore.h).
         ; Mirror the same gate in StorageUtil — marking PRESET_ACTIVE on a partial
         ; equip caused split-brain: alias short-circuit saw active=1 from
         ; StorageUtil, slot reapply read native activePresetIdx=-1 and no-op'd,
@@ -1128,60 +1142,6 @@ EndFunction
 ; SATCHEL HELPERS
 ; =============================================================================
 
-Function MovePersonalItemsToSatchel(Actor akActor, Int slotIdx)
-    {Walk actor's inventory, move all armor items that AREN'T in the DefaultOutfit
-     to the satchel. Keeps 1 copy of each DefaultOutfit item (matches NFF behavior).
-     Non-armor items are left alone. Called once per "first apply" cycle.}
-    if !akActor || slotIdx < 0
-        return
-    endif
-
-    ObjectReference satchel = EnsureSatchel(akActor, slotIdx)
-    if !satchel
-        return
-    endif
-
-    ; Collect DefaultOutfit parts to preserve at count>=1
-    Outfit origOutfit = SeverActionsNative.Native_OutfitSlot_GetOriginalOutfit(akActor)
-    Form[] defaultParts = None
-    if origOutfit
-        Int partCount = origOutfit.GetNumParts()
-        defaultParts = Utility.CreateFormArray(partCount)
-        Int dp = 0
-        While dp < partCount
-            defaultParts[dp] = origOutfit.GetNthPart(dp)
-            dp += 1
-        EndWhile
-    endif
-
-    Int itemCount = akActor.GetNumItems()
-    Int moved = 0
-    Int i = 0
-    While i < itemCount && moved < 500   ; sanity cap
-        Form item = akActor.GetNthForm(i)
-        Armor armorItem = item as Armor
-        if armorItem
-            Int keepCount = 0
-            if defaultParts && FindFormInArray(defaultParts, armorItem as Form) >= 0
-                keepCount = 1   ; preserve 1 copy of DefaultOutfit pieces
-            endif
-            Int haveCount = akActor.GetItemCount(armorItem)
-            Int moveCount = haveCount - keepCount
-            if moveCount > 0
-                ; Unequip first (in case worn), then transfer
-                if akActor.IsEquipped(armorItem)
-                    akActor.UnequipItem(armorItem, true, true)
-                endif
-                akActor.RemoveItem(armorItem, moveCount, true, satchel)
-                moved += 1
-            endif
-        endif
-        i += 1
-    EndWhile
-
-    Log("Moved " + moved + " personal armor items to satchel for " + akActor.GetDisplayName())
-EndFunction
-
 Function RestoreSatchelToActor(Actor akActor, Int slotIdx)
     {Dump satchel contents back to actor's inventory. Called by ClearPreset.}
     if !akActor || slotIdx < 0
@@ -1301,6 +1261,41 @@ Int Function FindPresetIndexByName(Actor akActor, String name)
     EndWhile
     Log("FindPresetIndexByName: " + akActor.GetDisplayName() + " '" + name + "' -> idx " + candidates[pick] + " (fuzzy random pick from [" + dumpCandidates + "]) " + dump)
     return candidates[pick]
+EndFunction
+
+Int Function FindPresetIndexExact(Actor akActor, String name)
+    {Exact-CI preset lookup — Tier 1 of FindPresetIndexByName ONLY, with no
+     fuzzy fallback and no random pick.
+
+     Use this for DESTRUCTIVE or IDENTITY operations (delete, and the migration
+     existence-probe). The fuzzy tier of FindPresetIndexByName picks a
+     token-overlap sibling at RANDOM when several qualify — correct for the
+     "ask for something sexy" variety-pack apply flow, but catastrophic for an
+     op that must resolve to exactly one known preset: "casual" would
+     fuzzy-match an already-migrated "casualwear" and either delete the wrong
+     preset (destroying its chest via RemoveAllItems) or make migration silently
+     skip the second preset as "already present". A destructive/identity op must
+     never fall through to a fuzzy or random tier.
+     See the N3 finding in ai_docs/OUTFIT_AUDIT_2026-08-19.md. Returns -1 if
+     there is no exact match.}
+    if !akActor || name == ""
+        return -1
+    endif
+    Int slotIdx = SeverActionsNative.Native_OutfitSlot_GetSlot(akActor)
+    if slotIdx < 0
+        return -1
+    endif
+    String queryLower = SeverActionsNative.StringToLower(name)
+    Int p = 0
+    While p < 8
+        String existing = SeverActionsNative.Native_OutfitSlot_GetPresetName(akActor, p)
+        String existingLower = SeverActionsNative.StringToLower(existing)
+        if existingLower == queryLower && existingLower != ""
+            return p
+        endif
+        p += 1
+    EndWhile
+    return -1
 EndFunction
 
 String[] Function TokenizeAndFilter(String s)
@@ -1465,7 +1460,9 @@ Bool Function DeletePresetFromSlot(Actor akActor, String presetName)
         return false
     endif
 
-    Int presetIdx = FindPresetIndexByName(akActor, presetName)
+    ; Exact match only — deleting the wrong same-prefix preset would destroy
+    ; the wrong chest (RemoveAllItems below). See FindPresetIndexExact / N3.
+    Int presetIdx = FindPresetIndexExact(akActor, presetName)
     if presetIdx < 0
         return false
     endif
@@ -1549,7 +1546,11 @@ Function UnequipAllExceptBlacklisted(Actor akActor)
     While i < worn.Length
         Form item = worn[i]
         if item
-            if SeverActionsNative.Native_Blacklist_IsBlacklisted(item)
+            ; Devious Devices are never stripped — unequipping the rendered
+            ; item outside the DD framework leaves the device invisible while
+            ; its locked token stays (same rule as every other strip path;
+            ; this loop was missed when the compat pass landed).
+            if SeverActionsNative.Native_Blacklist_IsBlacklisted(item) || SeverActionsNativeExt.Native_IsDeviousDevice(item)
                 kept += 1
             else
                 ; preventEquip=false, silent=true. preventEquip would lock
@@ -1684,7 +1685,7 @@ Bool Function IsSlotEligible(Actor akActor)
     if akActor.IsPlayerTeammate()
         return true
     endif
-    ; Vanilla CurrentFollowerFaction (0x00000528CE) — belt-and-suspenders for
+    ; Vanilla CurrentFollowerFaction (0x0005C84E) — belt-and-suspenders for
     ; vanilla followers whose teammate flag temporarily drops (sandboxing etc.)
     Faction cff = Game.GetFormFromFile(0x0005C84E, "Skyrim.esm") as Faction
     if cff && akActor.IsInFaction(cff)
@@ -1777,8 +1778,9 @@ Function MigrateToOutfitSlotSystem()
         ; reference calls every load doing nothing useful. This
         ; sentinel records "fully migrated at version 1" after a clean
         ; pass and short-circuits subsequent loads. New legacy presets
-        ; aren't a concern — modern SavePresetToNativeStore writes
-        ; directly to the slot system, not StorageUtil. If a user
+        ; aren't a concern — modern preset saves go through BuildPreset
+        ; (slot system) plus a native OutfitDataStore mirror, not the
+        ; StorageUtil legacy store. If a user
         ; reports stale preset state after upgrading, clearing this
         ; key force-remigrates.
         Bool alreadyMigrated = akActor && StorageUtil.GetIntValue(akActor, "SeverActions_OutfitSlotMigDone", 0) >= 1
@@ -1809,7 +1811,9 @@ Function MigrateToOutfitSlotSystem()
                         ;   - Name in slot AND chest has items: already migrated, skip.
                         ;   - Name in slot but chest EMPTY: refill chest from legacy mirror
                         ;     (RECOVERY PATH — handles cosave drops / chest corruption).
-                        Int existingSlotIdx = FindPresetIndexByName(akActor, name)
+                        ; Exact match only — a fuzzy hit on an already-migrated
+                        ; same-prefix sibling would silently drop this preset. (N3)
+                        Int existingSlotIdx = FindPresetIndexExact(akActor, name)
                         Bool needsItemCommit = false
                         Int targetIdx = -1
 
@@ -1926,7 +1930,9 @@ Function MigrateToOutfitSlotSystem()
                 While si < situations.Length
                     String sitPreset = StorageUtil.GetStringValue(akActor, "SeverOutfit_Sit_" + situations[si], "")
                     if sitPreset != ""
-                        Int idx = FindPresetIndexByName(akActor, sitPreset)
+                        ; Exact — a situation points at one specific stored
+                        ; preset name; a fuzzy sibling would mis-map it. (N3)
+                        Int idx = FindPresetIndexExact(akActor, sitPreset)
                         if idx >= 0
                             SeverActionsNative.Native_OutfitSlot_SetSituationPreset(akActor, situations[si], idx)
                             migratedSituations += 1
@@ -1955,11 +1961,6 @@ Function MigrateToOutfitSlotSystem()
         endif
         ai += 1
     EndWhile
-
-    ; Track cumulative migration count. Informational only - migration is now
-    ; incremental (runs every load), so no hard gate here.
-    Int cumulative = StorageUtil.GetIntValue(None, KEY_SLOT_MIGRATION_VERSION, 0) + migratedActors
-    StorageUtil.SetIntValue(None, KEY_SLOT_MIGRATION_VERSION, cumulative)
 
     if migratedActors > 0 || migratedPresets > 0 || migratedSituations > 0
         Log("MigrateToOutfitSlotSystem: Migrated " + migratedActors + " actors, " + migratedPresets + " presets, " + migratedSituations + " situation mappings this pass")
@@ -1990,7 +1991,7 @@ EndFunction
 Function Maintenance()
     {Called from SeverActions_Init on game load. Rebuilds all LvlItem contents
      from their containers. Auto-registers known guardian containers. Recovers
-     stranded items from old satchels (legacy MovePersonalItemsToSatchel).
+     stranded items from old satchels (a legacy satchel-stashing path).
 
      ORDER MATTERS: AutoRegisterKnownGuardians MUST run BEFORE
      DrainStrandedSatchelItems. The drain skips actors with registered
@@ -2115,7 +2116,7 @@ Int Function RepairGhostPresets(Actor akActor)
 EndFunction
 
 Int Function DrainStrandedSatchelItems(Actor akActor)
-    {Recovery for items stashed by the legacy MovePersonalItemsToSatchel path.
+    {Recovery for items stashed by a legacy satchel-stashing path.
      Drains satchel contents back to the actor's inventory.
 
      CAUTION: actors with guardian containers (custom followers like Daegon)

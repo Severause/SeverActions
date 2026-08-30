@@ -25,6 +25,8 @@ SeverActions_Crafting Property CraftingScript Auto
 SeverActions_Property Property PropertyScript Auto
 SeverActions_SpellCast Property SpellCastScript Auto
 SeverActions_Brawl Property BrawlScript Auto
+SeverActions_Furniture Property FurnitureScript Auto
+SeverActions_ArrestPlayer Property ArrestPlayerScript Auto
 
 ; =============================================================================
 ; LIFECYCLE
@@ -98,6 +100,12 @@ Function EnsureScriptReferences()
     If !BrawlScript
         BrawlScript = q as SeverActions_Brawl
     EndIf
+    If !FurnitureScript
+        FurnitureScript = q as SeverActions_Furniture
+    EndIf
+    If !ArrestPlayerScript
+        ArrestPlayerScript = q as SeverActions_ArrestPlayer
+    EndIf
 
     Debug.Trace("[SeverActions_PrismaUI] Script references resolved - " \
         + "MCM=" + (MCMScript != None) + " Follower=" + (FollowerManagerScript != None) \
@@ -130,13 +138,20 @@ Function RegisterForPrismaEvents()
             arrestQ, debtQ, travelQ, outfitQ, lootQ, spellTeachQ, hotkeyQ)
         Debug.Trace("[SeverActions_PrismaUI] Quest references passed to C++ DataGatherer")
 
-        ; Only register data request event — settings and actions are now
-        ; handled directly by C++ (PrismaUISettingsHandler / PrismaUIActionHandler).
-        ; World page still falls back to Papyrus for StorageUtil-dependent data.
+        ; Only ONE data-request event — settings and most data are C++-owned
+        ; (PrismaUISettingsHandler / PrismaUIActionHandler). The other events
+        ; below are action dispatches C++ can't do itself (DispatchMethodCall
+        ; reports success but never runs). World page still falls back to
+        ; Papyrus for StorageUtil-dependent data.
         RegisterForModEvent("SeverActions_PrismaUI_RequestData", "OnRequestData")
         RegisterForModEvent("SeverActions_PrismaClearPkgs", "OnPrismaClearPkgs")
         RegisterForModEvent("SeverActions_PrismaRemovePkg", "OnPrismaRemovePkg")
         RegisterForModEvent("SeverActions_PrismaExecuteAction", "OnPrismaExecuteAction")
+        RegisterForModEvent("SeverActions_PrismaSetHotkey", "OnPrismaSetHotkey")
+        ; Bounty clear buttons — routed by ModEvent for the same DispatchMethodCall
+        ; reason (see OnPrismaSetHotkey docstring).
+        RegisterForModEvent("SeverActions_PrismaClearBounty", "OnPrismaClearBounty")
+        RegisterForModEvent("SeverActions_PrismaClearAllBounties", "OnPrismaClearAllBounties")
         Debug.Trace("[SeverActions_PrismaUI] Registered for PrismaUI data request and action events")
     Else
         Debug.Trace("[SeverActions_PrismaUI] PrismaUI not available -- skipping registration")
@@ -176,32 +191,11 @@ Event OnRequestData(String eventName, String strArg, Float numArg, Form sender)
     EndIf
 EndEvent
 
-Event OnSettingChanged(String eventName, String strArg, Float numArg, Form sender)
-    String page = SeverActionsNative.PrismaUI_ExtractJsonValue(strArg, "page")
-    String sKey = SeverActionsNative.PrismaUI_ExtractJsonValue(strArg, "key")
-    String sVal = SeverActionsNative.PrismaUI_ExtractJsonValue(strArg, "value")
-    String sTarget = SeverActionsNative.PrismaUI_ExtractJsonValue(strArg, "target")
-
-    ; ── PrismaUI v2 page names ──
-    If page == "settings"
-        ; Settings consolidates: dialogue/tags (General), survival config
-        HandleGeneralSetting(sKey, sVal)
-        HandleSurvivalSetting(sKey, sVal)
-    ElseIf page == "world"
-        ; World consolidates: currency/debt, bounty/arrest
-        HandleCurrencySetting(sKey, sVal)
-        HandleBountySetting(sKey, sVal)
-    ElseIf page == "companions"
-        ; Companions consolidates: follower framework
-        HandleFollowersSetting(sKey, sVal, sTarget)
-    ; outfits page settings handled by C++ SettingsHandler
-    EndIf
-EndEvent
-
-Event OnActionRequested(String eventName, String strArg, Float numArg, Form sender)
-    String actType = SeverActionsNative.PrismaUI_ExtractJsonValue(strArg, "action")
-    HandleAction(actType, strArg)
-EndEvent
+; Settings and UI actions are owned entirely by C++: all settings changes
+; route through PrismaUISettingsHandler (the single settings authority,
+; including the debt trio the World page reads), UI actions through
+; PrismaUIActionHandler. This script only serves the data-request events
+; registered above — do not add Papyrus settings/action handlers here.
 
 ; =============================================================================
 ; HELPERS
@@ -245,7 +239,7 @@ Function SendCompanionsData()
     If FollowerManagerScript
         SeverActionsNativeExt.PrismaUI_AddInt("frameworkMode", FollowerManagerScript.FrameworkMode)
         SeverActionsNativeExt.PrismaUI_AddInt("maxFollowers", FollowerManagerScript.MaxFollowers)
-        SeverActionsNativeExt.PrismaUI_AddBool("autoDismissHostile", FollowerManagerScript.AllowAutonomousLeaving)
+        SeverActionsNativeExt.PrismaUI_AddBool("allowAutonomousLeaving", FollowerManagerScript.AllowAutonomousLeaving)
         SeverActionsNativeExt.PrismaUI_AddBool("trackRelationships", FollowerManagerScript.AutoRelAssessment)
         SeverActionsNativeExt.PrismaUI_AddFloat("rapportDecay", FollowerManagerScript.RapportDecayRate)
         SeverActionsNativeExt.PrismaUI_AddInt("leavingThreshold", FollowerManagerScript.LeavingThreshold as Int)
@@ -281,12 +275,11 @@ Function SendWorldData()
     Debug.Trace("[SeverActions_PrismaUI] SendWorldData START")
     SeverActionsNativeExt.PrismaUI_BeginPage("world")
 
-    ; Phase 5 — bounties (with per-faction event timelines) now ship via
-    ; PrismaUIDataGatherer::BuildWorldSettingsData on the C++ side. Shape
-    ; changed from a hold-name-keyed object to an array of
-    ; {crimeFactionId, amount, hold, events[]} entries — the Papyrus echo
-    ; here would clobber the C++ array on the frontend merge ("last write
-    ; wins"), so it's been removed.
+    ; Bounties (with per-faction event timelines) ship from the C++ side via
+    ; PrismaUIDataGatherer::BuildWorldSettingsData as an array of
+    ; {crimeFactionId, amount, hold, events[]} entries. Do NOT echo them from
+    ; Papyrus here — both reach the frontend on the same page request and last
+    ; write wins, so a Papyrus copy would clobber the C++ array.
 
     ; ── Arrest settings ──
     If ArrestScript
@@ -355,13 +348,10 @@ Function SendWorldData()
         SeverActionsNativeExt.PrismaUI_AddInt("reportThreshold", 72)
     EndIf
 
-    ; Phase 4 — debt structured data (debtCount / totalPlayerOwes /
-    ; totalOwedToPlayer / playerOwes[] / owedToPlayer[]) is now built by
-    ; PrismaUIDataGatherer::BuildWorldSettingsData on the C++ side. The
-    ; Papyrus fallback used to send the same fields; both reach the
-    ; frontend on the same page request, last write wins, so removing the
-    ; Papyrus version simplifies the source of truth without changing the
-    ; rendered output.
+    ; Debt structured data (debtCount / totalPlayerOwes / totalOwedToPlayer /
+    ; playerOwes[] / owedToPlayer[]) is built on the C++ side by
+    ; PrismaUIDataGatherer::BuildWorldSettingsData. Do NOT echo it from Papyrus —
+    ; both reach the frontend on the same page request and last write wins.
 
     SeverActionsNativeExt.PrismaUI_SendPage()
     Debug.Trace("[SeverActions_PrismaUI] SendWorldData DONE")
@@ -373,7 +363,7 @@ Function SendDashboardData()
     Debug.Trace("[SeverActions_PrismaUI] SendDashboardData START")
     SeverActionsNativeExt.PrismaUI_BeginPage("dashboard")
 
-    SeverActionsNativeExt.PrismaUI_AddString("version", "1.1")
+    SeverActionsNativeExt.PrismaUI_AddString("version", "3.9.13")
     SeverActionsNativeExt.PrismaUI_AddString("author", "Severause")
 
     ; System availability flags
@@ -395,9 +385,6 @@ Function SendDashboardData()
     SeverActionsNativeExt.PrismaUI_SendPage()
     Debug.Trace("[SeverActions_PrismaUI] SendDashboardData DONE")
 EndFunction
-
-; SendOutfitsData() — REMOVED: Outfits page now served by C++ DataGatherer
-; via OutfitDataStore (native cosave). No Papyrus fallback needed.
 
 Function SendSettingsData()
     {Build settings page: dialogue/tags, survival, spell teach config.
@@ -479,7 +466,13 @@ Function BuildCompanionData(Actor c)
     SeverActionsNativeExt.PrismaUI_AddString("home", SeverActionsNative.Native_GetHome(c))
 
     ; Active SkyrimNet packages
-    SeverActionsNativeExt.PrismaUI_AddBool("hasFollowPkg", SafeHasPackage(c, "FollowPlayer"))
+    ; hasFollowPkg = "actively following" (drives the rail "Following" badge +
+    ; the casual-follow filter). Since the 200-alias pool migration a follower
+    ; rides the pool with NO FollowPlayer package for the common case, so
+    ; SafeHasPackage read false while following and the badge never lit. Use
+    ; IsActorActivelyFollowing — faction-gated (so it excludes a WAITING
+    ; follower, unlike a bare slot check) and pool-slot aware.
+    SeverActionsNativeExt.PrismaUI_AddBool("hasFollowPkg", FollowerManagerScript && FollowerManagerScript.IsActorActivelyFollowing(c))
     SeverActionsNativeExt.PrismaUI_AddBool("hasTalkPlayerPkg", SafeHasPackage(c, "TalkToPlayer"))
     SeverActionsNativeExt.PrismaUI_AddBool("hasTalkNPCPkg", SafeHasPackage(c, "TalkToNPC"))
 
@@ -497,233 +490,6 @@ Function BuildCompanionData(Actor c)
 EndFunction
 
 ; =============================================================================
-; SETTING CHANGE HANDLERS
-; =============================================================================
-
-Function HandleGeneralSetting(String sKey, String sVal)
-    If sKey == "dialogueAnimEnabled" && MCMScript
-        MCMScript.DialogueAnimEnabled = (sVal == "true")
-        SeverActionsNative.SetDialogueAnimEnabled(MCMScript.DialogueAnimEnabled)
-    ElseIf sKey == "silenceChance" && MCMScript
-        MCMScript.SilenceChance = sVal as Int
-        StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", MCMScript.SilenceChance)
-    ElseIf sKey == "bookReadMode" && LootScript
-        LootScript.BookReadMode = sVal as Int
-    ElseIf sKey == "tagCompanion" && MCMScript
-        MCMScript.TagCompanionEnabled = (sVal == "true")
-        StorageUtil.SetIntValue(None, "SeverActions_TagCompanion", BoolToInt(sVal == "true"))
-    ElseIf sKey == "tagEngaged" && MCMScript
-        MCMScript.TagEngagedEnabled = (sVal == "true")
-        StorageUtil.SetIntValue(None, "SeverActions_TagEngaged", BoolToInt(sVal == "true"))
-    ElseIf sKey == "tagInScene" && MCMScript
-        MCMScript.TagInSceneEnabled = (sVal == "true")
-        StorageUtil.SetIntValue(None, "SeverActions_TagInScene", BoolToInt(sVal == "true"))
-    ElseIf sKey == "spellFailEnabled" && SpellTeachScript
-        SpellTeachScript.EnableFailureSystem = (sVal == "true")
-        StorageUtil.SetIntValue(None, "SeverActions_SpellFailEnabled", BoolToInt(sVal == "true"))
-    ElseIf sKey == "spellFailDifficulty" && SpellTeachScript
-        SpellTeachScript.FailureDifficultyMult = sVal as Float
-        StorageUtil.SetFloatValue(None, "SeverActions_SpellFailDifficulty", sVal as Float)
-    EndIf
-EndFunction
-
-Function HandleCurrencySetting(String sKey, String sVal)
-    If sKey == "allowConjuredGold" && MCMScript
-        MCMScript.AllowConjuredGold = (sVal == "true")
-        If CurrencyScript
-            CurrencyScript.AllowConjuredGold = (sVal == "true")
-        EndIf
-    ElseIf sKey == "overdueReminders" && DebtScript
-        DebtScript.EnableOverdueReminders = (sVal == "true")
-    ElseIf sKey == "gracePeriod" && DebtScript
-        DebtScript.OverdueGracePeriodHours = sVal as Float
-    ElseIf sKey == "reportThreshold" && DebtScript
-        DebtScript.ReportThresholdHours = sVal as Float
-    EndIf
-EndFunction
-
-Function HandleBountySetting(String sKey, String sVal)
-    If !ArrestScript
-        Return
-    EndIf
-    If sKey == "arrestCooldown"
-        ArrestScript.ArrestPlayerCooldown = sVal as Float
-    ElseIf sKey == "persuasionTimeLimit"
-        ArrestScript.PersuasionTimeLimit = sVal as Float
-    EndIf
-EndFunction
-
-Function HandleSurvivalSetting(String sKey, String sVal)
-    If !SurvivalScript
-        Return
-    EndIf
-    If sKey == "survivalEnabled"
-        SurvivalScript.Enabled = (sVal == "true")
-    ElseIf sKey == "hungerEnabled"
-        SurvivalScript.HungerEnabled = (sVal == "true")
-    ElseIf sKey == "hungerRate"
-        SurvivalScript.HungerRate = sVal as Float
-    ElseIf sKey == "autoEatThreshold"
-        SurvivalScript.AutoEatThreshold = sVal as Int
-    ElseIf sKey == "fatigueEnabled"
-        SurvivalScript.FatigueEnabled = (sVal == "true")
-    ElseIf sKey == "fatigueRate"
-        SurvivalScript.FatigueRate = sVal as Float
-    ElseIf sKey == "coldEnabled"
-        SurvivalScript.ColdEnabled = (sVal == "true")
-    ElseIf sKey == "coldRate"
-        SurvivalScript.ColdRate = sVal as Float
-    EndIf
-EndFunction
-
-Function HandleFollowersSetting(String sKey, String sVal, String sTarget)
-    If !FollowerManagerScript
-        Return
-    EndIf
-    ; Framework-level settings
-    If sKey == "frameworkMode"
-        FollowerManagerScript.FrameworkMode = sVal as Int
-    ElseIf sKey == "maxFollowers"
-        FollowerManagerScript.MaxFollowers = sVal as Int
-    ElseIf sKey == "autoDismissHostile"
-        FollowerManagerScript.AllowAutonomousLeaving = (sVal == "true")
-    ElseIf sKey == "trackRelationships"
-        FollowerManagerScript.AutoRelAssessment = (sVal == "true")
-    ElseIf sKey == "rapportDecay"
-        FollowerManagerScript.RapportDecayRate = sVal as Float
-    ElseIf sKey == "leavingThreshold"
-        FollowerManagerScript.LeavingThreshold = sVal as Float
-    ElseIf sKey == "relCooldown"
-        FollowerManagerScript.RelationshipCooldown = sVal as Float
-    ; Per-companion settings (sTarget = companion name)
-    ElseIf sKey == "companionCombatStyle" && sTarget != ""
-        HandleCompanionCombatStyle(sTarget, sVal)
-    EndIf
-EndFunction
-
-Function HandleCompanionCombatStyle(String companionName, String sVal)
-    Actor companion = FindFollowerByName(companionName)
-    If companion && FollowerManagerScript
-        String style = GetCombatStyleFromIndex(sVal as Int)
-        FollowerManagerScript.SetCombatStyle(companion, style)
-    EndIf
-EndFunction
-
-; HandleOutfitsSetting() — REMOVED: Handled by C++ PrismaUISettingsHandler
-
-; =============================================================================
-; ACTION HANDLER
-; =============================================================================
-
-Function HandleAction(String actType, String json)
-    ; Pre-declare all variables at function scope (Papyrus requires this)
-    String actName = ""
-    Actor actTarget = None
-    Int actSlot = 0
-    String actLocName = ""
-
-    ; Bounty actions
-    If actType == "clearBounty"
-        actName = SeverActionsNative.PrismaUI_ExtractJsonValue(json, "hold")
-        ClearBountyForHold(actName)
-        SeverActionsNative.PrismaUI_RefreshPage("world")
-    ElseIf actType == "clearAllBounties"
-        ClearAllBounties()
-        SeverActionsNative.PrismaUI_RefreshPage("world")
-
-    ; Travel actions
-    ElseIf actType == "clearTravelSlot"
-        actSlot = SeverActionsNative.PrismaUI_ExtractJsonValue(json, "slot") as Int
-        If TravelScript
-            TravelScript.ClearSlotFromMCM(actSlot)
-        EndIf
-        SeverActionsNative.PrismaUI_RefreshPage("world")
-    ElseIf actType == "resetAllTravel"
-        If TravelScript
-            TravelScript.CancelAllTravel()
-        EndIf
-        SeverActionsNative.PrismaUI_RefreshPage("world")
-
-    ; NPC Home actions
-    ElseIf actType == "clearNPCHome"
-        actName = SeverActionsNative.PrismaUI_ExtractJsonValue(json, "name")
-        actTarget = FindFollowerByName(actName)
-        If actTarget && FollowerManagerScript
-            FollowerManagerScript.ClearHome(actTarget)
-        EndIf
-        SeverActionsNative.PrismaUI_RefreshPage("companions")
-
-    ; Follower actions
-    ElseIf actType == "assignHomeHere"
-        actName = SeverActionsNative.PrismaUI_ExtractJsonValue(json, "name")
-        actTarget = FindFollowerByName(actName)
-        If actTarget && FollowerManagerScript
-            actLocName = GetPlayerLocationName()
-            FollowerManagerScript.AssignHome(actTarget, actLocName)
-        EndIf
-        SeverActionsNative.PrismaUI_RefreshPage("companions")
-
-    ElseIf actType == "clearCompanionHome"
-        actName = SeverActionsNative.PrismaUI_ExtractJsonValue(json, "name")
-        actTarget = FindFollowerByName(actName)
-        If actTarget && FollowerManagerScript
-            FollowerManagerScript.ClearHome(actTarget)
-        EndIf
-        SeverActionsNative.PrismaUI_RefreshPage("companions")
-    ElseIf actType == "dismissFollower"
-        actName = SeverActionsNative.PrismaUI_ExtractJsonValue(json, "name")
-        actTarget = FindFollowerByName(actName)
-        If actTarget
-            FollowerManagerScript.DismissCompanion(actTarget)
-        EndIf
-        Utility.Wait(0.5)
-        SeverActionsNative.PrismaUI_RefreshPage("companions")
-    ElseIf actType == "resetAllCompanions"
-        If FollowerManagerScript
-            Actor[] allComp = FollowerManagerScript.GetAllFollowers()
-            Int ci = 0
-            If allComp
-                While ci < allComp.Length
-                    If allComp[ci]
-                        FollowerManagerScript.DismissCompanion(allComp[ci])
-                    EndIf
-                    ci += 1
-                EndWhile
-            EndIf
-        EndIf
-        Utility.Wait(1.0)
-        SeverActionsNative.PrismaUI_RefreshPage("companions")
-
-    ; Outfit actions handled by C++ PrismaUIActionHandler
-
-    ; Package management actions (SkyrimNetApi calls)
-    ElseIf actType == "clearAllPackages"
-        actName = SeverActionsNative.PrismaUI_ExtractJsonValue(json, "name")
-        actTarget = FindFollowerByName(actName)
-        If actTarget
-            Debug.Trace("[SeverActions_PrismaUI] ClearAllPackages for " + actName)
-            SkyrimNetApi.ClearAllPackages(actTarget)
-            SeverActionsNative.Native_SetSandboxing(actTarget, false)
-        EndIf
-        Utility.Wait(0.5)
-        SeverActionsNative.PrismaUI_RefreshPage("companions")
-    ElseIf actType == "removePackage"
-        actName = SeverActionsNative.PrismaUI_ExtractJsonValue(json, "name")
-        actLocName = SeverActionsNative.PrismaUI_ExtractJsonValue(json, "package")
-        actTarget = FindFollowerByName(actName)
-        If actTarget
-            Debug.Trace("[SeverActions_PrismaUI] UnregisterPackage " + actLocName + " from " + actName)
-            SkyrimNetApi.UnregisterPackage(actTarget, actLocName)
-            If actLocName == "FollowPlayer"
-                SeverActionsNative.Native_SetSandboxing(actTarget, false)
-            EndIf
-        EndIf
-        Utility.Wait(0.5)
-        SeverActionsNative.PrismaUI_RefreshPage("companions")
-    EndIf
-EndFunction
-
-; =============================================================================
 ; C++ DISPATCH TARGETS
 ; These functions are called from C++ via vm->DispatchMethodCall when an
 ; action requires SkyrimNet API access or other Papyrus-only functionality.
@@ -731,51 +497,70 @@ EndFunction
 
 ; =============================================================================
 ; PRISMAUI ACTIONS PAGE — Generic Action Executor
-; Receives pipe-delimited: actionId|target|target2|strParam|intParam
+; Receives pipe-delimited (8 slots): actionId|target|target2|strParam|intParam|str2Param|targetFid|target2Fid
 ; Resolves actors by name and dispatches to the correct script function.
 ; =============================================================================
 
 Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form sender)
     EnsureScriptReferences()
 
-    ; Parse pipe-delimited fields (6 slots — actionId | target | target2 |
-    ; strParam | intParam | str2Param). str2Param is empty for most actions;
-    ; v4 verbs (castSpell, setSituationOutfit, createRecurringDebt) use it
-    ; for a second string parameter (preset name / interval days / etc.).
+    ; Parse pipe-delimited fields (8 slots — actionId | target | target2 |
+    ; strParam | intParam | str2Param | targetFid | target2Fid). str2Param is
+    ; empty for most actions; many verbs (setSituationOutfit, createRecurringDebt,
+    ; travel pace, loot take-lists, sell/buy gold, dispatch authority, etc.) use
+    ; it for a second string parameter. Fields 7/8 carry the pickers' exact
+    ; FormIDs as signed decimal (empty on an older DLL → 0 → name fallback below).
     String actionId = GetPipeField(strArg, 0)
     String targetName = GetPipeField(strArg, 1)
     String target2Name = GetPipeField(strArg, 2)
     String strParam = GetPipeField(strArg, 3)
     Int intParam = GetPipeField(strArg, 4) as Int
     String str2Param = GetPipeField(strArg, 5)
+    Int targetFid = GetPipeField(strArg, 6) as Int
+    Int target2Fid = GetPipeField(strArg, 7) as Int
 
     Debug.Trace("[SeverActions_PrismaUI] ExecuteAction: " + actionId + " target=" + targetName \
-        + " target2=" + target2Name + " str=" + strParam + " int=" + intParam + " str2=" + str2Param)
+        + " target2=" + target2Name + " str=" + strParam + " int=" + intParam + " str2=" + str2Param \
+        + " fid=" + targetFid + " fid2=" + target2Fid)
 
-    ; Resolve primary target ("Player" → player ref, otherwise search by name)
-    Actor target = None
-    If targetName == "Player" || targetName == "player"
-        target = Game.GetPlayer()
-    Else
-        target = SeverActionsNative.FindActorByName(targetName)
+    ; ── Resolve primary target: exact identity first ──
+    ; sender (set by C++ from targetFormId) > pipe FormID > name. Name
+    ; resolution is Levenshtein-fuzzy and picked the wrong duplicate-named
+    ; NPC — this page includes hostile verbs (attackTarget / arrestNPC), so
+    ; exactness matters. "Player" keeps its sentinel path (rail sends fid 0).
+    Actor target = sender as Actor
+    If !target && targetFid != 0
+        target = Game.GetFormEx(targetFid) as Actor
+    EndIf
+    If !target
+        If targetName == "Player" || targetName == "player"
+            target = Game.GetPlayer()
+        Else
+            target = SeverActionsNative.FindActorByName(targetName)
+        EndIf
     EndIf
     If !target
         Debug.Trace("[SeverActions_PrismaUI] ExecuteAction: Could not find target '" + targetName + "'")
         Return
     EndIf
 
-    ; Resolve optional second target ("Player" → player ref).
+    ; ── Resolve optional second target: exact identity first ──
     ; Several downstream Execute paths take target2Name as a raw string and
-    ; resolve it again themselves via FindActorByName (GiveGoldTrue_Execute,
-    ; DispatchGuardToArrest_Execute target2Name slot, DispatchGuardToHome_Execute
-    ; target2Name slot, etc.). FindActorByName fuzzy-matches via Levenshtein,
+    ; resolve it again themselves via FindActorByName (DispatchGuardToArrest_Execute
+    ; target2Name slot, DispatchGuardToHome_Execute target2Name slot, etc.).
+    ; FindActorByName fuzzy-matches via Levenshtein,
     ; so a literal "Player" sentinel from the picker would otherwise match the
     ; first NPC whose name contains "Player" (e.g. "Player Friend"). Whenever
     ; we successfully resolve target2 to an Actor, also overwrite target2Name
     ; with that actor's actual display name so the raw-string path can't
     ; collide. For the player specifically, "Player" → player.GetDisplayName().
     Actor target2 = None
-    If target2Name == "Player" || target2Name == "player"
+    If target2Fid != 0
+        target2 = Game.GetFormEx(target2Fid) as Actor
+    EndIf
+    If target2
+        target2Name = target2.GetDisplayName()
+    ElseIf target2Name == "Player" || target2Name == "player"
         target2 = Game.GetPlayer()
         target2Name = target2.GetDisplayName()
     ElseIf target2Name != ""
@@ -850,6 +635,56 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
             FollowerManagerScript.SetCombatStyle(target, strParam)
         EndIf
 
+    ElseIf actionId == "kidnapNPC"
+        ; Kidnap system (opt-in): target = the abducting companion,
+        ; strParam = victim name (global off-screen resolve inside KidnapNPC),
+        ; str2Param = destination. KidnapNPC itself notifies if the toggle is off.
+        If FollowerManagerScript
+            FollowerManagerScript.KidnapNPC(target, strParam, str2Param)
+        EndIf
+
+    ElseIf actionId == "releaseCaptive"
+        ; target = whoever unties them; strParam = captive name (optional —
+        ; matched against active captives only, single captive needs no name).
+        If FollowerManagerScript
+            FollowerManagerScript.ReleaseCaptive(target, strParam)
+        EndIf
+
+    ElseIf actionId == "moveCaptive"
+        ; target = escorting companion; strParam = captive name (optional);
+        ; str2Param = the new hold destination.
+        If FollowerManagerScript
+            FollowerManagerScript.MoveCaptive(target, strParam, str2Param)
+        EndIf
+
+    ElseIf actionId == "moveCaptiveHere"
+        ; target = the row's kidnapper (hint only — the entry's CURRENT
+        ; kidnapper is authoritative inside); strParam = captive name.
+        ; The captive is re-taken and bound at a pin dropped where the
+        ; player stood at click time.
+        If FollowerManagerScript
+            FollowerManagerScript.MoveCaptiveHere(target, strParam)
+        EndIf
+
+    ElseIf actionId == "demandRansom"
+        ; target = the companion sending the demand; strParam = captive name
+        ; (optional - single captive needs no name); intParam = gold demanded
+        ; (0 = ask a fair price).
+        If FollowerManagerScript
+            FollowerManagerScript.DemandRansom(target, strParam, intParam)
+        EndIf
+
+    ElseIf actionId == "untieCaptive"
+        If FollowerManagerScript
+            FollowerManagerScript.UntieCaptive(target, strParam)
+        EndIf
+
+    ElseIf actionId == "interrogateCaptive"
+        ; target = the interrogator; strParam = captive name (optional).
+        If FollowerManagerScript
+            FollowerManagerScript.InterrogateCaptive(target, strParam)
+        EndIf
+
     ; ── Combat Actions ──
     ElseIf actionId == "ceaseFire"
         If CombatScript
@@ -896,10 +731,9 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
 
     ; ── Economy Actions ──
     ElseIf actionId == "giveGold"
-        ; Name-resolution fallback (GiveGoldTrue) was deleted in Phase 1 — the
-        ; PrismaUI action picker always supplies a resolved target2 Actor, so
-        ; the string-based path is unreachable in practice. If a future UI
-        ; surface needs name-resolution, restore GiveGoldTrue first.
+        ; The PrismaUI action picker always supplies a resolved target2 Actor,
+        ; so only the Actor path exists here. If a future UI surface needs
+        ; name-resolution, restore a GiveGoldTrue-style fallback first.
         If CurrencyScript && target2
             CurrencyScript.GiveGold_Execute(target, target2, intParam)
         EndIf
@@ -970,12 +804,225 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
             Else
                 speed = 1  ; Jog (default)
             EndIf
-            TravelScript.TravelToPlace(target, strParam, 0.0, True, speed)
+            ; waitForPlayer=True preserves the page's long-standing semantics
+            ; (they go there and wait). NOTE: this call site MUST be recompiled
+            ; whenever TravelToPlace's signature changes - a stale 5-arg pex
+            ; hard-errors at the VM (Expected 6, got 5) and the whole action
+            ; silently dies (field report, Actions-page travel doing nothing).
+            TravelScript.TravelToPlace(target, strParam, 0.0, True, speed, True)
         EndIf
 
     ElseIf actionId == "cancelTravel"
         If TravelScript
             TravelScript.CancelTravel(target)
+        EndIf
+
+    ElseIf actionId == "travelPace"
+        ; str2Param carries the pace word via the 'speed' key (walk/run/sprint) —
+        ; SetTravelSpeedNatural normalizes natural-language variants itself.
+        If TravelScript
+            TravelScript.SetTravelSpeedNatural(target, str2Param)
+        EndIf
+
+    ; ── Artisanry Actions (v5 Writ & Command coverage) ──
+    ; Same member functions the SkyrimNet YAMLs call. strParam = the thing
+    ; being made (frontend key 'name'); target2 = optional recipient of the
+    ; finished goods; intParam = count (page seeds 1).
+    ElseIf actionId == "cookMeal"
+        If CraftingScript
+            CraftingScript.CookMeal_Internal(target, strParam, target2, intParam)
+        EndIf
+
+    ElseIf actionId == "brewPotion"
+        If CraftingScript
+            CraftingScript.BrewPotion_Internal(target, strParam, target2, intParam)
+        EndIf
+
+    ElseIf actionId == "craftItem"
+        If CraftingScript
+            CraftingScript.CraftItem_Internal(target, strParam, target2, intParam)
+        EndIf
+
+    ElseIf actionId == "commissionItem"
+        ; str2Param ('detail') = ETA text; quotedTotal 0 = the smith quotes it.
+        If CraftingScript
+            CraftingScript.CommissionItem_Internal(target, strParam, str2Param, intParam, 0)
+        EndIf
+
+    ElseIf actionId == "collectCommission"
+        If CraftingScript
+            CraftingScript.CollectCommission_Internal(target)
+        EndIf
+
+    ; ── Plunder Actions ──
+    ; The loot family honours the PR #184 owned-item theft contract inside
+    ; the Execute functions (silent transfer + SA tracked bounty if
+    ; witnessed) — nothing extra to do at dispatch.
+    ElseIf actionId == "setFollowDistance"
+        ; target = companion; strParam ('name') = 'close' or 'normal'.
+        If FollowScript
+            FollowScript.SetFollowDistance(target, strParam)
+        EndIf
+
+    ElseIf actionId == "searchCorpse"
+        ; strParam = corpse name — reveal-only, no take.
+        If LootScript
+            LootScript.SearchCorpse_Execute(target, strParam)
+        EndIf
+
+    ElseIf actionId == "searchContainer"
+        ; strParam = container name — reveal-only, no take.
+        If LootScript
+            LootScript.SearchContainer_Execute(target, strParam)
+        EndIf
+
+    ElseIf actionId == "lootCorpse"
+        ; strParam = corpse name; str2Param ('detail') = items to take.
+        If LootScript
+            String corpseTake = str2Param
+            If corpseTake == ""
+                corpseTake = "everything"
+            EndIf
+            LootScript.LootCorpse_Execute(target, strParam, corpseTake)
+        EndIf
+
+    ElseIf actionId == "lootContainer"
+        If LootScript
+            String contTake = str2Param
+            If contTake == ""
+                contTake = "everything"
+            EndIf
+            LootScript.LootContainer_Execute(target, strParam, contTake)
+        EndIf
+
+    ElseIf actionId == "pickUpItem"
+        If LootScript
+            LootScript.PickUpItem_Execute(target, strParam)
+        EndIf
+
+    ElseIf actionId == "bringItem"
+        ; target2 = the recipient (required by the page). Re-enabled after the
+        ; theft-contract fix in BringItem_Execute.
+        If LootScript && target2
+            LootScript.BringItem_Execute(target, target2, strParam)
+        EndIf
+
+    ; ── Trade Actions (buy/sell) ──
+    ; str2Param ('detail') carries the total gold as text (the single int
+    ; slot already holds quantity).
+    ElseIf actionId == "sellItem"
+        If CurrencyScript && target2
+            CurrencyScript.SellItem_Execute(target, target2, strParam, intParam, str2Param as Int)
+        EndIf
+
+    ElseIf actionId == "buyItem"
+        If CurrencyScript && target2
+            CurrencyScript.BuyItem_Execute(target, target2, strParam, intParam, str2Param as Int)
+        EndIf
+
+    ; ── Field extras ──
+    ElseIf actionId == "startFollowing"
+        ; Temporary follow for ANY NPC — distinct from Recruit (no roster).
+        If FollowScript
+            FollowScript.StartFollowing(target)
+        EndIf
+
+    ElseIf actionId == "stopFollowing"
+        If FollowScript
+            FollowScript.StopFollowing(target)
+        EndIf
+
+    ElseIf actionId == "standUp"
+        If FurnitureScript
+            FurnitureScript.StopUsingFurniture_Execute(target)
+        EndIf
+
+    ; ── Employment (Enterprises retainers) ──────────────────────────────
+    ; The board can do all of this; until now the Actions page could not.
+    ; Same natives the board's Venture_UIAction verbs call, issued per-NPC.
+    ; CollectInPerson (not Collect) is deliberate: the face-to-face path is
+    ; the only one that reaches a defiant Tribute retainer's withheld coin.
+    ElseIf actionId == "collectFromRetainer"
+        SeverActionsNativeExt2.Venture_CollectInPerson(target)
+
+    ElseIf actionId == "payRetainerArrears"
+        SeverActionsNativeExt2.Venture_PayArrears(target)
+
+    ElseIf actionId == "grantRetainerRaise"
+        SeverActionsNativeExt2.Venture_GrantRaiseInPerson(target)
+
+    ElseIf actionId == "reassureRetainer"
+        SeverActionsNativeExt2.Venture_Reassure(target)
+
+    ElseIf actionId == "brushOffRetainer"
+        SeverActionsNativeExt2.Venture_BrushOff(target)
+
+    ElseIf actionId == "grantLoan"
+        SeverActionsNativeExt2.Venture_GrantLoan(target)
+
+    ElseIf actionId == "refuseLoan"
+        SeverActionsNativeExt2.Venture_RefuseLoan(target)
+
+    ElseIf actionId == "forgiveLoan"
+        SeverActionsNativeExt2.Venture_ForgiveLoan(target)
+
+    ElseIf actionId == "bailRetainer"
+        SeverActionsNativeExt2.Venture_Bail(target)
+
+    ElseIf actionId == "settleRetainerBounty"
+        SeverActionsNativeExt2.Venture_SettleBounty(target)
+
+    ElseIf actionId == "dismissRetainer"
+        SeverActionsNativeExt2.Venture_Dismiss(target)
+
+    ; ── Gap-audit additions (2026-07) ───────────────────────────────────
+    ElseIf actionId == "restrainNPC"
+        ; RestrainNPC takes the victim by NAME (not an Actor) — target2 is
+        ; already the resolved display name from the frontend's actor picker.
+        If FollowerManagerScript
+            FollowerManagerScript.RestrainNPC(target, target2Name)
+        EndIf
+
+    ElseIf actionId == "adjustRelationship"
+        ; The frontend sends one axis + one signed amount; the Papyrus fn
+        ; takes all four axes positionally, so route the amount into the
+        ; chosen slot and leave the rest at zero.
+        If FollowerManagerScript
+            If strParam == "rapport"
+                FollowerManagerScript.AdjustRelationship(target, intParam, 0, 0, 0)
+            ElseIf strParam == "trust"
+                FollowerManagerScript.AdjustRelationship(target, 0, intParam, 0, 0)
+            ElseIf strParam == "loyalty"
+                FollowerManagerScript.AdjustRelationship(target, 0, 0, intParam, 0)
+            ElseIf strParam == "mood"
+                FollowerManagerScript.AdjustRelationship(target, 0, 0, 0, intParam)
+            EndIf
+        EndIf
+
+    ElseIf actionId == "payNpcBounty"
+        ; target = the authority taking payment; target2 = the wanted person
+        ; by name (they need not be present — the authority keys off their
+        ; own hold's wanted list).
+        If BountyScript
+            BountyScript.PayNpcBountyToGuard_Internal(target, target2Name)
+        EndIf
+
+    ElseIf actionId == "readAloud"
+        If LootScript
+            LootScript.ReadBook_Execute(target, strParam)
+        EndIf
+
+    ElseIf actionId == "stopReading"
+        If LootScript
+            LootScript.StopReading_Execute(target)
+        EndIf
+
+    ; ── Lawkeeping extras ──
+    ElseIf actionId == "turnMeIn"
+        ; The guard (target) arrests the PLAYER — surrender / clear a bounty
+        ; the honest way. Dangerous-flagged on the page (confirm before fire).
+        If ArrestPlayerScript
+            ArrestPlayerScript.ArrestPlayer_Internal(target)
         EndIf
 
     ; ── Spell Actions ──
@@ -1132,6 +1179,15 @@ Event OnPrismaExecuteAction(string eventName, string strArg, float numArg, Form 
     Else
         Debug.Trace("[SeverActions_PrismaUI] ExecuteAction: Unknown actionId '" + actionId + "'")
     EndIf
+
+    ; Completion-driven UI refresh (PR #452 review): the C++ dispatcher fires
+    ; a best-effort refresh one frame after SendEvent, but most verbs mint
+    ; their debts/bounties/journeys on this Papyrus stack seconds later - by
+    ; here the dispatched Execute call has returned, so the gathers finally
+    ; see the post-mutation stores. Runs once per verb, player-clicked, so
+    ; two gathers are cheap.
+    SeverActionsNative.PrismaUI_RefreshPage("world")
+    SeverActionsNative.PrismaUI_RefreshPage("enterprises")
 EndEvent
 
 ; Get the Nth pipe-delimited field from a string (0-indexed)
@@ -1153,17 +1209,30 @@ String Function GetPipeField(String data, Int index)
     If nextPipe < 0
         Return StringUtil.Substring(data, pos)
     EndIf
+    ; EMPTY field guard: SKSE's StringUtil.Substring treats len=0 as
+    ; "to the end of the string", so an empty field ("||") used to return
+    ; the ENTIRE remaining pipe tail (field bleed - live log: target2 came
+    ; back as '|outside of warmaiden's|0|walk|...', which then went through
+    ; fuzzy actor-name resolution as garbage).
+    If nextPipe == pos
+        Return ""
+    EndIf
     Return StringUtil.Substring(data, pos, nextPipe - pos)
 EndFunction
 
 Event OnPrismaClearPkgs(string eventName, string strArg, float numArg, Form sender)
-    {PrismaUI: Clear all packages on an actor. strArg = "actorName|".}
+    {PrismaUI: Clear all packages on an actor. strArg = "actorName|".
+     Sender-first — the C++ helper sets the exact actor; the fuzzy name
+     lookup is only a stale-DLL fallback (wrong-duplicate hazard).}
     Int pipePos = StringUtil.Find(strArg, "|")
     If pipePos < 0
         Return
     EndIf
     String actorName = StringUtil.Substring(strArg, 0, pipePos)
-    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    Actor akActor = sender as Actor
+    If !akActor
+        akActor = SeverActionsNative.FindActorByName(actorName)
+    EndIf
     If akActor
         Debug.Trace("[SeverActions_PrismaUI] ClearAllPackages: " + akActor.GetDisplayName())
         SkyrimNetApi.ClearAllPackages(akActor)
@@ -1172,14 +1241,18 @@ Event OnPrismaClearPkgs(string eventName, string strArg, float numArg, Form send
 EndEvent
 
 Event OnPrismaRemovePkg(string eventName, string strArg, float numArg, Form sender)
-    {PrismaUI: Remove a specific package from an actor. strArg = "actorName|packageName".}
+    {PrismaUI: Remove a specific package from an actor. strArg = "actorName|packageName".
+     Sender-first — see OnPrismaClearPkgs.}
     Int pipePos = StringUtil.Find(strArg, "|")
     If pipePos < 0
         Return
     EndIf
     String actorName = StringUtil.Substring(strArg, 0, pipePos)
     String packageName = StringUtil.Substring(strArg, pipePos + 1)
-    Actor akActor = SeverActionsNative.FindActorByName(actorName)
+    Actor akActor = sender as Actor
+    If !akActor
+        akActor = SeverActionsNative.FindActorByName(actorName)
+    EndIf
     If akActor
         Debug.Trace("[SeverActions_PrismaUI] RemovePackage: " + packageName + " from " + akActor.GetDisplayName())
         SkyrimNetApi.UnregisterPackage(akActor, packageName)
@@ -1213,8 +1286,6 @@ Actor Function FindFollowerByName(String name)
     Return None
 EndFunction
 
-; FindOutfitNPCByName() — REMOVED: C++ ActionHandler searches OutfitDataStore directly
-
 ReferenceAlias Function GetTravelAlias(Int slot)
     If !TravelScript
         Return None
@@ -1232,6 +1303,103 @@ ReferenceAlias Function GetTravelAlias(Int slot)
     EndIf
     Return None
 EndFunction
+
+Event OnPrismaSetHotkey(String eventName, String strArg, Float numArg, Form sender)
+    {Key binding changed on the PrismaUI Settings page.
+
+     The C++ handler has ALREADY written the display value onto the MCM script
+     property (that is what makes the MCM show the new key without a reload —
+     both menus read the one variable). What C++ cannot do is register the key
+     with the input system, so that half arrives here: SeverActions_Hotkeys
+     keeps its own copy of every binding and its UpdateXKey functions do the
+     UnregisterForKey/RegisterForKey pair.
+
+     Routed as a ModEvent rather than vm->DispatchMethodCall, which reports
+     success and never runs the function (see CLAUDE.md).
+
+     strArg = "PropertyName|scanCode"; numArg carries the same code.}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos < 0
+        Return
+    EndIf
+    String propName = StringUtil.Substring(strArg, 0, pipePos)
+    Int code = numArg as Int
+
+    If !HotkeyScript
+        EnsureScriptReferences()
+    EndIf
+    If !HotkeyScript
+        Debug.Trace("[SeverActions_PrismaUI] SetHotkey: no HotkeyScript - " + propName + " not registered")
+        Return
+    EndIf
+
+    ; Not a key — the config menu's Shift modifier, pushed down the same
+    ; channel. Re-pushes the native menu-key registration so the new
+    ; requirement takes effect immediately.
+    If propName == "ConfigMenuRequireShift"
+        If MCMScript
+            HotkeyScript.ConfigMenuRequireShift = MCMScript.ConfigMenuRequireShift
+        Else
+            HotkeyScript.ConfigMenuRequireShift = (code == 1)
+        EndIf
+        SeverActionsNative.PrismaUI_SetMenuKey(HotkeyScript.ConfigMenuKey, HotkeyScript.ConfigMenuRequireShift)
+        Debug.Trace("[SeverActions_PrismaUI] SetHotkey ConfigMenuRequireShift = " + HotkeyScript.ConfigMenuRequireShift)
+        Return
+    EndIf
+
+    If propName == "FollowToggleKey"
+        HotkeyScript.UpdateFollowToggleKey(code)
+    ElseIf propName == "DismissKey"
+        HotkeyScript.UpdateDismissKey(code)
+    ElseIf propName == "StandUpKey"
+        HotkeyScript.UpdateStandUpKey(code)
+    ElseIf propName == "UseFurnitureKey"
+        HotkeyScript.UpdateUseFurnitureKey(code)
+    ElseIf propName == "YieldKey"
+        HotkeyScript.UpdateYieldKey(code)
+    ElseIf propName == "UndressKey"
+        HotkeyScript.UpdateUndressKey(code)
+    ElseIf propName == "DressKey"
+        HotkeyScript.UpdateDressKey(code)
+    ElseIf propName == "SetCompanionKey"
+        HotkeyScript.UpdateSetCompanionKey(code)
+    ElseIf propName == "CompanionWaitKey"
+        HotkeyScript.UpdateCompanionWaitKey(code)
+    ElseIf propName == "AssignHomeKey"
+        HotkeyScript.UpdateAssignHomeKey(code)
+    ElseIf propName == "SetupCampKey"
+        HotkeyScript.UpdateSetupCampKey(code)
+    ElseIf propName == "DropMarkerKey"
+        HotkeyScript.UpdateDropMarkerKey(code)
+    ElseIf propName == "TieUntieKey"
+        HotkeyScript.UpdateTieUntieKey(code)
+    ElseIf propName == "ConfigMenuKey"
+        HotkeyScript.UpdateConfigMenuKey(code)
+    Else
+        Debug.Trace("[SeverActions_PrismaUI] SetHotkey: unknown binding " + propName)
+        Return
+    EndIf
+    Debug.Trace("[SeverActions_PrismaUI] SetHotkey " + propName + " = " + code)
+EndEvent
+
+Event OnPrismaClearBounty(String eventName, String strArg, Float numArg, Form sender)
+    {Native PrismaUIActionHandler routes the Clear Bounty button here.
+     strArg = "0|<hold>" (SendModEvent packs "actorName|payload"; no actor
+     involved in a hold-level clear, so the name half is "0").}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    String hold = strArg
+    If pipePos >= 0
+        hold = StringUtil.Substring(strArg, pipePos + 1)
+    EndIf
+    If hold != ""
+        ClearBountyForHold(hold)
+    EndIf
+EndEvent
+
+Event OnPrismaClearAllBounties(String eventName, String strArg, Float numArg, Form sender)
+    {Native PrismaUIActionHandler routes the Clear All Bounties button here.}
+    ClearAllBounties()
+EndEvent
 
 Function ClearBountyForHold(String hold)
     If !ArrestScript || !BountyScript
@@ -1282,21 +1450,6 @@ Faction Function GetCrimeFactionForHold(String hold)
         Return ArrestScript.CrimeFactionWinterhold
     EndIf
     Return None
-EndFunction
-
-String Function GetCombatStyleFromIndex(Int idx)
-    If idx == 0
-        Return "balanced"
-    ElseIf idx == 1
-        Return "aggressive"
-    ElseIf idx == 2
-        Return "defensive"
-    ElseIf idx == 3
-        Return "ranged"
-    ElseIf idx == 4
-        Return "healer"
-    EndIf
-    Return "balanced"
 EndFunction
 
 String Function GetPlayerLocationName()

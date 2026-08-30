@@ -1,6 +1,6 @@
 customCategory: combat
 name: AttackTarget
-description: "The speaker draws steel and lunges — a bandit breaking ambush, a jealous husband going for a rival's throat across a tavern, a Stormcloak charging an Imperial scout in the snow. Blades come out and the fight begins."
+description: "Attack the target with weapons and start a real fight. Use for lethal intent — ambushes, blood grudges, enemies on sight. For a non-lethal fist-fight challenge, use ChallengeBrawl."
 questEditorId: SeverActions
 scriptName: SeverActions_Combat
 executionFunctionName: AttackTarget_Execute

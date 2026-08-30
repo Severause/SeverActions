@@ -1,0 +1,79 @@
+name: RestrainNPC
+description: "Use when the speaker is told to restrain someone — by {{ player.name }} or by an NPC with authority over them (a jarl's command, a guard commander's order) — or when the speaker's own role plainly calls for it. The speaker binds the target's hands and holds them standing bound in plain sight until someone releases them, moves them, or decides their fate. The target must be present in the scene. NOT an abduction: no transport, no crime recorded — for abduction to a destination, use KidnapNPC. Never use it on anyone traveling with {{ player.name }}."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: RestrainNPC
+parameterMapping:
+  - type: speaker
+    name: akRestrainer
+    description: the NPC carrying out the restraint (the speaker)
+  - type: dynamic
+    name: targetName
+    description: "the exact name of the NPC to restrain (e.g. 'Nazeem') — must be present in the scene"
+enabled: true
+defaultPriority: 8
+eligibilityRules:
+  - conditions:
+      # Feature toggle (MCM / PrismaUI Settings, default ON).
+      # Custom decorator — STRING compare, "" = disabled. Never `== true`.
+      - decoratorName: "sever_restrain_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  # Deliberately NO is_sever_follower gate: any NPC can be ordered to
+  # restrain someone — a guard by their commander, a housecarl by their
+  # jarl, a companion by the player. The description scopes the social
+  # legitimacy; characters with no cause will refuse in dialogue.
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives or take new ones (the
+      # self-release hole). String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Arrest in flight (either side), judgment, escort, spell cast — the
+      # SeverActions arrest path calls SetActorBusy("arrest") on BOTH the
+      # guard and the person being arrested. Users reported each of them
+      # kicking off a restraint mid-arrest; two FSMs then fight over the same
+      # actor's packages and captured AVs. Built-in decorator, real bool.
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Mid-scene speakers (SexLab). get_faction_rank < 0, NOT is_in_faction:
+      # both frameworks can leave an NPC stuck in the faction at rank -1 after
+      # a scene ends, and is_in_faction reads that as "still animating" —
+      # gating the action forever. rank >= 0 = actually animating; -1 (stuck)
+      # and -2 (not a member) both pass. This is the same conversion the 3.x
+      # sweep applied to 62 other YAMLs; see CHANGELOG under is_in_faction ->
+      # get_faction_rank.
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Mid-scene speakers (OStim) — same sentinel rule.
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} moves to restrain {{ targetName }}"

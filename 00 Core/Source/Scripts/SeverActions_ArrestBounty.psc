@@ -1,5 +1,5 @@
 Scriptname SeverActions_ArrestBounty Extends Quest
-{Tracked-bounty subsystem (Wave 5b extraction, migrated to BountyStore).
+{Tracked-bounty subsystem, backed by the native BountyStore.
 
  Stores per-hold bounty separately from vanilla CrimeGold so that vanilla
  guard-arrest dialogue does NOT trigger on its own — the SeverActions arrest
@@ -17,7 +17,7 @@ Scriptname SeverActions_ArrestBounty Extends Quest
  BountyScript reaches them via the ArrestScript back-reference below.
 
  Public API (also exposed via the AddBountyToPlayer YAML action):
-   - GetBountyStorageKey, GetTrackedBounty, SetTrackedBounty,
+   - GetTrackedBounty, SetTrackedBounty,
      ModTrackedBounty, ClearTrackedBounty, ApplyTrackedBountyToVanilla
    - GetTrackedBountyForGuard
    - AddBountyToPlayer_Internal
@@ -50,14 +50,17 @@ Function Maintenance()
      The drain in MigrateLegacyStorage() resolves hold metadata via
      SeverActionsNativeExt.Hold_GetBountyKeyForCrime(), which depends on
      ArrestScript's Hold_Register chain having run first. Since
-     SeverActions_Arrest.Maintenance() calls THIS function (line ~630)
-     BEFORE its Hold_Register block (line ~665), running the migration
+     SeverActions_Arrest.Maintenance() calls THIS function
+     BEFORE its Hold_Register block, running the migration
      here would see an empty HoldResolver, silently no-op the drain for
      every faction, still commit the sentinel, and permanently lose the
      legacy bounty data.
 
      ArrestScript.Maintenance() invokes MigrateLegacyStorage() explicitly
      AFTER its Hold_Register chain completes — that's the safe site.}
+    ; Bounty-pay confirm popup choice (PrismaUIBountyPromptBridge). Registered
+    ; on the load path so existing saves get the listener (OnInit never re-fires).
+    RegisterForModEvent("SeverActions_BountyPayChoice", "OnBountyPayChoice")
     If !ArrestScript
         Quest q = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
         If q
@@ -139,22 +142,6 @@ Int Function DrainLegacyFaction(Actor akPlayer, Faction akCrimeFaction)
 EndFunction
 
 ; =============================================================================
-; STORAGE-KEY MAP
-; =============================================================================
-
-String Function GetBountyStorageKey(Faction akCrimeFaction)
-    {Get the legacy StorageUtil key name for a crime faction.
-
-     Retained for migration/diagnostic purposes only — live reads and writes
-     now go through BountyStore via the CRUD functions below. The string this
-     returns no longer corresponds to any value Papyrus reads; it just names
-     the legacy slot for log lines and the one-shot migration in
-     MigrateLegacyStorage() above.}
-
-    Return SeverActionsNativeExt.Hold_GetBountyKeyForCrime(akCrimeFaction)
-EndFunction
-
-; =============================================================================
 ; CRUD — thin delegations to the native BountyStore
 ; =============================================================================
 ;
@@ -210,7 +197,14 @@ Function ApplyTrackedBountyToVanilla(Faction akCrimeFaction)
 
     Int bounty = GetTrackedBounty(akCrimeFaction)
     If bounty > 0
-        akCrimeFaction.SetCrimeGold(bounty)
+        ; ADD to vanilla crime gold instead of overwriting it. The engine may
+        ; already hold witnessed vanilla bounty for this faction (e.g. 1000g
+        ; from an engine-witnessed murder); SetCrimeGold(bounty) clobbered
+        ; that down to the possibly-much-smaller tracked amount. ModCrimeGold
+        ; adds to the non-violent pool, which is what SetCrimeGold targeted
+        ; before. Violent crime gold is deliberately untouched -- the tracked
+        ; bounty is a single non-violent pool, so we stay consistent with it.
+        akCrimeFaction.ModCrimeGold(bounty)
         ClearTrackedBounty(akCrimeFaction)
         If ArrestScript
             ArrestScript.DebugMsg("Applied " + bounty + " tracked bounty to vanilla system")
@@ -315,7 +309,7 @@ Function AddBountyToPlayer_Internal(Actor akGuard, Int bountyAmount, String crim
 
     String holdName = ArrestScript.GetHoldNameForGuard(akGuard)
 
-    ; Ledger expansion Phase 4 — log the crime as a BountyStore event row.
+    ; Log the crime as a BountyStore event row.
     ; The event ring is bounded per faction (32 entries, FIFO) so a
     ; rampage-prone playthrough won't unbound-grow the cosave.
     SeverActionsNativeExt.Native_Bounty_AddEvent(crimeFaction, bountyAmount, normalizedCrime, holdName)
@@ -327,4 +321,64 @@ Function AddBountyToPlayer_Internal(Actor akGuard, Int bountyAmount, String crim
     ; Register persistent event so NPCs remember this crime
     String eventMsg = akGuard.GetDisplayName() + " witnessed the player commit " + normalizedCrime + " and added " + bountyAmount + " gold to their bounty in " + holdName + ". Total bounty is now " + totalBounty + " gold."
     SkyrimNetApi.RegisterPersistentEvent(eventMsg, akGuard, Game.GetPlayer())
+EndFunction
+
+Function PayNpcBountyToGuard_Internal(Actor akGuard, String offenderName)
+    {The player asks a hold authority to clear a NAMED offender's bounty and
+     pays it themselves. Covers a follower/NPC tracked bounty AND an Enterprises
+     fence's illicit bounty (native resolves the name in THIS guard's hold, so
+     the offender need not be present). Opens a non-pausing confirm popup first
+     (like CollectPayment); on confirm the pay commits.}
+    If akGuard == None || offenderName == ""
+        Return
+    EndIf
+    Actor player = Game.GetPlayer()
+    Int owed = SeverActionsNativeExt.Native_ResolveHoldBountyByName(akGuard, offenderName)
+    If owed <= 0
+        ; Nothing by that name is wanted in this hold.
+        SkyrimNetApi.RegisterEvent("bounty_pay_none",             akGuard.GetDisplayName() + " checks the books: no one named " + offenderName + " carries a bounty in this hold. There is nothing to pay off.",             akGuard, player)
+        Return
+    EndIf
+
+    ; Stash the offender name on the guard so the async choice handler knows
+    ; who to pay (the ModEvent only carries the guard + amount).
+    StorageUtil.SetStringValue(akGuard, "SeverBounty_PendingOffender", offenderName)
+
+    ; Non-pausing confirm popup. On any block (no PrismaUI / another view has
+    ; focus / prompt already open) fall straight through to paying.
+    RegisterForModEvent("SeverActions_BountyPayChoice", "OnBountyPayChoice")
+    If SeverActionsNativeExt.PrismaUI_IsBountyPromptAvailable()         && SeverActionsNativeExt.PrismaUI_OpenBountyPrompt(akGuard, owed, offenderName, 20000)
+        Return   ; choice arrives via OnBountyPayChoice
+    EndIf
+    ; No popup available — pay directly.
+    StorageUtil.UnsetStringValue(akGuard, "SeverBounty_PendingOffender")
+    _DoPayBounty(akGuard, offenderName)
+EndFunction
+
+Event OnBountyPayChoice(String asEventName, String asChoice, Float afAmount, Form akSender)
+    {The player confirmed or declined the bounty-pay popup. sender = the guard.}
+    Actor guard = akSender as Actor
+    If guard == None
+        Return
+    EndIf
+    String offenderName = StorageUtil.GetStringValue(guard, "SeverBounty_PendingOffender", "")
+    StorageUtil.UnsetStringValue(guard, "SeverBounty_PendingOffender")
+    If asChoice == "accept" && offenderName != ""
+        _DoPayBounty(guard, offenderName)
+    EndIf
+EndEvent
+
+Function _DoPayBounty(Actor akGuard, String offenderName)
+    {Commit the payment (shared by the popup-accept path and the no-popup
+     fallback). Native returns >0 paid, 0 no match, -1 can't afford.}
+    Actor player = Game.GetPlayer()
+    Int paid = SeverActionsNativeExt.Native_PayHoldBountyByName(akGuard, offenderName)
+    If paid > 0
+        Debug.Notification("Paid off " + offenderName + "'s bounty: " + paid + " gold")
+        String msg = player.GetDisplayName() + " paid off " + offenderName + "'s bounty of " + paid + " gold to " + akGuard.GetDisplayName() + ". The law has no more claim on them in this hold."
+        SkyrimNetApi.RegisterPersistentEvent(msg, akGuard, player)
+    ElseIf paid < 0
+        Debug.Notification("You can't afford " + offenderName + "'s bounty")
+        SkyrimNetApi.RegisterEvent("bounty_pay_failed",             player.GetDisplayName() + " offered to pay off " + offenderName + "'s bounty but does not have the coin on hand. " + akGuard.GetDisplayName() + " turns them away until they do.",             akGuard, player)
+    EndIf
 EndFunction

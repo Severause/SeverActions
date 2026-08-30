@@ -1,0 +1,28 @@
+customCategory: employment
+name: RefuseLoan
+description: "Use when {{ player.name }} turns down this retainer's (the speaker's) request for a loan — says no, cannot spare it, or refuses to be their moneylender. The 'In the Player's Service' context will state that they have asked for a loan and are waiting on an answer. Refusing stings: it costs loyalty and they will not raise it again for a long while. Only call on a clear no — if {{ player.name }} is still weighing it or puts them off vaguely, call neither this nor GrantLoan and let the ask stand."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: RefuseLoan
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the retainer whose request for a loan was turned down
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # has_loan_ask returns the amount asked for; "" when nothing is pending.
+      - decoratorName: "has_loan_ask"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

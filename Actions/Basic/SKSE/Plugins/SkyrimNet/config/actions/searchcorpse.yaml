@@ -1,0 +1,36 @@
+customCategory: items
+name: SearchCorpse
+description: "The speaker kneels and pats down a body without taking anything — what the dead carry is revealed so they (or whoever asked) can decide what's worth taking. Use this first when curious what a corpse has; follow up with LootCorpse to take specific things."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: SearchCorpse_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor searching the body
+  - type: dynamic
+    name: corpseName
+    description: name of the dead person being searched (e.g. "Bandit", "Stormcloak Soldier", a named NPC)
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

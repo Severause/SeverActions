@@ -1,6 +1,6 @@
 customCategory: arrest
 name: OrderRelease
-description: "The Jarl or magistrate weighs the case in the hall, finds the charges thin or the prisoner's account convincing, and waves them off — 'Cut them loose.' Only valid when a prisoner stands before the speaker after a DispatchGuardToArrest brought them in for judgment."
+description: "Use only when a prisoner stands before the speaker for judgment after a DispatchGuardToArrest brought them in. The Jarl or magistrate finds the charges thin or the account convincing and lets the prisoner walk. For an NPC already serving in a cell, use FreeFromJail instead."
 questEditorId: SeverActions
 scriptName: SeverActions_ArrestJudgment
 executionFunctionName: OrderRelease_Execute

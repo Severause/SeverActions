@@ -1,0 +1,67 @@
+customCategory: employment
+name: MusterCamp
+description: "Use ONLY when the speaker LEADS a camp sworn to {{ player.name }} and agrees to rally the whole crew to {{ player.name }}'s side RIGHT NOW — a raid, a march, a fight that needs every blade. Every living member of the camp gathers to {{ player.name }} at once and follows them as a war band until sent home. Never call it for a lone volunteer, for vague future plans, or from anyone who does not lead the camp."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: MusterCamp
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the CHIEF of the sworn camp rallying their people
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      # Feature gate — same rationale as the other takeover actions.
+      - decoratorName: "sever_camp_takeover"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_camp_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "sworn"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Only the chief rallies the camp — string-compared "1".
+      - decoratorName: "sever_camp_is_leader"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "1"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Already mustered → this action leaves the list; SendCampHome shows.
+      - decoratorName: "sever_camp_mustered"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # rank < 0 — NOT is_in_faction (the stuck-at--1 scene sentinel).
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} rallied the camp — the whole crew musters to {{ player.name }}'s side as a war band"

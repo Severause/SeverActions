@@ -1,5 +1,5 @@
 name: "Abort Pregnancy"
-description: "Spell that aborts child from the mother, voluntarily or otherwise."
+description: "Fires when the Abort Pregnancy spell is cast on a target, ending the target's pregnancy — with or without the target's consent."
 
 eventCriteria:
   eventType: "active_effect"
@@ -14,7 +14,7 @@ eventCriteria:
 
 response:
   type: "direct_narration"
-  content: "{{ player.name }} uses a spell to abort the child from {{ event_json.target }}"
+  content: "{{ player.name }} casts a spell on {{ event_json.target }}, ending the pregnancy."
 
 audience: "target"
 

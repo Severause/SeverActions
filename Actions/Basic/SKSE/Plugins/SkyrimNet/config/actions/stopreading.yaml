@@ -5,7 +5,7 @@ questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: StopReading_Execute
 parameterMapping:
-  - type: dynamic
+  - type: speaker
     name: akActor
     description: the actor who has been reading and is now closing the book
 enabled: true

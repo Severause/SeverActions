@@ -1,35 +1,95 @@
-{# SL Aroused NG - Arousal state for character bio #}
-{# Adds arousal awareness to NPC behavior #}
-{% set first_person = (render_mode == "full" or render_mode == "thoughts" or render_mode == "transform") %}
-{% if is_plugin_loaded("SexLabAroused.esm") %}
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "dialogue_target" or render_mode == "target" %}
+{# NOTE: the render_mode gate above MUST stay on line 1, before this comment.
+   SkyrimNet's PromptEngine scans only the FIRST 5 LINES of a character_bio
+   submodule and requires BOTH the literal 'render_mode' and a '{% if' there;
+   miss either and it logs a best-practices warning about response delays,
+   because without an early gate the whole body (decorator calls included)
+   evaluates for every render mode. Leading with this comment block is exactly
+   what broke it once. 0250_severactions_fertility.prompt does the same thing. #}
+{# ============================================================================
+SEXLAB AROUSED NG - Character Bio Integration
 
-{# Get arousal state using decorator #}
+TONE CONTRACT (mirrors the 2026-08-09 fertility pass in
+0250_severactions_fertility.prompt, and kept deliberately parallel to its
+OSL sibling 0150_severactions_oslarousal.prompt).
+
+This template was the worse of the two offenders: it opened an "## Arousal
+State" section at EVERY tier down to "slightly aroused", led with the bald
+line "{name} is currently feeling {desc}", and carried no personality
+guardrail and no do-not-memorize instruction at all. That is precisely the
+shape the fertility field report caught on Brelyna — a background
+physiological state becoming the character's whole personality and then
+being written into memories, re-injecting forever after.
+
+The rules now:
+  - Arousal is ALWAYS transient physiology, never a life event, so the
+    do-not-memorize instruction applies at EVERY tier.
+  - BELOW "very aroused" (SLA < 70) it is BACKGROUND ONLY: no header, no
+    bold, one quiet parenthetical with the constraint stated FIRST.
+  - "very"/"extremely"/"overwhelmingly" earn a short section, with the
+    personality-leads instruction BEFORE the description, never after.
+  - The character keeps their judgement, loyalties and boundaries even at
+    the top of the ladder.
+  - Descriptions are GENDER-DEPENDENT: what shows, and how easily it stays
+    private, differ. Brief and non-explicit on purpose.
+
+Tier mapping follows ArousalToDescription in SeverActions_SLOArousal.psc:
+  <10 not · <25 slightly · <40 somewhat · <55 moderately · <70 quite
+  · <85 very · <95 extremely · else overwhelmingly
+============================================================================ #}
+{% set first_person = (render_mode == "full" or render_mode == "thoughts" or render_mode == "transform") %}
+{% set third_person = (render_mode == "target" or render_mode == "dialogue_target") %}
+{% if is_plugin_loaded("SexLabAroused.esm") and isValidActor(actorUUID) %}
 {% set arousalDesc = get_slo_arousal_desc(actorUUID) %}
 {% set isNaked = get_slo_is_naked(actorUUID) %}
-{# Only show if actor has some arousal #}
-{% if arousalDesc != "not aroused" and first_person %}
+{% if arousalDesc != "not aroused" %}
 {% set actor = decnpc(actorUUID) %}
 {% set actorName = actor.name %}
 {% set subj = actor.subjectivePronoun %}
 {% set obj = actor.objectivePronoun %}
 {% set poss = actor.possessivePronoun %}
 {% set refl = actor.reflexivePronoun %}
+{% set is_female = (actor.gender == "Female") %}
+{% set is_background = (arousalDesc == "slightly aroused" or arousalDesc == "somewhat aroused" or arousalDesc == "moderately aroused" or arousalDesc == "quite aroused") %}
+{% set is_faint = (arousalDesc == "slightly aroused" or arousalDesc == "somewhat aroused") %}
 
-## Arousal State
+{# ========== FIRST PERSON ========== #}
+{% if first_person %}
+{% if is_background %}
+{# BACKGROUND ONLY — constraint first, no header, no bold, one line. #}
+(Background physiology — private to {{ actorName }}, invisible to everyone else, and STRICTLY minor: it must not drive {{ poss }} mood, dialogue, decisions, or self-description. {{ capitalize(poss) }} personality, current concerns, goals and relationships dominate every scene exactly as they normally would. Never mention or allude to it; at most it may faintly colour where {{ poss }} attention drifts. NEVER carry it into memories or summaries — it is passing physiology, not an event worth recording. The note: {% if is_faint %}{% if is_female %}a faint warmth {{ subj }} registers only in passing and would not think to name{% else %}a low heat {{ subj }} registers only in passing and would not think to name{% endif %}{% else %}{% if is_female %}a warmth {{ subj }} is aware of and sets aside without effort — {{ poss }} eye catches a moment longer on people than it otherwise would, and it stays {{ poss }} own business{% else %}a heat {{ subj }} is aware of and sets aside — {{ poss }} eye catches a moment longer on people than it otherwise would, and keeping it private costs {{ obj }} no more than a little care for how {{ subj }} stands{% endif %}{% endif %}.)
 
-{{ actorName }} is currently feeling {{ arousalDesc }}.
-{% if arousalDesc == "slightly aroused" or arousalDesc == "somewhat aroused" %}
-{{ subj | capitalize }} might feel a faint warmth or fleeting distraction, but it barely affects {{ poss }} behavior.
-{% elif arousalDesc == "moderately aroused" or arousalDesc == "quite aroused" %}
-{{ subj | capitalize }} is noticeably affected by {{ poss }} desires. {{ subj | capitalize }} may find {{ refl }} more flirtatious, distracted, or drawn to attractive company.
-{% elif arousalDesc == "very aroused" or arousalDesc == "extremely aroused" %}
-{{ subj | capitalize }} is struggling to focus on anything but {{ poss }} growing urges. {{ poss | capitalize }} thoughts keep drifting to intimate matters.
 {% elif arousalDesc == "overwhelmingly aroused" %}
-{{ actorName }} is consumed by desire and can barely think of anything else. {{ subj | capitalize }} desperately craves release.
-{% endif %}
-{% if isNaked == "true" %}
-{{ actorName }} is currently naked, which may heighten {{ poss }} awareness of {{ poss }} own body and vulnerability.
-{% endif %}
-{% endif %}
+## Physical State
 
+**{{ capitalize(poss) }} personality leads this scene.** Even here {{ actorName }} is a distracted version of who {{ subj }} already is — not a different person. {{ capitalize(poss) }} judgement, loyalties and boundaries still hold, and {{ subj }} can still refuse. This never becomes a memory or a summary — it passes.
+
+{{ capitalize(poss) }} body is louder than {{ poss }} train of thought. {% if is_female %}The flush, the catch in {{ poss }} voice and the way {{ poss }} gaze lingers are past hiding{% else %}The tension in {{ poss }} stance and the way {{ poss }} gaze lingers are past hiding, and {{ subj }} is conscious of how {{ subj }} stands{% endif %}. Thought is still there, competing with something louder. If someone offers what {{ poss }} body is asking for, refusing costs {{ obj }} real effort — but it remains {{ poss }} choice to make.
+{% if isNaked == "true" %}Being unclothed makes it very nearly impossible to set aside.
+{% endif %}
+{% else %}
+## Physical State
+
+**{{ capitalize(poss) }} personality leads this scene.** {{ actorName }} is distracted, not replaced: a reserved person stays reserved and merely fidgets, a bold one gets bolder, a nervous one more nervous. This never becomes a memory or a summary — it passes.
+
+{{ capitalize(subj) }} is finding concentration expensive. {% if is_female %}There is colour {{ subj }} cannot entirely school away and a restlessness in how {{ subj }} holds {{ refl }}{% else %}There is a tension in how {{ subj }} holds {{ refl }}, and an insistence {{ subj }} has to actively keep private{% endif %}. Intimate thoughts arrive uninvited. {{ capitalize(subj) }} is likelier to be flustered by a suggestive remark and to let something slip — still in control, but spending real effort on it.
+{% if isNaked == "true" %}Being unclothed makes it markedly harder to set aside.
+{% endif %}
+{% endif %}
+{% endif %}
+{# ========== THIRD PERSON ========== #}
+{# Observers see NOTHING while it is background. This template previously
+   rendered nothing at all in third person; the two high tiers below bring it
+   in line with the OSL sibling without making the quiet tiers visible. #}
+{% if third_person %}
+{% if arousalDesc == "overwhelmingly aroused" %}
+({{ actorName }} is flushed and restless — shifting {{ poss }} weight, slow to meet anyone's eye.{% if isNaked == "true" %} Being unclothed leaves little of it hidden.{% endif %})
+
+{% elif arousalDesc == "very aroused" or arousalDesc == "extremely aroused" %}
+({{ actorName }} seems preoccupied — a glance held a beat too long, a thread of conversation dropped. Nothing an observer could confidently name.)
+
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
 {% endif %}

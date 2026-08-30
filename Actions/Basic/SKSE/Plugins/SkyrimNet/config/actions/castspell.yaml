@@ -1,6 +1,6 @@
 customCategory: magic
 name: CastSpell
-description: "The speaker raises a hand and lets the magic loose — flames hissing off the palm at a wolf in the road, a healing glow brushing across a bleeding friend, an ice spike whistling toward a draugr down a barrow corridor. Restoration spells on a wounded target auto-repeat until the target is whole or the caster runs dry. IMPORTANT: pick a spell whose delivery matches the intent — self-delivered spells like 'Healing' only ever mend the caster regardless of targetName, so use 'Healing Hands' / 'Close Wounds' / 'Grand Healing' / etc. when healing another actor. Same for armor buffs: 'Oakflesh' is self-only; use the touch or aimed variants when buffing an ally."
+description: "The speaker casts a spell they know — flames at a wolf in the road, a healing glow across a bleeding friend, an ice spike down a barrow corridor. Restoration spells on a wounded target auto-repeat until the target is whole or the caster runs dry. Pick a spell whose delivery matches the intent (the spellName parameter explains)."
 questEditorId: SeverActions
 scriptName: SeverActions_SpellCast
 executionFunctionName: CastSpell_Execute
@@ -13,7 +13,7 @@ parameterMapping:
     description: "The name of the spell to cast (e.g. 'Healing', 'Healing Hands', 'Flames', 'Fireball'). Must be a spell this NPC actually knows. CRITICAL: match the spell's delivery to the situation — 'Healing' is self-only and ignores targetName; pick 'Healing Hands' (touch) or 'Close Wounds' / 'Grand Healing' (aimed/AoE) when healing someone other than yourself. Same rule for armor / fortify buffs: 'Oakflesh' is self; use the touch variant on allies."
   - type: dynamic
     name: targetName
-    description: "Display name of the target actor, 'self' to target the caster, or '0' for an aimed cast in front of the caster. Leave as '0' for self-delivered spells or when casting at no specific actor. Note: this is ignored for self-only spells like 'Healing' or 'Oakflesh' — those always target the caster regardless."
+    description: "Display name of the target actor, or '0' for an aimed cast in front of the caster and for all self-delivered spells."
     optional: true
     default: "0"
   - type: static

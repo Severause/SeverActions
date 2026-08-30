@@ -2,7 +2,7 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
 
-    <moduleName>SeverActions - SkyrimNet Action Pack v3.0</moduleName>
+    <moduleName>SeverActions - SkyrimNet Action Pack v3.9</moduleName>
 
     <requiredInstallFiles>
         <folder source="00 Core" destination="" priority="0"/>
@@ -146,7 +146,7 @@ Includes the debt-context prompt so NPCs are aware of debts they're involved in.
 
                         <plugin name="Enterprises Actions">
                             <description>Enterprises — put NPCs to work running off-screen ventures for you:
-• Hire Retainer - an NPC agrees to run a mine, shop, alchemy bench, farm, fencing operation, mercenary contract, or escort route
+• Hire Retainer - an NPC agrees to run a mine, shop, alchemy bench, farm, fencing operation, mercenary contract, or courtesan route
 • Collect From Retainer - take the gold and goods they've produced
 • Pay Arrears - settle back-wages you owe them (restores loyalty)
 • Dismiss Retainer - end their service
@@ -221,6 +221,25 @@ Install with Follower Prompts for full companion awareness.</description>
                             </typeDescriptor>
                         </plugin>
 
+                        <plugin name="Kidnap and Captive Actions">
+                            <description>Abduction and captivity (dark roleplay content) — split out from Follower Actions so you can opt in separately:
+• Kidnap NPC - Abduct an NPC and march them to a holding spot
+• Restrain NPC - Bind an NPC's hands and hold them standing (no hood or kneel)
+• Move Captive - Relocate a held captive
+• Interrogate Captive - Question a captive
+• Demand Ransom - Extort a ransom for a captive
+• Release Captive - Let a captive go free
+• Untie Captive - Free a restrained NPC
+
+Uses the same follower/kidnap systems already in the Core module — no extra dependency. Leave unticked if you don't want abduction options offered to the AI.</description>
+                            <files>
+                                <folder source="Actions/Kidnap" destination="" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <type name="Optional"/>
+                            </typeDescriptor>
+                        </plugin>
+
                     </plugins>
                 </group>
 
@@ -263,6 +282,7 @@ Recommended — these character_bio submodules are referenced by most SeverActio
 • Main Quest &amp; DLC fame — Dragonborn recognition, Dawnguard, and Solstheim quest fame spread through the population
 • Role-based filtering — innkeepers hear gossip, guards know official business, guild members know internally, criminals share underworld whispers
 • Shared guild awareness — fellow guild members treat you differently than strangers, with your rank woven into the relationship
+• Intimate history (adult) — if SexLab or OStim is installed, an NPC's private history with the player colours familiarity and reputation (encounter counts and whether it was consensual; nothing explicit is stored). Enabled by default; turn it off or set a gender filter under MCM → Followers or the PrismaUI panel. Does nothing without an adult framework.
 
 Recommended for immersive NPC interactions. Without this, NPCs have no concept of whether they've met you before.</description>
                             <files>

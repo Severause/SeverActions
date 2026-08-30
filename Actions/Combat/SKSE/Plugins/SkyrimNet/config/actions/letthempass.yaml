@@ -1,0 +1,33 @@
+name: LetThemPass
+description: "The speaker is satisfied with {{ player.name }}'s answer and waves them through — {{ player.name }} may move about the camp for this visit. Use when {{ player.name }}'s explanation holds up, when the speaker judges them useful or unthreatening, or when picking a fight simply is not worth it."
+questEditorId: SeverActions
+scriptName: SeverActions_Combat
+executionFunctionName: LetThemPass_Execute
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: the outlaw who challenged {{ player.name }}
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      - decoratorName: "camp_challenge_pending"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

@@ -1,6 +1,6 @@
 customCategory: items
 name: GiveItem
-description: "The speaker takes something out of their own pack and hands it to another. A gift, a borrowed tool, a healing draught pressed into a friend's hand, a token offered with both palms. The item leaves the speaker's pack and lands in the other's."
+description: "Use when the speaker offers an item to someone or is asked for one. The item moves from the speaker's pack into the target's — a gift, payment, a healing draught pressed into a friend's hand. NOT for receiving — use TakeItem."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: GiveItem_Execute
@@ -16,7 +16,7 @@ parameterMapping:
     description: name of the item being handed over (e.g. "Iron Sword", "Health Potion", "her mother's locket")
   - type: dynamic
     name: aiCount
-    description: how many units to give (default 1)
+    description: "how many units to give — a positive whole number (default 1)"
     optional: true
     default: 1
 enabled: true

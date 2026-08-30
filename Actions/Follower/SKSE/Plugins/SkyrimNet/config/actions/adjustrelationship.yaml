@@ -1,4 +1,7 @@
-customCategory: companion
+# NOTE: the half-applied 'companion' category scheme was stripped (audit
+# sec.7-20): its disabled cat_companion container never matched and no other
+# action carried the category. If this action is ever re-enabled it now
+# surfaces top-level. It remains superseded by sever_relationship_assess.
 name: AdjustRelationship
 description: "How the companion is feeling about {{ player.name }} — and about life in general — shifts after a meaningful moment together. A kind word at the campfire warms them; a betrayal in the market hardens them; a beautiful sunrise over the Throat of the World lifts the mood for no one's benefit but their own. Rapport, trust, and loyalty only move with direct {{ player.name }} interactions (-15 to +15); mood can swing from anything (-20 to +20). Use small numbers (1-5) for routine moments, medium (5-10) for significant ones, large (10-15) for major, and 0 if a stat isn't affected."
 questEditorId: SeverActions

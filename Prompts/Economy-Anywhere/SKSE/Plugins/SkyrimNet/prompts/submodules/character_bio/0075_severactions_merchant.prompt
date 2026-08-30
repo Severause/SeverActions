@@ -1,8 +1,8 @@
 {# Render-mode gate — "action" covers buy/sell/vendor drill-downs. #}
 {% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" or render_mode == "action" %}
 {% if actorUUID and actorUUID != 0 and not is_player(actorUUID) %}
-{% set _in_sexlab = is_in_faction(actorUUID, "SexLabAnimatingFaction") %}
-{% set _in_ostim = is_in_faction(actorUUID, "OStimExcitementFaction") %}
+{% set _in_sexlab = get_faction_rank(actorUUID, "SexLabAnimatingFaction") >= 0 %}
+{% set _in_ostim = get_faction_rank(actorUUID, "OStimExcitementFaction") >= 0 %}
 {% if not _in_sexlab and not _in_ostim %}
 {% set merchant_inventory = get_merchant_inventory(actorUUID) %}
 {% if merchant_inventory.items and length(merchant_inventory.items) > 0 %}
@@ -14,7 +14,7 @@
 {% else %}
 {% set item_name = get_form_name(item.formID) %}
 {% endif %}
-{% if item_name and item.value >= 0 -%}
+{% if item_name and item.value > 0 -%}
 {% set adjusted_value = round(item.value * price_multiplier, 0) %}
 - {{ item_name }}: {{ item.count }} ({{ adjusted_value }} gold)
 {% endif %}
@@ -23,12 +23,12 @@
 ## Pricing Guidelines
 These are your BASE prices for inventory items. You may negotiate within reason:
 - **Standard negotiation**: Allow 5-15% discounts for good customers or bulk purchases
-- **Persuasion checks**: If the player uses charm or intimidation, consider adjusting prices accordingly
+- **Persuasion checks**: If {{ player.name }} uses charm or intimidation, consider adjusting prices accordingly
 - **Faction members**: Offer 10-20% discounts to members of your faction
 - **Never go below**: 60% of base price - your profit margins matter
 - **When to hold firm**: For rare items, limited stock, or difficult customers, maintain higher prices
 
-Always START with your base prices and only adjust if the player actively negotiates or uses persuasion. Don't volunteer discounts.
+Always start with your base prices and only adjust if {{ player.name }} actively negotiates or uses persuasion — a successful haggle may lower a price up to 20%; if it fails, hold firm. Don't volunteer discounts.
 {% endif %}
 {% endif %}
 {% endif %}

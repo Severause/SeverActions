@@ -44,12 +44,8 @@ EndFunction
 ; =============================================================================
 
 Event OnNativeFurnitureCleanup(string eventName, string strArg, float numArg, Form sender)
-    ; numArg contains the actor's FormID
+    ; numArg is always 0 now (float truncates high FormIDs) — sender is authoritative.
     Actor akActor = sender as Actor
-    if !akActor
-        ; Try to look up by FormID
-        akActor = Game.GetFormEx(numArg as int) as Actor
-    endif
 
     if !akActor
         Debug.Trace("[SeverActions_Furniture] Cleanup event received but actor not found: " + numArg)
@@ -77,7 +73,8 @@ Event OnNativeFurnitureCleanup(string eventName, string strArg, float numArg, Fo
     ; Evaluate to let them stand up and return to normal AI
     akActor.EvaluatePackage()
 
-    SkyrimNetApi.RegisterEvent("furniture_stopped", akActor.GetDisplayName() + " got up (auto)", akActor, None)
+    ; Short-lived, keyed per actor - see the note on RegisterFurnitureSceneEvent.
+    RegisterFurnitureSceneEvent(akActor, "furniture_stopped", akActor.GetDisplayName() + " got up (auto)", GotUpTTLMs)
 EndEvent
 
 ; =============================================================================
@@ -102,12 +99,21 @@ Bool Function UseFurniture_IsEligible(Actor akActor, String furnitureFormId) Glo
     if !akActor || akActor.IsDead() || akActor.IsInCombat()
         return false
     endif
-    
+
     ; Already using furniture
     if akActor.GetSitState() != 0
         return false
     endif
-    
+
+    ; Mid-journey: never park a traveler in furniture. The furniture override
+    ; beats the travel alias package, so the traveler ping-pongs between the
+    ; StuckDetector's forward leapfrog and the furniture pull (the Rin
+    ; cooking-pot loop, 2026-08-09). Travel start also stands them up; this
+    ; gate stops the RE-park while the journey runs.
+    if SeverActionsNativeExt2.Travel_IsTravelingByActor(akActor)
+        return false
+    endif
+
     return furnitureFormId != ""
 EndFunction
 
@@ -136,6 +142,13 @@ Function UseFurnitureRef_Execute(Actor akActor, ObjectReference furnRef)
         return
     endif
 
+    ; Execute-side belt for the eligibility gate above: eligibility re-checks
+    ; lag the action fire, and this path is also reachable via the hotkey.
+    if SeverActionsNativeExt2.Travel_IsTravelingByActor(akActor)
+        Debug.Trace("[SeverActions_Furniture] " + akActor.GetDisplayName() + " is mid-journey - refusing furniture use")
+        return
+    endif
+
     String furnName = furnRef.GetBaseObject().GetName()
     Debug.Trace("[SeverActions_Furniture] " + akActor.GetDisplayName() + " using: " + furnName)
 
@@ -156,7 +169,7 @@ Function UseFurnitureRef_Execute(Actor akActor, ObjectReference furnRef)
     ; Register with SkyrimNet
     SkyrimNetApi.RegisterPackage(akActor, "SeverActions_UseFurniture", FurniturePackagePriority, 0, false)
 
-    SkyrimNetApi.RegisterEvent("furniture_used", akActor.GetDisplayName() + " is using " + furnName, akActor, None)
+    RegisterFurnitureSceneEvent(akActor, "furniture_used", akActor.GetDisplayName() + " is using " + furnName, InUseTTLMs)
 EndFunction
 
 ; =============================================================================
@@ -205,7 +218,7 @@ Function StopUsingFurniture_Execute(Actor akActor)
     ; Evaluate to let them stand up and return to normal AI
     akActor.EvaluatePackage()
 
-    SkyrimNetApi.RegisterEvent("furniture_stopped", akActor.GetDisplayName() + " got up", akActor, None)
+    RegisterFurnitureSceneEvent(akActor, "furniture_stopped", akActor.GetDisplayName() + " got up", GotUpTTLMs)
 EndFunction
 
 ; =============================================================================
@@ -238,4 +251,38 @@ Function StopUsingFurniture_Global_Execute(Actor akActor) Global
     if instance
         instance.StopUsingFurniture_Execute(akActor)
     endif
+EndFunction
+
+; ============================================================================
+; SCENE EVENTS
+; ============================================================================
+
+Int Property InUseTTLMs = 300000 Auto
+{How long -X is using Y- stays in scene context (ms). Long enough to matter
+ during a conversation, short enough that a stale line from an actor who left
+ the cell without a stop event ages out on its own.}
+
+Int Property GotUpTTLMs = 60000 Auto
+{How long -X got up- lingers (ms). Barely interesting after the moment.}
+
+Function RegisterFurnitureSceneEvent(Actor akActor, String asType, String asText, Int aiTTLMs)
+    {Furniture activity is SCENE state, not history - so it goes through
+     RegisterShortLivedEvent rather than RegisterEvent.
+
+     Two problems with the persistent version, both reported by users running
+     large followings: every sit and stand appended a permanent line, and the
+     auto-sandbox fires them for the whole retinue at once (five companions
+     going to bed = ten lines in a breath, which is what the chat log looked
+     like). Nothing here is history worth keeping - nobody needs to know an
+     NPC sat down forty minutes ago.
+
+     The eventId is the REPLACE key: SkyrimNet keeps only the newest event per
+     id, so keying on the actor means each NPC occupies exactly ONE line that
+     updates in place - used replaces stopped replaces used - instead of a
+     growing log. Ten followers cost ten lines at worst, and those expire.}
+
+    If akActor == None
+        Return
+    EndIf
+    SkyrimNetApi.RegisterShortLivedEvent("furniture_" + akActor.GetFormID(),         asType, asText, "", aiTTLMs, akActor, None)
 EndFunction

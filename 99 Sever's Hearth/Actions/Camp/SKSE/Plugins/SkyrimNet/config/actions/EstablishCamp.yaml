@@ -1,6 +1,6 @@
 customCategory: camp
 name: EstablishCamp
-description: "Pitch a camp at the player's current location. The player drops a Camp Kit, builds a fire ring, lays out a bedroll, and settles in to rest. Use when the player wants to camp here, when a companion suggests stopping for the night, or when the party needs to rest, eat, or take watch. Only valid outside combat and when no camp is already active."
+description: "Pitch a new camp at the current location: fire ring, bedroll, and gear from the Camp Kit. Use when the party decides to stop and camp here — to rest, eat, or take watch."
 questEditorId: SeversHearth
 scriptName: SeversHearth_Camp
 executionFunctionName: EstablishCamp
@@ -16,7 +16,13 @@ eligibilityRules:
         arguments: ["currentActor"]
         comparisonOperator: "=="
         expectedValue: false
+      # current_camp is a STRING decorator: empty = no camp yet. The old
+      # description CLAIMED this restriction without enforcing it (P0-14).
+      - decoratorName: "current_camp"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
     logicalOperator: "AND"
     required: true
-eventString: "A camp is established at the current location."
+eventString: "{{ npc.name }} pitches a camp."
 isShortLived: false

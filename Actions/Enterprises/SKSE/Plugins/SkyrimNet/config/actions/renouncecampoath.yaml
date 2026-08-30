@@ -1,0 +1,64 @@
+customCategory: employment
+name: RenounceCampOath
+description: "Use ONLY when the speaker LEADS a camp sworn to {{ player.name }} and {{ player.name }} has pushed them past the point of loyalty — betraying the camp, cutting down its people, seizing what was theirs, or shaming the chief past bearing. The oath breaks: the camp leaves {{ player.name }}'s service and every member turns hostile ON THE SPOT. This starts a real fight that cannot be taken back. Never call it for grumbling, hard bargaining, or wounded pride that words could still settle — and never from anyone who does not lead the camp."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: RenounceCampOath
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the CHIEF of the sworn camp renouncing the oath
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      # Feature gate. Disabling camp takeover empties this decorator, which
+      # removes the action from the eligible list entirely — rather than
+      # leaving it offered and silently refused by the native.
+      - decoratorName: "sever_camp_takeover"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Only a camp that actually swore has an oath to break.
+      - decoratorName: "sever_camp_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "sworn"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Only the chief speaks for the camp — string-compared "1", never a
+      # JSON bool (custom decorators are string-compared by the checker).
+      - decoratorName: "sever_camp_is_leader"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "1"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # rank < 0 — NOT is_in_faction. SexLab/OStim leave an NPC stuck at rank -1
+      # after a scene, and a rank-blind check would gate this off permanently.
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} renounced their camp's oath to {{ player.name }} — the camp is hostile"

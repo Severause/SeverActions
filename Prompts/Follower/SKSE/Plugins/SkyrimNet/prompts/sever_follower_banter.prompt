@@ -22,6 +22,7 @@ Mood: {{ f.mood }} (-100 to 100) | Combat Style: {{ f.combatStyle }}
 
 ## Pair Relationships
 
+(Affinity -100..100, start 0; Respect 0..100, start 30)
 {% for p in pairs %}
 **{{ p.nameA }} <-> {{ p.nameB }}**
 {{ p.nameA }} -> {{ p.nameB }}: Affinity {{ p.affinityAB }}, Respect {{ p.respectAB }}{% if p.blurbAB != "" %} -- {{ p.blurbAB }}{% endif %}
@@ -111,7 +112,7 @@ The single most common failure mode is the same pair bantering every tick with t
 No recent banters on record — any pair is fair game. Pick the most thematically interesting pair, not just the highest-affinity one.
 {% endif %}
 
-Current location: {{ player.location }}
+Current location: {{ location }}
 
 [ end system ]
 
@@ -177,7 +178,6 @@ Categories (with example seeds — already in directive form; do NOT copy verbat
 
 ### Anti-repetition rules
 
-- **Scan the "Topics Already Covered" list before deciding.** If your candidate topic shares a theme with anything there, pick something else. Same theme = same answer, no matter how the words are arranged.
 - **Avoid recycling beat types within the same in-game day.** If today's banter already had a "complaining about the cold" beat (Quotidian), pick a Personal or Speculation beat next, not another Quotidian one.
 - **Mine the bios for specifics.** Each follower's bio has unique hooks (homeland, family, profession, tics, peeves, scars). The topic should USE one specific hook from one follower and contrast against the OTHER follower's hook. Generic topics anyone could have are forbidden if a bio-specific one is available.
 - **Forbid generic filler.** Do NOT pick "casual conversation", "small talk", "passing the time", or "the weather" unless every other category genuinely doesn't fit AND nothing weather-adjacent is in the recent topic list.
@@ -186,12 +186,13 @@ Categories (with example seeds — already in directive form; do NOT copy verbat
 
 - The topic must be a brief **directive** (6-14 words) phrased as the speaker's action toward the target. It is NOT dialogue, NOT a noun-phrase subject, NOT a question to be answered. The downstream prompt will literally see `"speak about <topic>"` — if your topic doesn't read naturally after `"speak about"` as something one would do TO a specific person, fix it.
 - The target's actual in-game name MUST appear in the topic (use the literal name of the target you picked, not the placeholder `<target>` from the seed examples above). This anchors the downstream speaker on whom they're addressing.
+- **"direction" (optional)**: ONE sentence of scene steering, ONLY when the topic alone cannot carry the moment — a callback to shared history (who did what, teasing or sore?), simmering friction (how sharp?), something one is hiding from the other. These two travel together, so their shared past is exactly where directions earn their keep. For simple beats leave it empty — the speaker improvises better from a bare seed.
 - Pick the speaker as the one more likely to initiate based on personality (extroverts start, introverts respond, the one with a stake speaks first).
 - If recent events show this pair JUST talked, prefer a different pair or silence.
 
 Respond with ONLY one of these JSON formats. No explanation. One line:
 {% raw %}{"banter":null}{% endraw %}
-{% raw %}{"banter":{"speaker":"Name","target":"Name","topic":"verb the target about a specific thing"}}{% endraw %}
+{% raw %}{"banter":{"speaker":"Name","target":"Name","topic":"verb the target about a specific thing","direction":"optional one-sentence scene steering, or empty"}}{% endraw %}
 {% else %}
 {% raw %}{"banter":null}{% endraw %}
 {% endif %}

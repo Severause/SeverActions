@@ -1,0 +1,55 @@
+customCategory: employment
+name: HireSteward
+description: "Use when {{ player.name }} appoints the speaker — who must already be one of {{ player.name }}'s retainers — as STEWARD of their hold. From then on, every retainer working that hold pays their weekly take into the steward's vault instead of holding it themselves, so {{ player.name }} collects the whole hold from this one person. The steward draws their own weekly wage FROM that vault — if the vault runs dry, they go unpaid and will grow bitter about it. One steward per hold: if the seat is already filled the appointment fails and nothing changes. Only call this when {{ player.name }} clearly offers the stewardship and the speaker accepts; agree on the weekly wage in conversation if one is discussed."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: HireSteward
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the retainer accepting the stewardship of their hold
+  - type: dynamic
+    name: aiWeeklyWage
+    description: "the weekly wage agreed for the stewardship, in gold (e.g. 100). Omit if no figure was discussed — a standard wage is used."
+    optional: true
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Must already be a retainer of the player's.
+      - decoratorName: "retainer_status"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Not already stewarding a hold.
+      - decoratorName: "is_steward"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} accepted the stewardship of their hold for {{ player.name }}"

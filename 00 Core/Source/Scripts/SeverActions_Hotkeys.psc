@@ -61,9 +61,21 @@ int Property CompanionWaitKey = -1 Auto Hidden
 
 int Property AssignHomeKey = -1 Auto Hidden
 {Key code for assigning NPC's home to current location. -1 = unset/disabled}
+int Property ClearHomeKey = -1 Auto Hidden
+{Key code for clearing NPC's home assignment. -1 = unset/disabled}
 
 int Property SetupCampKey = -1 Auto Hidden
 {Key code for entering camp placement mode (Sever's Hearth). -1 = unset/disabled}
+
+int Property DropMarkerKey = -1 Auto Hidden
+{Key code for dropping a named travel marker at the player's feet (ai_docs/NAMED_MARKERS.md). -1 = unset/disabled}
+
+int Property TieUntieKey = -1 Auto Hidden
+{Key code for the Tie / Untie toggle (2026-08-23, Shrike field report). Aim at an
+ NPC and press: a bound captive is FREED - no matter who bound them, an NPC
+ restrainer included - and an unbound NPC is restrained on the spot with you as
+ the captor. Each press narrates what happened to SkyrimNet directly, so it never
+ depends on the LLM picking the right action. -1 = unset/disabled}
 
 int Property ConfigMenuKey = 9 Auto Hidden
 {Key code for opening the PrismaUI config menu. Default: 9 (the 8 key). -1 = disabled}
@@ -97,10 +109,9 @@ Event OnInit()
     RegisterKeys()
 EndEvent
 
-Event OnPlayerLoadGame()
-    Debug.Trace("[SeverActions_Hotkeys] Game loaded, re-registering keys")
-    RegisterKeys()
-EndEvent
+; No OnPlayerLoadGame handler here: Quest scripts never receive that event
+; (Actor/alias-only). Load re-registration runs from SeverActions_Init's
+; InitializeHotkeySystem(), which calls RegisterKeys() on every load.
 
 ; =============================================================================
 ; KEY REGISTRATION
@@ -110,7 +121,26 @@ Function RegisterKeys()
     ; Unregister all first to avoid duplicates
     UnregisterForAllKeys()
     IsRegistered = false
-    
+
+    ; Heal ANY hotkey sharing the config-menu key code (saves bound before the
+    ; MCM refused the collision): such a bind can never fire — OnKeyDown yields
+    ; to the native config handler — so clear it loudly, not leave it dead.
+    ; Runs BEFORE the registrations below so a healed key never registers.
+    FollowToggleKey  = HealConfigCollision(FollowToggleKey,  "Follow Toggle")
+    DismissKey       = HealConfigCollision(DismissKey,       "Dismiss")
+    StandUpKey       = HealConfigCollision(StandUpKey,       "Stand Up")
+    UseFurnitureKey  = HealConfigCollision(UseFurnitureKey,  "Use Furniture")
+    YieldKey         = HealConfigCollision(YieldKey,         "Yield")
+    UndressKey       = HealConfigCollision(UndressKey,       "Undress")
+    DressKey         = HealConfigCollision(DressKey,         "Dress")
+    SetCompanionKey  = HealConfigCollision(SetCompanionKey,  "Set Companion")
+    CompanionWaitKey = HealConfigCollision(CompanionWaitKey, "Companion Wait")
+    AssignHomeKey    = HealConfigCollision(AssignHomeKey,    "Assign Home")
+    ClearHomeKey     = HealConfigCollision(ClearHomeKey,     "Clear Home")
+    SetupCampKey     = HealConfigCollision(SetupCampKey,     "Set Up Camp")
+    DropMarkerKey    = HealConfigCollision(DropMarkerKey,    "Drop Marker")
+    TieUntieKey      = HealConfigCollision(TieUntieKey,      "Tie / Untie")
+
     ; Register follow toggle key (only if set)
     if FollowToggleKey > 0
         RegisterForKey(FollowToggleKey)
@@ -171,19 +201,45 @@ Function RegisterKeys()
         Debug.Trace("[SeverActions_Hotkeys] Registered assign home key: " + AssignHomeKey)
     endif
 
+    ; Register clear home key (only if set)
+    if ClearHomeKey > 0
+        RegisterForKey(ClearHomeKey)
+        Debug.Trace("[SeverActions_Hotkeys] Registered clear home key: " + ClearHomeKey)
+    endif
+
     ; Register setup camp key (only if set)
     if SetupCampKey > 0
         RegisterForKey(SetupCampKey)
         Debug.Trace("[SeverActions_Hotkeys] Registered setup camp key: " + SetupCampKey)
     endif
 
-    ; Register config menu key (only if set)
-    if ConfigMenuKey > 0
-        RegisterForKey(ConfigMenuKey)
-        Debug.Trace("[SeverActions_Hotkeys] Registered config menu key: " + ConfigMenuKey)
+    if DropMarkerKey > 0
+        RegisterForKey(DropMarkerKey)
+        Debug.Trace("[SeverActions_Hotkeys] Registered drop marker key: " + DropMarkerKey)
     endif
 
+    if TieUntieKey > 0
+        RegisterForKey(TieUntieKey)
+        Debug.Trace("[SeverActions_Hotkeys] Registered tie/untie key: " + TieUntieKey)
+    endif
+
+    ; Config menu key is NATIVE now — no RegisterForKey. The Papyrus VM is
+    ; saturated for 30-60s after a load on heavy lists, and key events queued
+    ; behind load recovery made the menu feel dead the whole time. The DLL's
+    ; InputEvent sink handles the key with zero VM involvement; this push
+    ; syncs the binding (and the DLL persists it, so later launches are live
+    ; at kDataLoaded before any Papyrus runs).
+    PushMenuKeyToNative()
+
     IsRegistered = true
+EndFunction
+
+; Sync the config-menu binding to the DLL's native input sink. Called from
+; RegisterKeys() (every load recovery), UpdateConfigMenuKey(), and the MCM's
+; shift-requirement toggle path.
+Function PushMenuKeyToNative()
+    SeverActionsNative.PrismaUI_SetMenuKey(ConfigMenuKey, ConfigMenuRequireShift)
+    Debug.Trace("[SeverActions_Hotkeys] Pushed config menu key to native: " + ConfigMenuKey + " shift=" + ConfigMenuRequireShift)
 EndFunction
 
 Function UpdateFollowToggleKey(int newKey)
@@ -350,6 +406,21 @@ Function UpdateAssignHomeKey(int newKey)
     endif
 EndFunction
 
+Function UpdateClearHomeKey(int newKey)
+    if ClearHomeKey > 0 && ClearHomeKey != newKey
+        UnregisterForKey(ClearHomeKey)
+    endif
+
+    ClearHomeKey = newKey
+
+    if newKey > 0
+        RegisterForKey(newKey)
+        Debug.Trace("[SeverActions_Hotkeys] Updated clear home key to: " + newKey)
+    else
+        Debug.Trace("[SeverActions_Hotkeys] Clear home key cleared")
+    endif
+EndFunction
+
 Function UpdateSetupCampKey(int newKey)
     if SetupCampKey > 0 && SetupCampKey != newKey
         UnregisterForKey(SetupCampKey)
@@ -365,15 +436,65 @@ Function UpdateSetupCampKey(int newKey)
     endif
 EndFunction
 
-Function UpdateConfigMenuKey(int newKey)
-    if ConfigMenuKey > 0 && ConfigMenuKey != newKey
-        UnregisterForKey(ConfigMenuKey)
+int Function HealConfigCollision(int aiKey, string label)
+    {A hotkey sharing the config-menu key code is a dead bind (OnKeyDown
+     always yields that code to the native config handler) - clear it with
+     a notification so the user rebinds instead of wondering why it's dead.}
+    if aiKey > 0 && aiKey == ConfigMenuKey
+        Debug.Trace("[SeverActions_Hotkeys] " + label + " key " + aiKey + " collided with config menu key - cleared")
+        Debug.Notification(label + " hotkey cleared - it shared the config menu key. Rebind it in the MCM.")
+        return -1
+    endif
+    return aiKey
+EndFunction
+
+Function UpdateDropMarkerKey(int newKey)
+    if newKey > 0 && newKey == ConfigMenuKey
+        ; Collision with the native config-menu key: the bind could never fire
+        ; (OnKeyDown yields to the config handler), so treat it as a clear.
+        ; The MCM refuses this bind now; this catches stale re-pushes from
+        ; ApplyHotkeySettings on saves that stored the collision earlier.
+        Debug.Trace("[SeverActions_Hotkeys] Drop marker key " + newKey + " collides with config menu key - clearing instead")
+        newKey = -1
+    endif
+    if DropMarkerKey > 0 && DropMarkerKey != newKey
+        UnregisterForKey(DropMarkerKey)
     endif
 
-    ConfigMenuKey = newKey
+    DropMarkerKey = newKey
 
     if newKey > 0
         RegisterForKey(newKey)
+        Debug.Trace("[SeverActions_Hotkeys] Updated drop marker key to: " + newKey)
+    else
+        Debug.Trace("[SeverActions_Hotkeys] Drop marker key cleared")
+    endif
+EndFunction
+
+Function UpdateTieUntieKey(int newKey)
+    if newKey > 0 && newKey == ConfigMenuKey
+        Debug.Trace("[SeverActions_Hotkeys] Tie/untie key " + newKey + " collides with config menu key - clearing instead")
+        newKey = -1
+    endif
+    if TieUntieKey > 0 && TieUntieKey != newKey
+        UnregisterForKey(TieUntieKey)
+    endif
+
+    TieUntieKey = newKey
+
+    if newKey > 0
+        RegisterForKey(newKey)
+        Debug.Trace("[SeverActions_Hotkeys] Updated tie/untie key to: " + newKey)
+    else
+        Debug.Trace("[SeverActions_Hotkeys] Tie/untie key cleared")
+    endif
+EndFunction
+
+Function UpdateConfigMenuKey(int newKey)
+    ; Native-owned key: no Papyrus registration; just record + push.
+    ConfigMenuKey = newKey
+    PushMenuKeyToNative()
+    if newKey > 0
         Debug.Trace("[SeverActions_Hotkeys] Updated config menu key to: " + newKey)
     else
         Debug.Trace("[SeverActions_Hotkeys] Config menu key cleared")
@@ -389,14 +510,13 @@ Event OnKeyDown(int keyCode)
         return
     endif
 
-    ; Config menu key — handled separately since it can open during normal gameplay
-    if keyCode == ConfigMenuKey && ConfigMenuKey > 0
-        if ConfigMenuRequireShift && !Input.IsKeyPressed(42)
-            ; Shift not held — skip
-        else
-            SeverActionsNative.PrismaUI_ToggleMenu()
-            return
-        endif
+    ; Config menu key: handled NATIVELY (PrismaUIBridge's InputEvent sink).
+    ; If another hotkey SHARES its code, this event DOES fire for that press —
+    ; the config key must win outright, or opening/closing the Prisma UI also
+    ; triggers the sharing hotkey (field-hit: DropMarkerKey bound to the same
+    ; key dropped a phantom marker on every menu toggle, 2026-08-09).
+    if keyCode == ConfigMenuKey
+        return
     endif
 
     ; All other hotkeys: ignore if in menu mode
@@ -404,10 +524,19 @@ Event OnKeyDown(int keyCode)
         return
     endif
 
+    ; ...and ignore while the Prisma UI itself is open. It is NOT engine menu
+    ; mode (with pause-on-open disabled IsInMenuMode() stays false), so typing
+    ; in a Prisma text field would otherwise fire any letter-bound hotkey.
+    if SeverActionsNativeExt2.Prisma_IsMenuOpen()
+        return
+    endif
+
     Actor player = Game.GetPlayer()
 
-    ; Ignore if player is in dialogue, dead, or incapacitated
-    if player.IsInDialogueWithPlayer() || player.IsDead() || player.GetSitState() == 3
+    ; Ignore if player is in dialogue, dead, or incapacitated.
+    ; (IsInDialogueWithPlayer() on the player is always false -- the Dialogue
+    ; Menu check is the real vanilla-dialogue guard.)
+    if UI.IsMenuOpen("Dialogue Menu") || player.IsDead() || player.GetSitState() == 3
         return
     endif
 
@@ -431,10 +560,118 @@ Event OnKeyDown(int keyCode)
         HandleCompanionWait()
     elseif keyCode == AssignHomeKey && AssignHomeKey > 0
         HandleAssignHome()
+    elseif keyCode == ClearHomeKey && ClearHomeKey > 0
+        HandleClearHome()
     elseif keyCode == SetupCampKey && SetupCampKey > 0
         HandleSetupCamp()
+    elseif keyCode == DropMarkerKey && DropMarkerKey > 0
+        HandleDropMarker()
+    elseif keyCode == TieUntieKey && TieUntieKey > 0
+        HandleTieUntie()
     endif
 EndEvent
+
+; =============================================================================
+; TIE / UNTIE HANDLER
+; =============================================================================
+
+Function HandleTieUntie()
+    {One key, two directions, decided by the crosshair NPC's state:
+       BOUND  -> free them. Routes through ReleaseCaptive (the kidnap/restrain
+                 system's real unbind), which resolves among ACTIVE captives and
+                 doesn't care who the captor was - an NPC restrainer's captive
+                 is freed exactly like the player's. This is the Shrike case
+                 (2026-08-23): an NPC restrained another mid-conversation and
+                 'I am untying your hands' never triggered the untie action.
+       UNBOUND-> restrain them, the player as captor. Same store entry + bind
+                 the NPC-driven RestrainNPC lands in (restraint flag, no hood,
+                 no crime), minus the walk-up - you are already standing there.
+     Every outcome is narrated straight to SkyrimNet via RegisterEvent, so the
+     NPCs react to what happened regardless of which model is driving dialogue.}
+    if !FollowerManagerScript
+        FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+        if !FollowerManagerScript
+            Debug.Notification("SeverActions: Follower manager not available")
+            return
+        endif
+    endif
+
+    Actor player = Game.GetPlayer()
+    Actor target = GetTargetActor()
+    if !target
+        Debug.Notification("Aim at someone to tie or untie them")
+        return
+    endif
+    if target == player
+        Debug.Notification("You cannot tie yourself up")
+        return
+    endif
+    if target.IsDead()
+        Debug.Notification(target.GetDisplayName() + " is beyond tying")
+        return
+    endif
+
+    ; ── UNTIE: any held captive, any captor ──────────────────────────────
+    ; Phase 3 = held/bound (the only state with something to untie). Phases
+    ; 1-2 are an in-flight approach/grab; aborting those from a hotkey would
+    ; race the restrainer's own leg, so only a standing bind is actionable.
+    int phase = SeverActionsNativeExt.Native_Kidnap_GetPhase(target)
+    if phase == 3
+        string capName = target.GetDisplayName()
+        FollowerManagerScript.ReleaseCaptive(player, capName)
+        ; ReleaseCaptive clears the entry on success; re-read to confirm
+        ; before narrating a freeing that a refusal may have blocked.
+        if SeverActionsNativeExt.Native_Kidnap_GetPhase(target) == 0
+            SkyrimNetApi.RegisterEvent("captive_untied", \
+                player.GetDisplayName() + " unties " + capName + "'s hands and lets them go free.", \
+                player, target)
+            Debug.Notification("You untie " + capName)
+        endif
+        return
+    elseif phase == 1 || phase == 2
+        Debug.Notification(target.GetDisplayName() + " is being taken - wait until they are held")
+        return
+    endif
+
+    ; ── TIE: restrain the crosshair NPC, player as captor ────────────────
+    if !FollowerManagerScript.EnableRestrainAction
+        Debug.Notification("Restraining is disabled (Settings > Followers > Behavior)")
+        return
+    endif
+    if FollowerManagerScript.IsRegisteredFollower(target)
+        Debug.Notification("You will not bind one of your own companions")
+        return
+    endif
+    if !FollowerManagerScript.PlayerRestrainOnSpot(target)
+        ; The helper already narrated/notified the specific refusal.
+        return
+    endif
+    ; No extra RegisterEvent here: _BindCaptive already fires the persistent
+    ; has-RESTRAINED event, and a second transient one read as a duplicate in
+    ; the Recent Events list (2026-08-23). Notification only.
+    Debug.Notification("You bind " + target.GetDisplayName() + "'s hands")
+    ; You tied them standing right here - lead them along rather than leave
+    ; them rooted to the spot (user request). Leash to the player.
+    FollowerManagerScript.LeashCaptive(target, player)
+EndFunction
+
+; =============================================================================
+; DROP MARKER HANDLER
+; =============================================================================
+
+Function HandleDropMarker()
+    {Drop a named travel marker at the player's feet (M0: auto-named "Spot N";
+     rename via Marker_Rename / the future Markers page). The at-feet placement
+     IS the navmesh mitigation - the player is standing on it.}
+    Actor player = Game.GetPlayer()
+    Int markerId = SeverActionsNativeExt2.Marker_DropHere(player, "")
+    If markerId > 0
+        String markerName = SeverActionsNativeExt2.Marker_GetName(markerId)
+        Debug.Notification("Marker dropped: " + markerName + " (" + SeverActionsNativeExt2.Marker_Count() + " total)")
+    Else
+        Debug.Notification("Could not drop a marker here.")
+    EndIf
+EndFunction
 
 ; =============================================================================
 ; SETUP CAMP HANDLER
@@ -481,6 +718,23 @@ Function HandleFollowToggle()
     ; Check current follow state and toggle
     ; Also check sandboxing — sandboxing NPCs had FollowPlayer unregistered so
     ; HasFollowPackage returns false, but they're still in our "paused follow" state
+    ; Registered companions route through the companion verbs, exactly like
+    ; the wheel menu - the casual StartFollowing path would layer a SkyrimNet
+    ; FollowPlayer package (and hasFollowPkg) over the alias system, and for
+    ; track-only companions would poison the native monitors (audit H8).
+    if !FollowerManagerScript
+        FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+    endif
+    if FollowerManagerScript && FollowerManagerScript.IsRegisteredFollower(target)
+        bool isHeld = (target.GetAV("WaitingForPlayer") > 0) || FollowScript.IsSandboxing(target)
+        if isHeld
+            FollowerManagerScript.CompanionFollow(target)
+        else
+            FollowerManagerScript.CompanionWait(target)
+        endif
+        return
+    endif
+
     bool isCurrentlyFollowing = FollowScript.HasFollowPackage(target)
     bool isSandboxing = FollowScript.IsSandboxing(target)
 
@@ -812,6 +1066,37 @@ EndFunction
 ; ASSIGN HOME HANDLER
 ; =============================================================================
 
+Function HandleClearHome()
+    {Crosshair-target Clear Home: wipe the home assignment of whatever NPC you
+     are looking at, regardless of list state - a follower, a dismissed NPC, an
+     NFF/track-only companion, or a townsperson the LLM home-assigned by mistake.
+     Routes through FollowerManager.ClearHome (native SetHome "", sandbox/marker/
+     bed release), so a stuck home sandbox lets go and NFF (or the NPC's own AI)
+     takes back over.}
+    if !FollowerManagerScript
+        FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+    endif
+    if !FollowerManagerScript
+        Debug.Notification("SeverActions: Follower Manager not configured!")
+        return
+    endif
+    Actor target = GetTargetActor()
+    if !target
+        Debug.Notification("No valid target found")
+        return
+    endif
+    if target == Game.GetPlayer()
+        Debug.Notification("Cannot target yourself")
+        return
+    endif
+    if FollowerManagerScript.GetAssignedHome(target) == ""
+        Debug.Notification(target.GetDisplayName() + " has no home assigned")
+        return
+    endif
+    FollowerManagerScript.ClearHome(target)
+    Debug.Notification("Cleared " + target.GetDisplayName() + "'s home")
+EndFunction
+
 Function HandleAssignHome()
     if !FollowerManagerScript
         FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
@@ -922,6 +1207,5 @@ EndFunction
 ; =============================================================================
 
 SeverActions_Hotkeys Function GetInstance() Global
-    ; Update this FormID to match your quest's FormID in CK
     return Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_Hotkeys
 EndFunction

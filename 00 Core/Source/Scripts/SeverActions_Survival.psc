@@ -18,8 +18,6 @@ Scriptname SeverActions_Survival extends Quest
 
     Prompt templates read needs via the sever_hunger / sever_fatigue /
     sever_cold SkyrimNet decorators which hit SurvivalDataStore directly.
-    The legacy SeverActions_Survival_Hunger / _Fatigue / _Cold /
-    _LastEatAttempt StorageUtil keys were retired in T3-A.
 }
 
 ; =============================================================================
@@ -48,7 +46,7 @@ Float Property ColdRate = 1.0 Auto
 {Multiplier for cold accumulation rate}
 
 Int Property AutoEatThreshold = 50 Auto
-{Hunger level at which followers will automatically eat (0-100)}
+{Hunger level at which followers will automatically eat (0-100). 0 disables auto-eat.}
 
 Bool Property ShowNotifications = true Auto
 {Master toggle for all survival notifications}
@@ -142,11 +140,12 @@ Function Maintenance()
     ; so PrismaUI can turn the system on without requiring a game reload
     RegisterForModEvent("SeverActions_SurvivalToggle", "OnPrismaSurvivalToggle")
 
-    ; Register for game load (always needed)
-    RegisterForModEvent("OnPlayerLoadGame", "OnPlayerLoadGame")
-
     ; Check if native functions are available
     NativeAvailable = CheckNativeAvailable()
+
+    ; Clear the OnUpdate re-entrancy guard -- it's save-persisted, so a save
+    ; made mid-tick would otherwise stall the update loop forever.
+    IsUpdating = false
 
     ; Push the master-switch state to native BEFORE the disabled early-out, so the
     ; survival decorators (sever_hunger/fatigue/cold) gate correctly even when off
@@ -176,15 +175,15 @@ Function Maintenance()
     ; Register for sleep events to restore follower fatigue
     RegisterForSleep()
 
-    ; Sync existing follower survival data to native store
-    ; This ensures followers recruited before native dual-write get real values in PrismaUI
+    ; Sync follower exclusion flags to native and seed never-tracked followers
+    ; so PrismaUI shows real survival data
     If NativeAvailable
         SyncFollowerSurvivalToNative()
     EndIf
 
     ; Start the update loop - use game seconds format for precision
     LastUpdateTime = GetGameTimeInSeconds()
-    RegisterForSingleUpdate(30.0) ; Check every 30 real seconds
+    ChronoArm(30.0) ; Check every 30 real seconds
 
     Debug.Trace("[SeverActions_Survival] Maintenance complete, update loop started")
 EndFunction
@@ -201,7 +200,9 @@ EndFunction
 
 Event OnNativeFoodConsumed(String eventName, String strArg, Float numArg, Form sender)
     {Called by native SKSE when a tracked follower eats food via inventory (not UseItem action).
-     numArg contains the food FormID so we can determine restore amount.}
+     strArg = "<food name>|<signed decimal FormID>" (protocol v2 — exact for any
+     load-order slot). numArg is the legacy float FormID, kept only for pairing
+     with an old DLL; it corrupts above 2^24, so it is used ONLY as a fallback.}
     If !Enabled || !HungerEnabled
         Return
     EndIf
@@ -211,9 +212,18 @@ Event OnNativeFoodConsumed(String eventName, String strArg, Float numArg, Form s
         Return
     EndIf
 
-    ; Look up the food form from the FormID passed in numArg
+    ; Look up the food form — prefer the signed-decimal FormID in strArg (v2),
+    ; fall back to the legacy float numArg for stale DLLs. GetFormEx (not
+    ; GetForm) so negative signed ints re-resolve to high-mod-index FormIDs.
     Form foodForm = None
-    If numArg > 0.0
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos >= 0
+        Int formId = StringUtil.Substring(strArg, pipePos + 1) as Int
+        If formId != 0
+            foodForm = Game.GetFormEx(formId)
+        EndIf
+    EndIf
+    If !foodForm && numArg > 0.0
         foodForm = Game.GetForm(numArg as Int)
     EndIf
 
@@ -308,18 +318,32 @@ Float Function GetGameTimeInSeconds()
     Return Utility.GetCurrentGameTime() * 24.0 * SECONDS_PER_GAME_HOUR
 EndFunction
 
-Event OnPlayerLoadGame()
-    Debug.Trace("[SeverActions_Survival] Game loaded")
-    Maintenance()
-EndEvent
-
 ; =============================================================================
 ; UPDATE LOOP
 ; =============================================================================
 
-Event OnUpdate()
-    If !Enabled || IsUpdating
-        RegisterForSingleUpdate(30.0)
+Function ChronoArm(Float afSeconds)
+    {Arm this script's one-shot chronometer tick - replaces the FORM-keyed
+     RegisterForSingleUpdate (canonical explanation: the Chronometer block in
+     SeverActionsNativeExt2.psc + the CLAUDE.md lesson). Event name AND
+     callback name are unique per script - both, always. Re-arm replaces the
+     pending tick; ticks do NOT survive save/load (load paths re-arm); at
+     most one already-in-flight wake can land after Cancel/Clear, so keep
+     the handler state-guarded.}
+    RegisterForModEvent("SeverActions_Tick_Survival", "OnChronoTick_Survival")
+    SeverActionsNativeExt2.Chrono_Request("SeverActions_Tick_Survival", afSeconds)
+EndFunction
+
+Event OnChronoTick_Survival(String eventName, String strArg, Float numArg, Form sender)
+    If !Enabled
+        ; Disabled: let the loop die instead of re-arming forever (which would
+        ; also defeat StopTracking's Chrono_Cancel). Every path that re-enables
+        ; the system routes through StartTracking() -> Maintenance(), which
+        ; re-arms the chronometer tick.
+        Return
+    EndIf
+    If IsUpdating
+        ChronoArm(30.0)
         Return
     EndIf
 
@@ -336,7 +360,7 @@ Event OnUpdate()
     EndIf
 
     IsUpdating = false
-    RegisterForSingleUpdate(30.0)
+    ChronoArm(30.0)
 EndEvent
 
 Function UpdateAllFollowers(Float hoursPassed)
@@ -367,20 +391,11 @@ Function UpdateAllFollowers(Float hoursPassed)
         i += 1
     EndWhile
 
-    ; Also update nearby non-follower NPCs with simple drift
-    ; so the survival prompt can reference their physical state
-    UpdateNearbyNPCs(player, hoursPassed)
-EndFunction
-
-Function UpdateNearbyNPCs(Actor player, Float hoursPassed)
-    {Seed nearby NPC survival in the native C++ store. C++ handles all
-     randomization (InitNearbyNPC/RandomizeFresh/RandomizeDrift) and prompts
-     read it back through the sever_hunger / sever_fatigue / sever_cold
-     decorators (SurvivalDataStore), so Papyrus no longer reads anything back.
-     The whole cell scan + filter + InitNearby loop now lives in C++ —
-     maxCount=25 mirrors the old `i < 25` budget, maxDist=4096.0 the old radius.}
-
-    SeverActionsNativeExt.Native_Survival_UpdateNearby(25, 4096.0)
+    ; Nearby NON-follower survival is RETIRED (2026-08-23, Faustus field
+    ; report: shopkeepers complaining of exhaustion in their thoughts). The
+    ; sweep invented random hunger/fatigue/cold for every NPC in the cell and
+    ; the prompt narrated it. Survival is followers-only by design; the
+    ; decorator is follower-gated too, so a stale nearby entry can never leak.
 EndFunction
 
 Function UpdateFollowerSurvival(Actor akFollower, Float hoursPassed)
@@ -405,7 +420,11 @@ Function UpdateFollowerSurvival(Actor akFollower, Float hoursPassed)
         ; Check for auto-eat at staggered thresholds
         ; First attempt at AutoEatThreshold (default 50), then retry every 10 points
         ; (60, 70, 80, 90, 100) if previous attempts found no food.
-        If currentHunger >= AutoEatThreshold
+        ; AutoEatThreshold 0 DISABLES auto-eat (the MCM tooltip always promised
+        ; this, but hunger >= 0 is always true, so 0 actually meant eat at
+        ; every bracket - the exact opposite). Hunger keeps ticking; only the
+        ; automatic eating stands down. Manual force-eat is unaffected.
+        If AutoEatThreshold > 0 && currentHunger >= AutoEatThreshold
             ; T3-A: lastEatAttempt lives on SurvivalDataStore (v3) now.
             Int lastAttemptThreshold = SeverActionsNativeExt.Native_Survival_GetLastEatAttempt(akFollower)
             ; Calculate which threshold bracket we're in (50, 60, 70, 80, 90, 100)
@@ -470,7 +489,7 @@ Function UpdateFollowerSurvival(Actor akFollower, Float hoursPassed)
     ; Apply speed penalty from cold (the only remaining modifier)
     ApplyStatPenalties(akFollower, currentHunger, currentFatigue, currentCold)
 
-    ; Dual-write to native SurvivalDataStore for PrismaUI
+    ; Write to native SurvivalDataStore for PrismaUI
     If NativeAvailable
         SeverActionsNative.Native_Survival_SetNeeds(akFollower, currentHunger as Float, currentFatigue as Float, currentCold as Float)
     EndIf
@@ -531,6 +550,14 @@ Function TryAutoEat(Actor akFollower)
     If !food
         ; Then try raw food
         food = FindFoodInInventory(akFollower, false)
+    EndIf
+    If !food && NativeAvailable
+        ; Party larder (user decision): the shared rations pool the Survival
+        ; page shows is the real source - pull the cheapest suitable food
+        ; from whoever carries it (player included) into this follower's
+        ; pack, then eat it through the normal flow below so the animation,
+        ; SkyrimNet event, and MarkFed all still fire.
+        food = SeverActionsNativeExt.Native_Survival_PullFoodFromParty(akFollower)
     EndIf
 
     If food
@@ -736,7 +763,7 @@ EndFunction
 Bool Function IsNearCampfirePapyrus(Actor akFollower)
     {Check if follower is near a campfire (Papyrus fallback)}
 
-    ; Search radius for campfires (512 units is roughly 7-8 feet in-game)
+    ; Search radius for campfires (512 units is roughly 7-8 meters / 24 feet in-game)
     Float searchRadius = 512.0
 
     ; Look for fire-related objects by checking for lit fires in the cell
@@ -1235,9 +1262,10 @@ EndFunction
 ; =============================================================================
 
 Function SyncFollowerSurvivalToNative()
-    {On game load, push StorageUtil survival values into native SurvivalDataStore
-     so PrismaUI shows real data for followers recruited before native dual-write existed.
-     Also initializes new followers with randomized values for realism.}
+    {On game load, sync each follower's exclusion flag (StorageUtil, MCM's source
+     of truth) into the native SurvivalDataStore, and initialize any never-tracked
+     follower (all needs 0, not excluded) with randomized values for realism.
+     Needs themselves already live in the native store.}
 
     Actor[] followers = GetCurrentFollowers()
     Int i = 0
@@ -1722,7 +1750,7 @@ Function StopTracking()
     ClearPenaltiesForEveryFollower()
 
     ; Stop the update loop
-    UnregisterForUpdate()
+    SeverActionsNativeExt2.Chrono_Cancel("SeverActions_Tick_Survival")
     Enabled = false
 
     ; Tell native the master switch is off — the sever_hunger/fatigue/cold

@@ -1,5 +1,5 @@
 name: SetCompanion
-description: "The speaker agrees to throw in with {{ player.name }} on the road ahead — a sellsword shaking on terms in a tavern back room, an old friend deciding to come along, a previously dismissed companion picking up the pack again. Use only when they genuinely consent to travel together."
+description: "The speaker agrees to travel with {{ player.name }} as a registered companion — a sellsword shaking on terms, an old friend coming along, a dismissed companion rejoining. Use only when they genuinely consent. NOT for a companion resuming after CompanionWait — use CompanionFollow."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: RegisterFollower
@@ -10,6 +10,25 @@ parameterMapping:
 enabled: true
 defaultPriority: 6
 eligibilityRules:
+  - conditions:
+      # Imperial tax collectors are loyal to the Empire alone — never
+      # recruitable, by design (P2 Final Audit). String-compared custom
+      # decorator: "" = not a collector.
+      #
+      # THIS RULE FAILS CLOSED, AND THAT IS DELIBERATE. SkyrimNet's
+      # EligibilityChecker returns false for an UNREGISTERED decorator before
+      # it ever compares, so if SeverActionsNative.dll is missing/stale (or
+      # SkyrimNet is pre-API-v5) this action goes ineligible for EVERY NPC —
+      # there is no fail-open formulation, inverting the operator behaves
+      # identically. These YAMLs are therefore DLL-COUPLED exactly like a
+      # prompt that calls a new decorator: ship them together, never alone.
+      # Papyrus backstops the same rule natively with an in-world refusal.
+      - decoratorName: "is_tax_collector"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
   - conditions:
       - decoratorName: "is_in_combat"
         arguments: ["currentActor"]

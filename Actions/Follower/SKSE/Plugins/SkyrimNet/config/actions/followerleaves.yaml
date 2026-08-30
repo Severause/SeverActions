@@ -1,5 +1,5 @@
 name: FollowerLeaves
-description: "The companion has had enough — they unbuckle the pack, drop it at {{ player.name }}'s feet, and walk away for good. Maybe a final shouting match outside the inn, maybe a silent departure before dawn. EXTREMELY RARE — only after long, severe mistreatment and rapport / trust ground all the way down."
+description: "The companion quits for good after severe, sustained mistreatment — drops the pack and walks out. EXTREMELY RARE: only when the relationship has collapsed over time, never for one argument. For a normal parting use DismissFollower."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: FollowerLeaves

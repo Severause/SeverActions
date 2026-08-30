@@ -1,6 +1,6 @@
 customCategory: economy
 name: CreateRecurringDebt
-description: "Strike an ongoing arrangement where coin changes hands on a steady schedule. Rent owed each week, monthly tribute to a thane, a hireling's regular wages, a guild's standing dues."
+description: "Strike an ongoing arrangement where coin changes hands on a steady schedule. Rent owed each week, monthly tribute to a thane, a hireling's regular wages, a guild's standing dues. For a one-off tab, use CreateDebt."
 questEditorId: SeverActions
 scriptName: SeverActions_Debt
 executionFunctionName: CreateRecurringDebt_Execute
@@ -10,10 +10,10 @@ parameterMapping:
     description: the actor striking the arrangement (usually the one being paid each cycle)
   - type: dynamic
     name: akCreditor
-    description: the actor collecting each cycle — the landlord, the thane, the guildmaster, the employer
+    description: the actor collecting each cycle — the landlord, the thane, the guildmaster, the hireling owed wages
   - type: dynamic
     name: akDebtor
-    description: the actor paying each cycle — the tenant, the sworn man, the hireling
+    description: the actor paying each cycle — the tenant, the sworn man, the employer paying wages
   - type: dynamic
     name: aiAmount
     description: gold owed per cycle

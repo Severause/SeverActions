@@ -1,6 +1,6 @@
 customCategory: economy
 name: AddToDebt
-description: "Add more weight to a tab the speaker is already keeping. Another round, another loaf, another repair — all going onto the same slate the other still owes."
+description: "Increase a tab the target already owes the speaker — another round, another repair on the same slate. Use only when a debt between these two already exists. To open a new tab, use CreateDebt."
 questEditorId: SeverActions
 scriptName: SeverActions_Debt
 executionFunctionName: AddToDebt_Execute
@@ -16,6 +16,11 @@ parameterMapping:
     description: additional gold being added to the tab
   - type: dynamic
     name: asReason
+    # optional is load-bearing: "leave empty" invites the LLM to omit the
+    # key entirely, which used to abort execution at SkyrimNet's
+    # missing-parameter check — the tab was never charged.
+    optional: true
+    default: ""
     description: "the original reason on the tab, for matching when the actor has multiple (leave empty to use whatever tab is found)"
 enabled: true
 eligibilityRules:
@@ -27,10 +32,14 @@ eligibilityRules:
     logicalOperator: "AND"
     required: true
   - conditions:
-      - decoratorName: "is_in_faction"
+      # get_faction_rank, not is_in_faction: RemoveFromFaction sets rank -1
+      # (layered override), it does not erase membership — a rank-blind check
+      # reads a former creditor as one forever. Only rank >= 0 is a live
+      # creditor. Mirrors reducedebt.yaml's documented fix.
+      - decoratorName: "get_faction_rank"
         arguments: ["currentActor", "SeverActions_CreditorFaction"]
-        comparisonOperator: "=="
-        expectedValue: true
+        comparisonOperator: ">="
+        expectedValue: 0
     logicalOperator: "AND"
     required: true
   - conditions:

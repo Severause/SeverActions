@@ -1,0 +1,4 @@
+customCategory: employment
+name: Employment
+description: "Jobs and workers for {{ player.name }} — hire retainers or appoint a hold steward (HireRetainer, HireSteward); wages, raises and haggling over terms (PayArrears, GrantRetainerRaise, NegotiateTerms); loan requests (GrantLoan, RefuseLoan, ForgiveLoan); work grievances (ReassureRetainer, BrushOffRetainer); collecting earnings or the hold vault (CollectFromRetainer, CollectFromSteward); ending service (DismissRetainer, DismissSteward). Also OUTLAW CAMPS: a camp swearing service (SwearCampToPlayer, RecruitLeaderlessCamp), a sworn camp mustering as a war band or disbanding it (MusterCamp, SendCampHome), a camp leaving service (ReleaseCampFromService, RenounceCampOath). Hired-thug ambush standoffs resolve here too (ThugAttack, ThugStandDown). Any talk of working for {{ player.name }} belongs here, not in Economy."
+enabled: true

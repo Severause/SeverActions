@@ -1,6 +1,6 @@
 customCategory: brawl
 name: DeclineBrawl
-description: "The speaker waves off a brawl challenge — too old for this, too tired, or just smart enough to know they'd lose. A merchant who'd rather keep his teeth, a noble who finds fistfights beneath them, a guard who reminds the challenger about the Hold's laws. akChallenger names who the speaker is brushing off; may be omitted if a ChallengeBrawl is already pending."
+description: "Refuse a brawl challenge without fighting. akChallenger names the actor whose challenge is refused; may be omitted if a ChallengeBrawl is already pending."
 questEditorId: SeverActions
 scriptName: SeverActions_Brawl
 executionFunctionName: DeclineBrawl_Execute
@@ -10,6 +10,9 @@ parameterMapping:
     description: the actor refusing the challenge
   - type: dynamic
     name: akChallenger
+    # optional is load-bearing — see acceptbrawl.yaml: omission used to
+    # abort execution before Papyrus ever ran.
+    optional: true
     description: the actor whose challenge is being declined. May be omitted when declining a pending challenge already recorded via ChallengeBrawl.
 enabled: true
 defaultPriority: 7

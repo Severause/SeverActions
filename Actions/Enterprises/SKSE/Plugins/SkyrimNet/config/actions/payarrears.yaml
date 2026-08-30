@@ -1,6 +1,6 @@
-customCategory: enterprises
+customCategory: employment
 name: PayArrears
-description: "Use when {{ player.name }} pays the back-wages they OWE this retainer (the speaker) — wages that went unpaid because {{ player.name }} couldn't afford them on a past settlement. The 'In the Player's Service' context will note the retainer is 'owed back-wages and growing resentful'. Paying clears the debt out of {{ player.name }}'s gold and restores the retainer's loyalty. Only call this when the retainer is actually owed money."
+description: "Use when {{ player.name }} pays the back-wages they OWE this retainer (the speaker) — wages that went unpaid because {{ player.name }} couldn't afford them on a past settlement. The 'In the Player's Service' context will note the retainer is 'owed back-wages and growing resentful'. Paying clears the debt out of {{ player.name }}'s gold and restores the retainer's loyalty."
 questEditorId: SeverActions
 scriptName: SeverActions_Currency
 executionFunctionName: PayArrears

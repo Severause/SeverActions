@@ -4,11 +4,64 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SeverActions Prompt</title>
-    <script type="module" crossorigin src="./assets/prompt-CYCb3p_D.js"></script>
+    <script type="module" crossorigin src="./assets/prompt-DzO-U9tV.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/client-Der9nqag.js">
-    <link rel="stylesheet" crossorigin href="./assets/prompt-C5WQeMn-.css">
+    <link rel="stylesheet" crossorigin href="./assets/prompt-BofJ1Axu.css">
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"></div>
+
+    <script>
+      // Generic keyboard/controller navigation (PR #288 gamepad bridge).
+      // Lives HERE in the Vite entry HTML — not hand-patched into the built
+      // view — so build-ui.ps1 rebuilds keep it. The native GamepadUIBridge
+      // turns gamepad input into keystrokes (A=Enter, B=Escape,
+      // d-pad/stick=arrows); arrows move focus through visible controls, the
+      // first press lands on the primary button. Text inputs keep Left/Right
+      // for the caret; selects keep Up/Down for value browsing. Escape is
+      // handled by PromptPanel itself (dismiss via the choice channel).
+      (function () {
+        var style = document.createElement('style');
+        style.textContent = 'button:focus,input:focus,select:focus,textarea:focus{outline:2px solid rgba(201,168,102,0.9);outline-offset:1px;}';
+        document.head.appendChild(style);
+        function focusables() {
+          var all = document.querySelectorAll('button, input, select, textarea');
+          var out = [];
+          for (var i = 0; i < all.length; i++) {
+            var el = all[i];
+            if (el.disabled) continue;
+            var r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) continue;
+            out.push(el);
+          }
+          return out;
+        }
+        function primary() {
+          var els = focusables();
+          for (var i = 0; i < els.length; i++) {
+            var c = String(els[i].className || '');
+            if (c.indexOf('--confirm') >= 0 || c.indexOf('--accept') >= 0 || c.indexOf('--go') >= 0 || c.indexOf('--primary') >= 0) return els[i];
+          }
+          return els.length ? els[0] : null;
+        }
+        document.addEventListener('keydown', function (e) {
+          var k = e.key;
+          if (k !== 'ArrowUp' && k !== 'ArrowDown' && k !== 'ArrowLeft' && k !== 'ArrowRight') return;
+          var els = focusables();
+          if (!els.length) return;
+          var f = document.activeElement;
+          var idx = els.indexOf(f);
+          if (idx < 0) { e.preventDefault(); var p = primary(); if (p) p.focus(); return; }
+          var tag = f.tagName;
+          if (tag === 'SELECT' && (k === 'ArrowUp' || k === 'ArrowDown')) return;
+          if ((tag === 'INPUT' || tag === 'TEXTAREA') && (k === 'ArrowLeft' || k === 'ArrowRight')) return;
+          e.preventDefault();
+          var next = (k === 'ArrowDown' || k === 'ArrowRight') ? idx + 1 : idx - 1;
+          if (next < 0) next = els.length - 1;
+          if (next >= els.length) next = 0;
+          els[next].focus();
+        });
+      })();
+    </script>
   </body>
 </html>

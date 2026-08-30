@@ -115,9 +115,9 @@ No recent banters on record — any pair is fair game.
 
 ## Scene Context
 
-Current location: {{ player.location }}
-Time of day: {{ player.timeOfDay }}{% if player.weather %}
-Weather: {{ player.weather }}{% endif %}
+Current location: {{ location }}
+Time: {{ gameTime }}
+Weather: {{ currentWeather.name }}{% if currentWeather.isRaining %} (raining){% elif currentWeather.isSnowing %} (snowing){% endif %}
 
 [ end system ]
 
@@ -127,7 +127,6 @@ Decide whether any two of the candidate NPCs above should spontaneously start a 
 
 Guidelines:
 - About 50% of the time, no banter is appropriate. Silence is normal — most NPCs go about their business without talking. Output {"banter":null} and nothing else.
-- These are AMBIENT NPCs, not the player's companions. The player is overhearing them; do NOT address the player or refer to the player as a participant.
 - Banter should feel organic — pick a pair only if their pairing genuinely fits the scene. A jarl and a beggar don't strike up small talk; market vendors complaining to each other do; two guards on the same patrol do.
 - Read the bios above. If two characters share a workplace, faction, family, or recent event, that's banter material. If they have nothing in common and are just standing in the same room, silence is more believable.
 
@@ -149,7 +148,7 @@ If the only connection is "they're both standing here," lean toward silence.
 Cycle through different beat types over time so the same NPCs don't always do the same kind of exchange. Categories (with example topic seeds — these are seeds, do NOT copy them verbatim):
 
 - **Local gossip** — a third party (a townsperson, a recent traveler, a known regular) is the subject
-  * "what {{ player.location }}'s latest scandal really involved"
+  * "what {{ location }}'s latest scandal really involved"
   * "the regular who hasn't shown up in three days"
   * "a customer who undertipped"
 - **Trade / work talk** — vendors, craftspeople, workers comparing or commiserating about the day
@@ -191,14 +190,14 @@ Cycle through different beat types over time so the same NPCs don't always do th
 ### Output discipline
 
 - The topic should be a brief direction (4-8 words), NOT full dialogue.
+- **"direction" (optional)**: ONE sentence of scene steering, ONLY when the topic alone cannot carry the moment — a callback (who did what, and is the tone teasing or sore?), friction (how sharp?), a secret (who must not overhear?). For simple beats (trade grumbling, weather-adjacent, civic news) leave it empty — the speaker improvises better from a bare seed.
 - Pick the speaker as the more outgoing of the two — vendors, innkeepers, gossipy types initiate; reserved or stoic types respond.
-- Avoid topics that depend on the player's recent actions unless the player has been visibly involved in something noteworthy nearby.
 - If the recent dialogue events show one of these NPCs already spoke very recently, prefer silence or pick a different pair.
-- Do NOT generate dialogue critical of, about, or addressed to the player. The player is simply present in the world.
+- The player is simply present in the world: do NOT generate dialogue critical of, about, or addressed to them, and avoid topics that depend on their recent actions unless they were visibly involved in something noteworthy nearby.
 
 Respond with ONLY one of these JSON formats. No explanation. One line:
 {% raw %}{"banter":null}{% endraw %}
-{% raw %}{"banter":{"speaker":"Name","target":"Name","topic":"brief topic direction"}}{% endraw %}
+{% raw %}{"banter":{"speaker":"Name","target":"Name","topic":"brief topic direction","direction":"optional one-sentence scene steering, or empty"}}{% endraw %}
 {% else %}
 {% raw %}{"banter":null}{% endraw %}
 {% endif %}

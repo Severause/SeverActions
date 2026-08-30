@@ -2,12 +2,16 @@
 <fomod>
     <Name>SeverActions - SkyrimNet Action Pack</Name>
     <Author>Sever</Author>
-    <Version>3.1.0</Version>
+    <Version>3.9.13</Version>
     <Description>A comprehensive action, prompt, and behavior pack for SkyrimNet. 58 actions, 25 context prompts, and a native C++ SKSE plugin (230+ functions). NPCs can follow, travel, craft, cook, brew, read books aloud, manage outfits with persistent outfit locking, handle gold and debts, use furniture, fight, get arrested and escorted to jail, and more — all driven naturally through conversation. Includes a full companion framework with relationship tracking, automatic LLM-based relationship assessment, EFF/NFF integration, and survival needs. Features a debt tracking system with credit limits, due dates, recurring charges, and automatic guard reporting for overdue debts. Native PackageManager with SKSE cosave persistence for LinkedRef auto-restoration across save/load. New in 1.0: PrismaUI-based configuration menu — a modern HTML/CSS/JS config interface with tabbed navigation replacing the MCM for users with PrismaUI installed (MCM remains available as fallback). Optional adult content modules included.
 
 Credits:
 - Cartography by Caro Tuts (Skyrim Paper Map for FWMF, Nexus #62705) — used as the base map for the World page in PrismaUI.
-- Hold sigils derived from CoMAP map markers by Parapets (Nexus #56123) and Cities of the North marker pack — re-tinted to a parchment palette for the World page.</Description>
+- Hold sigils derived from CoMAP map markers by Parapets (Nexus #56123) and Cities of the North marker pack — re-tinted to a parchment palette for the World page.
+- Imperial Fiscal Levy armour meshes and textures by NordwarUA (New Legion, Nexus #30468 — Base and Textures HD archives) — recoloured to a Treasury livery for the Final Audit detail.
+- The General's writ-blade mesh and textures by InsanitySorrow (Insanity's Ebony Sword Replacer, Nexus #37645) — recoloured to match the Treasury livery.
+- The Legates' blades by billyro (Mage Glass Sword, Nexus #38798) — re-tinted storm-blue for Livia and ember for Drusilla.
+</Description>
     <Groups>
         <element>Gameplay</element>
         <element>SkyrimNet</element>

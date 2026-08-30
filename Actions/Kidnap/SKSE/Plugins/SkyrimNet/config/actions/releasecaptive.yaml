@@ -1,0 +1,55 @@
+name: ReleaseCaptive
+description: "Free a held captive for good: cut their bonds and let them go, ending the captivity. Use when {{ player.name }} orders a captive released, or when the speaker decides — through conscience, bargain, or mercy — to set them free. The captive resumes their normal life (they will remember this). To keep the captive but loosen their bonds, use UntieCaptive instead."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: ReleaseCaptive
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: whoever is untying the captive
+  - type: dynamic
+    name: targetName
+    description: "the captive's name (may be approximate; matched against current captives only)"
+    optional: true
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  # NO toggle gate here (audit): the Papyrus body is deliberately ungated -
+  # an existing captive must ALWAYS be releasable, even if the player turned
+  # both feature toggles off mid-captivity. The is_kidnap_victim rule below
+  # still excludes bound speakers.
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives or take new ones (the
+      # self-release hole). String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Scene gates (audit sec.7-4 alignment): the kidnapnpc/movecaptive/
+      # restrainnpc siblings carry these; the speaker must not be mid-scene.
+      # get_faction_rank, never is_in_faction - rank -1 (stuck sentinel)
+      # must not gate the action forever (CLAUDE.md scene-gate rule).
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} frees the captive"

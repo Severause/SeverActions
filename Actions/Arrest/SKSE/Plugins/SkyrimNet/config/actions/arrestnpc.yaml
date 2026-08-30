@@ -1,6 +1,6 @@
 customCategory: arrest
 name: ArrestNPC
-description: "The guard claps a hand on the suspect's shoulder, calls for compliance, and marches them off to the cells — a brawler hauled from a tavern, a fence caught with stolen goods, a drunk dragged out of the gutter. For NPCs only; use ArrestPlayer for the player."
+description: "The guard claps a hand on the suspect's shoulder, calls for compliance, and marches them off to the cells — a brawler hauled from a tavern, a fence caught with stolen goods, a drunk dragged out of the gutter. The suspect must be present in the scene — for a suspect elsewhere, use DispatchGuardToArrest. For NPCs only; use ArrestPlayer for {{ player.name }}."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: ArrestNPC_Internal

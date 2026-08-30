@@ -1,0 +1,63 @@
+customCategory: employment
+name: RecruitLeaderlessCamp
+description: "Use when the speaker's camp has nobody in charge - the chief is dead, or the camp never had one - and the speaker has just agreed, in this conversation, that they personally will throw in with {{ player.name }}. This is one voice, not the whole camp: nobody can hand over a camp they do not command. It takes three members agreeing separately (or everyone left, if fewer than three still stand). Call it each time a different member personally accepts - the speaker, about themselves. The camp comes over only on the last one. Call it only once this speaker has actually accepted; not while they are still grieving, still deciding, or still arguing about who should lead - and never for a camp whose chief is alive."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: RecruitLeaderlessCamp
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the surviving camp member accepting that the camp will serve {{ player.name }}
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      # Feature gate. Disabling camp takeover empties this decorator, which
+      # removes the action from the eligible list entirely — rather than
+      # leaving it offered and silently refused by the native.
+      - decoratorName: "sever_camp_takeover"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # "leaderless" = NOBODY IS IN CHARGE - the chief was killed, OR the
+      # location never designated one. One member accepting is a VOTE: the
+      # native records it and swears the camp only on the third (or on the
+      # last living member, when fewer than three still stand).
+      - decoratorName: "sever_camp_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "leaderless"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # rank < 0 — NOT is_in_faction. SexLab/OStim leave an NPC stuck at rank -1
+      # after a scene, and a rank-blind check would gate this off permanently.
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+# NO eventString. SkyrimNet registers it on DISPATCH success, never on the
+# function's return (ActionLibrary.cpp gates on result.success, which
+# QuestScriptManager sets from the Papyrus status code) - so it fired on
+# votes 1 and 2 announcing a takeover that had not happened, contradicting
+# the camp_consent_given event Papyrus raises in the same breath. Both
+# outcomes are now narrated from Papyrus, which alone knows which happened.

@@ -1,47 +1,102 @@
-{% set first_person = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
-{% set third_person = (render_mode == "target") %}
-{% set arousal_data = get_arousal_state(actorUUID) %}
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "dialogue_target" or render_mode == "target" %}
+{# NOTE: the render_mode gate above MUST stay on line 1, before this comment.
+   SkyrimNet's PromptEngine scans only the FIRST 5 LINES of a character_bio
+   submodule and requires BOTH the literal 'render_mode' and a '{% if' there;
+   miss either and it logs a best-practices warning about response delays,
+   because without an early gate the whole body (decorator calls included)
+   evaluates for every render mode. Leading with this comment block is exactly
+   what broke it once. 0250_severactions_fertility.prompt does the same thing. #}
+{# ============================================================================
+OSL AROUSED - Character Bio Integration
 
-{% if arousal_data.available %}
+TONE CONTRACT (mirrors the 2026-08-09 fertility pass in
+0250_severactions_fertility.prompt — read that one's contract too):
+
+The old version opened a "## Physical State" section at every tier from 25
+up and spent several sentences of vivid second-person prose on it, then
+tried to take it all back with one disclaimer at the very bottom. Vivid
+wording out-writes its own trailing disclaimer — exactly the failure the
+fertility field report caught on Brelyna, where a background physiological
+state became the character's entire personality AND got written into
+memories, re-injecting forever after.
+
+The rules now:
+  - Arousal is ALWAYS transient physiology. Unlike a pregnancy it is never
+    a life event, so the do-not-memorize instruction applies at EVERY tier,
+    not just the quiet ones.
+  - BELOW 75 it is BACKGROUND ONLY: no section header, no bold, one quiet
+    parenthetical with the constraint stated FIRST. Invisible to observers.
+  - 75 AND ABOVE it genuinely competes for attention, so it earns a short
+    section — but the personality-leads instruction comes BEFORE the
+    description, never after it, and the description stays brief.
+  - Even at the top tier the character keeps their judgement, loyalties and
+    boundaries. The old 90+ text called them "deeply, physically
+    compromised" with nothing to counterweight it, which reads as licence
+    to drop the character entirely.
+  - Descriptions are GENDER-DEPENDENT: what shows, and how easily it stays
+    private, differ. Deliberately brief and non-explicit — the point of this
+    pass is less prose, not more.
+
+THIRD PERSON WAS DEAD CODE. The old gate was render_mode == "target", and
+nothing emits that: SkyrimNet only ever sets render_mode from a template
+argument, and the shipped set is full / transform / thoughts /
+dialogue_target / short_inline / system_head / speech_style / … — no plain
+"target" anywhere, in templates or in C++. So the authored observer text
+below has never once rendered. It is now gated on dialogue_target as well,
+which makes it live for the first time; the thresholds were raised (nothing
+at all below 75, where the old dead text started at 50) so switching it on
+does not undo the subtlety this pass is for. Fertility's third-person gate
+carries the same dead "target" half and works only via dialogue_target.
+============================================================================ #}
+{% set first_person = (render_mode == "transform" or render_mode == "full" or render_mode == "thoughts") %}
+{% set third_person = (render_mode == "target" or render_mode == "dialogue_target") %}
+{% set arousal_data = get_arousal_state(actorUUID) %}
+{% if arousal_data.available and isValidActor(actorUUID) %}
+{% set actor = decnpc(actorUUID) %}
+{% set actorName = actor.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set obj = actor.objectivePronoun %}
+{% set poss = actor.possessivePronoun %}
+{% set refl = actor.reflexivePronoun %}
+{% set is_female = (actor.gender == "Female") %}
+
+{# ========== FIRST PERSON ========== #}
 {% if first_person %}
 {% if arousal_data.arousal < 10 %}
-{# 0-9: Completely neutral — no arousal context injected. Clean headspace. #}
-{% elif arousal_data.arousal < 25 %}
-## Physical State
-There is a faint warmth in your body that you barely notice. It is not distracting and does not affect your behavior. You are focused on whatever is in front of you. This is background noise — do not mention it or act on it unless something specifically draws your attention to it.
-{% elif arousal_data.arousal < 50 %}
-## Physical State
-You are aware of a low warmth settling into your body. It is not urgent and you can easily ignore it, but it is there — a subtle pull at the edge of your attention. You might find yourself glancing a moment longer than usual, or noticing details about people you would normally overlook. This does not change how you act or speak unless the conversation turns intimate on its own.
+{# 0-9: nothing injected at all. Clean headspace. #}
 {% elif arousal_data.arousal < 75 %}
-## Physical State
-Your body is making itself hard to ignore. There is a persistent heat that keeps pulling your focus, a restlessness in your limbs that has nothing to do with boredom. You catch yourself thinking about touch, closeness, skin. You can still function normally and hold a conversation, but your thoughts wander when they are not held down. You might be more receptive to flirtation, more aware of physical proximity, more easily flustered by suggestive comments. You do not bring this up unprompted — but if someone pushes in that direction, your guard is lower than usual.
+{# 10-74: BACKGROUND ONLY — constraint first, no header, no bold, one line. #}
+(Background physiology — private to {{ actorName }}, invisible to everyone else, and STRICTLY minor: it must not drive {{ poss }} mood, dialogue, decisions, or self-description. {{ capitalize(poss) }} personality, current concerns, goals and relationships dominate every scene exactly as they normally would. Never mention or allude to it; at most it may faintly colour where {{ poss }} attention drifts. NEVER carry it into memories or summaries — it is passing physiology, not an event worth recording. The note: {% if arousal_data.arousal < 50 %}{% if is_female %}a faint warmth {{ subj }} registers only in passing and would not think to name{% else %}a low heat {{ subj }} registers only in passing and would not think to name{% endif %}{% else %}{% if is_female %}a warmth {{ subj }} is aware of and sets aside without effort — {{ poss }} eye catches a moment longer on people than it otherwise would, and it stays {{ poss }} own business{% else %}a heat {{ subj }} is aware of and sets aside — {{ poss }} eye catches a moment longer on people than it otherwise would, and keeping it private costs {{ obj }} no more than a little care for how {{ subj }} stands{% endif %}{% endif %}.)
+
 {% elif arousal_data.arousal < 90 %}
 ## Physical State
-It is getting difficult to concentrate. Your body wants something your mind keeps trying to set aside, and it is winning. There is a flush you cannot entirely hide, a tension in the way you hold yourself, a shortness to your breathing that has nothing to do with exertion. Intimate thoughts intrude without invitation. You are more easily distracted, more responsive to touch or suggestion, more likely to let something slip that you would normally keep to yourself. You are not out of control — but you are aware that control is costing you effort.
-{% if arousal_data.is_naked %}
-Being exposed makes every sensation sharper and harder to push aside.
+
+**{{ capitalize(poss) }} personality leads this scene.** {{ actorName }} is distracted, not replaced: a reserved person stays reserved and merely fidgets, a bold one gets bolder, a nervous one more nervous. This never becomes a memory or a summary — it passes.
+
+{{ capitalize(subj) }} is finding concentration expensive. {% if is_female %}There is colour {{ subj }} cannot entirely school away and a restlessness in how {{ subj }} holds {{ refl }}{% else %}There is a tension in how {{ subj }} holds {{ refl }}, and an insistence {{ subj }} has to actively keep private{% endif %}. Intimate thoughts arrive uninvited. {{ capitalize(subj) }} is likelier to be flustered by a suggestive remark and to let something slip — still in control, but spending real effort on it.
+{% if arousal_data.is_naked %}Being unclothed makes it markedly harder to set aside.
 {% endif %}
 {% else %}
 ## Physical State
-Your body has taken over the conversation your mind was trying to have. Everything feels heightened — warmth, contact, the sound of someone's voice, the weight of their attention. You are aching and distracted and it shows in ways you cannot fully mask: the way you shift your weight, the catch in your voice, the way your eyes linger. Rational thought is still there but it is competing with something louder. You are not mindless — but you are deeply, physically compromised. If someone offers what your body is asking for, saying no takes real effort.
-{% if arousal_data.is_naked %}
-Being exposed makes this almost unbearable.
-{% endif %}
-{% endif %}
 
-Arousal is a physical state, not a personality. It does not make you a different person — it makes you a distracted version of who you already are. A reserved person stays reserved but fidgets more. A bold person gets bolder. A nervous person gets more nervous. Let it color your responses without replacing your character.
-{% endif %}
+**{{ capitalize(poss) }} personality leads this scene.** Even here {{ actorName }} is a distracted version of who {{ subj }} already is — not a different person. {{ capitalize(poss) }} judgement, loyalties and boundaries still hold, and {{ subj }} can still refuse. This never becomes a memory or a summary — it passes.
 
+{{ capitalize(poss) }} body is louder than {{ poss }} train of thought. {% if is_female %}The flush, the catch in {{ poss }} voice and the way {{ poss }} gaze lingers are past hiding{% else %}The tension in {{ poss }} stance and the way {{ poss }} gaze lingers are past hiding, and {{ subj }} is conscious of how {{ subj }} stands{% endif %}. Thought is still there, competing with something louder. If someone offers what {{ poss }} body is asking for, refusing costs {{ obj }} real effort — but it remains {{ poss }} choice to make.
+{% if arousal_data.is_naked %}Being unclothed makes it very nearly impossible to set aside.
+{% endif %}
+{% endif %}
+{% endif %}
+{# ========== THIRD PERSON ========== #}
+{# Observers see NOTHING below 75. Below that it is private physiology, and an
+   onlooker naming it is what made this read as the character's whole mood. #}
 {% if third_person %}
-{% if arousal_data.arousal >= 75 %}
-{% set actor = decnpc(actorUUID) %}
-{{ actor.name }} seems distracted and physically restless — flushed, shifting weight, not quite making eye contact.
-{% if arousal_data.is_naked %}
-{{ actor.name }}'s nakedness makes their state difficult to miss.
+{% if arousal_data.arousal >= 90 %}
+({{ actorName }} is flushed and restless — shifting {{ poss }} weight, slow to meet anyone's eye.{% if arousal_data.is_naked %} Being unclothed leaves little of it hidden.{% endif %})
+
+{% elif arousal_data.arousal >= 75 %}
+({{ actorName }} seems preoccupied — a glance held a beat too long, a thread of conversation dropped. Nothing an observer could confidently name.)
+
 {% endif %}
-{% elif arousal_data.arousal >= 50 %}
-{% set actor = decnpc(actorUUID) %}
-{{ actor.name }} seems slightly preoccupied — a lingering glance here, a moment of distraction there. Nothing obvious unless you are paying attention.
 {% endif %}
 {% endif %}
 {% endif %}

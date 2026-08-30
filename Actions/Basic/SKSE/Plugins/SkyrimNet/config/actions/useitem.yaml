@@ -1,11 +1,11 @@
 customCategory: items
 name: UseItem
-description: "The speaker reaches into their pack and uses something they're carrying — drinking a potion to mend their wounds, biting into a hunk of bread to take the edge off hunger, popping a frost mirriam ingredient to test its sting."
+description: "Use when the speaker would consume something they carry — a potion when wounded, food when hungry, an ingredient to taste it. The item must be in the speaker's own pack."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: UseItem_Execute
 parameterMapping:
-  - type: dynamic
+  - type: speaker
     name: akActor
     description: the actor reaching for something in their pack
   - type: dynamic

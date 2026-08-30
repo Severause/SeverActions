@@ -1,5 +1,541 @@
 # SeverActions Changelog
 
+## v3.9.13 - Settling In
+
+Followers no longer set off on journeys of their own just because a place came up in conversation. "I'm thinking of visiting Whiterun" could send half your party marching out the door - the travel action was open to anyone, and the AI took musings as marching orders. Followers are now excluded from the travel action by default; if you want your companions free to wander off when the conversation takes them, there is a new Followers Can Travel toggle on the Settings Travel page and in the MCM. NPCs who are not following you are unaffected either way.
+
+Dressing a follower now leaves you a reusable outfit you can name and re-apply. On the Outfits page the Equip button used to lock that exact set onto the NPC and nothing more; now it also saves the set as an automatically-named preset — Outfit 1, Outfit 2, and so on — that you can rename, apply again later, or map to a situation. This is the last step of moving outfits off the old lock system and onto presets entirely, the same machinery that keeps what someone wears consistent across cell loads and reloads. Staging fresh pieces on someone right after you save and rename a preset works now too — for a moment it quietly didn't.
+
+Home outfits switch at your house, not only theirs. A companion with a home assignment would change into their Home-situation outfit when they reached that home; now the same switch fires when they are inside a house you own, together with you. Map a relaxed set to the Home situation and your followers put it on when you all get home.
+
+A follower another mod runs no longer freezes at home now and then instead of relaxing. A companion owned by its own framework — an NFF or a custom follower like Rin — would occasionally get stuck standing in place in a fallback wait pose when you came inside, rather than settling in to relax, and only some of the time. The relax hand-off was switching off their own follow behaviour as a side effect, so when the timing went wrong they had nothing left to do and the game pinned them where they stood. That side effect is gone for these followers; if anything slips now they simply keep following you rather than freezing. (Thanks to the user who noticed it happened only sometimes.)
+
+You have more say over what NPCs make of you, and their first impressions read straight. Three changes to the ‘How they see you’ side of the Companions page. There is a new update button beside the blurb — a small circular arrow — so you can refresh a follower's read of you on demand instead of waiting for the automatic pass, which is handy right after something significant passes between you. Some followers had been stuck on a stale or empty blurb: a guard meant to avoid re-summarising the same moments had, over a long game, frozen the update for anyone you spoke with less often — that is fixed, and a stuck follower catches up on their next real conversation, or the instant you press the button. And NPCs stop insisting they have met you an exact number of times — a familiarity note was handing the AI a raw tally it would recite as ‘I have seen you three times’; the number is no longer shown to it, so a passing acquaintance sounds like one again. (Thanks to the players who reported both.)
+
+The menu key closes the menu again. Opening the SeverActions wheel with a hotkey and then pressing that same key now closes it, the way it always had — for a while only Escape would.
+
+VR no longer crashes when an NPC travels. On Skyrim VR, the moment any NPC set out on a journey the game threw a script-extender error ("Failed to find the id within the address library: 36812") and stopped. The travel system's stuck-detector was calling an engine function (IsPathing) that exists on flat Skyrim but was never mapped for VR, so the very first stuck-check on a traveler crashed. VR now skips that one refinement and falls back to plain distance-based stuck detection - travel works, and a slowly-pathing NPC might occasionally get a harmless nudge. Flat-screen players were never affected. (Thank you to the VR user who reported it with logs.)
+
+Outfit auto-switching no longer freezes the game on a cell change. On a heavy load order — worst in VR — walking into a town or a house could hitch or briefly lock up as your followers changed outfit. The cause was every follower re-dressing in the same instant on the game's main thread; the re-dress work is now spread across frames a follower at a time, and the redundant inventory scans behind each change were removed, so a group changing together no longer blows the frame budget. The two re-dress passes that run on every cell load got the same treatment, and a rare reapply loop that could quietly churn after a transition was closed. As defensive hardening, a handful of location lookups that walked a home or town's parent chain without a stop are now bounded, so a malformed location record in a big modpack can no longer spin the game.
+
+Situation outfit switches actually happen when they should now. Several changes never took at all, each for its own reason, and all are fixed. One that landed while you were standing still — weather turning, or arriving somewhere and immediately talking to someone — was waiting on input that never came; a change now completes on its own a few seconds later even if you touch nothing. A quick fight was often over before the five-second settle could arm, so combat gear now goes on the moment a fight starts and comes off once it is truly over. A follower dithering right at a city's edge, where the game kept flipping between town and wilds, used to reset the timer every second and never settle; a brief flicker is ignored now so they commit. Mapping an outfit for a situation someone is already standing in applies on the next check instead of being ignored. And a preset whose items went missing after a load-order change no longer fails silently or strips the follower bare — it is noted in the log, left alone, and retried on its own so it recovers the moment you fix it. A momentary blank cell mid-transition no longer reads as a false trip out into the wilds either. And leaving a place for somewhere with no outfit of its own and then coming back is recognised as a change again, so the right outfit goes back on when you return.
+
+Your home is the inside of your home now, not the yard. A companion assigned to a house was treated as "home" while standing in the yard outside it too, because a player home's map location quietly covers the surrounding land. Two things came of that: a home outfit stuck to them out in the yard so an Adventure or Town outfit never took over, and a homed follower kept sitting down to relax in the yard instead of following you out (until something like a fight snapped them out of it). Home is now recognized only inside the house, so stepping outside reads as the wilds or the town as it should, and a follower you lead out the door comes with you. A follower with no assigned home was never affected.
+
+Bio Blocks work without PrismaUI now, and arrive with a library already filled. The custom-bio system - write a trait once and hang it on anyone - used to need the web UI to manage, which a lot of VR players simply cannot run. There is now a full Bio Blocks page in the MCM: aim at someone, pick a block, apply it; grant a block to a whole faction; or remove one - all through SkyUI, no PrismaUI required. The faction picker searches your entire load order rather than only the factions of people standing near you, so you can grant something to Windhelm's court from the other side of the map. And the mod ships with a starter library of seventy-eight blocks across seven tabs, written into your save folder the first time you load - so the page has something in it when you open it instead of a blank slate, and your own edits win from then on.
+
+Followers relax at home again - reliably, in modded homes, and without being left behind. The system that lets your companions settle in and potter about when they are home with you had been half-broken for a long time, and an audit turned up three separate faults. The relax package was being marked as applied a moment before it actually ran, so a follower looked settled but never sat down. The whole thing only recognized vanilla player homes, so any modded house did nothing at all. And leaving could strand a follower standing in the house instead of gathering them to come with you. All three are fixed: a home is recognized by who owns it now, not just the vanilla house tag, and the leave-check no longer waits on you to move around before it fires. Anyone stranded in an existing save sorts themselves out the next time they pass through a door.
+
+Your NFF, Dawnguard and custom-quest followers get to unwind at home too. The home-relax used to skip any follower another mod owns - an NFF companion, Serana, a custom follower - to stay clear of their AI. But they should get to sit down at home like anyone else, and the only step that ever fought their framework was re-driving them on the way out, so that is the only part held back now. When you leave, one of these followers has the temporary relax package quietly lifted and simply resumes their own following, instead of being marched back onto SeverActions' leash. It also no longer matters where a follower sits in your load order: followers added by late-loading mods were being silently skipped, and now they are not.
+
+Relaxing at home actually sticks now. Walking into your house with companions used to start a little war under the hood: the relax behaviour was applied into the storm of everything else a cell load kicks off, lost the fight, and left followers frozen in a fallback pose for up to twenty seconds - and even once settled, the game could knock them off the relax at any time and nothing put them back. Three fixes: the relax now waits a few seconds for the dust to settle and then applies cleanly on the first try; a watcher re-seats it if the engine ever knocks a relaxing follower onto that frozen fallback (and knows when to stop pushing, so it never fights another mod for control); and the relax no longer strikes up its own NPC conversations, which turned out to be what was randomly yanking followers out of it. Moving between rooms of your home works the way it always did - your followers come along and settle back in wherever you are - and leaving gathers everyone to the door and puts them back on your heels.
+
+Sleeping no longer wakes you to followers who forgot they were relaxing. Going to bed used to end with everyone snapped back onto your heels - the wake-up pass re-asserted following on the whole roster whether or not you had parked them. Followers who are waiting or relaxing are left exactly as you left them now; only the ones actively following you get their follow refreshed.
+
+A follower whose own mod takes her back is let go honestly. When a framework-run companion - NFF, a custom follower like Rin - was relaxing and her own mod re-asserted its follow, SeverActions kept counting her as relaxing while she was in fact walking at your shoulder, and every system that trusted that bookkeeping made wrong calls around her. That reclaim is now recognised for what it is: SeverActions quietly withdraws its relax, her framework keeps her without so much as a hitch in her stride, and after a couple of polite retries in one visit it stops offering the armchair until you next come home.
+
+Custom followers whose own mod runs them can finally be dismissed - and stop dropping off the roster. Some followers follow through their own mod's quest rather than the shared system SeverActions can reach - Rin is one - and they were impossible to dismiss: telling them to leave let go of SeverActions' hold while their own mod kept them walking, so the game counted them dismissed while they trailed after you anyway. Those followers are hands-off now: their own mod owns recruiting and dismissing, so their dialogue works, and SeverActions keeps only the conversation layer - bio, gossip, memories, relationship. A companion of this kind was also quietly falling off the tracked list every thirty seconds, because their mod does not flag them as a teammate the way vanilla does; they are kept tracked as long as they are actually still following you, recognized by their follow faction or their follow package. (Thanks to the user who suggested watching the package they are really on.)
+
+An NFF follower you had sent home can be brought back. Giving an NFF companion a home or a relax spot left a marker that pinned them, so afterwards a re-recruit would not take. It is read as a genuine re-recruit now, the way the work assignment already was.
+
+Brawls stop ending themselves out from under you. Two ways a fair bout could end wrongly are fixed. As a spellcaster, the setup that is meant to empty your hands was not fully taking the spell out - it landed in a limbo state where it looked unequipped but was not, so a beat later you would re-ready it, it would fire, and the no-magic rule read that as cheating and handed your opponent the win. Your hand is cleared properly now, on every kind of brawl. Separately, the check that forfeits you when you lower your fists had been reading an ordinary lull in the fight - the brawler stance can look like "combat over" for a moment - as you giving up; it now watches for the actual sheathe animation, so only genuinely dropping your fists counts as a yield. (Thanks to the players who reported both.)
+
+Followers come through doors behind you, not in front. The catch-up that gathers your companions after a load door had started placing them ahead of you along your heading - and even pulling same-cell followers out in front of where the game had correctly dropped them behind the door. That is the opposite of the vanilla feel most players want. Door transitions leave everyone behind you now, the way they used to; fast travel still gathers the group exactly as before.
+
+Jarl and guard actions know who is actually a jarl or a guard. Two behind-the-scenes checks were pointed at the wrong faction. "Is this person a jarl" was matching every citizen of an Imperial hold rather than the jarl - which fed jarl-only things like granting tax relief or raising a hold's taxes - and "is this a guard or authority" was aimed at the housecarl faction. Both are corrected to the real factions, so those actions and the lines that lean on them stop misfiring on ordinary townsfolk.
+
+A guard sent to arrest someone who has since moved elsewhere now follows them. When an arrest target had walked off to another part of the world, the redirect meant to send the guard after them was quietly aiming at the wrong internal marker and doing nothing. It points at the right one now, so the cross-area chase actually happens.
+
+A follower you just recruited already has opinions of your other companions. Bringing someone new into the group used to leave them with no view of the others until the next relationship pass came round. Their opinions are formed the moment they join now (and when they are first noticed mid-session), and a round of assessment refreshes what the whole roster thinks of each other rather than only the person being assessed.
+
+Two character descriptions that had gone quiet or started repeating themselves are fixed. Under the hood, a couple of the templates that describe an NPC to the AI were still reading from an old storage spot after the data itself had moved - so on a current save the "how they feel about you" line came up blank, and the relationship assessment lost track of what it had already seen and re-sent every recent event each time it ran. Both read the right source again: feelings show up, and an assessment only weighs what is genuinely new.
+
+Off-Screen Consequences is on by default, and stays that way. The setting was meant to default on, and did - but its "reset to default" button set it off, and the tooltip claimed off was the default. Both are corrected. The in-game dashboard also stops showing a stray "1.1" where its version should be and shows the real mod version.
+
+Hide Helmet is gone. Keeping a helmet equipped for its stats while hiding it from view is something a few established mods already do well, so there was little point carrying a thinner version of it here. The per-follower toggle has been removed from the Outfits page; nothing you are already wearing changes.
+
+The Fertility Mode bridge got a hardening pass, with thanks to the player who sent in their own patch. Two crash windows are closed: an actor caught mid-transition between cells could reach Fertility Mode Reloaded's data handler and take the game down, and the whole scan now stands down during a cell transition and resumes on its own. The bridge also stops flooding the script log - it polled Fertility Mode every three seconds and each poll could log a burst of harmless-but-noisy cast errors (about forty lines a minute, which made real problems harder to spot and got blamed on whatever mod was mid-call); a broken none-check inherited from the original bridge is fixed and the poll runs once a minute now, which is still far faster than pregnancies progress. Verified against FM Reloaded 1.0.3 and the new 1.0.5 - both work unchanged.
+
+Existing saves load straight into this and repair themselves where they need to - nothing here changes the save format, so there is no rollback hazard this time.
+
+## v3.9.11 - The quartermaster's ledger
+
+Fixed a crash on saving - including the automatic save at the start of a new game, right as the Imperial captain asks who you are. The hidden room where the Fiscal Levy waits before deployment carried a wrong flag on its cell record (the same defect the depot vault cell once had), which left everyone parked inside it without a proper cell link; the moment the game wrote a save that included them, it crashed. Players whose levy had already deployed never saw it - the soldiers had long since moved to real cells - which is exactly why it survived testing. New games hit it every time. One flag cleared; existing saves heal themselves on the next load.
+
+## v3.9.10 - Housekeeping
+
+You can clear a home that got stuck. There is a new Clear Home (Target) hotkey - point at any NPC and press it to wipe their home assignment, which lets go of SeverActions' home sandbox so the NPC (or NFF) takes back over. It works on anyone: a follower, a dismissed companion, an NFF-owned one, or a townsperson an errant command sent to live somewhere. And home management now lives on its own Homes page in the MCM. It used to sit at the bottom of the Followers page, which had grown long enough that SkyUI was quietly cutting off everything past a certain point - and the clear-home controls were exactly what fell off the end, so they had effectively vanished (thank you to the user who went looking for them). They have room to breathe now, and the list shows up to fifty homed NPCs.
+
+Nearby townsfolk trade instead of wandering off. The ambient director - the occasional moment where someone near you does something of their own accord - used to send people off on journeys, which meant it kept choosing odd destinations and, now and then, picked you. Journeys are out. In their place people deal in small, believable ways: selling a mundane good to someone who needs it, handing something over, or using something they plainly carry - a traveller eating bread, a wounded sellsword downing a healing potion. The player is never the one chosen to act.
+
+The Levy soldiers no longer set off the error checker. Anyone who ran xEdit's Check for Errors on the plugin saw nineteen warnings on the Imperial Fiscal Levy - the twelve soldiers and seven pieces of their kit. They were false alarms the whole time: the soldiers take their looks from vanilla templates rather than their own record, and their gear is deliberately plain, so xEdit read empty fields as broken links. Those are tidied away now. The patrols themselves also stopped shuffling their formation while nobody is watching - they only re-form when you are actually there to see it.
+
+## v3.9.9 - Whose follower is this?
+
+SeverActions and Nether's Follower Framework stop fighting over the same NPC. Recruiting, dismissing, waiting and resuming now go THROUGH NFF when NFF owns the follower, instead of around it - which is what left companions claimed by both mods and dismissable by neither. Detecting NFF switches you to Tracking mode once, and casual follow stands down only for followers something else actually owns, never for an ordinary townsperson.
+
+Camps stopped forming where camps cannot be. A recruited bandit walking at your shoulder was registering your own house, a Dawnguard glade and an entire hold as outlaw camps - then getting elected chief of one and handing it over to you. Camp registration is now gated on the location's own type, and no designated boss means no chief: nobody is invented, so bandits can no longer name a dungeon's end boss as their leader. Taking over a camp with nobody in charge is a group decision - three of them have to agree separately, they know exactly who broke first, and what they think of that person colours what they do next.
+
+Followers no longer trip bear traps or pressure plates, via vanilla's own LightFoot perk rather than by overriding any vanilla script. Friendly-fire protection is genuinely on by default now - the setting was read with two different defaults, so the part that keeps it anchored never ran.
+
+Your stewards go and see the people they collect from. Twice a week or so, a hold's steward walks out to one of their retainers, spends a day or two about the place looking the work over, and goes home - so you occasionally run into them somewhere you did not expect, with a bodyguard in tow if you gave them one. Both of them know why they are standing there and will say so, the Holds pane tells you who is on the road and who they are with, and it turns up in that week's journal entry from either side. It is entirely flavour: your weekly takings settle on their own schedule regardless, so nothing you are owed ever waits on a journey finishing.
+
+Masters of the Voice now teach what they actually know. An NPC that gets its shouts through a template - a custom follower built on a dragon or on Miraak, or Miraak's own serpentine dragon - used to shout perfectly well in combat while insisting they had nothing to teach, because we read their record instead of the one the game actually uses. Dragonborn and Dawnguard shouts translate properly now too, so a DLC dragon can teach Cyclone or Drain Vitality as the real player Shout - and Dawnguard's revered dragons no longer slip their own dialect version of Drain Vitality into your magic menu when they teach it.
+
+The beef-stew bow swap is gone. The engine quietly hands every follower a hidden hunting bow, and we used to intercept that and leave a bowl of beef stew as the wink - but the interception could get into a tug-of-war with follower mods that enforce their own equipment, and at its worst that meant hundreds of swaps a second and a frozen game (thank you to the user who measured it). The joke was not worth anyone's save: followers keep whatever the engine gives them now, and any stew already in a pack is just lunch.
+
+Brawls got a full overhaul. Sparring a follower no longer dismisses them mid-fight (with NFF, the release-and-rejoin now happens exactly the way NFF's own sparring does it, silently); an opponent who refuses to stay unarmed forfeits instead of being quietly excused; walking away actually ends the fight; and the loser stays down in bleedout and staggers back up as their strength returns instead of springing upright at full health. Your other followers now know a brawl when they see one and stop lunging at your sparring partner, and a spell some wardrobe mod slips back into anyone's hand mid-fight is taken away before it can end the match.
+
+Your bio blocks became a proper library. The custom-bio system grew from its proof of concept into a full Bio Blocks page: write a snippet once - a routine, a quirk, a combat style - file it under your own tabs, and apply it to any companion or townsfolk from a picker (crosshair target included). Each card shows exactly who is carrying it, editing a block updates everyone who has it, and one click removes it from one character. The library travels with your install and can be shared as a file or by copy-paste - imports rename on collision, never overwrite - while WHO has WHAT applied now belongs to each save, so a fresh start begins clean instead of inheriting every block you ever placed. Blocks and applications you made before this update carry over on their own. The page itself got a visual pass to match the rest of the ledger - each of your tabs takes a colour that runs down the spine of its cards and marks its dot in the tab strip, the category prefix steps back so the trait name reads first, and the cards warm up with a leather ground and a lift on hover.
+
+The Holds pane tells you where each retainer actually is. Instead of only their hold, every retainer now shows a live location - in Belethor's shop, in Dragonsreach, on the road to Whiterun, with you, at home - resolved the moment you open the page and kept honest: a place it can confirm reads plainly, while one it can only expect ("usually at the market") is marked as such rather than dressed up as fact. A retainer who works their own stall with no assigned work spot can be pinned to it by dropping one of your named markers there - the next time you pass them the marker becomes their usual place, shown even when they are a province away. And retainers no longer quietly go missing from the roster while you are elsewhere: everyone on your books is held resolvable in the background, so a hired guard built from a generic townsguard keeps their face and their place instead of dissolving back into the crowd.
+
+You can keep a larger household. The retainer roster cap rises to 500 at the top of the renown ladder (from 200), and the behind-the-scenes pools that keep guards on post and everyone on their daily routine grew to match.
+
+Sending someone across their own city works now. A guard told to walk to a marker inside Whiterun would set out, reach the spot, and then stand there forever - the arrival was being measured against the city gate by the stables, a good distance from where you actually sent them, so the trip never registered as finished. A journey that stays inside one city now aims at the real destination and completes on arrival; cross-country travel, which genuinely does end at the gate, is unchanged. Anyone already stuck from before sorts themselves out the next time you load.
+
+Gear commands find the right item and the right person. Equipping or removing something by name now prefers the vanilla piece when two share a display name - the wrong Monk Robes bug, where the command reached for a mod's record instead of the one you meant - and the wardrobe selector and worn-item list show a source-plugin badge so you can tell duplicates apart at a glance. Outfit actions aimed at a specific follower now resolve that follower by their game identity rather than their name, so a command meant for one of two same-named companions can no longer land on the wrong one.
+
+Loading a save no longer teleports your followers in front of you. Catch-up was firing on the load itself - jarring, and it ignored the off toggle because the load beat the setting to the punch. A real door or fast travel still gathers everyone exactly as before.
+
+The General did not come to Skyrim alone. Twelve seconded soldiers of the Imperial Fiscal Levy are now visibly at work across five Empire-friendly holds - four in Whiterun where the General is quartered, and a pair each in Solitude, Markarth, Falkreath and Morthal. Each detail walks its city in daylight behind its own Decanus, settles somewhere about the streets for a couple of hours, then moves on. Ask any of them and they will tell you whose writ they are here on and that the General himself is up at Dragonsreach - not that they are standing there with him. The General, his two Legates and all twelve are ESSENTIAL for now: the Treasury's case against you is deliberately not finished yet, so nothing that happens to them can strand it. They take up their posts once your purse crosses the Treasury's threshold and the books keep counting from there.
+
+Groundwork on the Imperial Final Audit, most of which you will not see yet because the encounter itself is still parked: when it is switched on, the Legate serves his writ the moment he reaches you instead of up to thirty seconds later, his battlemages walk home with him instead of standing in the road, they know to stay quiet unless spoken to, and paying works whichever collection action he reaches for. He also comes to you on foot now - genuinely setting out from Dragonsreach and walking the distance rather than appearing behind you, with his escort actually alongside him, and taking to the follow package only for the last stretch. If you are somewhere no road reaches, he still finds you the old way.
+
+Outlaws holding a dungeon fight on sight again. Bandits squatting in a barrow or a crypt were standing down exactly like the ones in a camp, which made a delve into a walking tour - so **Include Dungeon Holdouts** (Settings, Outlaws) now ships off. Camps, forts, warlock lairs and the open road are untouched and stay negotiable, and a bandit camp still counts as a camp even though the game also files it as a dungeon, so nothing that swore to you can be broken by this. Turn it on if you would rather be able to talk to anyone anywhere; turning it back off releases whoever is already calmed within a few seconds.
+
+A follower you told to wait stays where you put them. Something reading a wait as though a mod had cancelled it could release the order seconds after you gave it, and once released, two separate systems were free to drag that follower back to you. Cows and other livestock also stop being pulled into ambient conversations - they were being paired off and given opinions about banditry.
+
+Stewards can be appointed in a hold that has ever paid tax. Those holds were showing an empty steward's seat that had never existed, with no way to appoint anyone - which quietly locked the whole feature once your ventures had paid a single septim.
+
+Jail actually holds people with jobs now. An NPC you had jailed would clock in for their shift anyway - the work order and the jail order carried the same weight, so whichever was given last won, and the roster still listed them as locked up while they stood at their forge. Jailing someone now pulls them off the schedule on the spot, every schedule pass leaves prisoners alone until release, and anyone already mid-escape in an existing save gets marched back on the first pass. The job itself survives the sentence: they return to work once released.
+
+Creditors bring up what you owe them. A debt going past its deadline used to produce nothing you could see; now, the first time you run into a creditor whose deadline you have blown, they will raise the matter themselves - once per creditor each session, not a nag loop. The reminder toggle in the MCM covers this too.
+
+Paying one debt no longer risks wiping the rest. The forgive action - which cancels EVERY tab someone owes you at once - read enough like a payment acknowledgment that the AI sometimes reached for it after you settled a single debt, erasing the others as a side effect; its description now makes the distinction unmistakable. Partial payments also settle your oldest tab first instead of an arbitrary one.
+
+The ledger's Clear button became Pay. Clear was quietly deleting every debt involving that person, in both directions, with nobody the wiser. Now each debt you owe has a Pay button that moves real gold - capped at what you carry, partial payments count - and the creditor actually hears about it, exactly as if you had paid them in conversation. Debts owed TO you get a Forgive button instead, and the debtor knows you let them off.
+
+Serana stays where you told her to wait. If a Serana replacer removed her Dawnguard faction, SeverActions stopped recognizing her as DLC-managed - and with that one verdict wrong, every wait protection failed at once: our systems fought her own AI, read her AI's pushback as "a mod resumed her", tore down the wait, and dragged her along on the next fast travel. She is now recognized by WHO SHE IS - her record's identity, which no replacer can change - so every guard that respects DLC-managed followers holds again, waits included, and existing saves heal themselves on the first load. A second belt: a follower whose wait flag gets zeroed by another mod's scripts no longer gets force-re-followed after loading a save - our own record of the wait counts too. And our Wait/Follow buttons now speak to Serana in her own language: Dawnguard's follower brain actively cancels any wait it didn't order, so telling her to wait now goes through the same internal call her own dialogue uses - which also means a mid-story Serana who refuses to wait refuses honestly, exactly as the DLC intended. Works with Serana Dialogue Add-On too.
+
+Your shopkeepers actually sell things now. Each hold has a trade depot you stock from a first-class Wares panel (drag goods in by item or by category); your merchants and fences sell REAL items out of it week to week, and once in a while a named local - someone with real coin from their own wages - walks in and buys the best piece they can afford, wears it if it's armor, and remembers it enough to mention. Your farmers, miners and alchemists now send their haul to their hold's depot instead of your pack, whenever that hold has a merchant to move it, so the whole thing feeds itself: producers stock, merchants sell, workers buy, wages fund the next purchase.
+
+The Empire taxes like an empire. The flat hold tax that stopped mattering the moment your ventures got big is now a proper progressive schedule - a few percent on small takes, climbing toward half on a fortune - and it's marginal, so earning one more septim never costs you gold. Real payroll has two sides now: you're taxed on profit (wages come off first, as they should), and your workers are taxed on what they take home, both flowing to the hold's own court. And a profitable venture pays its own wages out of the week's earnings before reaching into your purse, so a thriving shop stops quietly draining your coin while its profit piles up uncollected. Coerced arrangements, camps, fences and holdless work stay off the books.
+
+Periodic systems no longer freeze on a heavy load. The timers that drive followers, travel, arrests and survival were sharing one hidden slot and could all stall behind a single dropped signal; they now run on their own steady clock that survives a busy load, self-restarts if the first tick goes missing, and only warns you if it truly can't recover.
+
+Every internal clock now actually keeps its own time. A sharp-eyed developer proved that all of SeverActions' periodic loops - follower upkeep, travel, arrests, brawl polling, survival, the Fertility Mode bridge and more - were unknowingly sharing a single engine timer, so whichever system set its alarm last won and everything else silently ran at that one cadence (a loop asking for 3 seconds was measured running at 32). Each system now gets a genuinely independent tick from a dedicated native timing service, so short-interval work - brawl prompts, travel pacing, arrest escorts - fires when it was actually asked to. Deepest-rooted bug fixed this cycle; enormous thanks to the developer who diagnosed it with three sessions of log evidence.
+
+NPCs finally spend the gold they earn. Working folk were piling up wages with nothing to do but sit on them. Off-screen life events now know exactly what's in the character's purse: a wealthy companion will treat themselves to something they'd actually want - and the purchase is real, the gold leaves their inventory and the fine clothes or silver ring lands in their pack - or lose a heavy purse the old-fashioned ways: a bad night at cards, a pickpocket, a scheme that never paid off. Background workers join in too: each payday, some of the labor roster spends a slice of what they carry at the market, the tavern, or the shrine, and about a third of those come home with something to show for it. (Thanks to the user who pointed out everyone was getting rich with nowhere to put it.)
+
+Loan requests show up on the Enterprises summary. A retainer asking to borrow now appears in the needs-attention feed right alongside raise asks, with the amount they want - previously you only found out by opening their card on the board. (Thanks to the user who asked.)
+
+Crafters no longer get stuck in a cooking loop. Asking someone to cook or brew could trap them in a cycle of announcing the result, taking that announcement as a cue to make another, and announcing again - because both the hand-off and every failure demanded a spoken response. Outcomes now land quietly in the NPC's awareness instead: they will mention the finished dish or the missing cooking pot naturally, without being goaded into round two.
+
+Intimacy runs on consent now, not a switch that is always on. Every NPC keeps a private stance on how open they are to you - unwilling, uncertain, receptive, willing, or withdrawn - and it is set from what has actually passed between you: your conversations, how you have treated them, what they remember. Relationship rank does not buy it (marriage is the one rank that counts, and it is read directly), and neither does how many times you have spoken. It moves both ways - someone who was warming to you pulls back after an insult, a threat, humiliation or an assault, and a withdrawal sticks until there is real evidence you have made it right. Your first conversation with anyone after updating reads their history at once, so established relationships start where they should; after that it re-checks only when enough has changed, so idle NPCs cost nothing. A master toggle and a gender filter (everyone / women only / men only) decide who it surfaces for, it obeys the Background-AI switch like every other generated line, and followers are included - romancing a companion is the whole point. NPCs also read your reputation and persona from the sexual-tab bio blocks you have applied, so a known courtesan or a feared warlord is met as what they are.
+
+Arousal descriptions are quieter and gender-aware: below the high tiers they are one background line that states the constraint first, and no tier writes itself into an NPC's memories any more.
+
+Very large households stop dragging on the script engine. Every thirty seconds SeverActions walked its whole list of homed NPCs over and over, asking each of them in turn whether it was their hour to change what they were doing — and on a big enough household that one pass outlived the thirty seconds it had. The two heaviest of those questions, the work-and-home routine and stepping out of a scene, are now asked once for everybody at once, and only the people whose answer actually changed are handled individually. Nothing about anyone's routine changed; ordinary households behave exactly as before, and only genuinely large ones spread the remaining work over a few of those thirty-second passes so nobody's schedule can stall the engine. Slow passes now also leave one line in the papyrus log saying which part was slow and how big the household was, so a report about stuttering can be answered instead of guessed at.
+
+Travel got a map and real roads. World & Travel now opens on a hand-drawn map of Skyrim with your travelers drawn on it as live routes, hold sigils placed at their true map positions, and a journey to a city aimed at the gate where the road actually meets the walls. Underneath, overland travel follows Skyrim's road network instead of cutting a straight line across the terrain, and a traveler who can't get an alias slot retries for one rather than giving up. (A crash that could strike when the map opened mid-journey is fixed too.)
+
+You can drop your own named places. Mark a spot anywhere - "the kitchen", "Whiterun Market", wherever you want someone to stand or go - give it a name, and travel to it by that name; a Markers tab under World & Travel lists them for renaming or clearing, and a journey into a building rotates through its rooms instead of piling everyone on one doorway.
+
+Nearby characters take small deeds of their own. The new Ambient Action Orchestrator lets an idle NPC occasionally do something they plausibly would on their own, with a social check deciding whether it fits who is around to see it - background colour that does not wait on you to prompt it.
+
+Casual follow survives a load door. Telling someone to tag along now seats them in the same alias-backed follow system your companions use, so they stop dropping the instant you cross a threshold; and the follow hotkey and wheel can turn someone OFF again - after that change a re-press kept telling you they had stopped following without ever having restarted.
+
+Fertility Mode got quieter. The monthly cycle states now run in the background instead of narrating themselves; a pregnancy still tracks and reports its stage exactly as before.
+
+Enterprises plumbing got tidier. A venture's premises are derived from where its work actually happens instead of being tracked as a separate thing that could drift out of sync, and a week's courier mail arrives as a single delivery rather than several.
+
+Work letters are signed. The letters your enterprises courier to you now carry the sender's name at the foot instead of arriving anonymous.
+
+Hiding a helmet stops shaving wig-haired followers. On a custom follower whose "hair" is really a headgear wig, Hide Helmet was stripping the wig along with the helmet - and could hang on the head rebuild that followed. It now touches only true helmet slots and leaves hair and circlets alone.
+
+Retainer work-life stories stopped repeating themselves. The weekly vignettes had settled into the same few openings and turns of phrase; they now vary their subject and voice from week to week.
+
+A broad pass over the mod's written text - prompts, courier letters, action descriptions - tightened wording throughout and fixed how your character's name is woven into generated lines.
+
+You can lead a bound captive by the wrist. A restrained or kidnapped prisoner can now be told to follow you - or another NPC - on a short leash, hands still bound, the way an Imperial escort marches a prisoner through town. The follow and companion actions understand it, and their hands bind the instant the leash is set rather than half a minute later on the next upkeep pass. A new **Tie / Untie hotkey** binds whoever you are looking at and frees them again with a plain line of narration - and it works even when someone else did the tying, so when one NPC restrains another in conversation you are no longer left with no way to cut the prisoner loose.
+
+Dropping your fists in a brawl forfeits the match - and gives your spells back. Sheathing mid-fight now reads as yielding: the bout ends cleanly, anything the brawl set aside is returned to you, and your opponent is told in as many words that you gave it up by lowering your hands. A brawl that begins with your weapons already away no longer counts that as an instant forfeit either - it only takes your sheathe as surrender once you have actually drawn.
+
+Only your followers feel hunger, cold and exhaustion. Shopkeepers and other townsfolk had started fretting in their own thoughts about being worn out - survival needs were being described for NPCs who were never part of the system. It is companions-only again, the way it was meant to be.
+
+VR's immersive behaviour has a switch now, and flat players can use it too. The immersion layer used to decide entirely on its own whether to engage; a three-way control (Auto / On / Off) on both the Settings page and the MCM lets you force it either way - a flat-screen player can turn the immersive touches on, a VR player can turn them off, and Auto keeps the old automatic behaviour.
+
+The Board and Holds pages became one. The Enterprises board now lays your retainers out by hold with the same clean, clickable cards the Holds view used - each hold headed by its steward, each retainer showing where they are and what they do - and the now-redundant page is retired. From a retainer's card you can teleport straight to wherever they are standing.
+
+The MCM got a proper reorganization. Its settings are re-sorted into thirteen clearly-themed pages - Interface, Followers, Off-Screen Life, Outfits, Survival, Combat & Outlaws, Crime & Bounty, Economy, Enterprises, Travel and the rest - with around fifty controls that previously lived only in the PrismaUI settings added so the two finally match. Every control with a twin in the in-game UI now writes through to the same place it does, so a choice you make in the MCM sticks across a reload instead of being quietly reverted on the next load.
+
+Cosaves `'CAMP'` and `'VSTR'` both move to v6, and `'FLWD'` to v20. Existing saves load and migrate; **do not roll back to 3.9.2 after loading this**, as the older DLL cannot read the new camp record and would drop your steward vaults, hold court treasuries and Final Audit state.
+
+---
+
+## v3.9.2 - The camp asks your business
+
+Hotfix for the 3.9.0 line, plus the truce's missing piece. Walking into a pacified camp's interior is no longer a free tour: someone comes over and asks what you are doing there, and the answer decides whether the truce holds. Chat spam from furniture and follow events is gone, letters remember who wrote them, and two crash classes from 3.9.0 field reports are fixed. Save-compatible.
+
+### The challenge at the door
+
+- **Wild camps question intruders.** Cross into a pacified camp's interior and the chief - or the nearest outlaw, if he is too deep in - walks over, steel drawn, and demands your business. Talk your way past and the truce holds for that visit; refuse, lie badly, walk off mid-question, or let the clock run out, and the whole camp turns - on BOTH sides of the door. Leaving the camp and coming back earns a fresh challenge; re-entering a cell mid-visit does not re-roll it.
+- **The verdict belongs to the outlaw, not a menu.** The challenger decides in dialogue - let you pass, or run you off - and only the one actually asking can settle it. They know the decision is theirs, that stalling is an answer, and that those two calls are the only ways it ends.
+- **Steel is a verdict too.** An outlaw who attacks you mid-challenge has answered for the whole camp - everyone turns at the moment of the swing, not after the fight.
+- **The boss chest is not part of the tour.** Plundering a camp's treasure hoard turns the camp, challenge or no challenge - a truce means they hold their fire while you walk their ground, not that the war chest is free. Ordinary sacks and barrels stay fair game; sworn camps' goods are yours by arrangement. The betrayal is written into the record, so the crew knows exactly why they are fighting you - and can say so.
+- **Breaks reach the whole camp now.** Striking or refusing one member of a registered camp turns every member by roster - a deep mine or an interior/exterior split no longer leaves half the camp calm while the other half dies.
+- **Three new settings** under Outlaws: the challenge master switch, how long they will wait for an answer (30-300s, default 120), and an optional choice card (off by default - the intended feel is answering in conversation, and the card only ever states the question).
+
+### Camps and Enterprises
+
+- **A chief of their own ends the yoke.** A conquered camp's weekly morale drain now stops if you appoint a living chief from its own ranks - being met halfway has two currencies, gold or leadership - and an appeased camp recovers week by week instead of just holding steady. The chief dying, or the camp's own boss re-asserting, resumes the grind. Easing the cut to the fair line works exactly as before.
+- **Lieutenants know what they are.** A named second now carries their own standing in conversation - the rank used to exist only in everyone else's context. Chiefs and campmates already knew; now the whole chain does.
+- **Stewards for any hold.** A steward can be appointed over any hold you choose - including companions from nowhere in particular, who previously showed "Unknown" and could not take the books anywhere.
+- **Job applicants are findable again.** The letter from someone seeking work now names them in the subject line, and the Enterprises dashboard shows who is asking and how many days you have to answer - previously the letter was the only copy of their name, and losing it stranded a real NPC until their window quietly expired.
+
+### Quieter chat, better letters
+
+- **Furniture and follow events stopped flooding the record.** Sitting, standing, waiting, following, and relaxing are scene state, not history - each companion now holds ONE short-lived line saying what they are doing right now, instead of appending a permanent entry per transition. Large followings no longer bury the event log in "got up (auto)". Genuine one-offs - a companion actually walking out, arrests, debts - stay permanent.
+- **Letters keep their author.** A letter's sender is now captured when the courier is dispatched, so a retainer who is unloaded by the time the letter reaches you no longer arrives anonymous.
+- **Letters no longer arrive pre-read.** The note pool recycles physical note forms, and the engine's "already read" flag lives on the form - one read letter used to mark every future letter on that slot as read. Cleared on every delivery.
+
+### Fixes
+
+- **Fixed a crash to desktop at the main menu, before any save is loaded.** SkyrimNet writes one character bio per NPC, named after that NPC. If your load order contains an NPC whose name uses a character your Windows language settings cannot represent, reading that filename raised an error - and because the NPC labor registry scans those bios on a background thread, that error killed the game outright, with no crash log and nothing useful in ours. Non-Latin NPC names are now read correctly instead of throwing, the same filename handling was swept across every path the DLL touches, and the background scan can no longer take the game down with it whatever it hits. Affected 3.9.0 only.
+- **Fixed the live viewport crash-to-desktop.** The Ledger's 3D NPC/item viewport held a reference to the engine's render geometry but not its GPU buffers - RaceMenu-overlay rebuilds (skee64) could swap those buffers mid-draw and crash the game. The viewport now owns the buffers it draws. Reported by three users; disabling the viewport was the workaround.
+- **Survival's per-NPC include/exclude no longer leaks between saves.** Excluding an NPC from survival needs was being written to the global preferences file instead of the save. Because that file holds one entry per setting name, it could only ever remember the last NPC you toggled - and it then re-applied that one NPC to every other save and every new game, failing silently on load. The toggle now lives purely in the save, where it always belonged; any stale entry already in your preferences file is cleaned out on the next launch. Nothing you had set is lost - the real state was always in the save.
+- **All nine SeverActions LLM prompts could be reported missing when they were installed.** The same filename problem aborted the startup prompt scan partway through, silently disabling relationship assessment, follower and ambient banter, off-screen life, quest awareness summaries, retainer worklife vignettes and letter writing for the rest of that session. The scan now reads past a name it cannot convert instead of giving up.
+
+### Catalog
+
+- **The per-item undress-protection shield is back.** The armor band's rows regained the blacklist toggle the Catalog rebuild lost - click the shield to protect a specific piece from ever being stripped by outfit changes (the plugin-level blacklist in the Outfits manager never went away; this restores the only way to ADD a single item). Shielded rows show a lit gold shield; plugin-blacklisted items read shielded too.
+
+### Display
+
+- **Ultrawide letterboxing (21:9 / 32:9).** On displays wider than ~2.1:1 the Ledger now centers itself at a comfortable reading width instead of stretching the nav rail and inspect panel to opposite horizons - the game world stays dimly visible in the side gutters. A Display setting ("Ultrawide: Stretch Full Width") restores edge-to-edge for anyone who prefers it. No effect on 16:9 / 16:10.
+
+## v3.9.0 - Outlaws, industry, and the Voice
+
+The biggest release since Enterprises. Bandits stop attacking on sight - and once you can talk to them, you can deal with them: an outlaw camp can end up working for you, chief and all, managed from its own Enterprises tab, mustered as a war band at your back. Skyrim starts running its own payroll - Saadia works for Hulda whether you are involved or not - and your empire gains hold stewards who collect the take so you don't ride nine holds every week. The whole UI was redesigned ("The Ledger, Illuminated"), NPCs and items now render live in 3D inside it, the Greybeards teach Words of Power, travel keeps honest time, and every background AI call gained a master off-switch. Save-compatible.
+
+### The Truce layer
+
+- **On by default - actually.** The truce layer's master switch now ships enabled (a tester's fresh save caught it dark: the kinds were on but the layer itself defaulted off, so every bandit fought like vanilla). A one-time migration turns it on for existing saves; switching it off under Settings -> Outlaws sticks.
+- **Outlaws hold their fire until provoked.** Bandits by default; necromancers, Forsworn and vampires are on by default too (vampires only while you are one yourself). They are not friendly and have not surrendered - it is a wary standoff, with tension that rises as you push in armed and close, and breaks the moment you or your followers swing. A one-time migration turns the extra kinds on for existing saves; turning any of them off in Settings sticks.
+- **Runtime, not an ESP.** Nothing is overridden, so this composes with any load order and re-evaluates every sweep instead of baking a decision at install time.
+- **Every mutation is recorded and reversible.** Aggression and faction membership both persist in a save, so a cosaved ledger restores everyone on load before the sweep re-pacifies. Turning the feature off restores the world rather than leaving it full of docile bandits.
+- **Spawner mods are covered.** Fresh hostiles injected mid-session (OBIS-class spawners) used to get four unpacified seconds - enough to ignite a whole camp. New spawns are now caught the moment their 3D loads, with a retry window that survives loading-screen races.
+- **Sworn crews forgive stray hits.** Once a camp works for you, a graze from your own follower, creeping tension, or contagion from a neighbour no longer flips the whole crew - only a real fight that costs someone a quarter of their health turns them. No more losing a camp to one wild swing.
+- **Camp chiefs are negotiable.** Quest-alias outlaws hold their fire too - camp leaders are very often radiant quest targets, and excluding them meant the one NPC actually worth talking to was the one who charged you.
+- **They no longer kill each other.** A pacified bandit reads as a NEUTRAL, and a still-hostile bandit is Very Aggressive - which attacks neutrals. Pacified bandits join vanilla's own `BanditFriendFaction`, so even a fully hostile one sees them as his own.
+
+### Camps: takeover, leadership, muster
+
+- **Two routes in.** Talk the chief round and the camp comes over as a **Partnership** (20% cut). Kill him and the survivors can throw in with you instead - **Vassalage** (40% cut), and everyone involved knows the difference. Talking is worth more renown than killing - and a fair fifth keeps the camp genuinely content, while the conqueror's two-fifths reads as the leash it is (ease it down to the agreed rate and you win them over).
+- **A Camps tab on the Enterprises page.** Every sworn camp as a first-class holding: terms, leader status, the roster with escrow and last-week columns, collect and release right there.
+- **Appoint chiefs and lieutenants.** Promote any member to lead a sworn camp; name lieutenants in succession order. When a leader dies, the first living lieutenant steps up - a sworn camp is never leaderless while a line exists.
+- **Muster the camp as a war band.** The whole crew arms up and marches with you - far-flung members walk in on honest travel-time ETAs instead of teleporting, stragglers rally when you next come near, and members you meet along the way fall in on sight. Send them home and they file back to camp. Bystanders notice: other NPCs see the armed company at your back and say so.
+- **Sworn members are permanent.** Swearing a camp promotes its people to persistent references - the engine can no longer regenerate them into different NPCs when the cell resets (the Imperial-turned-Argonian class of bug is gone), and the camp stops respawning fresh hostiles (encounter zone frozen on takeover, restored exactly on release).
+- **Agreed camps stay agreeable.** A camp whose chief chose the arrangement no longer grinds unhappy like a conquered one: at a fair cut (40% or less) they work like consensual partners. Squeeze them past that and they sour - ease a conquered camp down to fair terms and you genuinely win them over. The cut IS the coercion measure.
+- **Newcomers inherit the deal.** Fresh arrivals at a sworn camp join under the camp's standing terms automatically, the roster label can be renamed in bulk ("Mercenaries" to whatever you call your crew), and the Board honors the rename.
+- **Oaths are breakable - in both directions.** A sworn chief can renounce the oath in dialogue (RenounceCampOath), and a chief who simply attacks you IS renouncing - the whole cascade (books close, camp released, truce broken) follows either way.
+- **Attrition.** Camp members who die come off the books automatically, and a camp with nobody left closes itself out and releases the location.
+- **The leader is the game's own.** Camp leadership reads Skyrim's `Boss` location-ref marker rather than a heuristic we invented, with strongest-present as a visible fallback.
+
+### NPC Labor - Skyrim works for itself
+
+Saadia works for Hulda. She always did, lorewise - but until now the game had no idea. SeverActions ships a curated registry of who works for whom across Skyrim, then runs the payroll: every in-game week, employers pay their workers real gold and keep the takings, with no player involvement anywhere.
+
+- **A stable, curated list - nothing re-derived at runtime.** The registry ships as data (287 assignments: nine start-of-game jarl courts with stewards, housecarls, court wizards and servants, famous shop and inn staff, and a reviewed vanilla draft). Every user sees the same accurate list on every load order. Optional bio-heuristics can seed mod-added NPCs, off by default.
+- **Real weekly wages between NPCs.** One global payday: workers are paid real, carried gold (lift it off them if you're feeling criminal), employers keep the week's margin. Carried-gold caps and a tunable wage-ladder percentage keep the money supply sane. The MCM's Force Weekly Settle debug covers the NPC payday too.
+- **Organized by hold, jarl's court first.** The Labor pane groups every employer under their hold's banner with the jarl's court leading, in the Board's quiet-row style: click a worker to open the editor modal - give them a custom title ("head barmaid"), move them to a new employer, set their wage, or fire them. Pickers list nearby NPCs so adding real people is two clicks. Titles you grant are spoken in dialogue.
+- **Known in dialogue.** Workers know who they work for, as what, and for how much; employers know their own workforce. Your retainers stay on the retainer surface and never appear on the NPC side - hiring someone pauses their NPC wage, dismissing them resumes it.
+
+### Hold stewards
+
+- **One collector per hold.** Appoint a steward for each hold (from the new Holds pane or in dialogue) and your retainers' weekly earnings in that hold sweep into the steward's vault after every settle - visit one person instead of nine camps and twelve shopfronts.
+- **Stewards take 25% off the top.** Real pay for real work: the cut becomes carried gold on the steward, the rest waits in the vault. Their ledger blurb tells you what's waiting - and now steers the LLM to the right action (a steward asked to hand the vault over reaches for CollectFromSteward, not CollectPayment, which would charge YOU).
+- **Vacant seats keep their vault.** A steward whose venture ends auto-vacates; the vault survives for their successor. Dismissing one pays out the remainder on the spot.
+
+### Enterprises
+
+- **Retainers know their own money.** A retainer's dialogue now carries their loan state (a pending ask with its amount, the outstanding balance and weekly garnish, weeks behind, defaulted, or repaid in full) and when you last actually improved their pay - no more nagging days after getting the raise.
+- **The loan loop closes in dialogue.** Grant, refuse, or forgive a loan in conversation, not just from board buttons. Loan letters are LLM-written now and name a concrete purpose ("my daughter's apprenticeship fee"), not a form letter.
+- **Loans got discipline.** Camp members never ask (the camp IS their living); Sworn and Enslaved retainers never ask (they sit outside the economy - a kept guard on a stipend has no business begging for credit); retainers in the black don't beg; at most one ask per weekly settle. And loss weeks are real now - odds roughly one in ten, scaled losses, and a loss week jumps the story queue so the vignette explains the week the loan request arrives from.
+- **Weekly stories stopped sounding samey.** Twelve rotating opening moods per retainer per week, and raw-haul jobs (miner, farmer, lumberjack) still bring goods home every week - for everyone else goods are a ~5%-of-settles event, because gold is the routine and a physical haul should feel like one.
+- **Retainers know each other.** Crewmates at the same site appear in each other's weekly stories and shared memories; a bodyguard knows their charge's work, and the charge knows who shadows them - company on fair terms, a watcher on coerced ones.
+- **Renown has a real surface.** The five-rung ladder shows on Summary with progress, per-tier roster caps and perks. The roster cap defaults on again - existing over-cap rosters are grandfathered to the tier that holds them, so nobody loads into a locked empire.
+- **Fence jurisdiction follows the workplace.** A fence running your Whiterun operation accrues bounty with - and is jailed by - Whiterun, not their birth hold. Boards group by where the work happens, too.
+- **The two life-sims stopped double-charging.** A retainer can no longer be robbed by the settlement AND the off-screen-life system in the same week, or arrested by both pipelines carrying two bounties.
+
+### Trade and gold
+
+- **Buy/Sell confirmation popups.** Whenever YOU are a party to BuyItem/SellItem, a non-pausing popup shows exactly what changes hands - item, count, gold, direction - with Accept / Refuse / Refuse silently. Letting it time out refuses: nothing moves your gold or goods without a click.
+- **Conjured gold defaults OFF** - with retainers, camps, stewards and the NPC economy all minting real coin, the money printer is no longer the default (existing saves keep your stored choice).
+- **When it's on, NPC buyers pay properly.** An NPC short on coin pays every real septim they have first and only the shortfall is minted - conjured gold backs the sale instead of replacing the NPC's own money.
+
+### Shout teaching - the Way of the Voice
+
+- **Masters of the Voice teach Words of Power.** Ask Arngeir (or any NPC whose record genuinely carries Shouts - Greybeards, Paarthurnax, dragons, mod-added masters) to teach a Shout: one word per lesson, always the next word you don't know, wall-learned words counted. Three lessons master a Shout.
+- **A master's gift is complete.** The word arrives WITH its understanding - no dragon soul spent, exactly how the Greybeards handed you Whirlwind Sprint on the courtyard steps.
+- **Gated by the game's own data.** The new can_teach_shouts decorator lists the Shouts on the NPC's base record, so a random bandit never offers Fus Ro Dah. (The Greybeards' records carry nameless combat variants; teaching translates them to the true player Shouts, so what lands in your magic menu is always the real thing.)
+
+### The Ledger, Illuminated - the UI redesign
+
+- **A new design language across all 19 pages.** The 12-tab top bar became a left navigation rail with sub-pages; brass hairlines, higher ink contrast, serif stacks; the Dashboard is a chronicle spread, the Inventory a real ledger with hand-inked category glyphs, the Board a muster roll with a right-hand dossier.
+- **The Actions page is a verb book.** The 69-button wall became glyph-headed category cards, hand-packed to fit with no scrolling at 1080p and up - and 15 missing verbs were added, including a whole Employment category.
+- **The menu hotkey is native now.** The config key used to queue behind Papyrus load-recovery for 30-60 seconds after loading a save; it's handled in C++ and works the instant the game accepts input.
+- **Hotkeys are editable in PrismaUI** (Settings), synced both ways with the MCM.
+- **Assigned NPCs got a register.** Dozens of assigned NPCs open in a filterable grid modal instead of an inline scroll marathon.
+- **Density fixes for high-res displays.** Life Tracker no longer crushes tiles to hairlines at 4K or walls you with 37 entries; read letters collapse to a preview line. The Survival page fills its space, and followers' worded need stages ("Famished / Freezing / Sleep Deprived") actually render - they were dead code before.
+- **Outfits roster, findable.** One height cap instead of two stacked ones, nearest-first Nearby sorting, auto-focused filter with arrow-key walking, crosshair target pinned on top - about 12 visible entries where there were 5.
+
+### Portraits and items render live
+
+- **The Inspect panel renders the actual item.** Every inventory item gets a real 3D render - a drag-rotatable orbit with proper materials, gloss, and two-light shadows. PGPatcher/ParallaxGen-mangled meshes (duplicate child refs) are sanitized and rescued instead of showing a glyph.
+- **The wardrobe mirror is live.** The Outfits mannequin is a free trackball view by default - drag to turn, wheel to zoom, and it updates itself when gear changes (staging an outfit, presets, Hide Helmet). The baked orbit survives as automatic fallback for older setups.
+- **Faces are right.** Scars and war paint render, dark-scalp hair is fixed, distortion effects no longer paint as blue discs, head and body tones match, and the studio look is location-independent - a dark cave no longer crushes the skin shading.
+- **Uniforms from scratch.** Save any cart as a named uniform without needing an existing preset; the presets modal renders correctly at every width.
+
+### Followers
+
+- **Coward combat style.** A follower can be told to stay out of fights entirely - they disengage and keep their distance instead of charging in with a soup ladle.
+- **Survival debuffs can reach zero.** The hunger/fatigue/cold penalty sliders now go all the way to 0% for players who want the narration without the numbers.
+- **Multi-floor sandboxing.** Followers sandbox across floors now (the classic "Multiple Floors Sandboxing" tweak, done at runtime, widen-only, toggleable) - upstairs beds and chairs are finally inside the search volume, for our packages AND vanilla sandboxing.
+- **Homed NPCs sleep at night.** An NPC you've assigned a home no longer sandboxes around the house 24/7: during the sleep window (default 22:00-06:00, configurable, midnight wrap supported) they lie down in the bed that was auto-claimed for them at home assignment and actually sleep. Work and relax schedules win over the window - a night-shift worker keeps working - and they wake when recruited, disturbed, or when morning comes. Toggle + window sliders in Settings.
+- **Casual followers stop getting stuck at load doors.** Two root causes fixed: a leftover "waiting" faction rank that survived removal and read as waiting-forever at every door, and re-registered follow packages that the engine stopped serving after reload.
+- **Bio template library, for anyone nearby.** Save any custom bio block as a template and apply it to other NPCs (copy-on-apply, no linkage); the bio editor now works on ANY nearby humanoid, not just companions; Enter inserts real newlines.
+
+### Travel
+
+- **Honest ETAs.** Cross-map trips take the time they should - no more "completed" journeys seventeen minutes after leaving Solitude. Distance is measured without needing both ends loaded, and off-screen travelers are never teleport-"recovered" mid-route; a still-walking traveler finishes naturally.
+- **Meet them on the road.** Ride toward a mid-route traveler and they materialize walking the road where they should be, not standing at the destination early.
+- **Stray travel packages are visible and strippable.** NPCs left running a travel package by an old save or crash show under Travel with a Remove button.
+
+### Background AI controls
+
+- **One master switch for every background LLM call.** Settings gains an AI section: relationship/reputation assessments, banter, quest summaries, off-screen life, weekly stories, courier letters - individually toggleable, and one master toggle silences them all at once (SkyrimNet's own dialogue untouched). Letters fall back to templates when off.
+- **Nearby items consolidated in prompts.** Six carrots on the ground read as "Carrot x6" with one FormID instead of six lines, and furniture stays out of the item list.
+
+### Settings
+
+- **Enterprises and Outlaws got their own tabs.** Retainer controls live under Enterprises; the Truce/camp options under Outlaws → Truce & Camps. Retainer loan requests can be turned off separately from raise requests.
+- **Free look is a free camera.** Entering free look releases the keyboard properly (no more dead SKSE hotkeys) and toggles the engine's own free camera; your own TFC state is never clobbered.
+
+### Outfits
+
+- **The outfit lock is now OFF by default.** It is a veto mechanism - presets do the same job declaratively, with nothing to race. The reported symptoms (partial armour after sleeping, auto-switch failing, an NPC turning up naked) were all the lock capturing a mid-undress state and then enforcing it. Still switchable for anyone relying on ad-hoc locks.
+- **Fixed the Wardrobe leaving staged gear in NPC inventories permanently.** Discarding a preview now reclaims everything it added; committing keeps only what they wear. Presets saved mid-preview no longer classify staged copies as owned (the "preset strips them naked" bug), and old broken presets self-heal on next apply.
+- **Fixed headless mannequins** on templated NPCs with custom skins, and the bake's frame-to-frame jitter.
+
+### Fixes
+
+- **Fixed pacified outlaws staying hostile after anything registered as an assault.** Skyrim files "the player attacked me" in a separate faction that survives everything else - the truce now truly erases it (the first fix layered a hidden rank instead of removing it; that's gone too).
+- **Fixed outlaws turning on you at forts for no reason.** Detection-probe marker spells (zero-damage "fake hits" some mods fire from the player) no longer count as assaults.
+- Fixed the couriers who stood frozen like statues until despawn - the orphan-cleanup sweep was stripping their loiter anchor seconds after arrival.
+- Fixed spell teaching handing out one-handed variants instead of the spells a tome would actually teach.
+- Fixed the Dismiss All button removing companions from the page without dismissing them.
+- Fixed `<gone>` appearing on the Enterprises board where a name should be.
+- Cell catchup now requires live follow evidence before teleporting anyone - stale roster entries stay put.
+- NPCs briefly flagged as teammates by other mods are no longer silently adopted as companions (recruitment must hold ~5 seconds) - this was how strangers ended up teleporting to you at load doors.
+- The book-reading rule no longer sits in every NPC's context - it appears only while actually reading, and as a brief warm-up right where the ReadBook action gets chosen.
+- The jarl-recognition check used the wrong faction (it passed Legion members and failed actual jarls); property-sale gating reads the real JobJarlFaction now.
+- The vampire-truce toggle no longer reads Off for non-vampires and "refuses to stick" - the Settings page was displaying the vampire-gated effective state instead of your stored choice. The toggle now shows what you set (default On); being a vampire gates only the in-game behavior.
+- The survival master toggle is a true master now: with it off, an individually-included follower no longer shows up Famished/Freezing on the Survival page or the dashboard banner (those read stored needs raw, bypassing the off-switch that dialogue already honored). Off = everyone reads sated everywhere; stored needs are preserved and resume on re-enable.
+- Creatures and animals can be action targets from the Actions page (user report): the nearby rail was hard-filtered to humanoids, so a dragon, horse, dog, or summon could never be picked. Wildlife now lists after the people (so the rail doesn't drown in pigeons), and duplicate-named creatures no longer collapse into one row - two wolves are two rows.
+- Owned-item pickup by followers no longer raises a vanilla player bounty; thefts route through SeverActions' own witnessed, value-scaled bounty instead.
+
+## v3.8.0 - Fullscreen UI, per-retainer schedules, the alias overhaul
+
+A huge release. PrismaUI goes properly fullscreen with automatic per-resolution density. Retainers get individual work schedules - including 24-hour bodyguard duty, which now works for **every job, attending any NPC**. And the three most package-fragile systems in the mod (following, guard duty, captivity) all move onto quest-alias pools whose packages re-apply themselves on every cell load. Save-compatible.
+
+### PrismaUI
+
+- **True fullscreen menu.** The config menu was a fixed 1440x920 box with a static 1.5x transform that overflowed and cropped on common resolutions. It now fills the game window at any resolution, and the UI Scale slider became a density control (0.8-2.0) instead of a crop dial.
+- **Auto-proportional density.** The default density computes from your screen height (about 135% at 1440p, ~100% at 1080p, 200% at 4K) and tracks the viewport until you move the slider yourself. A one-shot migration resets everyone to the new default on first load; your own choice is remembered from then on.
+- **All-pages layout pass, twice.** Vertical flex-fills on the pages that top-aligned into a void (Dashboard, Life Tracker, Outfits, Inventory, Enterprises Summary, Companions detail), max-width and multi-column layouts where content huddled in a corner (Dashboard, Settings, Actions, Catalog), the World map scales to the screen, and the letter tiles in Life Tracker render clean 3-line previews instead of being sliced mid-glyph.
+- **Outfits roster rebuild.** The Companions/Managed/Nearby tabs are now one grouped roster with collapsible sections, an always-on cross-group name filter, most-recently-used NPCs floating to the top, and per-group selection memory. Finding someone is type-two-letters-and-click.
+- **Money colors were silently dead.** The ledger's green/red income/expense tokens were circular CSS self-references, so every money figure on the ledger side fell back to plain text. Fixed - the whole money language lights up.
+
+### Enterprises
+
+- **Per-retainer work hours.** Every retainer can override the global 8-17 schedule from their board card: custom windows, night shifts (22-6 wraps correctly), or 24 hours - the bodyguard-forever case. Work always wins over Relax on overlap.
+- **Guard duty for everyone, on anyone.** Any retainer can now be assigned to a *person* instead of a place, whatever their job - a Mercenary guarding a friend, an Alchemist attending their patron. Ally rank means they still come to their charge's aid in a fight. The assignment resolves by name when a FormID has gone stale after a load-order change.
+- **Board v2.** Summary is a proper cockpit (hero + KPIs + a wide needs-attention feed); the generic cashbook moved to its own Cashbook tab; Bounty and Debts merged into Obligations with hold-tinted tabs; Stories is a two-pane journal with a work-log view; the board sorts by attention/payout/name, caps long sections, and groups by trade *or by hold*.
+- **Renown roster cap now defaults OFF** so existing large rosters aren't gated (one-time migration turns it off for you; re-enable in Settings if you want it).
+- Assigning a Guard with no charge picked warns instead of silently keeping the old routine.
+
+### The alias overhaul (followers, guards, captives)
+
+- **Every follower rides a quest-alias follow package.** The old system had 21 alias slots plus a package-override overflow whose packages dropped on 3D unload and were only re-applied on sleep or save/load - overflow followers could silently stop following mid-session. A new 200-alias follow quest holds them all; packages re-apply natively on every cell load.
+- **Guards follow the same way.** Guard duty used to ride the same fragile override; a 50-alias guard quest now holds it.
+- **Captives too.** The captive hold (kneel) is alias-driven via a 16-alias quest instead of a priority-95 override plus a heal tick - the override stays as a backstop only.
+- **"Move here" for captives.** From the Arrests view, order the kidnapper to re-take a held captive and bind them at your feet - useful when "send them to my home" put them in the wrong room.
+
+### Fixes
+
+- **The 511 native-function cap.** SeverActionsNativeExt silently crossed Papyrus's hard 511-native-functions-per-script limit (512), and the failure mode was ugly: native lookups on the script failed at runtime - including the is-follower check - so companions were treated as strangers and left on load. All 40 Venture natives moved to a new SeverActionsNativeExt2 script (Ext 472 / Ext2 40 / main 469), and `check_release.ps1` now fails the build if any bindings script goes near the cap again.
+- **Dismissed followers kept following.** The dismiss cleanup wiped the follow/guard alias indices *before* the release paths read them, so the pool alias stayed filled and the NPC shadowed you until the next load. Indices are preserved now, and the release paths fall back to a pool scan regardless.
+- **Pool packages were inert at first** - alias packages only run for aliases of their owner quest, and the generated pools attached main-quest packages. Each pool now carries its own quest-scoped clones (byte-verified).
+- **Kidnap escape cadence** - was 25% per 30-second tick once past 12 unguarded hours (near-certain escape in minutes); now 5% per 6 unguarded game hours.
+
+## v3.7.3 - Custom-AI followers no longer stuck on home/play packages
+
+### Fixes
+
+- **A custom-AI follower could get stuck on their relax/home package mid-follow.** The schedule system decided "is this follower dismissed?" using the vanilla teammate flag alone - but track-only / custom-AI followers (Kaidan-style mods, NFF-managed, anything whose own framework owns the teammate flag) never carry it, so an actively-following companion was misread as dismissed and dragged to their play or home spot. The follow drift-monitor then re-asserted the follow link every few seconds, the two fought, and the engine dropped to a runtime fallback package - and no amount of Clear Packages stuck, because the next schedule tick re-applied the sandbox. Both the home/play and work swaps now judge "dismissed" by actual roster registration, not the teammate flag. Already-stuck followers strip the stale sandbox automatically on the next tick - no save edit or manual clearing needed.
+
+## v3.7.2 - Pay off NPC bounties, brawl spell-recovery
+
+A point release adding the ability to **pay off a wanted NPC's bounty** - both from the UI and by asking a guard in conversation - plus a safety net that returns spells stripped by a brawl that ended the wrong way.
+
+### New
+
+- **Pay off a fence's or follower's bounty.** Any wanted NPC's bounty can now be settled from your own purse: a **Pay** button right on the fence's Enterprises card (for their illicit heat, before they're ever jailed) and on the Ledger's "Wanted - your people" rows. A fence caught in the weekly arrest roll still uses the existing Bail button.
+- **Ask a guard to clear a bounty in dialogue.** Tell a guard, jarl, steward, or housecarl you'll pay off a specific person's bounty and they settle it with the law by name - covering both follower/NPC tracked bounties and Enterprises fence heat. The wanted person need not be present; the guard keys off their own hold's wanted list. A non-pausing confirm popup (matching the CollectPayment / arrest prompts) shows before any coin changes hands.
+
+### Fixes
+
+- **Brawl spell-recovery.** Ending a brawl with the surrender/yield hotkey (instead of the ForfeitBrawl action) used to leave your stripped spells gone for good. Spells stripped for a brawl are now recorded and automatically restored on the next load if no brawl is active - which also rescues a brawl interrupted by a crash or force-quit. (Spells lost before this build can't be recovered - there was no record of them - but no new losses.)
+- The guard bounty prompt no longer routes bounty payments to the generic CollectPayment action, and a template syntax error in it (an unsupported inline conditional) is fixed.
+
+## v3.7.1 - Custom bios, LLM trespass & the travel overhaul
+
+NPC bios are now yours to extend: mint **custom bio sections per companion** from the Companions page - name them anything, write the content, and they blend into the character's bio and reach the LLM on their very next line, with no game restart. Breaking and entering gains an LLM brain: instead of the vanilla threat-stalking loop, **occupants learn you broke in and confront you in dialogue** - talk your way out, get thrown out, or face the guards, with sneaking preserved until they actually see you. Travel got a top-to-bottom overhaul: NPCs know whether they're **meeting you or off on their own business**, conversational and duplicate place names resolve correctly, "outside" and "beside the barrow" work, and companions who travelled beside you no longer greet you as if they'd been waiting. Plus compatibility fixes for **Simple Follower Framework** and **Swiftly Order Squad**, a diagnostic toggle for a 3.5.0 startup-crash interaction, and the engine's unkillable follower bow is now a bowl of beef stew. Save-compatible.
+
+### Custom bio blocks (new)
+
+- **Write your own bio sections.** Companions -> Bio -> **+ Add Block**: name it anything (Routines, Kinks, Combat Style, Religion...), write the content in a modal, and it renders inline in the character's bio in the same style. It reaches the LLM the next time that NPC's dialogue is generated - no game restart needed, ever.
+- **Per-companion, no carryover.** Every companion owns their own independent set of blocks (up to 50 each); creating a block on one never shows an empty copy on the others. Built on a pre-shipped slot pool so both new blocks and edits are live at the next render. (Community suggestion by Goncalo - thank you.)
+
+### LLM-driven trespass (new)
+
+- **No more scripted threat-stalking.** Breaking into a home no longer summons the hardcoded vanilla loop of NPCs trailing you with scripted threats. Occupants instead learn you're not supposed to be there and confront you in dialogue - talk your way out, get thrown out, or bring the guards. A Settings toggle restores vanilla behaviour.
+- **Sneaking preserved; noise wakes them.** Nothing fires until an occupant actually gets line of sight, so stealth still works. But move loudly - jogging around un-crouched - and sleepers wake, get out of bed, and come investigate, staying up (a follow-package hold) rather than climbing straight back into bed.
+
+### Travel, overhauled
+
+- **Wait for you, or go about their business.** A new parameter lets an NPC know whether they're travelling somewhere to meet/wait for you (greet-on-arrival, patience timeout) or simply running their own errand (arrive, do their thing, drift back to their routine) - no more everyone acting like they've been waiting for you.
+- **It understands how people actually talk.** Conversational phrasings ("back to the College"), trailing qualifiers ("The Bannered Mare, Whiterun"), and duplicate names all resolve now - "Hall of the Dead" picks the hall for the hold you're standing in, or say "Hall of the Dead, Solitude" to override. An unresolvable place makes the NPC say so and ask for the proper name instead of announcing a trip and standing still.
+- **"Outside" and "beside the barrow" work.** "Go outside" walks them out the door to loiter at the entrance instead of stopping at the inside of it; "meet me outside the Bannered Mare" or "beside Bleak Falls Barrow" sends them to a place's entrance without walking in.
+- **Travelled together? They know.** Escort a companion the whole way and they arrive at your side - no "I've been waiting for you!" from someone who walked beside you. Arrive within a minute of them and they greet you as catching up. The canned "glad to see you!" popup is gone; arrivals are narrated in-world.
+- **Vanilla "Wait here" / "Follow me" works on SA followers.** The vanilla dialogue verbs route through SeverActions' own wait/follow, so companions actually stop and resume when told through the normal dialogue tree.
+- **Popup, your way.** A new setting shows the destination-confirm popup only for your own followers - a random NPC the AI sends somewhere just goes. The Actions-page Travel button also works again (it was dead and popup-less).
+
+### Fixes & compatibility
+
+- **Simple Follower Framework.** Recruiting a civilian through SeverActions and dismissing them no longer leaves them with an unremovable vanilla follow package (SFF parks extra followers in aliases SA couldn't see). Dismiss now clears the actor from every DialogueFollower alias - which also self-heals followers already stuck from before the fix.
+- **Swiftly Order Squad.** Followers waited or resumed through SOS no longer walk off or become un-recruitable; SA adopts external wait/resume commands cleanly.
+- **The follower bow is beef stew now.** The engine force-inserts a hidden hunting bow and arrows into every recruit, and deleting it just respawns it (engine behaviour, not ours). SeverActions now intercepts the insertion and swaps the bow for a bowl of beef stew.
+- **Auto-Eat threshold 0 actually disables auto-eat.** The tooltip always promised it, but 0 previously meant eat at every opportunity - the exact opposite. It now stands the system down (shared party rations included); hunger still accrues and manual feeding still works.
+- **Stale work assignments no longer bleed across saves.** Loading an old save where an NPC was a retainer with a work spot, then returning to your current save, no longer sends them commuting to a job they no longer have; self-healing on the next schedule tick.
+- **Follower audit, round two.** A stack of roster fixes: waiting followers surviving load races, Serana recruitment routing, healer re-application, work/home schedule edge cases, and orphan-cleanup no longer flooding duplicate events on script-heavy load orders.
+- **Casual-follow catch-up is now opt-in.** NPCs on a casual "follow me" (not recruited as companions) sit out the load-door catch-up teleport sweep by default; a Settings toggle re-enables it. Registered companions are unaffected. This also isolates a reported 3.5.0 startup-crash interaction - if you crashed on load, this build is the test.
+- **Fences with bounties** now appear on their hold's wanted list and jail roster like any other offender.
+
+## v3.5.0 — Abduction & restraint, morale with teeth, no more caps & the great stability pass
+
+The biggest release since Enterprises. Two new dark-side systems — **abduction** and **ordered restraint** — let your companions seize, hold, ransom, and interrogate NPCs, with real crime consequences when it goes loud. Enterprises retainers gain **Temper**, a fast-moving morale axis where neglect alone can spiral into pilfering, ultimatums, and desertion. The old capacity ceilings are gone: **100+ followers, unlimited homes and relax spots**. Companions looting for you finally have eyes (search first, take specifically), letters now read like real vanilla letters, couriers only approach outdoors, and full **controller support** lands across every popup and menu. Underneath it all: a full-codebase audit fixed two critical and twenty high-severity defects. Save-compatible — every cosave store migrates in place.
+
+### Abduction & restraint (new)
+
+- **Order a kidnapping.** Send a companion to quietly abduct an NPC and bring them to a destination — a two-leg operation (walk up, seize, march them off) that keeps working even when it happens entirely off-screen. The victim ends up held bound at the destination while your companion stands guard.
+- **Restrain someone on the spot.** The lighter, in-the-open variant: a companion walks over, ties the target's hands, and stands watch — no crime, no destination, done in front of everyone. Restrained captives stand bound; marched captives walk with bound hands (the arrest-march look).
+- **Move, ransom, untie, interrogate, release.** Relocate a captive to a new hold, press them for what they know — interrogation cracks their resolve so their own knowledge becomes fair game in conversation — loosen their bonds for gentler holding (an untied captive keeps to the hold, watched, but escapes far more easily), or let them go and live with what they remember.
+- **Ransom is a real negotiation.** Name your own price or let the kidnapper ask a fair one — the hold weighs who the captive IS (courtiers and merchants get paid for; nobody passes the hat for the town drunk) and how greedy the demand is. The answer arrives as a courier-delivered letter on fine court stock, written and SIGNED by the hold's actual steward — who remembers the decision. A refusal sends hired steel after the captive instead; survive that and the court either swallows its pride and reopens negotiation (at better odds — force already failed them) or cuts its losses and washes its hands of the matter for good. Pay honored with a prompt release settles the crime: no report, no bounty.
+- **NPCs carry their own bounties.** A follower's witnessed crimes — theft on your orders, a kidnapping gone loud — land on THEIR head, not yours: per-offender tracked bounties on the Ledger and Enterprises pages, guards who know their hold's wanted list, offenders who know their own price, and Jarls, stewards, and housecarls who can speak about exactly who sits in their cells. Jailing an offender answers the crime and clears the bounty; the ledger keeps the history. Or settle it with coin: every wanted-NPC row has a **Pay** button that squares their debt from your purse — and they remember who paid it.
+- **Consequences that stick.** A witnessed grab draws a real kidnapping bounty in the victim's home hold; word spreads as gossip; search parties can come looking; a released victim carries the grudge as a memory. Death in captivity is treated as the murder it is.
+- **Captives are people, not props.** A held NPC knows they're bound, narrates from inside the hood or facing the room (restraint holds leave them bare-headed and watching), can attempt escape, and can't cheekily use captive-management actions to free themselves.
+- **It plays nice with everything else.** Jailed prisoners, active arrests, your own followers, and children are all off-limits as targets; the arrest system and the kidnap system share apparatus without stepping on each other; captive retainers stop earning while held.
+
+### Enterprises — Temper (morale that bites)
+
+- **Morale is now its own fast axis, separate from loyalty.** Loyalty stays the slow trust anchor; Temper swings weekly with events — paid in full, missed wages, setbacks, raises granted or refused — and decays toward loyalty, so sustained good or bad treatment slowly drags the anchor itself.
+- **Every consequence is reachable through plain neglect.** An unhappy retainer gripes and may send a courier complaint. A resentful one pilfers — even wage workers skim now — and a bitter fence draws extra heat. Push further and you get a formal **notice**: a one-settle ultimatum before they walk with the full desertion teardown (exit theft, gossip, and possibly a grudge).
+- **Talk them down — or cow them.** A grieving retainer can be **reassured** in person; for coerced arrangements it reads as intimidation, which works differently than comfort. **Send word** to summon a retainer to a hearing, hash the grievance out face-to-face, and resolve it — grant, negotiate, or refuse and accept the fallout. Tribute retainers can turn openly **defiant** and withhold your cut.
+- **You'll know about it.** Complaint and notice letters arrive by courier (paced — a heavy settle week arrives as a stream of couriers, not a convoy), the Enterprises board surfaces troubled retainers, and a hearing alert shows when someone is waiting on you.
+
+### Followers — loot with eyes, uncapped rosters
+
+- **Search first, take specifically.** New search actions let a companion rummage a container or corpse *without* taking — the contents surface in conversation (named items by value, gold, the sundry tail) and the NPC then takes what they actually want, in character.
+- **Loot vocabulary.** "Grab the potions and any jewelry" now works: weapons, armor, jewelry, potions, food, ingredients, books, soul gems, ammo, scrolls, and gems are all understood as categories, alone or in lists, with plural-tolerant name matching.
+- **Locked doesn't mean no.** A locked container gets a real lockpicking attempt scaled by their skill against the lock — and they kneel and work the picks while they're at it (the same idle Mercer uses at Snow Veil Sanctum). Success opens it for good, failure narrates and they can try again. Key-only locks stay shut.
+- **They notice good spoils.** Companions spot notable loot they're carrying and bring it up on their own.
+- **Owned-item theft is handled properly** — silent transfer plus a SeverActions tracked bounty only when actually witnessed, instead of the engine's instant player bounty.
+- **Per-follower follow distance.** A close-follow variant per companion, switchable on the fly.
+- **The caps are gone.** Followers past the old 21-slot ceiling (100+ supported), and home / relax assignments are now unlimited — rebuilt on runtime anchors instead of finite quest aliases, with legacy assignments migrating lazily and safely.
+
+### One coherent off-screen life
+
+- **A retainer's work journal and their life events now read each other.** No more jail night the journal never mentions, or a "took caravan work" event while the journal has them at the forge all week. Each generator treats the other's latest output as canon: the job anchors their days, life happens in the off-hours around it, and bigger developments are channeled through the trade — rivals, dangerous clients, guards sniffing around.
+
+### Letters & books
+
+- **Letters read like vanilla letters — on VR too.** Click a courier-delivered letter in your inventory and it opens in the stock book reader as handwritten parchment — no popup. This also means SkyrimNet's own book-reading event and the ReadBook action now work on letters. VR uses a community-verified engine address; if a setup misbehaves, dropping an empty `SeverActionsNoLetterHook.txt` into `Data/SKSE/Plugins` reverts to the popup reader.
+- **Official letters arrive on fine paper.** A hold court's correspondence (ransom answers and the like) comes on crisp invitation-grade stock; sellsword threats and retainer notes stay on the rough scrap they deserve.
+- **Companions can read books from your pack.** Ask a follower to read something you're carrying — they borrow it in place, with a small scene beat crediting whose book it is. Works on delivered letters too.
+
+### Couriers
+
+- **Outdoors only.** Couriers no longer materialize beside you in your home, a shop, or a cave. Letters generated while you're inside wait in a queue and a courier walks up the next time you're in the open — including a blacklist for exteriors no courier could plausibly reach (Blackreach, Soul Cairn, Sovngarde, Apocrypha, the Forgotten Vale, and friends).
+- **Paced delivery.** A multi-letter settle week arrives as couriers spread out over minutes, not three at once.
+- **They actually leave now.** Couriers move on within a couple of game hours of delivering (was ~15 real minutes of loitering), and couriers who were alive when you saved no longer live forever after a reload — strays from older saves get cleaned up automatically.
+
+### Survival
+
+- **Followers eat from the party larder.** A hungry companion with an empty pack no longer starves next to fifty loaves — auto-eat pulls the cheapest suitable ration (cooked first) from whoever in the party carries food, you included. The Feed button keeps its best-food semantics, and the starving warning only fires when the whole party is truly out.
+- **Campfires warm you again.** Every burning campfire in the game — Hearth camps and vanilla bandit camps alike — was failing heat detection; fixed via model-path matching that also covers modded campfire variants.
+- **Camp sandbox toggle.** Whether establishing a camp starts companions sandboxing is now a Settings-page choice.
+
+### Controller support
+
+- **Every SeverActions popup and menu now plays with a gamepad.** A native bridge translates controller input for all PrismaUI surfaces — main menu, diary, letters, and the six prompt popups — with sane focus defaults (the travel popup confirms with one press of A instead of trapping you in a text box).
+
+### Dialogue quality
+
+- **Companions keep their own voices.** Party members who travel together tend to drift into one shared way of speaking — the group-conversation guidance now tells each engaged follower to hold onto their own vocabulary, cadence, and verbal habits and never borrow a companion's phrasing. (The separate always-on anti-echo guideline was removed — it over-constrained one-on-one dialogue.)
+
+### UI
+
+- **Actions page reskin — Writ & Command.** The composer is now a ledger-styled writ: staged sentences on ruled paper, category inks that could sit on parchment, and a wax-seal execute (dangerous verbs press a black seal). Same interaction model underneath.
+- **Enterprises assign modal fixed and extended.** Retained and Indentured no longer swap descriptions; opening Manage and saving without touching the arrangement no longer silently re-files the retainer under a coerced arrangement; and arrangement descriptions are now editable per retainer.
+- **Dead buttons fixed.** The World page's jail Release button, Cancel-arrest, and Travel-to-Camp all work again (a class of receivers reading a payload field the sender never populated).
+- **Wardrobe preview lifecycle fixed.** Exiting the outfit preview mid-staging can no longer leave the actor naked, and the mannequin re-renders across preset swaps.
+- **Robust UI payloads.** LLM-written text containing exotic line separators no longer kills a page render.
+- **Popup Scale.** The non-pausing HUD popups (travel destination, payment, commission) are ~10% larger by default and adjustable from 80–150% via a new slider in Settings → UI Display — saved globally, so it survives new games and updates.
+
+### Fixes & stability — the great audit
+
+A six-lens, full-codebase audit (~30 verified findings, two Critical, twenty High) plus the follow-up hunts:
+
+- **Cosave hardening.** Every growing text field is length-clamped at write, and a single oversized legacy string can no longer abort a load mid-record and silently drop the followers serialized after it. The Enterprises store now migrates forward on version bumps instead of wiping.
+- **Crash-class fixes.** Four SkyrimNet decorators were touching engine state on render worker threads (crash roulette under load); FormIDs passed through float event args could silently corrupt on high load orders; both classes eliminated.
+- **Load recovery rebuilt.** Five subsystems' load-recovery handlers were dead code (a Papyrus event that never fires on quest scripts) — all recovery now routes through one router that actually runs, fixing things like the camp badge vanishing after a game restart.
+- **Travel errands no longer dismiss companions**, forced-combat cleanly restores faction ranks, yields and ceasefires no longer race, and long-lived anchors (work markers, jail posts) survive the orphan cleaner.
+- **Log hygiene.** Eighteen orphaned native registrations that spammed "Function will not be bound" errors at every game start are gone, along with a class of cosmetic array-cast errors.
+- **The Nearby Objects prompt no longer vanishes for scene veterans.** SexLab "removes" scene actors by setting faction rank -1, which left the faction entry behind — any NPC who had ever been in a scene permanently lost their nearby-objects context (and read as [IN SCENE] in group prompts). All scene-faction gates now test rank instead of membership.
+- **Employment container actually gets picked.** The LLM rarely chose Employment actions in work conversations because its container description was a prose wall; rewritten in the terse style the working categories use.
+
+## v3.1.1 — Follower reliability, clearer retainer arrangements & base-game compatibility
+
+A focused patch: companions reliably follow you instead of being dragged back onto a work assignment or wandering off after a tavern scene; the Enterprises retainer arrangements got clearer names and a colour cue for which ones an NPC resents; and SeverActions no longer needs the Dawnguard or Dragonborn DLC to load. Save-compatible; no migration.
+
+### Followers
+
+- **Recruiting a working NPC now makes them follow.** If an NPC was on a work assignment (a retainer's job, a sandbox shift) and you recruited them as a companion, they'd keep doing their job instead of falling in behind you. Their work package is now stood down the moment they join you — and the assignment is remembered, so they pick it right back up when you dismiss them.
+- **Telling a worker to follow works too — not just formal recruitment.** The same fix now covers the casual "follow me" path (the wheel menu and SkyrimNet's own follow package), which previously lost out to the work assignment and left the NPC standing at their post while you walked away.
+- **Followers stop wandering off after greetings and bard songs.** A companion pulled into a vanilla scene — a tavern bard's performance, a forced greeting, a quest scene — could come out the other side on their default routine and walk off (the "I had to teleport them back" problem). They now re-acquire you on their own within a few seconds. It's handled natively for snappy recovery, and it deliberately leaves alone anyone who's waiting, sandboxing, traveling, or managed by another follower framework.
+
+### Enterprises
+
+- **Clearer retainer arrangement names.** The confusing "Vassalage" is now **Indentured**, and "Sworn" is now **Retained** — names that say what they actually do. (Players kept choosing "Vassalage" expecting a fair deal, then were surprised the retainer resented them.) "Retained" also got a sharper description: a flat weekly wage for serving you directly — a guard, bodyguard, or household servant — running no venture.
+- **Valence you can see at a glance.** The two *coerced* arrangements (Indentured, Enslaved) now render in red against the cool blue/green/teal of the fair ones (Employed, Partnership, Retained), and the picker is grouped fair-first — no more reading every line to tell which arrangements an NPC will resent. Save-safe: existing retainers keep their arrangement and simply display the new names.
+
+### Compatibility
+
+- **No longer requires the Dawnguard or Dragonborn DLC.** SeverActions.esp only ever pulled in those masters through two dead leftovers — an unused forge list and an orphaned script property — and both are now gone, so the plugin loads on any Skyrim install (base Special Edition included). This may also address some of the "won't load" / "SkyrimNet can't find the SeverActions quest" reports on setups missing those DLC — though we haven't confirmed that's the actual cause yet.
+
 ## v3.1.0 — Enterprises: put your NPCs to work, courier letters, player-placed camp & a batch of fixes
 
 A big release built around a brand-new system. **Enterprises** lets you assign any tracked NPC to work for you while you're off adventuring — a trade post, a mine, an alchemy lab, a fence laundering your spoils — running a small off-screen economy that produces gold and real goods, with payroll as a real obligation so stiffing people has teeth. Because it's SkyrimNet-aware, the worker *knows* they work for you and can bring it up, negotiate, or complain in conversation. Also in this release: livelier, less-repetitive companions (richer off-screen lives and follower banter), **settings that persist across saves and updates**, physical courier-delivered letters, a player-driven camp you can place and preview yourself, Devious Devices and Diary of Mine / Paradise Halls outfit compatibility, and a stack of stability fixes. Save-compatible — existing saves gain the Enterprises cosave cleanly with no migration.

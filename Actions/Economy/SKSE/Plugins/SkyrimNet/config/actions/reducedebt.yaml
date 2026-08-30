@@ -1,0 +1,55 @@
+customCategory: economy
+name: ReduceDebt
+description: "Reduce an existing tab the target owes the speaker by an agreed amount — no gold changes hands (work, favors, or goods traded against the debt, or plain generosity). The speaker must be the one who is owed. Fire only once they agree, not while haggling. Gold payments go through RepayDebt (the debtor pays) or CollectPayment (the creditor collects); to clear the whole debt without payment, use ForgiveDebt."
+questEditorId: SeverActions
+scriptName: SeverActions_Debt
+executionFunctionName: ReduceDebt_Execute
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: the actor who is OWED the coin and is choosing to lower the debt
+  - type: dynamic
+    name: akTarget
+    description: the actor whose debt is being reduced
+  - type: dynamic
+    name: aiAmount
+    description: "how much gold to take off the tab, as a whole number. Reducing by more than is currently owed simply clears it — it never puts the creditor in debt."
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # rank >= 0 rather than is_in_faction: removing someone from a faction
+      # via AddToFaction(f, -1) layers a rank -1 override instead of deleting
+      # the membership, and is_in_faction is rank-blind — so a former creditor
+      # would still read as one forever. Same trap the scene gates below avoid.
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SeverActions_CreditorFaction"]
+        comparisonOperator: ">="
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+# eventString context = actor object + each DYNAMIC PARAM by its own name
+# (verified in ActionLibrary.cpp) - there is no `target` object, so the old
+# {{ target.name }} was an undefined variable. akTarget carries the name
+# string the LLM passed.
+eventString: "{{ actor.name }} reduced {{ akTarget }}'s debt by {{ aiAmount }} gold"

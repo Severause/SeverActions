@@ -1,18 +1,11 @@
 customCategory: camp
 name: GoToCamp
 description: >
-  Head back to the campfire that's already pitched. The speaker turns and
-  walks (or jogs, or runs) toward {{ player.name }}'s established camp —
-  whether that's a short stroll from a nearby stream or a long trek back
-  from a hunt. The fire, the bedrolls, the chest — that's where they're
-  going.
-
-  Pick this when someone says "I'll head back to camp", "let's meet at
-  the fire", "go on ahead, I'll catch up", "wait for me by the tents",
-  "make your way back", or any phrasing that points at the *current*
-  camp specifically. Always prefer this over a generic travel action
-  when the destination is camp — the LLM should not try to "travel to
-  camp" using a place-name lookup; this action knows where the camp
+  Head back to the campfire that's already pitched: the speaker walks
+  (or jogs, or runs) to {{ player.name }}'s established camp. Use when
+  the speaker or player refers to returning to, meeting at, or waiting
+  at the current camp. Always prefer this over a generic travel action
+  when the destination is the camp — this action knows where the camp
   actually sits.
 
   Speed should match tone: a wounded scout limps back at 0, a tired

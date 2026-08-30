@@ -1,6 +1,6 @@
-customCategory: enterprises
+customCategory: employment
 name: CollectFromRetainer
-description: "Use when {{ player.name }} is collecting the earnings their retainer (the speaker) has been holding — the gold and goods produced since the last time {{ player.name }} collected. The 'In the Player's Service' context for this NPC will state how much is 'awaiting collection'. The game transfers it to {{ player.name }} automatically — do NOT call GiveGold or GiveItem for this. If nothing is pending, just tell {{ player.name }} there's nothing to collect yet and don't call this."
+description: "Use when {{ player.name }} is collecting the earnings their retainer (the speaker) has been holding — the gold and goods produced since the last time {{ player.name }} collected. The 'In the Player's Service' context for this NPC will state how much is 'awaiting collection'. The game transfers it to {{ player.name }} automatically — do NOT call GiveGold or GiveItem for this. If nothing is pending, just tell {{ player.name }} there's nothing to collect yet and don't call this. If this retainer is OPENLY DEFIANT (withholding the tribute and daring {{ player.name }} to collect), calling this IS {{ player.name }} coming to take it in person — the retainer backs down and hands it over, grudgingly."
 questEditorId: SeverActions
 scriptName: SeverActions_Currency
 executionFunctionName: CollectFromRetainer

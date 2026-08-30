@@ -1,0 +1,43 @@
+customCategory: employment
+name: DismissSteward
+description: "Use when {{ player.name }} relieves the speaker of their hold stewardship. Whatever gold sits in the hold vault is handed back to {{ player.name }} on the spot — the game transfers it automatically, do NOT call GiveGold. The speaker remains a regular retainer at their old job; only the stewardship ends, and the hold's other retainers go back to holding their own takings until someone new is appointed. Only call this when {{ player.name }} clearly ends the arrangement — not for complaints or unpaid-wage grumbling."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: DismissSteward
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the steward being relieved of the post
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # is_steward returns "" (not a steward) or the hold's name.
+      - decoratorName: "is_steward"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} stepped down as {{ player.name }}'s hold steward and handed back the vault"

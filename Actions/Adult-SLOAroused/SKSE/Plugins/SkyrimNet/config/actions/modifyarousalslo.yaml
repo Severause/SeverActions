@@ -9,7 +9,7 @@ parameterMapping:
     description: the actor whose arousal is shifting
   - type: dynamic
     name: amount
-    description: "how much the needle moves — negative cools them off (-2 to -20), positive stokes them (+2 to +15)"
+    description: "how much the needle moves — negative cools them off (-2 to -20), positive stokes them (+2 to +15). Mild moment: 2-5. Strong: 6-12. Extreme: 13-15. The smallest useful step is 2."
 enabled: true
 eligibilityRules:
   - conditions:

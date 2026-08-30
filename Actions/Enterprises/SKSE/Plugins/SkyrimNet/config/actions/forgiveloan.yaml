@@ -1,0 +1,28 @@
+customCategory: employment
+name: ForgiveLoan
+description: "Use when {{ player.name }} writes off a loan this retainer (the speaker) still owes them — tells them to keep it, calls the debt square, or forgives what is left. The 'In the Player's Service' context will state what they still owe and whether they have fallen behind or defaulted. This clears the whole remaining balance and calls off the debt collectors, and it buys real loyalty — forgiving a defaulted debt especially. Only call when {{ player.name }} clearly cancels the debt; pressing them to pay, or granting more time, is NOT forgiveness. This is for money LENT to them, not for back-wages {{ player.name }} owes THEM (that is PayArrears)."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: ForgiveLoan
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the retainer whose outstanding loan is being written off
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # has_loan_debt returns the outstanding balance; "" when they owe nothing.
+      - decoratorName: "has_loan_debt"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

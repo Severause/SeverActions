@@ -1,0 +1,64 @@
+customCategory: employment
+name: SendCampHome
+description: "Use ONLY when the speaker LEADS a camp currently mustered at {{ player.name }}'s side and the war band is being dismissed — the job is done, the march is over, or {{ player.name }} agreed they can go. Every member stops following and returns to the camp. Never call it mid-fight or from anyone who does not lead the camp."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: SendCampHome
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the CHIEF of the mustered camp dismissing the war band
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "sever_camp_takeover"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_camp_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "sworn"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_camp_is_leader"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "1"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Only a mustered band can be sent home — string-compared "1".
+      - decoratorName: "sever_camp_mustered"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "1"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} dismissed the war band — the camp's people return home"

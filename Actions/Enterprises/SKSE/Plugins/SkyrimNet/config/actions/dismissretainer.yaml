@@ -1,4 +1,4 @@
-customCategory: enterprises
+customCategory: employment
 name: DismissRetainer
 description: "Use when {{ player.name }} ends this retainer's (the speaker's) employment — letting them go from the venture they run. They stop producing and go back to their normal life. Only call when {{ player.name }} clearly wants to dismiss them from their WORK; this is NOT for dismissing a combat follower. If they're still owed back-wages, consider paying those first — dismissing does not settle debts."
 questEditorId: SeverActions
@@ -7,7 +7,7 @@ executionFunctionName: DismissRetainer
 parameterMapping:
   - type: speaker
     name: akActor
-    description: the retainer being let go from the player's service
+    description: the retainer being let go from {{ player.name }}'s service
 enabled: true
 defaultPriority: 5
 eligibilityRules:

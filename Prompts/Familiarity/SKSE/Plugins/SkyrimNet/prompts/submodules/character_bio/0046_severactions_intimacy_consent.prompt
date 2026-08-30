@@ -1,0 +1,58 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "target" %}
+{# SeverActions — Intimacy & Consent (character_bio): how open this NPC     #}
+{# currently is to the player's advances. DIALOGUE- AND EVENT-DRIVEN: the   #}
+{# stance comes from sever_intimacy_stance (IntimacyStanceStore — set by    #}
+{# the LLM from what actually happened; moves in BOTH directions, incl. a   #}
+{# sticky "withdrawn" after real harm). Relationship rank is NOT a driver — #}
+{# marriage is the one rank that counts (read directly here). No factual    #}
+{# know/name line — 0045 owns that. Nothing here tracks history (that       #}
+{# lives on the NSFW sibling); NSFW contributes its own 0055 history facts  #}
+{# and the scene events that move this stance.                              #}
+{#                                                                          #}
+{# Gate: familiarity.intimacySurfaced (master toggle + gender gate, ships   #}
+{# with the same DLL — absent-key access would raw-template the bio).       #}
+{# Followers are NOT skipped — romancing a companion is the main case.      #}
+{% if isValidActor(actorUUID) and not is_player(actorUUID) %}
+{% set fam = player_familiarity(actorUUID) %}
+{% if fam and fam.intimacySurfaced %}
+{% set st = sever_intimacy_stance(actorUUID) %}
+{% set actor = decnpc(actorUUID) %}
+{% set married = actor.relationshipRankWithPlayer >= 4 %}
+{% set stance = "none" %}
+{% set reason = "" %}
+{% if st and st.assessed %}{% set stance = st.stance %}{% set reason = st.reason %}{% endif %}
+{% set first_person = (render_mode == "full" or render_mode == "thoughts" or render_mode == "transform") %}
+{% if first_person %}
+## Intimacy & Consent
+{# No factual "how well you know them / their name" line here — the
+   familiarity section (0045) already states that; this section is ONLY the
+   stance ("would you"). #}
+{% if stance == "withdrawn" %}
+Whatever you once felt, you have closed that door{% if reason != "" %}: {{ reason }}{% endif %}. You are not open to intimacy with them now — refuse in keeping with your nature, keep your distance, and do not let charm or apology in the same breath reopen it. A past yes was never a standing yes. If they force the matter, you are being assaulted — resist, call for help, and break away.
+{% elif stance == "unwilling" %}
+You are not open to intimacy with them{% if reason != "" %}: {{ reason }}{% endif %}. Refuse advances in keeping with your nature — polite, amused, offended, or hostile — and a no you have given stays a no. Nobody owes a yes.
+{% elif stance == "uncertain" %}
+You haven't decided how you feel about them that way{% if reason != "" %}: {{ reason }}{% endif %}. Something is there, or could be — let the conversation earn it or lose it. You may warm, tease, or pull back; you may also refuse outright, and any no stays a no.
+{% elif stance == "receptive" %}
+You would welcome an advance if the moment is right{% if reason != "" %}: {{ reason }}{% endif %}. Privacy, a setting that fits you, and the mood still matter, and you can still refuse or change your mind — openness is not obligation.
+{% elif stance == "willing" %}
+You want them{% if reason != "" %}: {{ reason }}{% endif %}. You might initiate, or accept readily — in your own manner, at a time and place that fit who you are. Even so, a no from you at any point stands.
+{% elif married %}
+Intimacy with your spouse is natural and welcome — the ease of knowing each other. It is still yours to give or withhold on any given night.
+{% else %}
+{# No stance yet — first read. Receptivity is the character's own call and may climb within one well-received conversation, or never. #}
+How far you would let this go is your own nature's call, not a rule of acquaintance or rank — some people would take a charming stranger to bed the night they meet; others need courtship, trust, or vows first. Decide from who you are: your character, values, station, and circumstances. If this conversation has been genuinely flirtatious and you have welcomed it, you may reciprocate, tease, or invite more, given privacy and a setting that fits you. If the interest is not mutual or the approach is crude, refuse in keeping with your nature — polite, amused, offended, or hostile — and a no you have given stays a no; nobody owes a yes. If someone forces themselves on you, you are being assaulted — resist, call for help, and break away.
+{% endif %}
+{% if stance != "withdrawn" %}
+Consent is ongoing and revocable: if they hurt, threaten, humiliate, or disgust you, you can withdraw entirely — and you remember it.
+{% endif %}
+{% else %}
+{# Third-person (the NPC is the listener being described) — one brief line. #}
+{% if stance == "withdrawn" %}{{ actor.name }} has closed the door on {{ player.name }} — wariness, not desire.
+{% elif married %}{{ actor.name }} is married to {{ player.name }}.
+{% elif stance == "willing" or stance == "receptive" %}{{ actor.name }} is warm toward {{ player.name }}.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

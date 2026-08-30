@@ -214,6 +214,11 @@
           }
         }
 
+        // Expose to the separate nav <script> block below — identifiers declared
+        // inside this IIFE are not visible across <script> scopes (Escape dismiss
+        // used to throw ReferenceError, which broke VR controller cancel).
+        window.__postChoice = postChoice;
+
         function close() {
           overlay.classList.remove('visible');
           if (autoHandle !== null) {
@@ -269,5 +274,68 @@
         } catch (e) { /* listener not bound yet -- harmless */ }
       })();
     </script>
-  </body>
+  <script>
+  // Generic keyboard/controller navigation. The native GamepadUIBridge turns
+  // gamepad input into keystrokes (A=Enter, B=Escape, d-pad/stick=arrows);
+  // arrows move focus through visible controls, the first press lands on the
+  // primary button. Text inputs keep Left/Right for the caret; selects keep
+  // Up/Down for value browsing.
+  (function () {
+    var style = document.createElement('style');
+    style.textContent = 'button:focus,input:focus,select:focus,textarea:focus{outline:2px solid rgba(201,168,102,0.9);outline-offset:1px;}';
+    document.head.appendChild(style);
+    function focusables() {
+      var all = document.querySelectorAll('button, input, select, textarea');
+      var out = [];
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        if (el.disabled) continue;
+        var r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        out.push(el);
+      }
+      return out;
+    }
+    function primary() {
+      var els = focusables();
+      for (var i = 0; i < els.length; i++) {
+        var c = String(els[i].className || '');
+        if (c.indexOf('--confirm') >= 0 || c.indexOf('--accept') >= 0 || c.indexOf('--go') >= 0 || c.indexOf('--primary') >= 0) return els[i];
+      }
+      return els.length ? els[0] : null;
+    }
+    document.addEventListener('keydown', function (e) {
+      var k = e.key;
+      // Escape dismisses silently — same contract as the native escape
+      // monitor. This DOM path is the one that works for VR controllers:
+      // PrismaVR delivers controller cancel as a key event to the view,
+      // where GetAsyncKeyState (the native monitor) never sees it.
+      if (k === 'Escape') { e.preventDefault(); if (typeof window.__postChoice === 'function') window.__postChoice('dismiss'); return; }
+      if (k === 'Enter') {
+        // Explicit activation: Ultralight does NOT click a focused button on
+        // Enter by itself, so the gamepad's A (translated to Enter) was dead
+        // on these popups. Buttons only - inputs/selects keep their own
+        // Enter semantics.
+        var fb = document.activeElement;
+        if (fb && fb.tagName === 'BUTTON') { e.preventDefault(); fb.click(); }
+        return;
+      }
+      if (k !== 'ArrowUp' && k !== 'ArrowDown' && k !== 'ArrowLeft' && k !== 'ArrowRight') return;
+      var els = focusables();
+      if (!els.length) return;
+      var f = document.activeElement;
+      var idx = els.indexOf(f);
+      if (idx < 0) { e.preventDefault(); var p = primary(); if (p) p.focus(); return; }
+      var tag = f.tagName;
+      if (tag === 'SELECT' && (k === 'ArrowUp' || k === 'ArrowDown')) return;
+      if ((tag === 'INPUT' || tag === 'TEXTAREA') && (k === 'ArrowLeft' || k === 'ArrowRight')) return;
+      e.preventDefault();
+      var next = (k === 'ArrowDown' || k === 'ArrowRight') ? idx + 1 : idx - 1;
+      if (next < 0) next = els.length - 1;
+      if (next >= els.length) next = 0;
+      els[next].focus();
+    });
+  })();
+</script>
+</body>
 </html>

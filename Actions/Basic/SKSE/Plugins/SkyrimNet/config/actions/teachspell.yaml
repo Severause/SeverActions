@@ -1,6 +1,6 @@
 customCategory: magic
 name: TeachSpell
-description: "The speaker walks the player through one of their own spells — guiding the gestures by a College brazier, sketching the runes in chalk on a tavern table, demonstrating the cantrip until it takes. The speaker must actually know the spell (check their Known Spells list). Only use when the player has asked the speaker to teach a specific spell, or during roleplay where it would naturally come up."
+description: "The speaker walks {{ player.name }} through one of their own spells — guiding the gestures by a College brazier, sketching the runes in chalk on a tavern table, demonstrating the cantrip until it takes. The speaker must actually know the spell (check their Known Spells list). Use only when {{ player.name }} has asked the speaker to teach a specific spell, or the speaker has offered and {{ player.name }} accepted."
 questEditorId: SeverActions
 scriptName: SeverActions_SpellTeach
 executionFunctionName: TeachSpell

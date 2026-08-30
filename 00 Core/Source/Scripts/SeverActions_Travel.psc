@@ -33,7 +33,7 @@ Keyword Property TravelTargetKeyword Auto
 {Keyword used to link NPC to their travel destination via SetLinkedRef.}
 
 Package Property TravelPackage Auto
-{Default travel package (walk speed) - also used as fallback.}
+{Default/run travel package - also used as fallback.}
 
 Package Property TravelPackageWalk Auto
 Package Property TravelPackageJog Auto
@@ -60,6 +60,11 @@ Float Property ArrivalDistance = 300.0 Auto
 Float Property UpdateInterval = 3.0 Auto
 {How often to check waiting slots (seconds).}
 
+; Courier worldspace blacklist - built lazily once per session (see
+; CourierBlockedWorldspace).
+Form[] CourierWsBlacklist
+Bool CourierWsBlacklistBuilt = false
+
 Int Property TravelPackagePriority = 100 Auto
 {Priority for travel/sandbox package overrides.}
 
@@ -69,11 +74,23 @@ Float Property MaxWaitTime = 168.0 Auto
 
 Bool Property EnableDebugMessages = false Auto
 
+Bool Property TravelMapMarkersEnabled = True Auto
+{Vanilla-style objective map markers for travelers underway. The native
+ orchestrator fires SeverActions_TravelSlotClaimed/Released per Traveler_NN
+ pool slot; the handlers below display/undisplay the matching objective on
+ SeverActions_TravelQuest (0x16AC00) so the player can see where a traveler
+ is headed. Disabling stops NEW markers; releases always clear.}
+
 ; =============================================================================
 ; CONSTANTS
 ; =============================================================================
 
 Int Property MAX_SLOTS = 5 AutoReadOnly
+
+Int Property TravelActionCooldownSeconds = 120 Auto
+{How long after one TravelToPlace before the LLM may pick it again, in real
+ seconds. The anti-spam backstop for location-mention misfires - genuine
+ travel is not something anyone orders twice a minute. 0 disables.}
 
 ; Orchestrator option bitfield (see SeverActionsNative.psc TRAVEL ORCHESTRATOR
 ; comment block). 4 = kTravelOpt_AbortOnDegraded (recommended on).
@@ -84,6 +101,39 @@ Int Property TRAVEL_OPTIONS_DEFAULT = 4 AutoReadOnly
 ; kTravelOpt_SkipPreflight — the marker is already validated by ResolvePlace, and the
 ; orchestrator's leapfrog/teleport recovery is what carries a cross-cell journey.
 Int Property TRAVEL_OPTIONS_LONGRANGE = 12 AutoReadOnly
+; Long-range AND silent: 12|32 adds kTravelOpt_Quiet, which suppresses the
+; Traveler_NN quest objective and its map marker. For errands the world runs
+; on its own and the player was never told about - a hold steward walking out
+; to look in on one of their retainers (ai_docs/STEWARD_VISITS.md).
+Int Property TRAVEL_OPTIONS_QUIETLONG = 44 AutoReadOnly
+
+; =============================================================================
+; STEWARD VISITS (ai_docs/STEWARD_VISITS.md)
+;
+; Native decides WHO and WHEN and owns the cosaved state (VSTR v6); this script
+; owns every package touch, because ActorUtil lives here. Three events:
+;   SeverActions_StewardVisitTravel  sender=steward, strArg=retainer FormID
+;   SeverActions_StewardVisitArrived sender=steward, strArg=retainer FormID
+;   SeverActions_StewardVisitEnd     sender=steward
+; The journey rides the orchestrator with the "stewardvisit" tag, so
+; OnTravelComplete routes the leg's outcome back to native.
+;
+; The posting on arrival is the Final Audit's escort shape: LinkedRef the
+; steward to the RETAINER under WorkAnchorKeyword, then the WorkSandbox
+; package makes them mill about that person. The sandbox is NOT left on while
+; they travel - a sandbox does not chase a moving anchor, which is what
+; stranded the audit's battlemages in the road.
+; =============================================================================
+
+Int Property StewardVisitPriority = 110 AutoReadOnly
+{Above the guard-duty alias pool (105) and the traveler pool (106), so a
+ steward who also holds a person-duty posting still keeps the visit.}
+
+Float Property AuditFollowHandoff = 1000.0 AutoReadOnly
+{Where the Final Audit's walk ends and the follow package takes over. Mirrors
+ VentureMonitor::kAuditFollowHandoff - keep the two in step. Deliberately much
+ wider than ArrivalDistance: route steering is coarse, and the final approach
+ wants the follow package's own beeline at the player.}
 
 ; =============================================================================
 ; TRACKING STATE
@@ -101,7 +151,6 @@ Int Property TRAVEL_OPTIONS_LONGRANGE = 12 AutoReadOnly
 ;   State  0=empty 1=traveling 2=waiting
 ;   Sandbox override (e.g. SeversHearth's CampSandboxPackage); None = default SandboxPackage.
 
-; GetSlotState is the existing public accessor (further down) — reused, not duplicated.
 Function SetSlotState(Int s, Int v)
     StorageUtil.SetIntValue(None, "SeverTravel_SlotState_" + s, v)
 EndFunction
@@ -167,22 +216,33 @@ Event OnInit()
     InitializeSlotArrays()
     RegisterEvents()
     RegisterSpeedPackages()
-    RegisterForSingleUpdate(UpdateInterval)
+    ChronoArm(UpdateInterval)
 EndEvent
 
-Event OnPlayerLoadGame()
-    DebugMsg("OnPlayerLoadGame")
+Function OnGameLoaded()
+    {Load-time recovery. Called by SeverActions_Init.RunLoadRecovery() on
+     every load — Quest scripts NEVER receive OnPlayerLoadGame, so this must
+     be a called function, not an event handler: an OnPlayerLoadGame here
+     would never fire, leaving in-flight travelers unrecovered (orphan-cleaned
+     ~5s after load) and the ambush save/load teardown skipped.}
+    DebugMsg("OnGameLoaded")
 
     ; Slot state is StorageUtil-backed now — no member arrays to initialize/heal.
     RegisterEvents()
     RegisterSpeedPackages()
     RecoverExistingTravelers()
+    ; Belt for the ForceClear ModEvent's load-order race: the native load
+    ; sweep can ask for clears BEFORE RegisterEvents above re-armed the
+    ; listener (the VM is saturated for 30-60s after load on heavy lists),
+    ; so also sweep the pool directly - any seated actor with NO live
+    ; journey gets a vanilla Clear() right here.
+    SweepStalePoolSeats()
     ; A standoff that was live when this save was made can't survive a reload (the
     ; native ambush-thug set is in-memory only), so tear it down cleanly instead of
     ; stranding the player with unresolvable neutral thugs.
     AbandonAmbushOnLoad()
-    RegisterForSingleUpdate(UpdateInterval)
-EndEvent
+    ChronoArm(UpdateInterval)
+EndFunction
 
 Function RegisterEvents()
     ; Orchestrator completion + PrismaUI controls. All ModEvent-based —
@@ -190,10 +250,183 @@ Function RegisterEvents()
     RegisterForModEvent("SeverActions_TravelComplete", "OnTravelComplete")
     RegisterForModEvent("SeverActions_PrismaClearTravel", "OnPrismaClearTravel")
     RegisterForModEvent("SeverActions_PrismaResetTravel", "OnPrismaResetTravel")
+    RegisterForModEvent("SeverActions_PrismaStripTravel", "OnPrismaStripTravel")
     ; Non-pausing travel popup → player-confirmed destination starts the trip.
     RegisterForModEvent("SeverActions_TravelPromptResult", "OnTravelPromptResult")
+    ; Traveler map markers — native fires these per Traveler_NN pool slot
+    ; (claimed on a verified alias fill + re-fired by the load sweep;
+    ; released when the journey ends). Registered here so BOTH init paths
+    ; cover them: OnInit and OnGameLoaded each call RegisterEvents().
+    ; Grep-verified unique event names (one ModEvent name per quest FORM —
+    ; a sibling script registering the same name would be silently dead).
+    RegisterForModEvent("SeverActions_TravelSlotClaimed", "OnTravelSlotClaimed")
+    RegisterForModEvent("SeverActions_TravelSlotReleased", "OnTravelSlotReleased")
+    RegisterForModEvent("SeverActions_TravelMarkersToggle", "OnTravelMarkersToggle")
+    RegisterForModEvent("SeverActions_TravelAliasForceClear", "OnTravelAliasForceClear")
+    ; Steward visits — grep-verified unique names (one ModEvent name per quest
+    ; FORM: a sibling script registering any of these would be silently dead).
+    RegisterForModEvent("SeverActions_StewardVisitTravel", "OnStewardVisitTravel")
+    RegisterForModEvent("SeverActions_StewardVisitArrived", "OnStewardVisitArrived")
+    RegisterForModEvent("SeverActions_StewardVisitEnd", "OnStewardVisitEnd")
+    ; The Final Audit walks to the player now. Travel lives here; the audit's
+    ; own package work stays in SeverActions_Currency.
+    RegisterForModEvent("SeverActions_FinalAuditTravel", "OnFinalAuditTravel")
+    RegisterForModEvent("SeverActions_FinalAuditTravelAbort", "OnFinalAuditTravelAbort")
     EnsureCourierEvents()
 EndFunction
+
+; =============================================================================
+; TRAVELER POOL (Traveler_NN) — pre-flight teardown, map markers, seat sweep
+; =============================================================================
+
+Function DisengageOverridesForTravel(Actor akNPC, String asTag)
+    {Free the traveler from anything that fights the travel package BEFORE the
+     journey starts (the Rin cooking-pot loop, 2026-08-09): a traveler bound to
+     furniture never yields to the travel package - the StuckDetector leapfrogs
+     them forward and the furniture pull walks them straight back, forever.
+     The furniture teardown clears SA's override + linked ref and fires
+     IdleForceDefaultState (which also unsticks vanilla/sandbox seating); the
+     craft cancel drops the CraftAtForge override the same way (TermCancelled
+     runs the usual cleanup). The NEXT override class that fights travel gets
+     added HERE, once - both travel entry points call this.}
+    If SeverActions_Furniture.StopUsingFurniture_Global_IsEligible(akNPC)
+        DebugMsg(asTag + ": standing " + akNPC.GetDisplayName() + " up from furniture before travel")
+        SeverActions_Furniture.StopUsingFurniture_Global_Execute(akNPC)
+    EndIf
+    If SeverActionsNativeExt2.Craft_CancelByActor(akNPC) > 0
+        DebugMsg(asTag + ": cancelled in-flight crafting for " + akNPC.GetDisplayName() + " before travel")
+    EndIf
+EndFunction
+
+Quest Function GetTravelPoolQuest()
+    {The 24-alias traveler pool quest SeverActions_TravelQuest — resolved by
+     FormID (never EditorID; VR strips runtime EditorIDs).}
+    Return Game.GetFormFromFile(0x0016AC00, "SeverActions.esp") as Quest
+EndFunction
+
+Function SweepStalePoolSeats()
+    {Load-recovery belt (Irileth field report, 2026-08-09): free any actor
+     seated in a Traveler_NN alias with no live journey behind it. The
+     engine-thunk empty does not take for us, and the ForceClear ModEvent
+     can race this script's registration on load - a direct VM sweep is the
+     one path with no ordering dependency. Clear() is the vanilla teardown.}
+    Quest pool = GetTravelPoolQuest()
+    If pool == None
+        Return
+    EndIf
+    Int slot = 0
+    While slot < 24
+        ReferenceAlias ra = pool.GetAlias(slot) as ReferenceAlias
+        If ra != None
+            Actor held = ra.GetActorReference()
+            If held != None && !SeverActionsNativeExt2.Travel_IsTravelingByActor(held)
+                ra.Clear()
+                held.EvaluatePackage()
+                Debug.Trace("[SeverActions_Travel] Load sweep freed stale pool slot " + slot + " (" + held.GetDisplayName() + ")")
+            EndIf
+        EndIf
+        slot += 1
+    EndWhile
+EndFunction
+
+Event OnTravelSlotClaimed(String eventName, String strArg, Float numArg, Form sender)
+    {A traveler was seated in pool slot numArg (0-23). Display that slot's
+     objective — objective index is slot + 1 (QOBJ 1..24; vanilla never uses
+     index 0). abForce=true re-shows the HUD line for a fresh journey after
+     an earlier display/undisplay cycle on the same slot.}
+    If !TravelMapMarkersEnabled
+        Return
+    EndIf
+    Int slot = numArg as Int
+    If slot < 0 || slot > 23
+        Return
+    EndIf
+    Quest pool = GetTravelPoolQuest()
+    If pool == None
+        Return
+    EndIf
+    pool.SetObjectiveDisplayed(slot + 1, true, true)
+EndEvent
+
+Event OnTravelAliasForceClear(String eventName, String strArg, Float numArg, Form sender)
+    {Native asked us to empty pool slot numArg via the VM: the engine-thunk
+     null path (ForceRefIntoAlias) does not actually clear for us (Irileth
+     field report, 2026-08-09 - an actor stayed pinned in her Traveler alias
+     through 8 retries AND a quest bounce). ReferenceAlias.Clear() is the
+     vanilla-sanctioned teardown and works where the thunk does not. sender
+     is the actor the native EXPECTS in the slot - if someone else holds it
+     now, a newer journey displaced the release and the slot is not ours.}
+    Int slot = numArg as Int
+    If slot < 0 || slot > 23
+        Return
+    EndIf
+    Quest pool = GetTravelPoolQuest()
+    If pool == None
+        Return
+    EndIf
+    ReferenceAlias ra = pool.GetAlias(slot) as ReferenceAlias
+    If ra == None
+        Return
+    EndIf
+    Actor held = ra.GetActorReference()
+    If held == None
+        Return ; already empty - the native retry will read that back
+    EndIf
+    Actor expected = sender as Actor
+    If expected != None && held != expected
+        Return ; displaced by a newer journey - not ours to clear
+    EndIf
+    ra.Clear()
+    held.EvaluatePackage()
+    Debug.Trace("[SeverActions_Travel] Force-cleared travel pool slot " + slot + " via Papyrus Clear (" + held.GetDisplayName() + ")")
+EndEvent
+
+Event OnTravelSlotReleased(String eventName, String strArg, Float numArg, Form sender)
+    {Pool slot numArg's journey is over (arrived, cancelled, aborted — or the
+     alias refused to empty; the marker comes down either way). Deliberately
+     NOT gated on TravelMapMarkersEnabled so toggling the setting off mid-
+     journey can never strand a stale marker.}
+    Int slot = numArg as Int
+    If slot < 0 || slot > 23
+        Return
+    EndIf
+    Quest pool = GetTravelPoolQuest()
+    If pool == None
+        Return
+    EndIf
+    pool.SetObjectiveDisplayed(slot + 1, false)
+EndEvent
+
+Event OnTravelMarkersToggle(String eventName, String strArg, Float numArg, Form sender)
+    {PrismaUI Settings toggle for traveler quest-objective markers. With
+     ambient NPCs now picking TravelToPlace on their own, a journal entry
+     pinpointing every random traveler is clutter (field request 2026-08-08).
+     Disabling ALSO takes down every currently-displayed marker immediately —
+     the per-slot release handler stays as the steady-state cleanup, but the
+     user should not wait out in-flight journeys to get a clean journal.}
+    TravelMapMarkersEnabled = (numArg as Int) == 1
+    If !TravelMapMarkersEnabled
+        Quest pool = GetTravelPoolQuest()
+        If pool != None
+            Int i = 1
+            While i <= 24
+                pool.SetObjectiveDisplayed(i, false)
+                i += 1
+            EndWhile
+        EndIf
+    EndIf
+    Debug.Trace("[SeverActions_Travel] traveler map markers " + TravelMapMarkersEnabled)
+EndEvent
+
+Event OnVentureDeparted(String eventName, String strArg, Float numArg, Form sender)
+    {A retainer left the player's service (deserted, quit over terms, or escaped).
+     strArg is the ready-made line; sender is the ex-retainer. Their venture entry
+     stays cosaved so the sever_former_retainer decorator can tell them WHY when
+     the player next speaks to them - and so a deserter can be taken back on.}
+    If strArg != ""
+        Debug.Notification(strArg)
+    EndIf
+EndEvent
 
 Function EnsureCourierEvents()
     {Idempotent registration for the Enterprises courier events. Exposed so a
@@ -201,8 +434,17 @@ Function EnsureCourierEvents()
      saves where this quest's OnPlayerLoadGame didn't re-fire.}
     RegisterForModEvent("SeverActions_VentureLetter", "OnVentureLetter")
     RegisterForModEvent("SeverActions_VentureAmbush", "OnVentureAmbush")
+    ; Someone left the player's service. The weekly settle runs off-screen, so
+    ; without this the only sign was a faded card next time they opened the
+    ; board. C++ has no notification primitive - this is the Papyrus half.
+    RegisterForModEvent("SeverActions_VentureDeparted", "OnVentureDeparted")
     ; Shared with the arrest flow — both gate on their own active state.
-    RegisterForModEvent("SeverActions_PersuasionFailed", "OnAmbushPersuasionFailed")
+    ; SHARED with SeverActions_ArrestPlayer: all SA scripts live on one quest
+    ; form and SKSE keeps ONE callback per (form, event) - two different
+    ; callback names meant one listener was silently dead (audit H3). Both
+    ; scripts now register the SAME callback name; name-dispatch reaches both
+    ; handlers and each gates on its own active state.
+    RegisterForModEvent("SeverActions_PersuasionFailed", "OnPersuasionFailedEvent")
     ; A standoff thug entered combat by ANY path (incl. the generic AttackTarget) —
     ; normalize the whole pack to a real fight so the player's follower can hit them.
     RegisterForModEvent("SeverActions_VentureThugCombat", "OnVentureThugCombat")
@@ -216,10 +458,10 @@ Event OnVentureLetter(string eventName, string strArg, float numArg, Form sender
     If retainer == None
         Return
     EndIf
-    String subj   = SeverActionsNativeExt.Venture_LetterSubject(retainer)
-    String body   = SeverActionsNativeExt.Venture_LetterBody(retainer)
-    String reason = SeverActionsNativeExt.Venture_LetterReason(retainer)
-    SeverActionsNativeExt.Venture_ClearLetter(retainer)
+    String subj   = SeverActionsNativeExt2.Venture_LetterSubject(retainer)
+    String body   = SeverActionsNativeExt2.Venture_LetterBody(retainer)
+    String reason = SeverActionsNativeExt2.Venture_LetterReason(retainer)
+    SeverActionsNativeExt2.Venture_ClearLetter(retainer)
     If body != ""
         DispatchCourier(retainer, subj, body, reason)
     EndIf
@@ -271,7 +513,7 @@ Event OnVentureAmbush(string eventName, string strArg, float numArg, Form sender
     ; (Bandit War's rebalance is fine). PlaceAtMe on a LeveledCharacter spawns a
     ; concrete actor.
     Form thugList = Game.GetForm(0x0003DECD)
-    If thugList == None
+    If !thugList  ; not '== None' - the None-compare logs a cosmetic cast error
         Debug.Trace("[SeverActions] OnVentureAmbush: thug leveled list missing")
         Return
     EndIf
@@ -280,9 +522,9 @@ Event OnVentureAmbush(string eventName, string strArg, float numArg, Form sender
     String subj = ""
     String body = ""
     If deserter != None
-        subj = SeverActionsNativeExt.Venture_LetterSubject(deserter)
-        body = SeverActionsNativeExt.Venture_LetterBody(deserter)
-        SeverActionsNativeExt.Venture_ClearLetter(deserter)
+        subj = SeverActionsNativeExt2.Venture_LetterSubject(deserter)
+        body = SeverActionsNativeExt2.Venture_LetterBody(deserter)
+        SeverActionsNativeExt2.Venture_ClearLetter(deserter)
     EndIf
     ; Stash it; it gets handed to the first-arriving thug when the standoff opens.
     AmbushLetterSubj = subj
@@ -300,8 +542,39 @@ Event OnVentureAmbush(string eventName, string strArg, float numArg, Form sender
     ; them mid-parley. They only become hostile again on ResolveAmbushCombat.
     Faction banditFaction = GetBanditFaction()
     Faction bladeFaction = GetHiredBladeFaction()
+
+    ; v15: a HOSTILE ex-retainer leads their own ambush. The native passes their
+    ; FormID as a signed-decimal strArg ("" = hired blades only). They take slot
+    ; 0 — they ARE the wronged party, so they lead the parley (AmbushLead =
+    ; AmbushThugs[0]) and carry their own letter. Neutral-converted like the
+    ; blades so the standoff can talk before it swings; every resolve path
+    ; (stand-off walk-off, combat, teardown) already treats slot members
+    ; uniformly, so no special casing downstream.
+    Actor leader = None
+    If strArg != ""
+        Int leaderFid = strArg as Int
+        If leaderFid != 0
+            leader = Game.GetFormEx(leaderFid) as Actor
+        EndIf
+    EndIf
+
     AmbushThugs = new Actor[5]
     Int n = 0
+    If leader != None && !leader.IsDead() && !leader.IsDisabled()
+        leader.StopCombat()
+        leader.SetActorValue("Aggression", 0)
+        If bladeFaction != None
+            leader.AddToFaction(bladeFaction)
+        EndIf
+        If fromAfar
+            leader.MoveTo(player, 2800.0 * Math.Cos(baseAng), 2800.0 * Math.Sin(baseAng), 0.0)
+        Else
+            leader.MoveTo(player, 220.0, 0.0, 0.0)
+        EndIf
+        AmbushThugs[0] = leader
+        n = 1
+        Debug.Trace("[SeverActions] OnVentureAmbush: hostile ex-retainer " + leader + " leads the ambush")
+    EndIf
     Int i = 0
     While i < count && n < 5
         ObjectReference ref = player.PlaceAtMe(thugList, 1)
@@ -355,14 +628,28 @@ Event OnVentureAmbush(string eventName, string strArg, float numArg, Form sender
             Actor t = AmbushThugs[k]
             If t
                 SeverActionsNative.LinkedRef_Set(t, player, TravelTargetKeyword)
+                ; Register with OrphanCleanup or its ~5s scan sees the travel
+                ; LinkedRef with no registry entry and strips the jog mid-
+                ; approach (the pack froze off-screen and only the 12s
+                ; standoff fallback masked it). Unregistered again when the
+                ; approach resolves (BeginAmbushStandoff / StripThugPackages).
+                SeverActionsNative.OrphanCleanup_RegisterTraveler(t)
                 If jog != None
-                    ActorUtil.AddPackageOverride(t, jog, TravelPackagePriority, 1)
+                    ; A hostile leader is a schedule-managed NPC: their prio-110
+                    ; work package would beat the standard prio-100 jog, so their
+                    ; override goes in above it. Removal is by package identity
+                    ; (StripThugPackages), so the higher priority strips clean.
+                    Int prio = TravelPackagePriority
+                    If t == leader
+                        prio = TravelPackagePriority + 20
+                    EndIf
+                    ActorUtil.AddPackageOverride(t, jog, prio, 1)
                 EndIf
                 t.EvaluatePackage()
             EndIf
             k += 1
         EndWhile
-        RegisterForSingleUpdate(1.0)   ; poll for arrival
+        ChronoArm(1.0)   ; poll for arrival
         Debug.Trace("[SeverActions] OnVentureAmbush: " + n + " thugs closing in from off-screen (deserter " + deserter + ")")
     Else
         BeginAmbushStandoff()
@@ -471,10 +758,12 @@ Function BeginAmbushStandoff()
                 ActorUtil.RemovePackageOverride(t, jog)
             EndIf
             SeverActionsNative.LinkedRef_Clear(t, TravelTargetKeyword)
+            ; Approach leg over — pair with the RegisterTraveler at dispatch.
+            SeverActionsNative.OrphanCleanup_UnregisterTraveler(t)
             SkyrimNetApi.RegisterPackage(t, "FollowPlayer", 100, 0, true)
             t.EvaluatePackage()
-            SeverActionsNativeExt.Venture_RegisterAmbushThug(t)        ; gates the standoff actions
-            SeverActionsNativeExt.Venture_StageThugDirective(t, AmbushDeserter)  ; hold/parley bias
+            SeverActionsNativeExt2.Venture_RegisterAmbushThug(t)        ; gates the standoff actions
+            SeverActionsNativeExt2.Venture_StageThugDirective(t, AmbushDeserter)  ; hold/parley bias
         EndIf
         i += 1
     EndWhile
@@ -483,7 +772,11 @@ Function BeginAmbushStandoff()
     ; first-arriver, promoted in CheckAmbushApproach) - so the thug who speaks is
     ; the one carrying the letter naming who sent them.
     If AmbushLead != None && AmbushLetterBody != ""
-        SeverActionsNativeExt.Letter_DeliverToCourier(AmbushDeserter, AmbushLead, AmbushLetterSubj, AmbushLetterBody, "thug")
+        String desertNm = ""
+        If AmbushDeserter
+            desertNm = AmbushDeserter.GetDisplayName()
+        EndIf
+        SeverActionsNativeExt.Letter_DeliverToCourier(AmbushDeserter, AmbushLead, AmbushLetterSubj, AmbushLetterBody, "thug", desertNm)
         AmbushLetterSubj = ""
         AmbushLetterBody = ""
     EndIf
@@ -493,7 +786,7 @@ Function BeginAmbushStandoff()
     ; dual-package AI flicker the FollowerManager warns about. FollowPlayer keeps
     ; the lead on the player; the taunt below fires via DirectNarration regardless
     ; of which package is running.
-    String taunt = SeverActionsNativeExt.Venture_AmbushTaunt(AmbushDeserter)
+    String taunt = SeverActionsNativeExt2.Venture_AmbushTaunt(AmbushDeserter)
     If taunt != "" && AmbushLead != None
         SkyrimNetApi.DirectNarration(taunt, AmbushLead, player)
     EndIf
@@ -533,6 +826,9 @@ Function StripThugPackages(Actor t)
         ActorUtil.RemovePackageOverride(t, jog)
     EndIf
     SeverActionsNative.LinkedRef_Clear(t, TravelTargetKeyword)
+    ; Drop any orphan-registry entry from the approach/walk-off legs — the
+    ; travel link is gone, so the scanner has nothing left to police.
+    SeverActionsNative.OrphanCleanup_UnregisterTraveler(t)
     SkyrimNetApi.UnregisterPackage(t, "TalkToPlayer")
     SkyrimNetApi.UnregisterPackage(t, "FollowPlayer")
 EndFunction
@@ -545,6 +841,7 @@ Function ThugStandDown_Execute(Actor akActor)
     If !AmbushActive
         Return
     EndIf
+    MarkKidnapSteelSpent()
     Actor player = Game.GetPlayer()
     SeverActionsNative.Native_Persuasion_End()
 
@@ -590,16 +887,71 @@ Function ThugStandDown_Execute(Actor akActor)
                 ; Walk to the waypoint via the SA travel package (linked-ref target,
                 ; same mechanism couriers use). Non-blocking; they jog off and leave.
                 SeverActionsNative.LinkedRef_Set(t, awayMarker, TravelTargetKeyword)
+                ; Registered or the orphan scan strips the walk-off package a
+                ; few steps out (they froze in place forever); the departing
+                ; list below despawns them once they're genuinely gone —
+                ; nothing else ever cleaned up these spawns.
+                SeverActionsNative.OrphanCleanup_RegisterTraveler(t)
                 ActorUtil.AddPackageOverride(t, leavePkg, TravelPackagePriority, 1)
             EndIf
+            StorageUtil.FormListAdd(self, "SeverTravel_DepartingThugs", t, false)
             t.EvaluatePackage()
         EndIf
         i += 1
     EndWhile
+    StorageUtil.SetFloatValue(self, "SeverTravel_ThugDepartStart", Utility.GetCurrentRealTime())
     ; Reset bookkeeping ONLY — do NOT call ClearAmbushState here, it would strip
     ; the walk-off package we just applied.
     ResetAmbushBookkeeping()
+    ChronoArm(UpdateInterval)   ; keep the loop alive for the despawn poll
     Debug.Trace("[SeverActions] Ambush: thugs stood down and walked off")
+EndFunction
+
+Function ProcessDepartingThugs()
+    {Despawn walked-off ambush thugs once they're genuinely gone. We spawned
+     them (PlaceAtMe) and nothing else owns them — without this they persisted
+     forever as neutral, cowardly bandits loitering wherever the walk-off
+     package stranded them. Dead thugs are left as lootable corpses.}
+    Int count = StorageUtil.FormListCount(self, "SeverTravel_DepartingThugs")
+    If count == 0
+        Return
+    EndIf
+    Float started = StorageUtil.GetFloatValue(self, "SeverTravel_ThugDepartStart", 0.0)
+    Float elapsed = Utility.GetCurrentRealTime() - started
+    If elapsed < 0.0
+        ; GetCurrentRealTime resets per app session — a deadline saved last
+        ; session reads as negative now. Re-baseline instead of waiting forever.
+        StorageUtil.SetFloatValue(self, "SeverTravel_ThugDepartStart", Utility.GetCurrentRealTime())
+        elapsed = 0.0
+    EndIf
+    Actor player = Game.GetPlayer()
+    Int i = count - 1
+    While i >= 0
+        Actor t = StorageUtil.FormListGet(self, "SeverTravel_DepartingThugs", i) as Actor
+        Bool gone = (t == None) || t.IsDead()
+        If !gone
+            ; Grace period so they visibly walk away first, then despawn once
+            ; out of sight (unloaded or far). The hard cap despawns a
+            ; navmesh-stuck thug regardless so the list can't wedge.
+            Bool outOfSight = !t.Is3DLoaded()
+            If !outOfSight && player != None
+                outOfSight = t.GetDistance(player as ObjectReference) > 3500.0
+            EndIf
+            If (elapsed >= 20.0 && outOfSight) || elapsed >= 300.0
+                SeverActionsNative.OrphanCleanup_UnregisterTraveler(t)
+                t.Disable()
+                t.Delete()
+                gone = True
+            EndIf
+        EndIf
+        If gone
+            StorageUtil.FormListRemoveAt(self, "SeverTravel_DepartingThugs", i)
+        EndIf
+        i -= 1
+    EndWhile
+    If StorageUtil.FormListCount(self, "SeverTravel_DepartingThugs") == 0
+        StorageUtil.UnsetFloatValue(self, "SeverTravel_ThugDepartStart")
+    EndIf
 EndFunction
 
 Function ThugAttack_Execute(Actor akActor)
@@ -611,7 +963,7 @@ Function ThugAttack_Execute(Actor akActor)
     Debug.Trace("[SeverActions] Ambush: thugs attack (rejected)")
 EndFunction
 
-Event OnAmbushPersuasionFailed(String asEventName, String asReason, Float afUnused, Form akSender)
+Event OnPersuasionFailedEvent(String asEventName, String asReason, Float afUnused, Form akSender)
     {Shared SeverActions_PersuasionFailed ModEvent (the arrest flow uses it too).
      Only act when WE have a live ambush — the player drew a weapon, fled, or the
      window timed out, so the thugs strike.}
@@ -638,6 +990,7 @@ EndEvent
 Function ResolveAmbushCombat()
     {Turn the standoff into a fight: clear the hold packages, go aggressive, engage.
      They stay spawned (real corpses to loot — the lead still carries the letter).}
+    MarkKidnapSteelSpent()
     Actor player = Game.GetPlayer()
     Faction banditFaction = GetBanditFaction()
     Faction bladeFaction = GetHiredBladeFaction()
@@ -665,11 +1018,30 @@ Function ResolveAmbushCombat()
     ResetAmbushBookkeeping()
 EndFunction
 
+Function MarkKidnapSteelSpent()
+    {If this standoff was the hold's hired searchers for a REFUSED ransom,
+     any resolution - a fight (the player kills them) or a stand-down (they
+     walk off empty-handed) - means the hold's steel is SPENT to no effect.
+     Stamp the victim so the kidnap tick can reopen negotiation after the
+     dust settles; the flag also feeds the desperation premium on the next
+     ransom resolve. Venture-grudge ambushes no-op here (their sender is a
+     retainer with no kidnap ransom state).}
+    If AmbushDeserter == None
+        Return
+    EndIf
+    ; 3 = KIDNAP_RANSOM_REFUSED (KidnapStore::RansomState).
+    If SeverActionsNativeExt.Native_Kidnap_GetRansomState(AmbushDeserter) == 3
+        StorageUtil.SetFloatValue(AmbushDeserter, "SA_KidnapSteelSpentGT", Utility.GetCurrentGameTime())
+        StorageUtil.SetIntValue(AmbushDeserter, "SA_KidnapSteelFailed", 1)
+        Debug.Trace("[SeverActions] Ambush: hold steel spent for refused-ransom captive " + AmbushDeserter.GetDisplayName())
+    EndIf
+EndFunction
+
 Function ResetAmbushBookkeeping()
     {Reset the ambush flags + clear the standoff-action eligibility — WITHOUT
      touching packages (callers that just applied a resolve package, e.g. the
      stand-down walk-off, rely on this not stripping it).}
-    SeverActionsNativeExt.Venture_ClearAmbushThugs()
+    SeverActionsNativeExt2.Venture_ClearAmbushThugs()
     AmbushActive = False
     AmbushApproaching = False
     AmbushLead = None
@@ -698,8 +1070,9 @@ EndFunction
 
 Function AbandonAmbushOnLoad()
     {Save/reload safety: the native ambush-thug eligibility set (m_ambushThugs in
-     VentureMonitor) is in-memory only and is EMPTY after a load, so a standoff that
-     was live when the save was made can never be resolved (the standoff actions go
+     VentureMonitor) is transient and is cleared by the SKSE revert callback on
+     every load (VentureMonitor::ResetTransientState), so a standoff that was
+     live when the save was made can never be resolved (the standoff actions go
      ineligible and the combat-enter hook can't recognize the thugs). Rather than
      leave the player trailed by unresolvable neutral thugs forever, tear the
      encounter down on load: strip packages, undo the faction conversion, and
@@ -757,18 +1130,11 @@ EndFunction
 
 Function EnsureReady()
     {Lazy-init guard for the public entry points. OnInit/OnPlayerLoadGame normally
-     set up the slot arrays + event/speed-package registration, but on some existing
-     saves OnPlayerLoadGame doesn't re-fire (stale Papyrus load-event binding),
-     leaving the script uninitialized: slot arrays None ("Cannot access an element
-     of a None array") and the native speed-package / OrphanCleanup-traveler
-     registries empty. Running the same setup on first use makes travel work
-     regardless of whether the load event fired. All idempotent + cheap.}
-    ; Guard EVERY slot array individually (create only the missing ones, preserve
-    ; populated ones). NOT InitializeSlotArrays() — that wipes all 7 fresh, which
-    ; would erase live per-slot data if called mid-travel (e.g. from
-    ; OnTravelComplete). On this class of save, some arrays persist non-None while
-    ; others (added in later script versions) load as None, so a single SlotStates
-    ; check isn't enough — each must be guarded.
+     re-register the ModEvents + native speed packages, but on some existing saves
+     OnPlayerLoadGame doesn't re-fire (stale Papyrus load-event binding), leaving the
+     native speed-package / OrphanCleanup-traveler registries empty. Running the same
+     setup on first use makes travel work regardless of whether the load event fired.
+     All idempotent + cheap.}
     ; Slot state is StorageUtil-backed now (cosave keys) - nothing to allocate or heal here.
     RegisterEvents()
     RegisterSpeedPackages()
@@ -801,12 +1167,25 @@ Function RecoverExistingTravelers()
                 If GetSlotState(i) == 1
                     Int handle = GetSlotHandle(i)
                     If handle > 0 && SeverActionsNativeExt.Travel_IsActive(handle)
-                        Package pkg = SeverActionsNativeExt.Travel_GetSpeedPackage(GetSlotSpeed(i))
-                        If pkg != None
-                            ActorUtil.AddPackageOverride(npc, pkg, TravelPackagePriority, 1)
-                            npc.EvaluatePackage()
-                            DebugMsg("Recovered traveling slot " + i + " (handle=" + handle + ")")
+                        ; plugin.cpp clears the orphan registry at kPostLoadGame
+                        ; ("Papyrus will re-register active travelers") — without
+                        ; this call the 5s OrphanCleanup scan sees the restored
+                        ; travel LinkedRef with an empty registry and strips the
+                        ; package mid-journey. Mirrors Follow.psc's re-register.
+                        SeverActionsNative.OrphanCleanup_RegisterTraveler(npc)
+                        ; Phase 2: the Traveler_NN pool alias re-applies its own
+                        ; package natively on cell load (the whole reason the pool
+                        ; exists), so an aliased traveler needs NO override re-apply
+                        ; here — doing so would re-create the two-package split.
+                        ; Only a pool-exhausted traveler (no alias) gets the override.
+                        If !SeverActionsNativeExt2.Travel_HasAlias(handle)
+                            Package pkg = SeverActionsNativeExt.Travel_GetSpeedPackage(GetSlotSpeed(i))
+                            If pkg != None
+                                ActorUtil.AddPackageOverride(npc, pkg, TravelPackagePriority, 1)
+                                npc.EvaluatePackage()
+                            EndIf
                         EndIf
+                        DebugMsg("Recovered traveling slot " + i + " (handle=" + handle + ")")
                     Else
                         DebugMsg("Slot " + i + " orchestrator handle lost - clearing")
                         ClearSlot(i, false)
@@ -830,13 +1209,17 @@ Function RecoverExistingTravelers()
                     ; Clear any stale real-time greet baseline — see bug #2.
                     StorageUtil.UnsetIntValue(npc, "SeverTravel_Greeted")
                     StorageUtil.UnsetFloatValue(npc, "SeverTravel_GreetTime")
+                    ; Waiting NPCs still hold the travel LinkedRef (cleared only
+                    ; when the wait resolves) — re-register with OrphanCleanup so
+                    ; the post-load scan doesn't strip their sandbox.
+                    SeverActionsNative.OrphanCleanup_RegisterTraveler(npc)
                     DebugMsg("Recovered waiting slot " + i)
                 Else
                     ClearSlot(i, false)
                 EndIf
             Else
-                ; Empty/dead — zero out array entries without invoking ClearSlot
-                ; (alias may already be empty; nothing to remove).
+                ; Empty/dead — zero out the slot's cosave state without invoking
+                ; ClearSlot (alias may already be empty; nothing to remove).
                 SetSlotState(i, 0)
                 SetSlotPlaceName(i, "")
                 SetSlotDest(i, None)
@@ -879,8 +1262,60 @@ Event OnTravelComplete(string eventName, string strArg, float numArg, Form sende
         Return
     EndIf
 
+    ; A hold steward walking out to look in on one of their retainers. Only a
+    ; real arrival posts them; anything else (gave up, timed out, the player
+    ; turned them back from the travel page) drops the visit rather than
+    ; leaving them sandboxing around nobody. Native owns the state either way.
+    If tag == "stewardvisit"
+        Actor stewardNpc = sender as Actor
+        If stewardNpc
+            SeverActionsNativeExt2.Steward_VisitLegDone(stewardNpc, status == "arrived")
+            If status != "arrived"
+                EndStewardVisit(stewardNpc)
+            EndIf
+        EndIf
+        Return
+    EndIf
+
+    ; The Imperial Final Audit walking the player down. Native owns the state
+    ; machine and decides what an arrival means; all this does is clean up the
+    ; journey and report the leg. On a real arrival native fires
+    ; SeverActions_FinalAuditApproach and the follow package closes the last
+    ; stretch; on any failure it stages the detail behind the player instead,
+    ; so the encounter always happens.
+    If tag == "finalaudit"
+        Actor legateNpc = sender as Actor
+        If legateNpc
+            ; The journey is over on EVERY terminal status: stop the orphan
+            ; scanner treating him as a traveler and drop any pool-exhaustion
+            ; fallback override + travel LinkedRef, so nothing competes with
+            ; the follow package native is about to send. Quietly - this
+            ; journey was never announced. (Idempotent with the abort
+            ; handler's identical cleanup.)
+            SeverActionsNative.OrphanCleanup_UnregisterTraveler(legateNpc)
+            ClearTravelPackagesQuietly(legateNpc)
+        EndIf
+        SeverActionsNativeExt2.Venture_Audit_TravelLegDone(status == "arrived")
+        Return
+    EndIf
+
     ; (Thug-ambush arrival is detected by the OnUpdate proximity poll now, not the
     ; orchestrator — see CheckAmbushApproach. No "ambush" tag rides the orchestrator.)
+
+    ; Kidnap legs (kidnap_grab / kidnap_transport) — forward to FollowerManager.
+    ; SKSE keeps ONE ModEvent callback per (form, event), and every SA script
+    ; shares this quest form, so FollowerManager can NOT register its own
+    ; SeverActions_TravelComplete listener (a second RegisterForModEvent for an
+    ; event a sibling script already holds is silently dead — this handler owns
+    ; the registration for the whole quest). Route by tag instead.
+    If StringUtil.GetLength(tag) >= 7 && StringUtil.Substring(tag, 0, 7) == "kidnap_"
+        SeverActions_FollowerManager fmKidnap = (Self as Quest) as SeverActions_FollowerManager
+        Actor kidnapNpc = sender as Actor
+        If fmKidnap && kidnapNpc
+            fmKidnap.HandleKidnapTravelComplete(kidnapNpc, tag, status)
+        EndIf
+        Return
+    EndIf
 
     If StringUtil.GetLength(tag) < 6 || StringUtil.Substring(tag, 0, 5) != "slot_"
         Return  ; Not one of ours — Arrest or future callers use different tags.
@@ -890,10 +1325,8 @@ Event OnTravelComplete(string eventName, string strArg, float numArg, Form sende
         Return
     EndIf
 
-    ; The completion event can fire on a save where the slot arrays loaded as
-    ; None (OnPlayerLoadGame didn't run). Ensure they exist before any indexing
-    ; below / in OnArrived. EnsureReady preserves populated arrays, so this does
-    ; NOT wipe the in-flight slot data.
+    ; EnsureReady(): re-arm event + speed-package registration in case the load
+    ; path never ran on this save (idempotent; touches no in-flight slot data).
     EnsureReady()
 
     Actor npc = sender as Actor
@@ -909,7 +1342,17 @@ Event OnTravelComplete(string eventName, string strArg, float numArg, Form sende
             ClearSlot(slot, true)
         EndIf
     ElseIf status == "cancelled"
-        ; CancelTravel/CancelAllTravel path already cleared the slot — nothing to do.
+        ; Two cancel paths reach here and only ONE pre-clears the slot:
+        ;  - Papyrus CancelTravel/CancelAllTravel -> ClearSlot THEN Travel_Cancel
+        ;    -> this event. Slot already empty; ClearSlot below is a no-op.
+        ;  - Native "Turn back" (PrismaUI travel page -> cancelJourney ->
+        ;    CancelByActor -> Cancel -> FireCompletionEvent) NEVER runs ClearSlot;
+        ;    it only releases the Traveler_NN pool alias. The legacy slot's
+        ;    package override + LinkedRef would survive and the actor keeps
+        ;    walking (the "turn back does nothing" field report).
+        ; ClearSlot is idempotent — on the already-cleared path the alias holds
+        ; no actor, so it skips the package/follower work (no double restore).
+        ClearSlot(slot, true)
     Else
         ; aborted | gaveup | timedout — terminal failure, restore follower.
         String npcName = "Traveler"
@@ -936,6 +1379,64 @@ Event OnPrismaResetTravel(string eventName, string strArg, float numArg, Form se
     CancelAllTravel()
 EndEvent
 
+Event OnPrismaStripTravel(string eventName, string strArg, float numArg, Form sender)
+    {PrismaUI: strip a STRAY SeverActions travel package from an NPC the
+     Travel tab's ground-truth scan surfaced (override present, no live
+     orchestrator entry - a leak from an old save or a lost completion
+     event; the SnS "SeverTravelToActionWalk forever" field report).
+     Sender = the actor.}
+    Actor npc = sender as Actor
+    If npc
+        StripStrayTravelPackages(npc)
+    EndIf
+EndEvent
+
+Function StripStrayTravelPackages(Actor akNPC)
+    {Remove EVERY travel-family package override this mod has ever applied:
+     the current SeverTravelToAction* family (resolved by FormID exactly
+     like RegisterSpeedPackages, so stale CK property fills cannot miss)
+     plus the CK-filled legacy properties. RemovePackageOverride is a safe
+     no-op for packages the actor never held. Also ends any hidden
+     orchestrator session and clears the travel LinkedRef so nothing is
+     left for OrphanCleanup to chase. The NPC returns to their own AI.}
+    If !akNPC
+        Return
+    EndIf
+    EnsureReady()
+    Package p = Game.GetFormFromFile(0x07C068, "SeverActions.esp") as Package  ; SeverTravelToActionWalk
+    If p
+        ActorUtil.RemovePackageOverride(akNPC, p)
+    EndIf
+    p = Game.GetFormFromFile(0x07C069, "SeverActions.esp") as Package          ; SeverTravelToActionJog
+    If p
+        ActorUtil.RemovePackageOverride(akNPC, p)
+    EndIf
+    p = Game.GetFormFromFile(0x076F60, "SeverActions.esp") as Package          ; SeverTravelToAction (run)
+    If p
+        ActorUtil.RemovePackageOverride(akNPC, p)
+    EndIf
+    ; Legacy family / CK-property fills (old saves carried these).
+    If TravelPackage
+        ActorUtil.RemovePackageOverride(akNPC, TravelPackage)
+    EndIf
+    If TravelPackageWalk
+        ActorUtil.RemovePackageOverride(akNPC, TravelPackageWalk)
+    EndIf
+    If TravelPackageJog
+        ActorUtil.RemovePackageOverride(akNPC, TravelPackageJog)
+    EndIf
+    If TravelPackageRun
+        ActorUtil.RemovePackageOverride(akNPC, TravelPackageRun)
+    EndIf
+    ; End a hidden orchestrator session if one somehow exists (safe no-op),
+    ; and drop the travel LinkedRef the package steered by.
+    SeverActionsNativeExt.Travel_CancelByActor(akNPC)
+    SeverActionsNative.LinkedRef_Clear(akNPC, TravelTargetKeyword)
+    akNPC.EvaluatePackage()
+    NotifyPlayer(akNPC.GetDisplayName() + " is released from their travel package.")
+    Debug.Trace("[SeverActions_Travel] StripStrayTravelPackages: cleared " + akNPC.GetDisplayName())
+EndFunction
+
 ; =============================================================================
 ; COURIER — letter delivery NPC (Enterprises Phase 3)
 ;
@@ -946,41 +1447,118 @@ EndEvent
 ; moving/interrupted delivery never loses the text.
 ; =============================================================================
 
+; Single-courier rule (field report 2026-08-09: TEN couriers surrounding the
+; player after a settle week). At most ONE courier exists at a time, and at
+; most one per CourierMinIntervalDays; every letter QUEUES, the courier
+; ceremonially hands over the first and delivers the WHOLE queue on arrival
+; (the week's mailbag). Urgent letters (ransom) bypass the cooldown, never
+; the one-at-a-time rule.
+Float Property CourierMinIntervalDays = 7.0 Auto Hidden
+{Minimum game days between courier dispatches. 7 = one courier per week.}
+
 Int Function DispatchCourier(Actor akSender, String asSubject, String asBody, String asReason)
-    {Dispatch a courier to bring the player a letter. Short walk-up in the open;
-     an at-your-side handoff indoors (cramped navmesh strands walkers). Returns
-     1 on dispatch, 0 on failure.}
+    {Queue a letter for courier delivery. The actual dispatch is gated by
+     TryDispatchQueuedCourier (single courier, weekly cooldown, outdoors only)
+     — callers never spawn couriers directly anymore. Returns 1 on queue, 0
+     on bad args.}
     EnsureReady()
     Actor player = Game.GetPlayer()
     If player == None || asBody == ""
         Return 0
     EndIf
+    QueueCourierLetter(akSender, asSubject, asBody, asReason)
+    ChronoArm(UpdateInterval)  ; keep the queue poll alive
+    TryDispatchQueuedCourier()
+    Return 1
+EndFunction
 
-    ; Spawn well out in the exterior so the courier actually travels in, rather
-    ; than popping up next to the player. Indoors there's no room for that, so
-    ; fall back to an at-side handoff.
-    Float spawnDist = 3000.0
-    Bool atSide = player.IsInInterior()
-    If atSide
-        spawnDist = 0.0
+Bool Function ActiveCourierLive()
+    {Is a dispatched courier still on the job? Frees the lock when the courier
+     died, got deleted, or has been unloaded-and-silent for over 6 game hours
+     (native despawn ate them without a delivery).}
+    Actor c = StorageUtil.GetFormValue(self, "SeverTravel_ActiveCourier") as Actor
+    If c == None
+        Return false
+    EndIf
+    Bool stale = (!c.Is3DLoaded()) && \
+        (Utility.GetCurrentGameTime() - StorageUtil.GetFloatValue(self, "SeverTravel_ActiveCourierGT", 0.0)) > 0.25
+    If c.IsDead() || c.IsDeleted() || stale
+        StorageUtil.UnsetFormValue(self, "SeverTravel_ActiveCourier")
+        Return false
+    EndIf
+    Return true
+EndFunction
+
+Bool Function QueueHasUrgent()
+    Int i = 0
+    Int n = StorageUtil.StringListCount(self, "SeverTravel_CourierQ_Reason")
+    While i < n
+        If StorageUtil.StringListGet(self, "SeverTravel_CourierQ_Reason", i) == "ransom"
+            Return true
+        EndIf
+        i += 1
+    EndWhile
+    Return false
+EndFunction
+
+Bool Function TryDispatchQueuedCourier()
+    {Gatekeeper for every courier spawn. Pops the FIRST queued letter onto the
+     courier (the ceremonial handoff item); the REST stay queued and are handed
+     over together at delivery — a lost courier costs at most one letter,
+     exactly like the old single-letter flow. Returns true when a courier was
+     dispatched.}
+    If StorageUtil.StringListCount(self, "SeverTravel_CourierQ_Body") == 0
+        Return false
+    EndIf
+    Actor player = Game.GetPlayer()
+    If player == None || player.IsInInterior() || CourierBlockedWorldspace(player)
+        Return false
+    EndIf
+    If ActiveCourierLive()
+        Return false   ; their arrival hands over the whole queue anyway
+    EndIf
+    Float nowGT = Utility.GetCurrentGameTime()
+    If nowGT - StorageUtil.GetFloatValue(self, "SeverTravel_LastCourierGT", -100.0) < CourierMinIntervalDays && !QueueHasUrgent()
+        Return false   ; one courier per week at the maximum (urgent bypasses)
     EndIf
 
+    ; Read (don't pop yet — pop only after a successful spawn) letter 0.
+    Actor akSender = Game.GetFormEx(StorageUtil.StringListGet(self, "SeverTravel_CourierQ_SenderFid", 0) as Int) as Actor
+    String asSubject = StorageUtil.StringListGet(self, "SeverTravel_CourierQ_Subject", 0)
+    String asBody    = StorageUtil.StringListGet(self, "SeverTravel_CourierQ_Body", 0)
+    String asReason  = StorageUtil.StringListGet(self, "SeverTravel_CourierQ_Reason", 0)
+    String senderNm  = StorageUtil.StringListGet(self, "SeverTravel_CourierQ_SenderName", 0)
+    If senderNm == "" && akSender != None
+        senderNm = akSender.GetDisplayName()
+    EndIf
+
+    ; Spawn well out in the exterior so the courier actually travels in,
+    ; rather than popping up next to the player.
+    Float spawnDist = 3000.0
     Actor courier = SeverActionsNativeExt.Courier_Spawn(player, spawnDist)
     If courier == None
-        DebugMsg("DispatchCourier: spawn failed")
-        Return 0
+        DebugMsg("TryDispatchQueuedCourier: spawn failed - letters stay queued")
+        Return false
     EndIf
+    StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_SenderFid", 0)
+    StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_Subject", 0)
+    StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_Body", 0)
+    StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_Reason", 0)
+    StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_SenderName", 0)
+    StorageUtil.SetFormValue(self, "SeverTravel_ActiveCourier", courier)
+    StorageUtil.SetFloatValue(self, "SeverTravel_ActiveCourierGT", nowGT)
+    StorageUtil.SetFloatValue(self, "SeverTravel_LastCourierGT", nowGT)
 
     ; Stash the pending letter on the courier until it reaches the player.
     StorageUtil.SetFormValue(courier, "SA_CourierSender", akSender)
+    ; Snapshot the NAME too, while the sender is known-good. The letter writer
+    ; is by definition away, and if their ref is gone by the time the courier
+    ; reaches the player the letter view drops its -a letter from X- line and
+    ; the player has no idea who wrote (user report 2026-08-03).
+    StorageUtil.SetStringValue(courier, "SA_CourierSenderName", senderNm)
     StorageUtil.SetStringValue(courier, "SA_CourierSubject", asSubject)
     StorageUtil.SetStringValue(courier, "SA_CourierBody", asBody)
     StorageUtil.SetStringValue(courier, "SA_CourierReason", asReason)
-
-    If atSide
-        DeliverCourierLetter(courier)   ; already beside the player
-        Return 1
-    EndIf
 
     ; Travel in from afar. Apply the jog travel package + drive the orchestrator;
     ; OnTravelComplete fires when within arrival range and routes to
@@ -988,13 +1566,331 @@ Int Function DispatchCourier(Actor akSender, String asSubject, String asBody, St
     ; final approach + face, then hands the letter over. 300s cap; on timeout/abort
     ; OnTravelComplete still delivers (the letter is never lost).
     Package travelPkg = GetTravelPackageForSpeed(SPEED_JOG)
-    If travelPkg != None
+    Int cHandle = SeverActionsNativeExt.Travel_Begin(courier, player, TravelTargetKeyword, 400.0, "courier", TRAVEL_OPTIONS_DEFAULT, 300, SPEED_JOG)
+    ; Phase 2: the Traveler_NN pool alias (a clone of travelPkg, priority 106)
+    ; drives the jog. The legacy override applies ONLY as the pool-exhaustion
+    ; fallback (or if Begin failed) — no second competing package otherwise.
+    If travelPkg != None && (cHandle <= 0 || !SeverActionsNativeExt2.Travel_HasAlias(cHandle))
         ActorUtil.AddPackageOverride(courier, travelPkg, TravelPackagePriority, 1)
         courier.EvaluatePackage()
     EndIf
-    SeverActionsNativeExt.Travel_Begin(courier, player, TravelTargetKeyword, 400.0, "courier", TRAVEL_OPTIONS_DEFAULT, 300, SPEED_JOG)
-    DebugMsg("DispatchCourier: courier en route from afar")
-    Return 1
+    ; Register with OrphanCleanup — the ~3000u jog spans multiple 5s scan
+    ; windows and the scanner otherwise strips the travel package mid-
+    ; delivery (the courier stuttered/teleported in on stuck-recovery).
+    ; Unregistered in DeliverCourierLetter once the travel leg ends.
+    SeverActionsNative.OrphanCleanup_RegisterTraveler(courier)
+    DebugMsg("TryDispatchQueuedCourier: courier en route from afar (" \
+        + StorageUtil.StringListCount(self, "SeverTravel_CourierQ_Body") + " more letter(s) ride the same delivery)")
+    Return true
+EndFunction
+
+; =============================================================================
+; STEWARD VISITS — the journey out, the posting, the stand-down
+; =============================================================================
+
+Event OnStewardVisitTravel(String eventName, String strArg, Float numArg, Form sender)
+    {Native picked a retainer for this steward to go and see. sender = the
+     steward; strArg = the retainer's FormID as SIGNED DECIMAL (never a float
+     numArg - floats are exact only to 2^24 and higher FormIDs corrupt).
+     Start the orchestrator journey; OnTravelComplete reports the leg back.}
+    Actor steward = sender as Actor
+    Actor target = Game.GetFormEx(strArg as Int) as Actor
+    If !steward || !target
+        Debug.Trace("[SeverActions_Travel] steward visit: steward or retainer did not resolve")
+        Return
+    EndIf
+    EnsureReady()
+    ; Free them from anything that fights a travel package first (furniture,
+    ; in-flight crafting) - the same pre-flight every other journey does.
+    DisengageOverridesForTravel(steward, "StewardVisit")
+    ; The DESTINATION IS THE RETAINER'S OWN REF: the orchestrator reads a ref
+    ; destination's position live each tick, so the walk tracks a person who
+    ; moves rather than aiming at a spot they have wandered away from.
+    ; Quiet: no journal objective and no map marker (this is the world's own
+    ; errand, not something the player ordered).
+    Int handle = SeverActionsNativeExt.Travel_Begin(steward, target, TravelTargetKeyword, \
+        ArrivalDistance, "stewardvisit", TRAVEL_OPTIONS_QUIETLONG, 0, SPEED_WALK)
+    If handle <= 0
+        ; Begin refused (unresolvable destination, rollback). Tell native the
+        ; leg is done and failed so the seat does not sit in Traveling until
+        ; its backstop expires.
+        Debug.Trace("[SeverActions_Travel] steward visit: Travel_Begin refused for " + steward.GetDisplayName())
+        SeverActionsNativeExt2.Steward_VisitLegDone(steward, false)
+        Return
+    EndIf
+    ; Pool-exhaustion fallback ONLY, exactly like the courier: the Traveler_NN
+    ; alias package already drives the walk when a slot was claimed, and adding
+    ; the override too would be a second competing package.
+    Package travelPkg = GetTravelPackageForSpeed(SPEED_WALK)
+    If travelPkg != None && !SeverActionsNativeExt2.Travel_HasAlias(handle)
+        ActorUtil.AddPackageOverride(steward, travelPkg, TravelPackagePriority, 1)
+        steward.EvaluatePackage()
+    EndIf
+    ; A cross-hold walk spans many 5s orphan-scan windows; without this the
+    ; scanner strips the travel package mid-journey (the courier's lesson).
+    SeverActionsNative.OrphanCleanup_RegisterTraveler(steward)
+    DebugMsg("StewardVisit: " + steward.GetDisplayName() + " is walking out to " + target.GetDisplayName())
+EndEvent
+
+Event OnStewardVisitArrived(String eventName, String strArg, Float numArg, Form sender)
+    {The steward has reached their retainer. Post them on that PERSON - the
+     Final Audit's escort shape: LinkedRef under the work-anchor keyword, then
+     the WorkSandbox package mills them about whoever is linked.}
+    Actor steward = sender as Actor
+    Actor target = Game.GetFormEx(strArg as Int) as Actor
+    If !steward || !target
+        Return
+    EndIf
+    PostStewardVisit(steward, target)
+EndEvent
+
+Function PostStewardVisit(Actor akSteward, Actor akTarget)
+    {Anchor the steward to the retainer and sandbox them around that person.
+     Idempotent - PO3 cosaves overrides, so re-applying is harmless.
+
+     THE ANCHOR IS SHARED WITH THE WORK SYSTEM. WorkAnchorKeyword (0x165675)
+     is the same link a retainer's own work sandbox steers by, so pointing it
+     at the visited retainer CLOBBERS the steward's workplace anchor. That is
+     fine only because the stand-down restores it from Native_GetWorkLoc,
+     which is the authoritative record of their work marker - without that
+     restore the steward would come home and never work again.}
+    Package sandboxPkg = Game.GetFormFromFile(0x00165676, "SeverActions.esp") as Package
+    Keyword anchorKw = Game.GetFormFromFile(0x00165675, "SeverActions.esp") as Keyword
+    If !sandboxPkg || !anchorKw
+        Debug.Trace("[SeverActions_Travel] steward visit: WorkSandbox package/keyword missing - run GenerateWorkSandbox.pas")
+        Return
+    EndIf
+    ; The travel leg is over: stop the orphan scanner watching them as a
+    ; traveler and drop any fallback travel override, or it competes with the
+    ; sandbox for the rest of the visit. Done QUIETLY - deliberately not
+    ; StripStrayTravelPackages, which posts a player-facing notification and
+    ; would announce a journey the player was never told about in the first
+    ; place (the whole point of the quiet travel option).
+    SeverActionsNative.OrphanCleanup_UnregisterTraveler(akSteward)
+    ClearTravelPackagesQuietly(akSteward)
+    ; Permanent so OrphanCleanup's staleness prune can never strip the anchor
+    ; mid-visit and leave the sandbox with nothing to mill about.
+    SeverActionsNativeExt.LinkedRef_SetPermanent(akSteward, akTarget, anchorKw)
+    ActorUtil.AddPackageOverride(akSteward, sandboxPkg, StewardVisitPriority, 1)
+    akSteward.EvaluatePackage()
+    DebugMsg("StewardVisit: " + akSteward.GetDisplayName() + " is now keeping company with " + akTarget.GetDisplayName())
+EndFunction
+
+; =============================================================================
+; THE FINAL AUDIT'S APPROACH — a real walk, not a teleport
+; =============================================================================
+
+Event OnFinalAuditTravel(String eventName, String strArg, Float numArg, Form sender)
+    {The grace has lapsed and the General sets out from Dragonsreach on foot.
+     sender = the General. He walks the WHOLE way under the orchestrator - the
+     Traveler_NN pool alias makes him persistent so the engine's low-process
+     sim carries him while unloaded, which is what makes a cross-Skyrim walk
+     possible at all (it was not, before that pool existed).
+
+     Only he travels. The two battlemages hold their Follow package on him, so
+     the formation carries itself and exactly one actor is ever steered.}
+    Actor legate = sender as Actor
+    Actor player = Game.GetPlayer()
+    If !legate || !player
+        SeverActionsNativeExt2.Venture_Audit_TravelLegDone(false)
+        Return
+    EndIf
+    EnsureReady()
+    DisengageOverridesForTravel(legate, "FinalAudit")
+    ; DROP THE COURT SANDBOX BEFORE THE WALK. It sits at priority 100 with a
+    ; LinkedRef anchored to the marker AT DRAGONSREACH - leaving it on is what
+    ; sent the General sandbox-walking home mid-standoff in the first field
+    ; test, the moment the travel package came off and nothing outranked it.
+    ; ApplyFinalAuditApproachPackages re-strips it too, but the walk must not
+    ; depend on that event landing.
+    Package courtPkg = Game.GetFormFromFile(0x00165676, "SeverActions.esp") as Package
+    If courtPkg
+        ActorUtil.RemovePackageOverride(legate, courtPkg)
+    EndIf
+    ; Quiet: no journal objective and no map marker. Being FOUND is the whole
+    ; drama of the encounter - a quest arrow announcing the taxman would give
+    ; the game away before he is over the horizon.
+    ;
+    ; The threshold is deliberately wide (1000u, not the usual arrival
+    ; distance): route steering is coarse by design, and the last stretch
+    ; belongs to the follow package's own beeline. Native takes it from there.
+    Int handle = SeverActionsNativeExt.Travel_Begin(legate, player, TravelTargetKeyword, \
+        AuditFollowHandoff, "finalaudit", TRAVEL_OPTIONS_QUIETLONG, 0, SPEED_JOG)
+    If handle <= 0
+        Debug.Trace("[SeverActions_Travel] Final Audit: Travel_Begin refused - native will stage instead")
+        SeverActionsNativeExt2.Venture_Audit_TravelLegDone(false)
+        Return
+    EndIf
+    ; Pool-exhaustion fallback only - the Traveler_NN alias package drives the
+    ; walk when a slot was claimed, and a second override would fight it.
+    Package travelPkg = GetTravelPackageForSpeed(SPEED_JOG)
+    If travelPkg != None && !SeverActionsNativeExt2.Travel_HasAlias(handle)
+        ActorUtil.AddPackageOverride(legate, travelPkg, TravelPackagePriority, 1)
+        legate.EvaluatePackage()
+    EndIf
+    SeverActionsNative.OrphanCleanup_RegisterTraveler(legate)
+    DebugMsg("FinalAudit: the General is on the road to the player")
+EndEvent
+
+Event OnFinalAuditTravelAbort(String eventName, String strArg, Float numArg, Form sender)
+    {Native wants the walk to stop - it overran its ceiling, or he reached the
+     player early. Cancelling fires the orchestrator's completion event with
+     status "cancelled", which routes back through OnTravelComplete and tells
+     native the leg failed; native then stages and sends the march packages.}
+    Actor legate = sender as Actor
+    If !legate
+        Return
+    EndIf
+    SeverActionsNativeExt.Travel_CancelByActor(legate)
+    SeverActionsNative.OrphanCleanup_UnregisterTraveler(legate)
+    ClearTravelPackagesQuietly(legate)
+    legate.EvaluatePackage()
+EndEvent
+
+Function ClearTravelPackagesQuietly(Actor akNPC)
+    {The silent half of StripStrayTravelPackages: drop the travel-family
+     overrides and the travel LinkedRef with no notification and no trace
+     spam. For journeys the player was never told about.
+
+     MUST strip the LEGACY CK-property family too, not just the three
+     FormID-resolved packages. GetTravelPackageForSpeed falls back to
+     TravelPackageJog / TravelPackage when the FormID lookups fail
+     (RegisterSpeedPackages' self-heal), so in that path the pool-exhaustion
+     fallback override applied at journey start is one of THESE forms - and a
+     cleanup that only knew about the FormID trio could never remove it. The
+     steward or the General would then carry a travel package for the rest of
+     the session. RemovePackageOverride is a safe no-op for a package the
+     actor never held, so stripping both families always is free.}
+    Package p = Game.GetFormFromFile(0x07C068, "SeverActions.esp") as Package  ; walk
+    If p
+        ActorUtil.RemovePackageOverride(akNPC, p)
+    EndIf
+    p = Game.GetFormFromFile(0x07C069, "SeverActions.esp") as Package          ; jog
+    If p
+        ActorUtil.RemovePackageOverride(akNPC, p)
+    EndIf
+    p = Game.GetFormFromFile(0x076F60, "SeverActions.esp") as Package          ; run
+    If p
+        ActorUtil.RemovePackageOverride(akNPC, p)
+    EndIf
+    ; Legacy CK-property fills - the fallback family RegisterSpeedPackages
+    ; self-heals to. Mirrors StripStrayTravelPackages.
+    If TravelPackage
+        ActorUtil.RemovePackageOverride(akNPC, TravelPackage)
+    EndIf
+    If TravelPackageWalk
+        ActorUtil.RemovePackageOverride(akNPC, TravelPackageWalk)
+    EndIf
+    If TravelPackageJog
+        ActorUtil.RemovePackageOverride(akNPC, TravelPackageJog)
+    EndIf
+    If TravelPackageRun
+        ActorUtil.RemovePackageOverride(akNPC, TravelPackageRun)
+    EndIf
+    SeverActionsNative.LinkedRef_Clear(akNPC, TravelTargetKeyword)
+EndFunction
+
+Event OnStewardVisitEnd(String eventName, String strArg, Float numArg, Form sender)
+    {The visit is over (dwell elapsed, the retainer left the books, the seat
+     was vacated, the journey was lost). Release the anchor, drop the override,
+     and hand the steward back to their own schedule.}
+    Actor steward = sender as Actor
+    If steward
+        EndStewardVisit(steward)
+    EndIf
+EndEvent
+
+Function EndStewardVisit(Actor akSteward)
+    {Undo PostStewardVisit. Idempotent, and safe to call on a steward who was
+     only ever mid-journey (nothing was posted yet - the cancel below is the
+     part that matters then).}
+    Package sandboxPkg = Game.GetFormFromFile(0x00165676, "SeverActions.esp") as Package
+    Keyword anchorKw = Game.GetFormFromFile(0x00165675, "SeverActions.esp") as Keyword
+    ; Kill any travel leg still running (an end that arrives while they are
+    ; still walking: a lost completion, a dismissal, the retainer leaving).
+    SeverActionsNativeExt.Travel_CancelByActor(akSteward)
+    SeverActionsNative.OrphanCleanup_UnregisterTraveler(akSteward)
+    ClearTravelPackagesQuietly(akSteward)
+    If sandboxPkg
+        ActorUtil.RemovePackageOverride(akSteward, sandboxPkg)
+    EndIf
+    If anchorKw
+        ; RESTORE THE WORK ANCHOR, never just clear it. The visit borrowed the
+        ; work system's own keyword; clearing it outright would leave the
+        ; steward's work sandbox with no target and they would never return to
+        ; their post. Native_GetWorkLoc is the authoritative marker record.
+        ObjectReference workMarker = SeverActionsNative.Native_GetWorkLoc(akSteward)
+        If workMarker
+            SeverActionsNativeExt.LinkedRef_SetPermanent(akSteward, workMarker, anchorKw)
+        Else
+            SeverActionsNative.LinkedRef_Clear(akSteward, anchorKw)
+        EndIf
+    EndIf
+    akSteward.EvaluatePackage()
+    DebugMsg("StewardVisit: " + akSteward.GetDisplayName() + " is released - back to their books")
+EndFunction
+
+Bool Function CourierBlockedWorldspace(Actor akPlayer)
+    {Exterior worldspaces a courier could never plausibly reach - underground
+     mega-zones (Blackreach, Darkfall Passage), other planes (Sovngarde, Soul
+     Cairn, Apocrypha), and roadless hidden areas (Forgotten Vale, Skuldafn,
+     Ancestor Glade, Forebears' Holdout, the Boneyard, Volkihar's courtyard).
+     IsInInterior() covers real interiors; these are technically exteriors.
+     Resolved by FormID, never EditorID (runtime EditorIDs are stripped
+     without po3 Tweaks - the VR lesson); DLC lookups return None harmlessly
+     when the master is absent (SA does not require the DLC).}
+    WorldSpace ws = akPlayer.GetWorldSpace()
+    If !ws
+        Return false
+    EndIf
+    If !CourierWsBlacklistBuilt
+        Form[] bl = new Form[11]
+        bl[0]  = Game.GetFormFromFile(0x01EE62, "Skyrim.esm")      ; Blackreach
+        bl[1]  = Game.GetFormFromFile(0x02EE41, "Skyrim.esm")      ; Sovngarde
+        bl[2]  = Game.GetFormFromFile(0x0278DD, "Skyrim.esm")      ; SkuldafnWorld
+        bl[3]  = Game.GetFormFromFile(0x001408, "Dawnguard.esm")   ; DLC01SoulCairn
+        bl[4]  = Game.GetFormFromFile(0x000BB5, "Dawnguard.esm")   ; DLC01FalmerValley (Forgotten Vale)
+        bl[5]  = Game.GetFormFromFile(0x004BEA, "Dawnguard.esm")   ; DLC1DarkfallPassageWorld
+        bl[6]  = Game.GetFormFromFile(0x002F64, "Dawnguard.esm")   ; DLC1ForebearsHoldout
+        bl[7]  = Game.GetFormFromFile(0x0048C7, "Dawnguard.esm")   ; DLC1AncestorsGladeWorld
+        bl[8]  = Game.GetFormFromFile(0x00528D, "Dawnguard.esm")   ; DLC01Boneyard
+        bl[9]  = Game.GetFormFromFile(0x007202, "Dawnguard.esm")   ; DLC1VampireCastleCourtyard
+        bl[10] = Game.GetFormFromFile(0x01C0B2, "Dragonborn.esm")  ; DLC2ApocryphaWorld
+        CourierWsBlacklist = bl
+        CourierWsBlacklistBuilt = true
+    EndIf
+    Return CourierWsBlacklist.Find(ws as Form) >= 0
+EndFunction
+
+Function QueueCourierLetter(Actor akSender, String asSubject, String asBody, String asReason)
+    {FIFO of letters waiting for the player to step outside. Parallel
+     StorageUtil string lists on self; the sender rides as a FormID string
+     because a None entry in a FormList would silently desync the parallel
+     lists (senders can be gone by delivery time - resolved best-effort).}
+    Int senderFid = 0
+    If akSender
+        senderFid = akSender.GetFormID()
+    EndIf
+    StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_SenderFid", senderFid as String)
+    StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_Subject", asSubject)
+    StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_Body", asBody)
+    StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_Reason", asReason)
+    ; Snapshot the sender NAME while the ref is known-good — senders can be
+    ; gone by delivery time and the letter view needs its from-line.
+    String qSenderNm = ""
+    If akSender
+        qSenderNm = akSender.GetDisplayName()
+    EndIf
+    StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_SenderName", qSenderNm)
+EndFunction
+
+Bool Function ProcessCourierQueue()
+    {OnUpdate poll: try the single batch courier whenever the gates clear
+     (outdoors, no live courier, weekly cooldown elapsed). Returns whether
+     anything still needs the loop alive — queued letters waiting on a gate,
+     or an en-route courier whose staleness check wants polling.}
+    TryDispatchQueuedCourier()
+    Return StorageUtil.StringListCount(self, "SeverTravel_CourierQ_Body") > 0 || ActiveCourierLive()
 EndFunction
 
 Function DeliverCourierLetter(Actor akCourier)
@@ -1013,13 +1909,20 @@ Function DeliverCourierLetter(Actor akCourier)
     ; physically hand it over with the give animation, and get the form back.
     Form note = None
     If body != ""
-        note = SeverActionsNativeExt.Letter_DeliverToCourier(sender, akCourier, subj, body, reason)
+        note = SeverActionsNativeExt.Letter_DeliverToCourier(sender, akCourier, subj, body, reason,             StorageUtil.GetStringValue(akCourier, "SA_CourierSenderName"))
     EndIf
 
     ; End the travel package, then force SkyrimNet's TalkToPlayer package: the
     ; courier turns to the player, closes the last gap, and HOLDS there to speak
     ; — instead of stopping short on a default "stay" package. (SkyrimNet's own
     ; controller applies "TalkToPlayer" the same way for live dialogue.)
+    ;
+    ; Do NOT unregister the traveler here (2026-08-01 statue-courier fix):
+    ; the loiter below re-anchors on the SAME TravelTargetKeyword LinkedRef,
+    ; and an actor holding that keyword while unregistered is exactly what
+    ; OrphanCleanup's 5s scan strips — anchor gone, sandbox dead, courier
+    ; frozen in place until despawn. They stay registered for their whole
+    ; life; the native CourierManager deregisters at actual despawn.
     RemoveAllTravelPackages(akCourier)
     If player != None
         SkyrimNetApi.RegisterPackage(akCourier, "TalkToPlayer", 100, 0, false)
@@ -1033,7 +1936,26 @@ Function DeliverCourierLetter(Actor akCourier)
         If sender != None
             senderName = sender.GetDisplayName()
         EndIf
-        String narration = "*A courier catches up to " + player.GetDisplayName() + ", a little out of breath, and holds out a sealed letter"
+        If reason == "ransom" && sender != None
+            ; Pool letters are keyed by the CAPTIVE, so 'sender' here is the
+            ; victim - and a courier announcing a letter *from Hulda* while
+            ; Hulda sits bound reads as a mistake. The ransom answer comes
+            ; from the victim's hold court (the steward who signed it).
+            String ransomHold = SeverActionsNativeExt.Hold_GetHoldName(sender)
+            If ransomHold != ""
+                senderName = "the court of " + ransomHold + ", concerning " + sender.GetDisplayName()
+            Else
+                senderName = sender.GetDisplayName() + "'s people"
+            EndIf
+        EndIf
+        ; Single-courier rule: this courier carries the whole queued mailbag,
+        ; so the narration matches what's about to be handed over.
+        Int pendingExtra = StorageUtil.StringListCount(self, "SeverTravel_CourierQ_Body")
+        String letterWord = "a sealed letter"
+        If pendingExtra > 0
+            letterWord = "a small bundle of letters, the topmost"
+        EndIf
+        String narration = "*A courier catches up to " + player.GetDisplayName() + ", a little out of breath, and holds out " + letterWord
         If senderName != ""
             narration += " from " + senderName
         EndIf
@@ -1054,7 +1976,42 @@ Function DeliverCourierLetter(Actor akCourier)
         EndIf
     EndIf
 
-    Debug.Notification("A courier hands you a letter.")
+    ; BATCH: hand over every letter still queued — the single-courier rule
+    ; means this courier carries the week's whole mailbag. Each queued letter
+    ; becomes a real note in the player's inventory (silent transfer; the
+    ; ceremony above covered the first one).
+    Int extraDelivered = 0
+    While StorageUtil.StringListCount(self, "SeverTravel_CourierQ_Body") > 0
+        Actor qSnd = Game.GetFormEx(StorageUtil.StringListGet(self, "SeverTravel_CourierQ_SenderFid", 0) as Int) as Actor
+        String qSubj   = StorageUtil.StringListGet(self, "SeverTravel_CourierQ_Subject", 0)
+        String qBody   = StorageUtil.StringListGet(self, "SeverTravel_CourierQ_Body", 0)
+        String qReason = StorageUtil.StringListGet(self, "SeverTravel_CourierQ_Reason", 0)
+        String qName   = StorageUtil.StringListGet(self, "SeverTravel_CourierQ_SenderName", 0)
+        StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_SenderFid", 0)
+        StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_Subject", 0)
+        StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_Body", 0)
+        StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_Reason", 0)
+        StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_SenderName", 0)
+        If qBody != ""
+            If qName == "" && qSnd != None
+                qName = qSnd.GetDisplayName()
+            EndIf
+            Form qNote = SeverActionsNativeExt.Letter_DeliverToCourier(qSnd, akCourier, qSubj, qBody, qReason, qName)
+            If qNote != None && player != None
+                akCourier.RemoveItem(qNote, 1, true, player)
+                extraDelivered += 1
+            EndIf
+        EndIf
+    EndWhile
+
+    ; This delivery is done — free the single-courier lock.
+    StorageUtil.UnsetFormValue(self, "SeverTravel_ActiveCourier")
+
+    If extraDelivered > 0
+        Debug.Notification("A courier hands you " + (extraDelivered + 1) + " letters.")
+    Else
+        Debug.Notification("A courier hands you a letter.")
+    EndIf
 
     ; Done speaking — sandbox AROUND THE PLAYER for the linger (IntelEngine-style):
     ; CourierLoiter is a sandbox anchored to the TravelTargetKeyword linked ref,
@@ -1078,6 +2035,7 @@ Function DeliverCourierLetter(Actor akCourier)
 
     ; Clear the stash so a recycled FormID can't re-deliver.
     StorageUtil.UnsetFormValue(akCourier, "SA_CourierSender")
+    StorageUtil.UnsetStringValue(akCourier, "SA_CourierSenderName")
     StorageUtil.UnsetStringValue(akCourier, "SA_CourierSubject")
     StorageUtil.UnsetStringValue(akCourier, "SA_CourierBody")
     StorageUtil.UnsetStringValue(akCourier, "SA_CourierReason")
@@ -1113,7 +2071,7 @@ EndFunction
 ; MAIN API
 ; =============================================================================
 
-Bool Function TravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0, Bool stopFollowing = true, Int speed = 0)
+Bool Function TravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0, Bool stopFollowing = true, Int speed = 0, Bool waitForPlayer = true)
     {Action entry (executionFunctionName). Offers a non-pausing PrismaUI popup so the
      player can confirm or redirect the destination; on confirm the trip starts via
      DoTravelToPlace (routed through OnTravelPromptResult). Cancel/timeout/Escape =
@@ -1121,6 +2079,33 @@ Bool Function TravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0
      has focus, it falls back to travelling directly to the LLM's pick.}
     If akNPC == None
         Return false
+    EndIf
+    ; Mid-encounter setup (NSFW pairing): the scene system owns this NPC's
+    ; movement - never let the LLM march them off "to start the scene" and
+    ; spam the popup. No-op when the NSFW add-on isn't installed (nothing
+    ; ever stamps the flag). The traveltoplace.yaml eligibility gate normally
+    ; stops the action being offered at all; this is the belt-and-suspenders
+    ; for a stale action the LLM emits before eligibility re-checks.
+    If SeverActionsNativeExt.Native_SceneBound_IsBound(akNPC)
+        DebugMsg("TravelToPlace: suppressed - " + akNPC.GetDisplayName() + " is mid-encounter setup")
+        Return false
+    EndIf
+    ; Anti-spam cooldown (user report: NPCs fire this whenever a location is
+    ; so much as MENTIONED, and the confirm popup mid-conversation got as
+    ; annoying as the misfire). The yaml description now carries hard
+    ; criteria, but a description is advice the LLM can ignore - this is the
+    ; mechanical backstop: once ANY travel fires (or even opens the popup),
+    ; the action leaves the eligible list for TravelActionCooldownSeconds.
+    ; Genuine travel is not something anyone does twice a minute.
+    SkyrimNetApi.SetActionCooldown("TravelToPlace", TravelActionCooldownSeconds)
+    ; User setting: skip the confirm popup entirely and just send them off.
+    If !SeverActionsNative.PrismaUI_IsTravelPopupEnabled()
+        Return DoTravelToPlace(akNPC, placeName, waitHours, stopFollowing, speed, waitForPlayer)
+    EndIf
+    ; User setting: popup only for the player's own followers - a random
+    ; citizen deciding to go somewhere is not the player's call to redirect.
+    If SeverActionsNative.PrismaUI_IsTravelPopupFollowersOnly() && !IsPopupWorthyTraveler(akNPC)
+        Return DoTravelToPlace(akNPC, placeName, waitHours, stopFollowing, speed, waitForPlayer)
     EndIf
     ; Guarantee the confirm handler is registered before the popup can fire it — on
     ; saves where this quest's OnPlayerLoadGame didn't re-fire, RegisterEvents() never
@@ -1133,10 +2118,25 @@ Bool Function TravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0
         StorageUtil.SetFloatValue(akNPC, "SeverTravel_PendingWait", waitHours)
         StorageUtil.SetIntValue(akNPC, "SeverTravel_PendingStopFollow", stopFollowing as Int)
         StorageUtil.SetIntValue(akNPC, "SeverTravel_PendingSpeed", speed)
+        StorageUtil.SetIntValue(akNPC, "SeverTravel_PendingWaitForPlayer", waitForPlayer as Int)
         DebugMsg("TravelToPlace: opened travel popup for " + akNPC.GetDisplayName() + " (prefill '" + placeName + "')")
         Return true
     EndIf
-    Return DoTravelToPlace(akNPC, placeName, waitHours, stopFollowing, speed)
+    Return DoTravelToPlace(akNPC, placeName, waitHours, stopFollowing, speed, waitForPlayer)
+EndFunction
+
+Bool Function IsPopupWorthyTraveler(Actor akNPC)
+    {Followers-only popup scope: teammates and SA-registered followers
+     (including track-only) count as the player's people; anyone else
+     travels without asking.}
+    If akNPC.IsPlayerTeammate()
+        Return true
+    EndIf
+    SeverActions_FollowerManager fm = (self as Quest) as SeverActions_FollowerManager
+    If fm == None
+        Return false
+    EndIf
+    Return fm.IsRegisteredFollower(akNPC)
 EndFunction
 
 Event OnTravelPromptResult(string eventName, string strArg, float numArg, Form sender)
@@ -1149,15 +2149,20 @@ Event OnTravelPromptResult(string eventName, string strArg, float numArg, Form s
     Float waitHours = StorageUtil.GetFloatValue(npc, "SeverTravel_PendingWait", 0.0)
     Bool stopFollowing = StorageUtil.GetIntValue(npc, "SeverTravel_PendingStopFollow", 1) != 0
     Int speed = StorageUtil.GetIntValue(npc, "SeverTravel_PendingSpeed", 0)
+    Bool waitForPlayer = StorageUtil.GetIntValue(npc, "SeverTravel_PendingWaitForPlayer", 1) != 0
     StorageUtil.UnsetFloatValue(npc, "SeverTravel_PendingWait")
     StorageUtil.UnsetIntValue(npc, "SeverTravel_PendingStopFollow")
     StorageUtil.UnsetIntValue(npc, "SeverTravel_PendingSpeed")
-    DoTravelToPlace(npc, strArg, waitHours, stopFollowing, speed)
+    StorageUtil.UnsetIntValue(npc, "SeverTravel_PendingWaitForPlayer")
+    DoTravelToPlace(npc, strArg, waitHours, stopFollowing, speed, waitForPlayer)
 EndEvent
 
-Bool Function DoTravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0, Bool stopFollowing = true, Int speed = 0)
+Bool Function DoTravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0, Bool stopFollowing = true, Int speed = 0, Bool waitForPlayer = true)
     {Send an NPC to a named place. Returns true if travel started.
-     speed: 0=walk, 1=jog, 2=run.}
+     speed: 0=walk, 1=jog, 2=run.
+     waitForPlayer: true = they are meeting the player there (greet on
+     approach, patience timeout); false = a self-errand - they arrive, do
+     their business for waitHours, then drift back to their normal life.}
 
     If akNPC == None
         DebugMsg("TravelToPlace: None actor")
@@ -1189,13 +2194,26 @@ Bool Function DoTravelToPlace(Actor akNPC, String placeName, Float waitHours = 0
     ; Resolve BEFORE cancelling — a bad placeName must not nuke active travel.
     ObjectReference destMarker = ResolvePlace(akNPC, placeName)
     If destMarker == None
+        ; Close the silent-failure loop: tell the NPC's LLM the place did not
+        ; resolve so they can say so and ask for the proper name, instead of
+        ; announcing a trip and then standing still.
+        SkyrimNetApi.RegisterShortLivedEvent("travelfail_" + akNPC.GetFormID(), \
+            "travel_failed", \
+            akNPC.GetDisplayName() + " meant to set out for '" + placeName + "' but realizes they do not actually know where that is. They should admit it and ask for the place's proper name.", \
+            "", 30000, akNPC, Game.GetPlayer())
         Return false
     EndIf
 
+    ; Exterior intent ("outside/beside <place>"): the resolver stamped this
+    ; actor because the phrase asked for the ENTRANCE, not the inside. Consume
+    ; the stamp and keep the exterior door as the destination - they arrive,
+    ; sandbox, and loiter around the entrance instead of walking in.
+    Bool exteriorIntent = SeverActionsNativeExt.Native_TravelExteriorIntent(akNPC)
+
     ; If destination is a door to an interior, follow through to the interior marker.
     ObjectReference finalDest = destMarker
-    If destMarker.GetBaseObject().GetType() == 29
-        ObjectReference interiorMarker = SeverActionsNative.FindInteriorMarkerForDoor(destMarker)
+    If destMarker.GetBaseObject().GetType() == 29 && !exteriorIntent
+        ObjectReference interiorMarker = SeverActionsNative.FindInteriorMarkerForDoor(destMarker, akNPC)
         If interiorMarker != None
             finalDest = interiorMarker
             DebugMsg("Door resolved to interior marker for '" + placeName + "'")
@@ -1204,6 +2222,8 @@ Bool Function DoTravelToPlace(Actor akNPC, String placeName, Float waitHours = 0
         If destMarker.IsLocked()
             destMarker.Lock(false)
         EndIf
+    ElseIf exteriorIntent
+        DebugMsg("Exterior intent for '" + placeName + "' - stopping at the entrance")
     EndIf
 
     ; Resolve the speed package BEFORE cancelling — if the package is missing
@@ -1217,6 +2237,8 @@ Bool Function DoTravelToPlace(Actor akNPC, String placeName, Float waitHours = 0
 
     ; Now safe to cancel any existing travel for this NPC.
     CancelTravel(akNPC)
+
+    DisengageOverridesForTravel(akNPC, "TravelToPlace")
 
     Int slot = FindFreeSlot()
     If slot < 0
@@ -1243,16 +2265,24 @@ Bool Function DoTravelToPlace(Actor akNPC, String placeName, Float waitHours = 0
         DismissFollower(akNPC)
     EndIf
 
-    ActorUtil.AddPackageOverride(akNPC, travelPkg, TravelPackagePriority, 1)
-
-    ; Hand off to the orchestrator. callbackTag carries the slot index so
-    ; OnTravelComplete can route back here. options=4 enables degraded-state abort.
+    ; Hand off to the orchestrator — it sets the LinkedRef target, evaluates, and
+    ; claims a Traveler_NN pool alias whose package (a QNAM-retargeted clone of
+    ; travelPkg, priority 106 — above the actor's own AI) drives BOTH the loaded
+    ; and unloaded leg. Phase 2: no AddPackageOverride in the common case — the
+    ; pool alias IS the package, so pace/cancel/turn-back all operate on one
+    ; thing. callbackTag carries the slot index so OnTravelComplete routes back.
     Int handle = SeverActionsNativeExt.Travel_Begin(akNPC, finalDest, TravelTargetKeyword, ArrivalDistance, "slot_" + slot, TRAVEL_OPTIONS_LONGRANGE, 0, speed)
     If handle <= 0
         DebugMsg("TravelToPlace: orchestrator rejected (handle=0)")
-        ActorUtil.RemovePackageOverride(akNPC, travelPkg)
         theAlias.Clear()
         Return false
+    EndIf
+    ; Pool-exhaustion fallback ONLY (>24 concurrent travelers): with no free
+    ; Traveler_NN alias, the legacy override drives the trip. Mirrors the
+    ; follow/guard pools, which keep their override for exactly this case.
+    If !SeverActionsNativeExt2.Travel_HasAlias(handle)
+        ActorUtil.AddPackageOverride(akNPC, travelPkg, TravelPackagePriority, 1)
+        akNPC.EvaluatePackage()
     EndIf
 
     ; Record state
@@ -1275,9 +2305,10 @@ Bool Function DoTravelToPlace(Actor akNPC, String placeName, Float waitHours = 0
     StorageUtil.SetFloatValue(akNPC, "SeverTravel_WaitUntil", waitUntil)
     StorageUtil.SetIntValue(akNPC, "SeverTravel_Slot", slot)
     StorageUtil.SetIntValue(akNPC, "SeverTravel_Speed", speed)
+    StorageUtil.SetIntValue(akNPC, "SeverTravel_WaitForPlayer", waitForPlayer as Int)
 
     NotifyPlayer(akNPC.GetDisplayName() + " traveling to " + placeName)
-    RegisterForSingleUpdate(UpdateInterval)
+    ChronoArm(UpdateInterval)
     Return true
 EndFunction
 
@@ -1333,6 +2364,8 @@ Bool Function TravelNPCToReference(Actor akNPC, ObjectReference akDestination, F
 
     CancelTravel(akNPC)
 
+    DisengageOverridesForTravel(akNPC, "TravelNPCToReference")
+
     Int slot = FindFreeSlot()
     If slot < 0
         DebugMsg("TravelNPCToReference: no free slots")
@@ -1356,22 +2389,23 @@ Bool Function TravelNPCToReference(Actor akNPC, ObjectReference akDestination, F
         DismissFollower(akNPC)
     EndIf
 
-    ActorUtil.AddPackageOverride(akNPC, travelPkg, TravelPackagePriority, 1)
-
     Int handle = SeverActionsNativeExt.Travel_Begin(akNPC, finalDest, TravelTargetKeyword, ArrivalDistance, "slot_" + slot, TRAVEL_OPTIONS_LONGRANGE, 0, speed)
     If handle <= 0
         DebugMsg("TravelNPCToReference: orchestrator rejected")
-        ActorUtil.RemovePackageOverride(akNPC, travelPkg)
         theAlias.Clear()
         Return false
+    EndIf
+    ; Phase 2: the Traveler_NN pool alias package (priority 106) drives the trip;
+    ; the legacy override is applied ONLY as the pool-exhaustion fallback.
+    If !SeverActionsNativeExt2.Travel_HasAlias(handle)
+        ActorUtil.AddPackageOverride(akNPC, travelPkg, TravelPackagePriority, 1)
+        akNPC.EvaluatePackage()
     EndIf
 
     SetSlotState(slot, 1)
     SetSlotSandbox(slot, akSandboxOverride)
     ; ALSO persist the arrival sandbox override in StorageUtil (per-actor, cosave-
-    ; backed). The SlotSandboxOverrides member array can come back None across the
-    ; OnTravelComplete dispatch on fragile saves, losing the camp package; the
-    ; StorageUtil copy is the robust source OnArrived reads.
+    ; backed). The per-actor copy is the robust source OnArrived reads first.
     StorageUtil.SetFormValue(akNPC, "SeverTravel_SandboxOverride", akSandboxOverride)
     ; Use a synthetic place label since ref-targeted travel has no user-facing name.
     String label = "dispatch_target"
@@ -1401,7 +2435,7 @@ Bool Function TravelNPCToReference(Actor akNPC, ObjectReference akDestination, F
     StorageUtil.SetIntValue(akNPC, "SeverTravel_Slot", slot)
     StorageUtil.SetIntValue(akNPC, "SeverTravel_Speed", speed)
 
-    RegisterForSingleUpdate(UpdateInterval)
+    ChronoArm(UpdateInterval)
     Return true
 EndFunction
 
@@ -1411,9 +2445,42 @@ EndFunction
 
 Function OnArrived(Int slot, Actor akNPC, String placeName)
     {Called from OnTravelComplete with status "arrived". Apply sandbox and
-     transition the slot to waiting state.}
+     transition the slot to waiting state.
+
+     Traveled-together: some players escort the traveler the whole way. If the
+     player is right there at the moment of arrival, entering the waiting/greet
+     flow reads absurd (the NPC greets them as if they had been waiting).
+     Complete immediately with an arrived-together beat instead. A near-miss
+     (player a few steps behind, or trailing through a load door) is covered by
+     the grace window in CheckWaitingSlot via the arrival timestamp below.}
 
     RemoveAllTravelPackages(akNPC)
+
+    Bool waitsForPlayer = StorageUtil.GetIntValue(akNPC, "SeverTravel_WaitForPlayer", 1) == 1
+    If waitsForPlayer
+        Actor playerRef = Game.GetPlayer()
+        Bool together = false
+        If playerRef
+            If playerRef.GetParentCell() == akNPC.GetParentCell()
+                together = akNPC.GetDistance(playerRef) <= 2500.0
+            ElseIf playerRef.GetWorldSpace() != None && playerRef.GetWorldSpace() == akNPC.GetWorldSpace()
+                together = akNPC.GetDistance(playerRef) <= 2500.0
+            EndIf
+        EndIf
+        If together
+            StorageUtil.SetStringValue(akNPC, "SeverTravel_State", "complete")
+            SeverActionsNative.Native_SetTravelState(akNPC, "complete", "")
+            StorageUtil.SetStringValue(akNPC, "SeverTravel_Result", "arrived_together")
+            SkyrimNetApi.DirectNarration("*" + akNPC.GetDisplayName() + " arrives at " + placeName + " with " + playerRef.GetDisplayName() + " at their side*", akNPC, playerRef)
+            NotifyPlayer(akNPC.GetDisplayName() + " arrived at " + placeName)
+            ClearSlot(slot, true)
+            Return
+        EndIf
+        ; Not together at arrival - stamp the moment so the greet can tell a
+        ; player who catches up within a minute from one who shows up an hour
+        ; later. Real-time; the reader guards against save/load resets.
+        StorageUtil.SetFloatValue(akNPC, "SeverTravel_ArrivedRT", Utility.GetCurrentRealTime())
+    EndIf
 
     If TravelTargetKeyword
         ObjectReference dest = GetSlotDest(slot)
@@ -1425,9 +2492,8 @@ Function OnArrived(Int slot, Actor akNPC, String placeName)
     ; Sandbox override (per-slot) wins over the default SandboxPackage so a
     ; camp-bound follower joins the campfire crowd rather than picking SA's
     ; generic sandbox. Falls through to SandboxPackage when no override set.
-    ; Read the per-slot override from StorageUtil first (robust), falling back to
-    ; the member array, then to the default SandboxPackage. This is what makes the
-    ; camp sandbox actually apply on arrival even when the member array reset.
+    ; StorageUtil per-actor copy first, per-slot cosave key second, default
+    ; SandboxPackage last. This is what makes the camp sandbox apply on arrival.
     Package sandboxToApply = StorageUtil.GetFormValue(akNPC, "SeverTravel_SandboxOverride") as Package
     If sandboxToApply == None
         sandboxToApply = GetSlotSandbox(slot)
@@ -1446,7 +2512,7 @@ Function OnArrived(Int slot, Actor akNPC, String placeName)
     SeverActionsNative.Native_SetTravelState(akNPC, "waiting", placeName)
 
     NotifyPlayer(akNPC.GetDisplayName() + " arrived at " + placeName)
-    RegisterForSingleUpdate(UpdateInterval)
+    ChronoArm(UpdateInterval)
 EndFunction
 
 Function CheckWaitingSlot(Int slot)
@@ -1470,6 +2536,17 @@ Function CheckWaitingSlot(Int slot)
     Float deadline = GetSlotWaitDeadline(slot)
     String placeName = GetSlotPlaceName(slot)
 
+    ; Self-errand travelers (waitForPlayer=false) are not waiting for anyone:
+    ; no greet-on-approach, no spoken-to completion, no patience framing.
+    ; Their stay simply ends at the deadline. Default 1 keeps every legacy
+    ; and external caller (Hearth, kidnap slot-fallback) on the old behavior.
+    If StorageUtil.GetIntValue(npc, "SeverTravel_WaitForPlayer", 1) == 0
+        If currentTime >= deadline
+            OnStayComplete(slot, npc)
+        EndIf
+        Return
+    EndIf
+
     ; --- Check 1: external SpokenTo flag ---
     Bool spokenTo = StorageUtil.GetIntValue(npc, "SeverTravel_SpokenTo") as Bool
     If spokenTo
@@ -1492,7 +2569,22 @@ Function CheckWaitingSlot(Int slot)
             If greetedState == 0 && dist <= 300.0 && npc.HasLOS(player as ObjectReference)
                 StorageUtil.SetIntValue(npc, "SeverTravel_Greeted", 1)
                 StorageUtil.SetFloatValue(npc, "SeverTravel_GreetTime", Utility.GetCurrentRealTime())
-                String narration = "*" + npc.GetDisplayName() + " notices the player approaching and turns to greet them, having been waiting here in " + placeName + "*"
+                ; Grace window: a player who walks in within a minute of the
+                ; NPC's own arrival almost certainly traveled WITH them (a few
+                ; steps behind, a load door between them) - greet as catching
+                ; up, not as if the NPC had been camped here waiting. Bogus
+                ; elapsed (save/load reset real time) falls back to waited.
+                Float arrivedRT = StorageUtil.GetFloatValue(npc, "SeverTravel_ArrivedRT", -1.0)
+                Float sinceArrival = -1.0
+                If arrivedRT >= 0.0
+                    sinceArrival = Utility.GetCurrentRealTime() - arrivedRT
+                EndIf
+                String narration
+                If sinceArrival >= 0.0 && sinceArrival <= 60.0
+                    narration = "*" + npc.GetDisplayName() + " reaches " + placeName + " just ahead of " + player.GetDisplayName() + ", and turns as they catch up*"
+                Else
+                    narration = "*" + npc.GetDisplayName() + " spots " + player.GetDisplayName() + " coming into " + placeName + " and moves to meet them*"
+                EndIf
                 SkyrimNetApi.DirectNarration(narration, npc, player)
                 Return
             EndIf
@@ -1540,7 +2632,10 @@ Function OnPlayerArrived(Int slot, Actor akNPC)
     StorageUtil.SetStringValue(akNPC, "SeverTravel_State", "complete")
     SeverActionsNative.Native_SetTravelState(akNPC, "complete", "")
     StorageUtil.SetStringValue(akNPC, "SeverTravel_Result", "player_arrived")
-    NotifyPlayer(akNPC.GetDisplayName() + " is glad to see you!")
+    ; No HUD line here - the greet DirectNarration in CheckWaitingSlot already
+    ; played the moment they spotted the player (field feedback: the old
+    ; "is glad to see you!" notification read as canned and broke the scene).
+    DebugMsg(akNPC.GetDisplayName() + " travel completed - player arrived")
     ClearSlot(slot, true)
 EndFunction
 
@@ -1556,6 +2651,17 @@ Function NotifyTravelSpokenTo(Actor akNPC)
     EndIf
 EndFunction
 
+Function OnStayComplete(Int slot, Actor akNPC)
+    {A self-errand traveler's stay ran out - no waiting drama, they finish
+     their business and drift back to their normal life. restoreFollower
+     false mirrors OnWaitTimeout: whoever wants them back re-summons.}
+    StorageUtil.SetStringValue(akNPC, "SeverTravel_State", "complete")
+    SeverActionsNative.Native_SetTravelState(akNPC, "complete", "")
+    StorageUtil.SetStringValue(akNPC, "SeverTravel_Result", "stay_ended")
+    NotifyPlayer(akNPC.GetDisplayName() + " has finished their business at " + GetSlotPlaceName(slot))
+    ClearSlot(slot, false)
+EndFunction
+
 Function OnWaitTimeout(Int slot, Actor akNPC)
     StorageUtil.SetStringValue(akNPC, "SeverTravel_State", "timeout")
     SeverActionsNative.Native_SetTravelState(akNPC, "timeout", "")
@@ -1565,10 +2671,22 @@ Function OnWaitTimeout(Int slot, Actor akNPC)
 EndFunction
 
 ; =============================================================================
-; UPDATE LOOP — waiting slots only
+; UPDATE LOOP — waiting slots, ambush approach/standoff, departing thugs, courier queue
 ; =============================================================================
 
-Event OnUpdate()
+Function ChronoArm(Float afSeconds)
+    {Arm this script's one-shot chronometer tick - replaces the FORM-keyed
+     RegisterForSingleUpdate (canonical explanation: the Chronometer block in
+     SeverActionsNativeExt2.psc + the CLAUDE.md lesson). Event name AND
+     callback name are unique per script - both, always. Re-arm replaces the
+     pending tick; ticks do NOT survive save/load (load paths re-arm); at
+     most one already-in-flight wake can land after Cancel/Clear, so keep
+     the handler state-guarded.}
+    RegisterForModEvent("SeverActions_Tick_Travel", "OnChronoTick_Travel")
+    SeverActionsNativeExt2.Chrono_Request("SeverActions_Tick_Travel", afSeconds)
+EndFunction
+
+Event OnChronoTick_Travel(String eventName, String strArg, Float numArg, Form sender)
     ; Ambush approach poll — open the standoff once the pack reaches the player.
     If AmbushApproaching
         CheckAmbushApproach()
@@ -1580,6 +2698,13 @@ Event OnUpdate()
     If AmbushActive
         ReassertThugStance()
     EndIf
+
+    ; Despawn walked-off ambush thugs once out of sight.
+    ProcessDepartingThugs()
+    Bool hasDeparting = StorageUtil.FormListCount(self, "SeverTravel_DepartingThugs") > 0
+
+    ; Courier letters deferred while the player was indoors.
+    Bool hasQueuedCourier = ProcessCourierQueue()
 
     Bool hasWaiting = false
     Int i = 0
@@ -1594,11 +2719,11 @@ Event OnUpdate()
     ; Keep ticking fast while a pack is approaching (snappy arrival) or holding the
     ; standoff (to keep weapons out); otherwise the normal waiting-slot cadence.
     If AmbushApproaching
-        RegisterForSingleUpdate(1.0)
+        ChronoArm(1.0)
     ElseIf AmbushActive
-        RegisterForSingleUpdate(2.0)
-    ElseIf hasWaiting
-        RegisterForSingleUpdate(UpdateInterval)
+        ChronoArm(2.0)
+    ElseIf hasWaiting || hasDeparting || hasQueuedCourier
+        ChronoArm(UpdateInterval)
     EndIf
 EndEvent
 
@@ -1744,6 +2869,12 @@ Function ClearTravelStorage(Actor akNPC)
     StorageUtil.UnsetIntValue(akNPC, "SeverTravel_SpokenTo")
     StorageUtil.UnsetIntValue(akNPC, "SeverTravel_Greeted")
     StorageUtil.UnsetFloatValue(akNPC, "SeverTravel_GreetTime")
+    StorageUtil.UnsetIntValue(akNPC, "SeverTravel_WaitForPlayer")
+    StorageUtil.UnsetFloatValue(akNPC, "SeverTravel_ArrivedRT")
+    StorageUtil.UnsetFloatValue(akNPC, "SeverTravel_PendingWait")
+    StorageUtil.UnsetIntValue(akNPC, "SeverTravel_PendingStopFollow")
+    StorageUtil.UnsetIntValue(akNPC, "SeverTravel_PendingSpeed")
+    StorageUtil.UnsetIntValue(akNPC, "SeverTravel_PendingWaitForPlayer")
 EndFunction
 
 Function ForceResetAllSlots(Bool restoreFollowers = true)
@@ -1856,16 +2987,12 @@ EndFunction
 ; =============================================================================
 
 Bool Function SetTravelSpeed(Actor akNPC, Int speed)
-    {Change speed mid-journey. Updates both the package override and the
-     orchestrator's catch-up estimator.}
+    {Change speed mid-journey. ACTOR-KEYED so it works for pool-only journeys
+     too (no legacy slot required — the Actions-page travel-pace bug). The native
+     Travel_SetSpeedByActor re-bands the Traveler_NN pool alias (unloaded pace)
+     and updates the catch-up estimator; when a legacy slot exists we ALSO swap
+     the loaded package override so the on-screen pace changes immediately.}
     If akNPC == None
-        Return false
-    EndIf
-    Int slot = FindSlotByActor(akNPC)
-    If slot < 0
-        Return false
-    EndIf
-    If GetSlotState(slot) != 1
         Return false
     EndIf
     If speed < 0
@@ -1873,29 +3000,41 @@ Bool Function SetTravelSpeed(Actor akNPC, Int speed)
     ElseIf speed > 2
         speed = 2
     EndIf
-    If GetSlotSpeed(slot) == speed
-        Return true
+
+    ; --- Pool re-band (native): the Traveler_NN alias package IS the pace, so
+    ;     this moves the traveler to the new speed band and BOTH the loaded and
+    ;     unloaded leg follow. Works with or without a legacy slot. ---
+    Bool applied = SeverActionsNativeExt2.Travel_SetSpeedByActor(akNPC, speed)
+
+    ; --- Legacy slot bookkeeping + the pool-EXHAUSTION override case only ---
+    Int slot = FindSlotByActor(akNPC)
+    If slot >= 0 && GetSlotState(slot) == 1
+        If GetSlotSpeed(slot) != speed
+            ; Only a pool-exhausted traveler (override fallback, no alias) needs a
+            ; package swap here — an aliased traveler was already re-banded above,
+            ; and adding an override on top would reintroduce the two-package split.
+            Int handle = GetSlotHandle(slot)
+            If handle > 0 && !SeverActionsNativeExt2.Travel_HasAlias(handle)
+                Package newPkg = SeverActionsNativeExt.Travel_GetSpeedPackage(speed)
+                If newPkg != None
+                    Package oldPkg = SeverActionsNativeExt.Travel_GetSpeedPackage(GetSlotSpeed(slot))
+                    If oldPkg != None
+                        ActorUtil.RemovePackageOverride(akNPC, oldPkg)
+                    EndIf
+                    ActorUtil.AddPackageOverride(akNPC, newPkg, TravelPackagePriority, 1)
+                    akNPC.EvaluatePackage()
+                EndIf
+            EndIf
+            SetSlotSpeed(slot, speed)
+            StorageUtil.SetIntValue(akNPC, "SeverTravel_Speed", speed)
+        EndIf
+        applied = true
     EndIf
 
-    Package newPkg = SeverActionsNativeExt.Travel_GetSpeedPackage(speed)
-    If newPkg == None
-        DebugMsg("SetTravelSpeed: no package for speed " + speed)
-        Return false
+    If !applied
+        DebugMsg("SetTravelSpeed: no live journey for " + akNPC.GetDisplayName())
     EndIf
-
-    Package oldPkg = SeverActionsNativeExt.Travel_GetSpeedPackage(GetSlotSpeed(slot))
-    If oldPkg != None
-        ActorUtil.RemovePackageOverride(akNPC, oldPkg)
-    EndIf
-    ActorUtil.AddPackageOverride(akNPC, newPkg, TravelPackagePriority, 1)
-    akNPC.EvaluatePackage()
-
-    SetSlotSpeed(slot, speed)
-    StorageUtil.SetIntValue(akNPC, "SeverTravel_Speed", speed)
-    If GetSlotHandle(slot) > 0
-        SeverActionsNativeExt.Travel_SetSpeed(GetSlotHandle(slot), speed)
-    EndIf
-    Return true
+    Return applied
 EndFunction
 
 Bool Function SetTravelSpeedNatural(Actor akNPC, String speedText)
@@ -1974,13 +3113,28 @@ EndFunction
 
 Function DismissFollower(Actor akNPC)
     Bool isFollower = akNPC.IsPlayerTeammate()
-    StorageUtil.SetIntValue(akNPC, "SeverTravel_WasFollower", isFollower as Int)
+    ; Track-only followers (NFF / custom-AI / nwsIgnoreToken) have an external
+    ; framework that OWNS their teammate flag — toggling it invites that
+    ; framework (and our own TeammateMonitor) to treat the trip as a real
+    ; dismissal. Leave their flag alone and record WasFollower=0 so
+    ; ReinstateFollower won't force it back on arrival either.
+    SeverActions_FollowerManager fm = (self as Quest) as SeverActions_FollowerManager
+    Bool trackOnly = fm && fm.IsTrackOnlyFollower(akNPC)
+    If trackOnly
+        StorageUtil.SetIntValue(akNPC, "SeverTravel_WasFollower", 0)
+    Else
+        StorageUtil.SetIntValue(akNPC, "SeverTravel_WasFollower", isFollower as Int)
+    EndIf
     If isFollower
-        akNPC.SetPlayerTeammate(false)
+        If !trackOnly
+            akNPC.SetPlayerTeammate(false)
+        EndIf
         ; SetPlayerTeammate(false) alone is NOT enough — the SA follow alias package
         ; keeps chasing the player via the FollowerFollowKW linked-ref, which outranks
         ; the travel package, so she never paths (the orchestrator then leapfrogs her,
         ; which looks like teleporting). Clear the follow link so travel is unopposed.
+        ; (Clearing is safe for track-only too — the link is SA-owned state and a
+        ; no-op when SA never set it.)
         Keyword followKw = GetFollowerFollowKW()
         If followKw
             SeverActionsNative.LinkedRef_Clear(akNPC, followKw)

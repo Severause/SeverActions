@@ -1,6 +1,6 @@
 customCategory: arrest
 name: FreeFromJail
-description: "The guard turns the key in a cell door and lets a prisoner out — sentence served, charges dropped, jarl's pardon, or a quiet favor done. The freed NPC shakes off the cell and returns to their normal life."
+description: "Use to release an NPC who is currently sitting in a hold's cell — sentence served, charges dropped, jarl's pardon, or a quiet favor. The freed NPC returns to their normal life. For a prisoner standing judgment after a dispatch, use OrderRelease instead."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: FreeNPC_Internal

@@ -20,11 +20,10 @@ Character: {{ npc.name }} ({{ npc.race }}{% if npc.class %}, {{ npc.class }}{% e
 {% set dialogueLines = [] %}
 {% for ev in events %}
 {% if existsIn(ev.data, "dialogue") %}
-{% if ev.type == "dialogue_npc" and existsIn(ev.data, "speaker") %}
-{% set dialogueLines = append(dialogueLines, ev) %}
-{% elif ev.type == "dialogue_player" and existsIn(ev.data, "player_name") %}
-{% set dialogueLines = append(dialogueLines, ev) %}
-{% elif ev.type == "dialogue" and existsIn(ev.data, "speaker") %}
+{# Event vocabulary verified against SkyrimNet source (EventQueryService):
+   the engine emits exactly "dialogue" and "dialogue_player_text" - the
+   former dialogue_npc/dialogue_player branches here were dead code. #}
+{% if ev.type == "dialogue" and existsIn(ev.data, "speaker") %}
 {% set dialogueLines = append(dialogueLines, ev) %}
 {% elif ev.type == "dialogue_player_text" and existsIn(ev.data, "player_name") %}
 {% set dialogueLines = append(dialogueLines, ev) %}
@@ -42,7 +41,7 @@ Recent dialogue that was spoken (for context on what just happened):
 {% endfor %}
 {% endif %}
 
-{% set player_blurb = papyrus_util("GetStringValue", npc.UUID, "SeverFollower_PlayerBlurb", "") %}
+{% set player_blurb = sever_player_blurb(npc.UUID) %}
 {% if player_blurb != "" %}
 How {{ npc.name }} currently feels about {{ player.name }}:
 {{ player_blurb }}

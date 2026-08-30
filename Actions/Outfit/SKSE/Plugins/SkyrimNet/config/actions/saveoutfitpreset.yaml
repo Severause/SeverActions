@@ -1,6 +1,6 @@
 customCategory: outfit
 name: SaveOutfitPreset
-description: "The speaker looks down at what they're currently wearing and gives it a name to come back to — 'this is my combat kit', 'this is my home dress', 'this is what I wear for court'. Saved for later recall with ApplyOutfitPreset."
+description: "Save what the speaker is currently wearing as a named outfit, for later recall with ApplyOutfitPreset. Use when the speaker wants to remember their current look under a short name (e.g. 'combat', 'home', 'formal')."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: SaveOutfitPreset_Execute

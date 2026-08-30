@@ -1,7 +1,18 @@
 {% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "dialogue_target" or render_mode == "target" %}
 {# ============================================================================
 FERTILITY MODE RELOADED - Character Bio Integration
-Provides physical state info; emotional response depends on character personality
+
+TONE CONTRACT (field report, 2026-08-09 — Brelyna): the old version gave
+cycle states the same header + bolded "How she feels" prose as a third
+trimester, and the vivid wording out-wrote its own trailing disclaimer —
+the LLM made cramps the character's whole personality AND wrote them into
+memories, which re-injected forever. The rules now:
+  - PREGNANCY (trimesters, recovery) is a real life event: keep the rich
+    treatment, personality still leads.
+  - CYCLE states (ovulating/fertile/pms/menstruating) are BACKGROUND ONLY:
+    no section header, no bold, one quiet parenthetical with the constraint
+    stated FIRST, explicit do-not-memorize instruction. An observer sees
+    nothing (third person renders almost nothing for cycle states).
 ============================================================================ #}
 {% set first_person = (render_mode == "full" or render_mode == "thoughts" or render_mode == "transform") %}
 {% set third_person = (render_mode == "dialogue_target" or render_mode == "target") %}
@@ -29,9 +40,11 @@ Provides physical state info; emotional response depends on character personalit
 {% set playerName = "the player" %}
 {% endif %}
 {% set isPlayersChild = (fert_father == playerName) %}
+{% set is_pregnancy = (fert_state == "first_trimester" or fert_state == "second_trimester" or fert_state == "third_trimester" or fert_state == "recovery") %}
 
 {# ========== FIRST PERSON VIEW ========== #}
 {% if first_person %}
+{% if is_pregnancy %}
 ## Fertility & Physical State
 
 {% if fert_state == "third_trimester" %}
@@ -55,37 +68,6 @@ Provides physical state info; emotional response depends on character personalit
 
 **Emotional landscape** (interpret based on {{ actorName }}'s personality and how this happened):\n- If wanted: cautious hope, fear of losing it, keeping the secret, tender protectiveness\n- If unwanted: shock, denial, anger, scrambling to figure out what to do, feeling betrayed by {{ poss }} body\n- If uncertain: testing different futures in {{ poss }} mind, not ready to tell anyone, mood swinging with the hormones\n- The father's identity matters — was this with someone {{ subj }} loves? A mistake? Something worse?
 
-{% elif fert_state == "ovulating" %}
-{{ actorName }} is at peak fertility (cycle day {{ fert_cycle_day }}).
-{% if fert_cycle_day == 13 or fert_cycle_day == 14 %}
-**How {{ subj }} feels:** A sharp, restless energy — more confident, more aware of others, carrying {{ refl }} with an effortless magnetism. {{ capitalize(subj) }} feels alive in a way {{ subj }} can't quite explain.
-{% else %}
-**How {{ subj }} feels:** High energy, good mood, more socially present than usual. {{ capitalize(subj) }} feels like {{ refl }} at {{ poss }} best today.
-{% endif %}
-
-{% elif fert_state == "fertile" %}
-{{ actorName }} is in {{ poss }} fertile window (cycle day {{ fert_cycle_day }}).
-
-**How {{ subj }} feels:** Energy is up, mood is lifting. {{ capitalize(subj) }} feels more like {{ refl }} again — more social, more engaged, generally in better spirits. A good stretch of days.
-
-{% elif fert_state == "pms" %}
-{{ actorName }} is in the premenstrual phase of {{ poss }} cycle (day {{ fert_cycle_day }}).
-{% if fert_cycle_day >= 27 %}
-**How {{ subj }} feels:** The crash has hit. Bloated, lower back aching, head foggy. {{ capitalize(subj) }} has a short fuse — small things land harder than they should. {{ capitalize(subj) }} may snap and immediately regret it.
-{% else %}
-**How {{ subj }} feels:** Early signs of fatigue setting in. A bit more distracted than usual, slightly on edge, but mostly functioning normally. {{ capitalize(subj) }} just feels a little off.
-{% endif %}
-
-{% elif fert_state == "menstruating" %}
-{{ actorName }} is on {{ poss }} period (cycle day {{ fert_cycle_day }}).
-{% if fert_cycle_day <= 2 %}
-**How {{ subj }} feels:** The worst of it — low energy, real discomfort that {{ subj }} pushes through. {{ capitalize(subj) }} needs to sit more often and winces at sudden movements. {{ capitalize(subj) }}'d rather be anywhere comfortable.
-{% elif fert_cycle_day == 3 or fert_cycle_day == 4 %}
-**How {{ subj }} feels:** The worst has passed but a dull ache lingers. Low stamina, patience still thin. {{ capitalize(subj) }} carries on but doesn't have much to spare.
-{% else %}
-**How {{ subj }} feels:** Tapering off. Energy is starting to return and the discomfort is mostly gone. {{ capitalize(subj) }} feels {{ refl }} coming back to normal.
-{% endif %}
-
 {% elif fert_state == "recovery" %}
 {{ actorName }} is recovering from childbirth.{% if fert_has_baby == 1 %} {{ capitalize(subj) }} has a newborn to care for.{% endif %}
 
@@ -94,38 +76,35 @@ Provides physical state info; emotional response depends on character personalit
 **Emotional landscape** (depends entirely on circumstances):\n- Hormonal volatility — the "baby blues" hit everyone differently\n- Joy and love don't preclude exhaustion and overwhelm\n- If the birth was wanted: fierce protectiveness mixed with "what have I done" moments\n- If unwanted: complicated feelings about the baby, guilt, detachment, or unexpected attachment\n- The father's presence (or absence) matters enormously right now
 
 {% endif %}
+**Guidance:** Pregnancy is a real life event — let it inform {{ actorName }}'s behavior in character. But {{ poss }} personality, goals, studies, family and relationships still lead every scene; the pregnancy is part of {{ poss }} life, not the whole of it.
 
-**Guidance:** Personality drives everything — this is a subtle filter on mood and energy, invisible most of the time. Never mention cycles, periods, or physical specifics in dialogue or thoughts. Show it only through behavior: lower energy, shorter patience, preference to rest. Pregnancy is a life event worth acknowledging in character. Cycle states are not.
+{% else %}
+(Background physiology — private to {{ actorName }}, invisible to everyone else, and STRICTLY minor: it must not drive {{ poss }} mood, dialogue, decisions, or self-description. {{ capitalize(poss) }} personality, current concerns, goals and relationships dominate every scene exactly as they normally would. Never mention or allude to it in dialogue or inner thoughts; at most it may faintly color {{ poss }} energy today. NEVER carry it into memories or summaries — it is transient, routine physiology, not an event worth recording. The note: {% if fert_state == "ovulating" %}{{ subj }} is having an unusually good-energy, confident day (cycle day {{ fert_cycle_day }}){% elif fert_state == "fertile" %}{{ subj }} is in a good stretch of days — energy and mood a touch above baseline (cycle day {{ fert_cycle_day }}){% elif fert_state == "pms" %}{{ subj }} is running slightly lower on energy{% if fert_cycle_day >= 27 %} and patience{% endif %} than usual (cycle day {{ fert_cycle_day }}) — a faint background drag {{ subj }} handles without comment{% elif fert_state == "menstruating" %}{{ subj }} is on {{ poss }} cycle (day {{ fert_cycle_day }}) — {% if fert_cycle_day <= 2 %}its roughest day, energy somewhat low{% elif fert_cycle_day <= 4 %}a dull background ache, energy a little low{% else %}nearly past it, energy returning to normal{% endif %}; ordinary life {{ subj }} manages privately and without drama{% endif %}.)
 
+{% endif %}
 {% endif %}
 {# ========== THIRD PERSON VIEW ========== #}
 {% if third_person %}
+{% if is_pregnancy %}
 ## Fertility & Physical State
 
 {% if fert_state == "third_trimester" %}
-{{ actorName }} is heavily pregnant{% if fert_father %} with {{ fert_father }}'s child{% endif %}. {{ capitalize(subj) }} moves carefully, one hand supporting {{ poss }} back, visibly uncomfortable.
+{{ actorName }} is heavily pregnant. {{ capitalize(subj) }} moves carefully, one hand supporting {{ poss }} back, visibly uncomfortable.
 
 {% elif fert_state == "second_trimester" %}
-{{ actorName }} is visibly pregnant{% if fert_father %} with {{ fert_father }}'s child{% endif %} — a rounded belly that can't be hidden.
+{{ actorName }} is visibly pregnant — a rounded belly that can't be hidden.
 
 {% elif fert_state == "first_trimester" %}
-{{ actorName }} shows subtle signs — occasional pallor, hand pressed to {{ poss }} stomach, moments of queasiness{% if fert_father %}, possibly carrying {{ fert_father }}'s child{% endif %}.
-
-{% elif fert_state == "fertile" or fert_state == "ovulating" %}
-{{ actorName }} has a subtle vitality about {{ obj }} today.
-
-{% elif fert_state == "pms" %}
-{{ actorName }} seems a bit tired and shorter-tempered than usual.
-
-{% elif fert_state == "menstruating" %}
-{% if fert_cycle_day <= 2 %}
-{{ actorName }} looks noticeably drained, moving with a slight wince of discomfort.
-{% else %}
-{{ actorName }} is quieter than usual, carrying {{ refl }} with a bit less energy.
-{% endif %}
+{{ actorName }} shows subtle signs — occasional pallor, hand pressed to {{ poss }} stomach, moments of queasiness.
 
 {% elif fert_state == "recovery" %}
 {{ actorName }} moves carefully, clearly exhausted, still recovering from childbirth.
+
+{% endif %}
+{% elif fert_state == "menstruating" and fert_cycle_day <= 2 %}
+{# Cycle states are invisible to observers — the ONLY outward sign is a
+   little tiredness on the roughest day. Everything else renders nothing. #}
+({{ actorName }} seems a little lower on energy than usual today — nothing an observer could name.)
 
 {% endif %}
 {% endif %}

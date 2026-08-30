@@ -1,6 +1,6 @@
 customCategory: magic
 name: LearnSpell
-description: "The speaker takes a spell from the player — a quiet hour at a College workbench tracing the gestures, an apprentice's curiosity by the fireside, a Restoration trick passed between friends. The player must actually know the spell to pass it on. Only use when the player has offered to teach a specific spell, or during roleplay where learning would make sense."
+description: "The speaker takes a spell from {{ player.name }} — a quiet hour at a College workbench tracing the gestures, an apprentice's curiosity by the fireside, a Restoration trick passed between friends. {{ player.name }} must actually know the spell to pass it on. Use only when {{ player.name }} has offered to teach a specific spell and the speaker accepts."
 questEditorId: SeverActions
 scriptName: SeverActions_SpellTeach
 executionFunctionName: learnspell

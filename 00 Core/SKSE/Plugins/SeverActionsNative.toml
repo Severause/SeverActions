@@ -1,7 +1,7 @@
 [Info]
 Name = "SeverActionsNative"
 Author = "Severause"
-Version = "1.0.0"
+Version = "3.9.13"
 
 [Compatibility]
 MinimumSKSEVersion = 131

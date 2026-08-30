@@ -1,0 +1,36 @@
+customCategory: items
+name: SearchContainer
+description: "The speaker opens a chest, sack, barrel, drawer, or strongbox and looks through it without taking anything — the contents are revealed so they (or whoever asked) can decide what's actually worth grabbing. Use this first when curious what's inside; follow up with LootContainer to take specific things. Locked containers get a lockpicking attempt."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: SearchContainer_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor rummaging through the container
+  - type: dynamic
+    name: containerName
+    description: name of the container being searched (e.g. "Chest", "Barrel", "Sack", "End Table")
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

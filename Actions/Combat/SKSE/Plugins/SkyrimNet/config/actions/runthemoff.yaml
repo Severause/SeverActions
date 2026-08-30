@@ -1,0 +1,33 @@
+name: RunThemOff
+description: "Reject the stranger's answer and attack — the whole camp joins the fight. Use when the answer is insulting, evasive, or an obvious lie, or when the speaker simply wants the outsider gone."
+questEditorId: SeverActions
+scriptName: SeverActions_Combat
+executionFunctionName: RunThemOff_Execute
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: the outlaw who challenged {{ player.name }}
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      - decoratorName: "camp_challenge_pending"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true

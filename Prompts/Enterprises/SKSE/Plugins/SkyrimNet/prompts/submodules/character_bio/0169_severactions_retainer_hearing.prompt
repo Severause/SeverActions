@@ -1,0 +1,31 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# SeverActions Enterprises (Temper) — a retainer's GRIEVANCE about working for
+   the player, and the HEARING flow when the player has sent word to talk it
+   out. Mirrors the arrest persuasion block (0276): while a hearing is armed,
+   the conversation MUST resolve through one of the two Employment actions. #}
+{% if actorUUID and actorUUID != 0 and player and player.UUID and player.UUID != 0 and actorUUID != player.UUID %}
+{% set retGrievance = retainer_grievance(actorUUID) %}
+{% if retGrievance != "" %}
+{% set actor = decnpc(actorUUID) %}
+{% set playerData = decnpc(player.UUID) %}
+{% set playerName = playerData.name %}
+## Trouble In the Player's Service
+{{ retGrievance }}
+
+{% set retHearing = retainer_hearing(actorUUID) %}
+{% if retHearing != "" %}
+**THE HEARING — {{ playerName }} ARRANGED THIS TALK. CRITICAL INSTRUCTIONS:**
+- {{ playerName }} sent word they would come and talk about the grievance above. If {{ playerName }} is speaking with {{ actor.name }} now, THIS IS THAT TALK.
+- {{ actor.name }} MUST raise the grievance plainly and hear {{ playerName }} out — and judge them by what is ACTUALLY said, not by pleasantries.
+- Before this conversation ends, {{ actor.name }} MUST select the **Employment** action category, then choose exactly one of:
+    - **GrantRetainerRaise** — if {{ playerName }} clearly COMMITS to better pay or easier terms (grants the raise, promises the owed coin will move, eases the cut). This actually changes the terms — the strongest possible answer to a pay grievance.
+    - **ReassureRetainer** — if {{ playerName }} genuinely engaged with the grievance: a sincere apology, a real promise, an honest reckoning with the complaint (but no concrete change of terms).
+    - **BrushOffRetainer** — if {{ playerName }} dismissed it, mocked it, threatened {{ actor.name }}, or answered with hollow words and a change of subject.
+- Empty flattery does NOT earn ReassureRetainer. A clear commitment to better pay earns GrantRetainerRaise, not just ReassureRetainer. Contempt or dismissal DOES earn BrushOffRetainer.
+- DO NOT use any other action category to resolve the grievance during this conversation.
+{% else %}
+If {{ playerName }} seriously engages with this grievance in conversation, {{ actor.name }} should resolve it by selecting the **Employment** action category and choosing **GrantRetainerRaise** ({{ playerName }} commits to better pay or easier terms), **ReassureRetainer** (genuinely heard out, no change of terms), or **BrushOffRetainer** (dismissed to their face). Casual small talk resolves nothing.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

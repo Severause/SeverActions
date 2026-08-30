@@ -1,6 +1,6 @@
-customCategory: enterprises
+customCategory: employment
 name: ThugAttack
-description: "Use when you are one of the hired thugs confronting {{ player.name }} in an ambush and the standoff has TURNED to violence - {{ player.name }} has refused to settle, threatened you, mocked the one who hired you, drawn a weapon, or struck first. Calling this makes you and the others fall on {{ player.name }} and attack. IMPORTANT: do NOT call this on your opening turn or before {{ player.name }} has actually answered your demand - you stopped them to TALK first and give them the chance to make it easy. Hold and wait for their reply; only attack once they've clearly refused or made a hostile move. Prefer ThugStandDown if they pay you, frighten you, or talk you out of it."
+description: "Use when the speaker is one of the hired thugs confronting {{ player.name }} in an ambush and the standoff has turned to violence - {{ player.name }} refused to settle, threatened the thugs, mocked their employer, drew a weapon, or struck first. The whole pack falls on {{ player.name }} and attacks. Do not call this before {{ player.name }} has actually answered the demand - the thugs stopped them to talk first. Only attack once the answer is clearly a refusal or a hostile move. Prefer ThugStandDown if they pay, frighten, or talk the thugs out of it."
 questEditorId: SeverActions
 scriptName: SeverActions_Travel
 executionFunctionName: ThugAttack_Execute

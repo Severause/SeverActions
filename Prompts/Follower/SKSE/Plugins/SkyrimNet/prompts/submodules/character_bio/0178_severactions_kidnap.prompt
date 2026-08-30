@@ -1,0 +1,12 @@
+{# Kidnap context — injects situation awareness for anyone in an active
+   kidnap: the victim (seized mid-march, or bound + hooded and unable to see)
+   or the kidnapper (on the job / holding a captive). kidnap_context returns
+   "" for everyone else, so this renders nothing for uninvolved actors. #}
+{% if render_mode == "transform" or render_mode == "full" or render_mode == "thoughts" %}
+{% if actorUUID and actorUUID != 0 %}
+{% set kidnap_ctx = kidnap_context(actorUUID) %}
+{% if kidnap_ctx and kidnap_ctx != "" %}
+{{ kidnap_ctx }}
+{% endif %}
+{% endif %}
+{% endif %}

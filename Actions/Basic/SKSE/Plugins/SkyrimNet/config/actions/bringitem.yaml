@@ -1,20 +1,20 @@
 customCategory: items
 name: BringItem
-description: "The speaker spots something nearby — a sword on a table, a potion on a shelf, a tool left out — picks it up and carries it across to deliver it. Fetch-and-deliver in one motion."
+description: "Fetch-and-deliver in one motion: the speaker picks up a loose item nearby and carries it to the target actor. Use when someone asks the speaker to bring or fetch something. NOT for keeping the item — use PickUpItem for that."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: BringItem_Execute
 parameterMapping:
-  - type: dynamic
+  - type: speaker
     name: akActor
     description: the actor doing the fetching
   - type: dynamic
     name: akTarget
-    description: the actor the item is being brought to
+    description: "the actor the item is being brought to (their name)"
   - type: dynamic
     name: itemType
     description: "name or type of the item to fetch (e.g. 'sword', 'potion', 'book')"
-enabled: false
+enabled: true
 eligibilityRules:
   - conditions:
       - decoratorName: "is_in_combat"

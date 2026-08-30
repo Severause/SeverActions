@@ -1,5 +1,5 @@
 name: CompanionWait
-description: "The companion plants their feet right here and settles in to wait for {{ player.name }} — propped against a wagon, warming hands at a brazier, idling at the bar. They'll wander nearby on their own business until {{ player.name }} comes back."
+description: "The speaker waits here until {{ player.name }} returns, wandering nearby on their own business. Use when {{ player.name }} asks them to wait, stay, or hold this spot. NOT a farewell — use DismissFollower for parting ways."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: CompanionWait

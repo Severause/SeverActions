@@ -1,0 +1,45 @@
+customCategory: magic
+name: TeachShout
+description: "The speaker teaches {{ player.name }} one Word of Power of a Shout the speaker themselves knows — speaking the dragon word slowly and sharing its meaning, the way the Greybeards gifted Whirlwind Sprint on the steps of High Hrothgar. Each lesson grants the next unknown word of the named Shout (three lessons master it), and the understanding comes with it — no dragon soul required. Only use when {{ player.name }} has asked to be taught a Shout, or when the speaker chooses to bestow one during roleplay. This is a solemn gift; masters of the Voice do not hand out words casually."
+questEditorId: SeverActions
+scriptName: SeverActions_SpellTeach
+executionFunctionName: TeachShout
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the master of the Voice passing the word on
+  - type: dynamic
+    name: shoutName
+    description: "the Shout being taught (e.g. 'Unrelenting Force', 'Whirlwind Sprint', 'Fire Breath')"
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "can_teach_shouts"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} teaches {{ player.name }} a Word of Power of {{ shoutName }}"

@@ -1,0 +1,73 @@
+name: UntieCaptive
+description: "Loosen a held captive's bonds without freeing them: the hood and ties come off and they may move about their place of holding - watched, but no longer trussed. They remain a captive (guards still matter, and an unwatched unbound captive escapes far more easily). Use when {{ player.name }} wants a captive kept but treated less harshly. To free the captive for good, use ReleaseCaptive instead."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: UntieCaptive
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: the companion loosening the bonds
+  - type: dynamic
+    name: targetName
+    description: "the captive's name (may be approximate; matched against current captives only)"
+    optional: true
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      # Opt-in feature toggle. Custom decorator — STRING compare, never == true.
+      - decoratorName: "sever_kidnap_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+      # OR the restrain opt-in: restraint is default-ON while kidnap is
+      # default-OFF, and a restrained captive must be manageable under
+      # default settings.
+      - decoratorName: "sever_restrain_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "OR"
+    required: true
+  - conditions:
+      - decoratorName: "is_sever_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives (the self-release hole).
+      # String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Scene gates (audit sec.7-4 alignment): the kidnapnpc/movecaptive/
+      # restrainnpc siblings carry these; the speaker must not be mid-scene.
+      # get_faction_rank, never is_in_faction - rank -1 (stuck sentinel)
+      # must not gate the action forever (CLAUDE.md scene-gate rule).
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} loosens the captive's bonds"

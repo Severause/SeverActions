@@ -1,6 +1,6 @@
 customCategory: economy
 name: CreateDebt
-description: "Open a tab. One party fronts gold or goods now with the understanding the other will pay it back later — a merchant's slate, a smith fronting steel for repairs, a friend covering tonight's room at the inn."
+description: "Open a tab. One party fronts gold or goods now with the understanding the other will pay it back later — a merchant's slate, a smith fronting steel for repairs, a friend covering tonight's room at the inn. For a repeating arrangement (rent, wages, dues), use CreateRecurringDebt."
 questEditorId: SeverActions
 scriptName: SeverActions_Debt
 executionFunctionName: CreateDebt_Execute

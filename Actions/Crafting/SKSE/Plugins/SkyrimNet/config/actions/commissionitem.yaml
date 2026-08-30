@@ -1,6 +1,6 @@
 customCategory: crafting
 name: CommissionItem
-description: "The speaker takes a deferred order — they can't forge it on the spot, but they'll have it ready in a few days. Use this when the smith agrees to make something and tells the player to come back for it later: 'Aye, a steel greatsword — give me three days and a deposit.' Takes half the price up front; the rest is due when the player returns to collect. NOT for work done immediately (use CraftItem for that)."
+description: "The speaker takes a deferred order — they can't forge it on the spot, but they'll have it ready in a few days. Use this when the smith agrees to make something and tells {{ player.name }} to come back for it later, usually naming a timeframe and asking for a deposit. Takes half the price up front; the rest is due when {{ player.name }} returns to collect. NOT for work done immediately (use CraftItem for that)."
 questEditorId: SeverActions
 scriptName: SeverActions_Crafting
 executionFunctionName: CommissionItem_Internal
@@ -21,7 +21,7 @@ parameterMapping:
     default: 1
   - type: dynamic
     name: quotedTotal
-    description: "the TOTAL price in gold you, the smith, are charging for this whole order — your call, in character. This exact number is what the customer pays: half taken now as a deposit, half on pickup. Pass the SAME figure you said out loud (if you told them 'about eight hundred', pass 800). Price the job fairly by metal and effort: a steel sword is a few dozen septims, an ebony piece a few hundred, daedric work over a thousand. Whole number, gold only. Leave empty only if you truly never named a price."
+    description: "the TOTAL price in gold for the whole order, as a whole number — half is taken now as a deposit, half on pickup. Pass the same figure the speaker named in dialogue ('about eight hundred' -> 800). Price by material and effort: a steel sword a few dozen septims, ebony a few hundred, daedric over a thousand. Leave empty only if no price was named."
     optional: true
     default: 0
 enabled: true
@@ -35,7 +35,13 @@ eligibilityRules:
     required: true
   - conditions:
       - decoratorName: "is_in_faction"
-        arguments: ["currentActor", "JobBlacksmithFaction"]
+        arguments:
+          - currentActor
+          # JobBlacksmithFaction (Skyrim.esm 0x0005091D) by hex FormID — the
+          # VR-safe form (name lookup needs po3 "Keep EditorIDs", absent on
+          # VR, and failed closed: blacksmiths never matched). Mirrors the
+          # documented fix in craftitem.yaml.
+          - "0x0005091D"
         comparisonOperator: "=="
         expectedValue: true
     logicalOperator: "AND"

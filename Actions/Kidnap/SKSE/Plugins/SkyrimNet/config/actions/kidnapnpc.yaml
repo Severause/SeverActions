@@ -1,0 +1,86 @@
+name: KidnapNPC
+description: "Use ONLY when {{ player.name }} explicitly orders an abduction and names both the target and the destination. The companion quietly abducts the named NPC and delivers them — bound and hooded — to the chosen place, tying them up on arrival. A companion with strong morals may refuse in dialogue instead of calling this. Avoid quest-important NPCs — abduction can break their quests. For binding someone in place with no transport, use RestrainNPC."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: KidnapNPC
+parameterMapping:
+  - type: speaker
+    name: akKidnapper
+    description: the companion carrying out the abduction
+  - type: dynamic
+    name: targetName
+    description: "the exact name of the NPC to abduct (e.g. 'Nazeem')"
+  - type: dynamic
+    name: destination
+    description: "where to deliver the captive (e.g. 'Breezehome', 'Whiterun', a known interior)"
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      # Opt-in feature toggle (MCM / PrismaUI Settings, default OFF).
+      # Custom decorator — STRING compare, "" = disabled. Never `== true`.
+      - decoratorName: "sever_kidnap_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Speaker must be a SeverActions companion (string decorator — != "").
+      - decoratorName: "is_sever_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives or take new ones (the
+      # self-release hole). String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Arrest in flight (either side), judgment, escort, spell cast — the
+      # SeverActions arrest path calls SetActorBusy("arrest") on BOTH the
+      # guard and the person being arrested. Users reported each of them
+      # kicking off an abduction mid-arrest; two FSMs then fight over the same
+      # actor's packages and captured AVs. Built-in decorator, real bool.
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Mid-scene speakers (SexLab). get_faction_rank < 0, NOT is_in_faction:
+      # both frameworks can leave an NPC stuck in the faction at rank -1 after
+      # a scene ends, and is_in_faction reads that as "still animating" —
+      # gating the action forever. rank >= 0 = actually animating; -1 (stuck)
+      # and -2 (not a member) both pass. This is the same conversion the 3.x
+      # sweep applied to 62 other YAMLs; see CHANGELOG under is_in_faction ->
+      # get_faction_rank.
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Mid-scene speakers (OStim) — same sentinel rule.
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} sets out to abduct {{ targetName }} and deliver them to {{ destination }}"

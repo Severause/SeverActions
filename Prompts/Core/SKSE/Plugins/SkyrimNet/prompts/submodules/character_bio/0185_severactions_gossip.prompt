@@ -12,7 +12,7 @@
 You've heard talk around {{ loc }} recently:
 {{ replace(gossip, "|", "\n") }}
 
-You may casually reference local happenings in conversation if relevant — like sharing gossip with an acquaintance. Only bring it up if it fits naturally. Don't mention everyone or everything, just whatever feels relevant to the current conversation.
+You may mention one of these in conversation, but only if it fits naturally. Otherwise ignore them.
 {% endif %}
 {% endif %}
 {% endif %}

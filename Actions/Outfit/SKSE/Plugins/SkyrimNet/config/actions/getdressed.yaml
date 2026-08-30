@@ -1,6 +1,6 @@
 customCategory: outfit
 name: GetDressed
-description: "The speaker reaches for the clothes folded over a chair, the armor stacked by the bedroll, the robes hung on a peg — and puts back on what they had removed earlier. Dressed again, ready to move."
+description: "Put back on the clothes and armor the speaker removed earlier. Use after Undress, or whenever the speaker is told to get dressed. For putting on specific named items, use EquipArmor instead; for a saved named outfit, use ApplyOutfitPreset."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: Dress_Execute

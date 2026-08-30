@@ -1,5 +1,5 @@
 name: DismissFollower
-description: "{{ player.name }} parts ways with this companion for now — a handshake at the city gate, a nod across a tavern table, a quiet thank-you on the road. They head back to whatever place they call home and can be picked up again later. DismissFollower = the road parts here for now. CompanionWait = stay temporarily on this spot. FollowerLeaves = walking out for good."
+description: "Part ways with this companion for now: they head home and can be re-recruited later. Use for an amicable parting. NOT for waiting on a spot (use CompanionWait) and NOT for the companion quitting for good (use FollowerLeaves)."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
 executionFunctionName: DismissCompanion

@@ -1,0 +1,30 @@
+customCategory: employment
+name: ReassureRetainer
+description: "Use when {{ player.name }} sincerely hears out this retainer's grievance face to face and genuinely addresses it — an apology, a real promise, an honest talk about the work. This is the success outcome of the hearing: judge {{ player.name }}'s actual words against the retainer's stated grievance — hollow platitudes or a subject change do not earn it (if {{ player.name }} is dismissive or contemptuous, that is BrushOffRetainer instead; if they merely chat and leave, call neither). On fair terms this clears the air and withdraws a notice to quit; on coerced terms it only cows them into line for a week — fear, not comfort. One of the two at most per conversation."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: ReassureRetainer
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the retainer being reassured (or cowed)
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # retainer_grievance returns "" when content (or not a retainer) —
+      # string-compared eligibility, never a bool.
+      - decoratorName: "retainer_grievance"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ player.name }} heard out {{ actor.name }}'s grievance about their work"

@@ -1,6 +1,6 @@
 customCategory: arrest
 name: AcceptEscortPlea
-description: "The escorting guard, halfway down the road to the jail, lowers their blade and waves the prisoner off — convinced by the argument, swayed by the coin offered later, or just moved by the plea. The cuffs come off, the bounty in this hold is wiped clean, and the prisoner walks free. Only use after a prisoner has just appealed mid-escort and the guard genuinely accepts."
+description: "Use only right after a prisoner appealed mid-escort, when the escorting guard genuinely accepts the plea — convinced, bribed, or moved to mercy. The cuffs come off, the bounty in this hold is wiped clean, and the prisoner walks free."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: AcceptEscortPlea_Internal

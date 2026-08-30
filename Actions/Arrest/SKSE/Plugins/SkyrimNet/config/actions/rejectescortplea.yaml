@@ -1,6 +1,6 @@
 customCategory: arrest
 name: RejectEscortPlea
-description: "The escorting guard hears the prisoner's plea out and isn't having any of it — the story's too thin, the bribe too cheap, or they've heard this one too many times before. They jerk the prisoner forward and the march to the cells resumes. Only use when you are the escorting guard and a prisoner has just appealed to you mid-escort."
+description: "The escorting guard hears the prisoner's plea out and isn't having any of it — the story's too thin, the bribe too cheap, or they've heard this one too many times before. They jerk the prisoner forward and the march to the cells resumes. Only use when the speaker is the escorting guard and a prisoner has just appealed to them mid-escort."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: RejectEscortPlea_Internal

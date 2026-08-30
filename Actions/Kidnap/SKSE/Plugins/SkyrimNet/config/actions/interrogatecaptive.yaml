@@ -1,0 +1,73 @@
+name: InterrogateCaptive
+description: "Interrogate a held captive: press them for what they know — secrets, names, hidden valuables. Their resolve cracks under duress and their own knowledge becomes fair game in conversation. Use when {{ player.name }} wants information extracted from a captive. Only works on captives currently held bound."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: InterrogateCaptive
+parameterMapping:
+  - type: speaker
+    name: akInterrogator
+    description: the companion doing the interrogating
+  - type: dynamic
+    name: targetName
+    description: "the captive's name (may be approximate; matched against current captives only)"
+    optional: true
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      # Opt-in feature toggle. Custom decorator — STRING compare, never == true.
+      - decoratorName: "sever_kidnap_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+      # OR the restrain opt-in: restraint is default-ON while kidnap is
+      # default-OFF, and a restrained captive must be manageable under
+      # default settings.
+      - decoratorName: "sever_restrain_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "OR"
+    required: true
+  - conditions:
+      - decoratorName: "is_sever_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives or take new ones (the
+      # self-release hole). String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Scene gates (audit sec.7-4 alignment): the kidnapnpc/movecaptive/
+      # restrainnpc siblings carry these; the speaker must not be mid-scene.
+      # get_faction_rank, never is_in_faction - rank -1 (stuck sentinel)
+      # must not gate the action forever (CLAUDE.md scene-gate rule).
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} begins interrogating the captive"

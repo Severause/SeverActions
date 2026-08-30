@@ -1,0 +1,70 @@
+name: LeashCaptive
+description: "Take a held, bound captive ALONG with you: their hands stay tied but they walk behind you wherever you go instead of standing held in place - a prisoner on a short leash. Use when {{ player.name }} (or you) wants to bring a captive somewhere rather than leave them. They remain a captive: guards still matter and they may try to slip away. To hold them in place again, use UnleashCaptive; to free them, ReleaseCaptive."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: LeashCaptiveByName
+parameterMapping:
+  - type: speaker
+    name: akLeader
+    description: the one leading the captive along
+  - type: dynamic
+    name: targetName
+    description: "the captive's name (may be approximate; matched against current captives only)"
+    optional: true
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      # Opt-in feature toggle. Custom decorator — STRING compare, never == true.
+      - decoratorName: "sever_kidnap_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+      # OR the restrain opt-in: restraint is default-ON while kidnap is
+      # default-OFF, and a restrained captive must be manageable under
+      # default settings.
+      - decoratorName: "sever_restrain_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "OR"
+    required: true
+  # Deliberately NO is_sever_follower gate (same as restrainnpc.yaml): the
+  # leader is whoever holds the captive - a follower bringing a prisoner
+  # along, or the guard/captor who restrained them. User request 2026-08-23:
+  # a bound NPC should follow the player "or whoever else".
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives (the self-release hole).
+      # String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Scene gates (audit sec.7-4 alignment): the kidnapnpc/movecaptive/
+      # restrainnpc siblings carry these; the speaker must not be mid-scene.
+      # get_faction_rank, never is_in_faction - rank -1 (stuck sentinel)
+      # must not gate the action forever (CLAUDE.md scene-gate rule).
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} leads the bound captive along"

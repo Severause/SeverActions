@@ -221,8 +221,17 @@ EndFunction
 Function DispatchToOrchestrator(Actor akActor, Form itemForm, ObjectReference workstation, string workstationType, string actionVerb, Actor akRecipient, int itemCount, string originalName)
     {Shared tail for the three entry points. Handles the cases the
     orchestrator won't see — null item / null workstation — and dispatches
-    successful starts. Failure paths fire DirectNarration for the LLM and a
-    player Debug.Notification.}
+    successful starts. Failure paths fire RegisterEvent for the LLM and a
+    player Debug.Notification.
+
+    RegisterEvent, NOT DirectNarration (field report): a DirectNarration
+    forces the NPC to RESPOND, and the response re-enters action selection —
+    so the NPC spoke about the failed craft, tried the craft again, hit the
+    same failure, and looped (speak -> craft -> narrate -> speak...). A
+    regular event lands the outcome in context without demanding a reply;
+    the NPC mentions it naturally in the next exchange instead of being
+    goaded into another attempt. Same conversion on the TermComplete
+    hand-off below.}
 
     Actor recipient = akRecipient
     if !recipient
@@ -230,11 +239,20 @@ Function DispatchToOrchestrator(Actor akActor, Form itemForm, ObjectReference wo
     endif
     bool recipientIsPlayer = (recipient == Game.GetPlayer())
 
+    ; Mid-journey: never park a traveler at a workstation. The CraftAtForge
+    ; override beats the travel alias package - same ping-pong as the
+    ; furniture case (travel start also cancels in-flight crafting; this is
+    ; the reverse gate for a craft fired while the journey runs).
+    if SeverActionsNativeExt2.Travel_IsTravelingByActor(akActor)
+        SkyrimNetApi.RegisterEvent("craft_failed", akActor.GetDisplayName() + " is traveling and cannot stop to work right now.", akActor, recipient)
+        return
+    endif
+
     if !itemForm
         if recipientIsPlayer
             Debug.Notification("Cannot craft: " + originalName)
         endif
-        SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " doesn't know how to make " + originalName + ".", akActor, recipient)
+        SkyrimNetApi.RegisterEvent("craft_failed", akActor.GetDisplayName() + " doesn't know how to make " + originalName + ".", akActor, recipient)
         return
     endif
 
@@ -242,7 +260,7 @@ Function DispatchToOrchestrator(Actor akActor, Form itemForm, ObjectReference wo
         if recipientIsPlayer
             Debug.Notification("No " + workstationType + " nearby!")
         endif
-        SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " can't find a " + workstationType + " nearby.", akActor, recipient)
+        SkyrimNetApi.RegisterEvent("craft_failed", akActor.GetDisplayName() + " can't find a " + workstationType + " nearby.", akActor, recipient)
         return
     endif
 
@@ -254,7 +272,7 @@ Function DispatchToOrchestrator(Actor akActor, Form itemForm, ObjectReference wo
         if recipientIsPlayer
             Debug.Notification(akActor.GetDisplayName() + " can't start the task right now.")
         endif
-        SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " is unable to begin " + actionVerb + " " + itemForm.GetName() + " right now.", akActor, recipient)
+        SkyrimNetApi.RegisterEvent("craft_failed", akActor.GetDisplayName() + " is unable to begin " + actionVerb + " " + itemForm.GetName() + " right now.", akActor, recipient)
         return
     endif
 
@@ -269,7 +287,8 @@ EndFunction
 ; and have it ready in a few days. State lives in the native CommissionStore
 ; (cosave record 'CMSN'); see the SeverActionsNativeExt.psc 'CMSN' block.
 ;
-; Economy (locked v1 — "Simple"): priceTotal = item gold value × count; take a
+; Economy: priceTotal = the smith's LLM-quoted total (quotedTotal param), with
+; item gold value × count as the fallback when nothing was quoted; take a
 ; 50% deposit at order time; the balance is due at pickup via a Yes/No confirm.
 ; If the player can't/won't pay the balance, the smith keeps holding the item
 ; (the commission stays Ready). No DebtStore involvement.
@@ -797,8 +816,10 @@ Event OnCraftPhaseChange(string eventName, string strArg, float numArg, Form sen
         ; Item already transferred by C++. Narrate + notify player.
         Actor recipient = SeverActionsNativeExt.Craft_GetRecipient(handle)
         bool recipientIsPlayer = (recipient == Game.GetPlayer())
+        ; RegisterEvent, not DirectNarration - the forced response to the
+        ; hand-off is what re-triggered the craft loop (see DispatchToOrchestrator).
         string narration = recipient.GetDisplayName() + " has received an item from " + akActor.GetDisplayName() + "."
-        SkyrimNetApi.DirectNarration(narration, akActor, recipient)
+        SkyrimNetApi.RegisterEvent("craft_complete", narration, akActor, recipient)
         if recipientIsPlayer
             Debug.Notification("Received item from " + akActor.GetDisplayName())
         endif
@@ -815,8 +836,9 @@ Event OnCraftPhaseChange(string eventName, string strArg, float numArg, Form sen
         RecipientAlias.Clear()
         akActor.EvaluatePackage()
         string msg = akActor.GetDisplayName() + " was unable to reach the " + wsType + " and abandoned the task."
+        ; Persistent event only - the DirectNarration that used to double up
+        ; here forced a response and fed the craft retry loop.
         SkyrimNetApi.RegisterPersistentEvent(msg, akActor, recipient)
-        SkyrimNetApi.DirectNarration(msg, akActor, recipient)
         if recipientIsPlayer
             Debug.Notification(akActor.GetDisplayName() + " couldn't reach the " + wsType + ".")
         endif

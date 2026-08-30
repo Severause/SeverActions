@@ -1,13 +1,10 @@
 Scriptname SeverActions_Debt extends Quest
 {Debt tracking system for SeverActions — gold obligations between actors.
- Phase 3a moved the data into the native DebtStore (cosave 'DEBT'),
- reached via SeverActionsNativeExt.Native_Debt_*.
- Phase 4 moved the prompt-context strings into the debt_context /
- debt_complaints SkyrimNet decorators, so RebuildDebtSummary,
- RebuildAllSummaries, RebuildComplaintSummary, and the
- SeverDebt_Info / SeverDebt_Complaints StorageUtil writes are gone —
- the decorators read live from DebtStore.
- What remains here: action _Execute handlers, TickDebts, the one-time
+ Data lives in the native DebtStore (cosave 'DEBT'), reached via
+ SeverActionsNativeExt.Native_Debt_*. Prompt-context strings come from the
+ debt_context / debt_complaints SkyrimNet decorators, which read live from
+ DebtStore.
+ This script holds: action _Execute handlers, TickDebts, the one-time
  StorageUtil → native migration, the PrismaUI clear-by-name handler,
  and the MCM detail formatters.}
 
@@ -82,6 +79,11 @@ Function Maintenance()
     ; Register for PrismaUI debt clear events
     UnRegisterForModEvent("SeverActions_PrismaClearDebt")
     RegisterForModEvent("SeverActions_PrismaClearDebt", "OnPrismaClearDebt")
+    ; Per-debt Pay / Forgive buttons (replaced the name-keyed Clear)
+    UnRegisterForModEvent("SeverActions_PrismaPayDebt")
+    RegisterForModEvent("SeverActions_PrismaPayDebt", "OnPrismaPayDebt")
+    UnRegisterForModEvent("SeverActions_PrismaForgiveDebt")
+    RegisterForModEvent("SeverActions_PrismaForgiveDebt", "OnPrismaForgiveDebt")
 EndFunction
 
 Function DrainLegacySummaryKeys()
@@ -116,6 +118,90 @@ Event OnPrismaClearDebt(String eventName, String strArg, Float numArg, Form send
 
     Int removed = SeverActionsNativeExt.Native_Debt_RemoveDebtsInvolvingName(targetName)
     DebugMsg("OnPrismaClearDebt: cleared " + removed + " debt(s) for '" + targetName + "'")
+EndEvent
+
+Int Function _ParseDebtIdFromPrisma(String strArg)
+    {The PrismaUIActionHandler SendModEvent helper unconditionally prepends
+     "actorName|" to strArg ("0|" here, no actor context) — recover the id
+     after the pipe. Returns 0 on anything unparseable.}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    String idStr = strArg
+    If pipePos >= 0
+        idStr = StringUtil.Substring(strArg, pipePos + 1)
+    EndIf
+    Return idStr as Int
+EndFunction
+
+Event OnPrismaPayDebt(String eventName, String strArg, Float numArg, Form sender)
+    {Pay ONE debt the player owes, with real gold — the ledger's Pay button
+     (replaced the name-keyed Clear, which wiped every debt involving the
+     counterparty: meli report #3). Payment is capped at the gold the player
+     carries; a shortfall pays what it can and leaves the rest owed. The
+     creditor learns of it through the SAME debt_settled /
+     debt_partial_payment events the in-dialogue payment path fires.}
+    Int debtId = _ParseDebtIdFromPrisma(strArg)
+    If debtId <= 0
+        Return
+    EndIf
+    Actor player = Game.GetPlayer()
+    Actor creditor = SeverActionsNativeExt.Native_Debt_GetCreditor(debtId)
+    Actor debtor = SeverActionsNativeExt.Native_Debt_GetDebtor(debtId)
+    If !creditor || debtor != player
+        DebugMsg("OnPrismaPayDebt: id=" + debtId + " is not a debt the player owes")
+        Return
+    EndIf
+    Int amount = SeverActionsNativeExt.Native_Debt_GetAmount(debtId)
+    If amount <= 0
+        Return
+    EndIf
+    Form gold = Game.GetForm(0x0000000F)
+    Int goldOnHand = player.GetItemCount(gold)
+    Int pay = amount
+    If goldOnHand < pay
+        pay = goldOnHand
+    EndIf
+    If pay <= 0
+        Debug.Notification("You don't have the gold to pay " + creditor.GetDisplayName())
+        Return
+    EndIf
+    player.RemoveItem(gold, pay, true)
+    creditor.AddItem(gold, pay, true)
+    Int newAmount = SeverActionsNativeExt.Native_Debt_ModifyAmount(debtId, -pay)
+    If newAmount <= 0
+        SeverActionsNativeExt.Native_Debt_Remove(debtId)
+        SkyrimNetApi.RegisterEvent("debt_settled", player.GetDisplayName() + " paid off their " + amount + " gold debt with " + creditor.GetDisplayName(), creditor, player)
+        Debug.Notification("Paid " + pay + " gold to " + creditor.GetDisplayName() + " — debt settled")
+    Else
+        SkyrimNetApi.RegisterEvent("debt_partial_payment", player.GetDisplayName() + " paid " + pay + " gold toward debt with " + creditor.GetDisplayName() + " (" + newAmount + " remaining)", creditor, player)
+        Debug.Notification("Paid " + pay + " gold toward your debt to " + creditor.GetDisplayName() + " (" + newAmount + "g remaining)")
+    EndIf
+    SyncDebtFactionsForActor(creditor)
+    SyncDebtFactionsForActor(player)
+    DebugMsg("OnPrismaPayDebt: id=" + debtId + " paid=" + pay + " remaining=" + newAmount)
+EndEvent
+
+Event OnPrismaForgiveDebt(String eventName, String strArg, Float numArg, Form sender)
+    {Cancel ONE debt owed TO the player — the ledger's Forgive button on the
+     "Owed to you" column. No gold moves; the debtor learns of the mercy via
+     the same debt_forgiven event the in-dialogue forgive action fires.}
+    Int debtId = _ParseDebtIdFromPrisma(strArg)
+    If debtId <= 0
+        Return
+    EndIf
+    Actor player = Game.GetPlayer()
+    Actor creditor = SeverActionsNativeExt.Native_Debt_GetCreditor(debtId)
+    Actor debtor = SeverActionsNativeExt.Native_Debt_GetDebtor(debtId)
+    If creditor != player || !debtor
+        DebugMsg("OnPrismaForgiveDebt: id=" + debtId + " is not a debt owed to the player")
+        Return
+    EndIf
+    Int amount = SeverActionsNativeExt.Native_Debt_GetAmount(debtId)
+    SeverActionsNativeExt.Native_Debt_Remove(debtId)
+    SkyrimNetApi.RegisterEvent("debt_forgiven", player.GetDisplayName() + " forgave " + debtor.GetDisplayName() + "'s debt of " + amount + " gold", player, debtor)
+    Debug.Notification("Forgave " + debtor.GetDisplayName() + "'s debt of " + amount + " gold")
+    SyncDebtFactionsForActor(player)
+    SyncDebtFactionsForActor(debtor)
+    DebugMsg("OnPrismaForgiveDebt: id=" + debtId + " amount=" + amount)
 EndEvent
 
 ; =============================================================================
@@ -373,8 +459,8 @@ Bool Function ModifyDebtAmount(Int debtId, Int deltaAmount)
 
     ; PR #85 review fix: snapshot creditor/debtor BEFORE the mutation. When
     ; newAmount drops to 0 the native side erases the entry, and a post-call
-    ; Native_Debt_GetCreditor returns None — leaving faction membership and
-    ; per-actor summaries stale until the next full RebuildAllSummaries.
+    ; Native_Debt_GetCreditor returns None — leaving faction membership stale
+    ; unless we sync it from the snapshot taken here.
     Actor preCreditor = SeverActionsNativeExt.Native_Debt_GetCreditor(debtId)
     Actor preDebtor   = SeverActionsNativeExt.Native_Debt_GetDebtor(debtId)
 
@@ -563,12 +649,12 @@ EndFunction
 ; FACTION MEMBERSHIP SYNC
 ; =============================================================================
 ;
-; Phase 4 retired the per-actor StorageUtil summary cache — the prompt
-; templates now read live via debt_context / debt_complaints decorators.
-; Faction membership management still lives here because the YAML eligibility
-; rules (CollectPayment / ForgiveDebt / AddToDebt) consult SeverActions_*Faction
-; and adding/removing faction membership has side effects (package re-eval)
-; we don't want native triggering implicitly.
+; The prompt templates read live via the debt_context / debt_complaints
+; decorators, so no per-actor summary cache lives here. Faction membership
+; management still does, because the YAML eligibility rules (CollectPayment /
+; ForgiveDebt / AddToDebt) consult SeverActions_*Faction and adding/removing
+; membership has side effects (package re-eval) we don't want native
+; triggering implicitly.
 
 Function SyncDebtFactionsForActor(Actor akActor)
     {Add/remove the actor from DebtorFaction / CreditorFaction so its current
@@ -623,15 +709,16 @@ EndFunction
 ; =============================================================================
 
 Function TickDebts()
-    {Phase 3b — the recurring-charge / overdue / guard-report walk lives in
-     the native DebtStore::Tick. Papyrus only drains the side-effect queue
-     here, because SkyrimNet's PublicAPI doesn't expose event registration
-     to C++ callers — only Papyrus can call SkyrimNetApi.Register*Event.
+    {The recurring-charge / overdue / guard-report walk lives in the native
+     DebtStore::Tick. Papyrus only drains the side-effect queue here, because
+     SkyrimNet's PublicAPI doesn't expose event registration to C++ callers —
+     only Papyrus can call SkyrimNetApi.Register*Event.
 
      Tick kinds (mirrors DebtStore::DebtEventKind):
-       0 = Regular     — RegisterEvent(name, content, creditor, debtor)
-       1 = ShortLived  — RegisterShortLivedEvent(key, name, content, "", ttl, creditor, debtor)
-       2 = Persistent  — RegisterPersistentEvent(content, creditor, debtor)
+       0 = Regular       — RegisterEvent(name, content, creditor, debtor)
+       1 = ShortLived    — RegisterShortLivedEvent(key, name, content, "", ttl, creditor, debtor)
+       2 = Persistent    — RegisterPersistentEvent(content, creditor, debtor)
+       3 = Collection ask — DirectNarration(content, creditor, debtor)
 
      The native side converts MCM-tunable hours to days so the data layer
      stays unit-consistent (everything in Calendar days).}
@@ -658,6 +745,12 @@ Function TickDebts()
         ElseIf kind == 2
             SkyrimNetApi.RegisterPersistentEvent(content, creditor, debtor)
             DebugMsg("Tick persistent: " + content)
+        ElseIf kind == 3
+            ; Collection ask (meli report #2): the creditor is loaded near the
+            ; player with an overdue debt — DirectNarration makes them actually
+            ; raise it, once per creditor per session (native-side latch).
+            SkyrimNetApi.DirectNarration(content, creditor, debtor)
+            DebugMsg("Tick collection ask: " + content)
         Else
             SkyrimNetApi.RegisterEvent(eventName, content, creditor, debtor)
             DebugMsg("Tick regular: " + content)
@@ -709,6 +802,36 @@ Function CreateDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor akDebtor, I
         extraDetails += " Credit limit: " + aiCreditLimit + " gold."
     EndIf
 
+    ; Non-pausing PrismaUI confirm first when the player is a party (public
+    ; issue #16): the SkyMessage modal below does NOT render while the
+    ; dialogue menu is up — the NPC verbally confirmed the debt while the
+    ; confirm box silently never appeared, so nothing was recorded (reported
+    ; for the player-as-creditor case; the debtor branch had the same hole).
+    ; The overlay renders over dialogue exactly like the trade prompt.
+    ; SkyMessage stays as the fallback when the prompt view is unavailable.
+    If akDebtor == player || akCreditor == player
+        If SeverActionsNativeExt2.PrismaUI_IsDebtPromptAvailable() && !SeverActionsNativeExt2.PrismaUI_IsDebtPromptOpen()
+            Actor npcParty = akCreditor
+            If akCreditor == player
+                npcParty = akDebtor
+            EndIf
+            ; Lazy ModEvent registration — same rationale as the trade prompt's.
+            RegisterForModEvent("SeverActions_DebtChoice", "OnDebtChoice")
+            PendingDebtCreditor = akCreditor
+            PendingDebtDebtor = akDebtor
+            PendingDebtAmount = aiAmount
+            PendingDebtReason = asReason
+            PendingDebtDueSeconds = dueTimeSeconds
+            PendingDebtCreditLimit = aiCreditLimit
+            If SeverActionsNativeExt2.PrismaUI_OpenDebtPrompt(npcParty, aiAmount, asReason, aiDueDays, aiCreditLimit, akCreditor == player, 20000)
+                ; Choice arrives asynchronously via OnDebtChoice.
+                Return
+            EndIf
+            ; Open refused (another prompt up / view focus) — fall through to
+            ; the legacy modal below.
+        EndIf
+    EndIf
+
     If akDebtor == player
         String promptText = akCreditor.GetDisplayName() + " claims you owe them " + aiAmount + " gold for " + asReason + "." + extraDetails + " Accept this debt?"
         String result = SkyMessage.Show(promptText, "Yes", "No", "No (Silent)")
@@ -738,6 +861,49 @@ Function CreateDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor akDebtor, I
         SkyrimNetApi.RegisterEvent("debt_created", akDebtor.GetDisplayName() + " now owes " + akCreditor.GetDisplayName() + " " + aiAmount + " gold for " + asReason, akCreditor, akDebtor)
     EndIf
 EndFunction
+
+; ── Debt confirm prompt state (public issue #16) ─────────────────────────────
+; One pending debt at a time — matches the bridge's one-in-flight rule. The
+; full pending terms are stashed HERE before opening; the ModEvent only
+; carries the verdict (strArg) and the amount (numArg).
+Actor PendingDebtCreditor
+Actor PendingDebtDebtor
+Int PendingDebtAmount
+String PendingDebtReason
+Float PendingDebtDueSeconds
+Int PendingDebtCreditLimit
+
+Event OnDebtChoice(String asEventName, String asChoice, Float afAmount, Form akSender)
+    {The non-pausing debt prompt resolved. accept = record the debt exactly as
+     the modal Yes did; deny = spoken refusal (DirectNarration so the NPC
+     hears it); denySilent/dismiss = walk away, nothing recorded or said.}
+    Actor cred = PendingDebtCreditor
+    Actor debt = PendingDebtDebtor
+    Int amount = PendingDebtAmount
+    String reason = PendingDebtReason
+    Float dueSeconds = PendingDebtDueSeconds
+    Int creditLimit = PendingDebtCreditLimit
+    PendingDebtCreditor = None
+    PendingDebtDebtor = None
+
+    If !cred || !debt || amount <= 0
+        Return
+    EndIf
+
+    Actor player = Game.GetPlayer()
+    If asChoice == "accept"
+        AddDebt(cred, debt, amount, reason, dueSeconds, false, 0.0, creditLimit)
+        SkyrimNetApi.RegisterEvent("debt_created", debt.GetDisplayName() + " now owes " + cred.GetDisplayName() + " " + amount + " gold for " + reason, cred, debt)
+    ElseIf asChoice == "deny"
+        If debt == player
+            SkyrimNetApi.DirectNarration(player.GetDisplayName() + " refused to accept the debt of " + amount + " gold for " + reason, cred)
+        Else
+            SkyrimNetApi.DirectNarration(player.GetDisplayName() + " declined to record the debt", debt)
+        EndIf
+    Else
+        DebugMsg("OnDebtChoice: silently declined (" + asChoice + ")")
+    EndIf
+EndEvent
 
 Function CreateRecurringDebt_Execute(Actor akSpeaker, Actor akCreditor, Actor akDebtor, Int aiAmount, String asReason, Int aiIntervalDays, Int aiCreditLimit)
     {Create a recurring debt. interval = aiIntervalDays x 24 game hours.
@@ -807,7 +973,7 @@ EndFunction
 Function ReduceDebtByPayment(Actor akCollector, Actor akPayer, Int aiAmountPaid)
     {Reduce debts where akCollector is creditor and akPayer is debtor by the paid amount.
      Called automatically by CollectPayment after gold transfers.
-     Removes debts that reach 0. Rebuilds summaries and complaint cache.}
+     Removes debts that reach 0. Syncs debtor/creditor faction membership for both parties.}
     If !akCollector || !akPayer || aiAmountPaid <= 0
         Return
     EndIf
@@ -829,6 +995,48 @@ Function ReduceDebtByPayment(Actor akCollector, Actor akPayer, Int aiAmountPaid)
     SyncDebtFactionsForActor(akCollector)
     SyncDebtFactionsForActor(akPayer)
     DebugMsg("ReduceDebtByPayment: " + akPayer.GetDisplayName() + " paid " + reduced + "g toward debt with " + akCollector.GetDisplayName() + " (was " + totalOwed + "g)")
+EndFunction
+
+Function ReduceDebt_Execute(Actor akSpeaker, Actor akTarget, Int aiAmount)
+    {The speaker knocks an arbitrary amount off what the target owes them, with
+     NO gold changing hands - a favour repaid, work done, goods handed over, or
+     plain generosity.
+
+     Distinct from ForgiveDebt (all-or-nothing) and from a repayment (which
+     reduces by what was actually paid). Reuses Native_Debt_ReduceForPayment
+     because the arithmetic is identical - only the reason differs - so the
+     ledger, the credit limits and the faction sync all behave exactly as they
+     do for a real payment.}
+    If !akSpeaker || !akTarget || aiAmount <= 0
+        DebugMsg("ReduceDebt_Execute failed - invalid params")
+        Return
+    EndIf
+
+    Int totalOwed = SeverActionsNativeExt.Native_Debt_SumOwed(akSpeaker, akTarget)
+    If totalOwed <= 0
+        DebugMsg("ReduceDebt: " + akTarget.GetDisplayName() + " doesn't owe " + akSpeaker.GetDisplayName() + " anything")
+        Return
+    EndIf
+
+    ; Never write off more than is owed - a reduction past zero would read as
+    ; the creditor now owing THEM, which is a different transaction entirely.
+    Int amount = aiAmount
+    If amount > totalOwed
+        amount = totalOwed
+    EndIf
+
+    Int reduced = SeverActionsNativeExt.Native_Debt_ReduceForPayment(akSpeaker, akTarget, amount)
+    Int remaining = SeverActionsNativeExt.Native_Debt_SumOwed(akSpeaker, akTarget)
+
+    If remaining <= 0
+        SkyrimNetApi.RegisterEvent("debt_reduced", akSpeaker.GetDisplayName() + " wrote off the last " + reduced + " gold of " + akTarget.GetDisplayName() + "'s debt - the tab is clear", akSpeaker, akTarget)
+    Else
+        SkyrimNetApi.RegisterEvent("debt_reduced", akSpeaker.GetDisplayName() + " knocked " + reduced + " gold off " + akTarget.GetDisplayName() + "'s debt - " + remaining + " gold still owed", akSpeaker, akTarget)
+    EndIf
+    DebugMsg("ReduceDebt: " + akSpeaker.GetDisplayName() + " reduced " + akTarget.GetDisplayName() + " by " + reduced + "g (" + remaining + "g left)")
+
+    SyncDebtFactionsForActor(akSpeaker)
+    SyncDebtFactionsForActor(akTarget)
 EndFunction
 
 Function ForgiveDebt_Execute(Actor akSpeaker, Actor akTarget)

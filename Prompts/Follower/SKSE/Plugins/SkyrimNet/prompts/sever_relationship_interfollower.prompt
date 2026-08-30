@@ -24,13 +24,13 @@ Party members and current opinions:
 {% endif %}
 {% endfor %}
 
-Name → ID mapping (use these names as targets):
+Valid targets (use these exact names):
 {% for member in partyMembers %}
 {% set memberUUID = formid_to_uuid(member.formId) %}
 {% if memberUUID and isNumber(memberUUID) and memberUUID != 0 %}
 {% set memberNpc = decnpc(memberUUID) %}
 {% if memberNpc and memberNpc.UUID %}
-{{ memberNpc.name }} = {{ member.formId }}
+- {{ memberNpc.name }}
 {% endif %}
 {% endif %}
 {% endfor %}
@@ -154,7 +154,7 @@ Rules:
 - For each companion with changes, include a "blurb" — a 2-3 sentence summary (25-40 words) of how {{ npc.name }} feels about them, written in second person addressing {{ npc.name }} as "you" (e.g., "You find her capable in a fight but reckless — she charges in without thinking and it puts the group at risk. Still, you'd rather have her at your side than not."). The blurb should reflect the TOTAL relationship (current affinity + respect + history), not just the latest change. Make each blurb unique — reference specific shared experiences, personality clashes, combat moments, or moral disagreements that shaped the opinion. Avoid generic statements.
 
 Respond with ONLY this JSON. No spaces after colons. No explanation. One line.
-Use the target's exact name (string) from the Name → ID mapping above. Each companion gets their OWN individual affinity and respect changes based on {{ npc.name }}'s specific interactions with THAT companion. Do NOT give all companions the same values.
+Use the target's exact name (string) from the Valid targets list above. Each companion gets their OWN individual affinity and respect changes based on {{ npc.name }}'s specific interactions with THAT companion. Do NOT give all companions the same values.
 
 Include "assessor" with the value "{{ npc.name }}", "src" with the value {{ npcFormId }}, "eid" with the value {{ maxEventId }}, "mid" with the value {{ maxMemoryId }}, and "did" with the value {{ diaryId }}:
 {% raw %}{"assessor":"Name","src":0,"pairs":[{"target":"Name","affinity":0,"respect":0,"blurb":"You find her reliable in combat and appreciate her directness. She stood by you against those bandits without hesitation, and that earned your respect."}],"eid":0,"mid":0,"did":0}{% endraw %}

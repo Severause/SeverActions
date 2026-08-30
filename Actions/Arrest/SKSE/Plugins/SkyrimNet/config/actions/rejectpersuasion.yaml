@@ -1,13 +1,13 @@
 customCategory: arrest
 name: RejectPersuasion
-description: "The guard listens to the player's argument and shakes their head — bounty stands, story doesn't hold up, the law is the law. They demand the player face justice and the confrontation moves to submit-or-resist."
+description: "Use only during an active bounty confrontation, when {{ player.name }}'s argument fails to convince the guard. The bounty stands, and the confrontation moves to submit-or-resist."
 questEditorId: SeverActions
 scriptName: SeverActions_ArrestPlayer
 executionFunctionName: RejectPersuasion_Internal
 parameterMapping:
   - type: speaker
     name: akGuard
-    description: the guard unmoved by the player's case
+    description: the guard unmoved by {{ player.name }}'s case
 enabled: true
 defaultPriority: 9
 eligibilityRules:

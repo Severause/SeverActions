@@ -33,30 +33,8 @@ You're properly cold now. Shivering, arms crossed tight, wishing for a fire or a
 {% elif cold >= 25 %}
 There's a chill in the air. Nothing you can't handle, but you notice it.
 {% endif %}
-When hungry, eat food you already have in your inventory first. Only look for food elsewhere if you have nothing to eat on you.
-{% else %}
-## Physical State
-{% if hunger >= 75 %}
-You haven't had a proper meal in far too long and it shows — you feel weak and distracted.
-{% elif hunger >= 50 %}
-You're hungry and your thoughts keep drifting to food.
-{% elif hunger >= 25 %}
-You could use something to eat. Your stomach has been grumbling.
-{% endif %}
-{% if fatigue >= 75 %}
-You've been up far too long. Everything feels heavy and slow.
-{% elif fatigue >= 50 %}
-Tiredness hangs on you. You keep losing your train of thought.
-{% elif fatigue >= 25 %}
-You're a bit worn out. Rest would be nice.
-{% endif %}
-{% if cold >= 75 %}
-The cold is brutal. Your fingers are numb and you can barely think straight.
-{% elif cold >= 50 %}
-You're chilled through and it's making everything harder.
-{% elif cold >= 25 %}
-It's a bit cold. You notice the chill but push through.
-{% endif %}
+{% if hunger >= 25 %}When hungry, eat food you already have in your inventory first. Only look for food elsewhere if you have nothing to eat on you.{% endif %}
+
 {% endif %}
 {% endif %}
 {% endif %}

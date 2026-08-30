@@ -1,6 +1,6 @@
 customCategory: combat
 name: Yield
-description: "The speaker drops their guard and throws up empty hands — a bandit who's lost the stomach for it, a wounded soldier sinking to one knee in the snow, a thief cornered in an alley. They surrender, hoping mercy will come."
+description: "Surrender a real fight the speaker is losing and hope for mercy — a bandit who has lost the stomach for it, a wounded soldier sinking to one knee. For yielding a non-lethal brawl, use ForfeitBrawl."
 questEditorId: SeverActions
 scriptName: SeverActions_Combat
 executionFunctionName: Yield_Execute

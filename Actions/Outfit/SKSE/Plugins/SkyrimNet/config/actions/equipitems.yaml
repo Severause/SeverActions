@@ -1,6 +1,6 @@
 customCategory: outfit
 name: EquipArmor
-description: "The speaker pulls specific pieces out of their pack and puts them on — buckling on steel gauntlets before a fight, lacing up boots before a long march, pulling on a circlet to meet a Jarl. Equip one or more named items from inventory; comma-separate for multiple."
+description: "The speaker pulls specific pieces out of their pack and puts them on — buckling on steel gauntlets before a fight, lacing up boots before a long march, pulling on a circlet to meet a Jarl. Equip one or more named items from inventory (any gear, not just armor); comma-separate for multiple. For re-dressing after Undress use GetDressed; for a saved named outfit use ApplyOutfitPreset."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: EquipMultipleItems_Execute

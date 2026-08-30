@@ -1,5 +1,5 @@
 name: StopUsingFurniture
-description: "The speaker pushes back from the chair, rolls off the bed, or rises from the shrine — done sitting, done sleeping, done praying — and stands on their own feet again."
+description: "The speaker gets up from furniture they are using — pushes back from the chair, rolls off the bed, rises from the shrine. Use only when they are currently sitting, lying, or kneeling and should stand."
 questEditorId: SeverActions
 scriptName: SeverActions_Furniture
 executionFunctionName: StopUsingFurniture_Execute

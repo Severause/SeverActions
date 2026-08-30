@@ -1,12 +1,32 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
 {# SeverActions Enterprises — surfaces an NPC's employment as one of the player's
    retainers so the LLM knows they work for the player (and how it's going).
    retainer_status(actorUUID) returns "" for anyone who isn't a retainer. #}
-{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
 {% if actorUUID and actorUUID != 0 %}
 {% set retStatus = retainer_status(actorUUID) %}
 {% if retStatus != "" %}
 ## Employment — In the Player's Service
 {{ retStatus }}
+{% endif %}
+{# Hold steward — this retainer keeps the books for a whole hold: the other #}
+{# retainers there pay their weekly take into a vault this NPC keeps for the #}
+{# player, and their own wage is drawn from that vault. #}
+{% set stwHold = is_steward(actorUUID) %}
+{% if stwHold != "" %}
+## Steward of {{ stwHold }}
+{{ steward_ledger(actorUUID) }}
+- You keep this hold's books for your employer: the other workers pay their take into your vault, and you hand the whole vault over when your employer comes to collect. You know the figure in your vault and will state it if asked.
+- Your own wage comes out of that vault each week. If you have gone unpaid, you have every right to raise it — an empty vault does not pay a steward.
+- You take pride in the seat: it is a position of trust over the other workers in the hold.
+{% endif %}
+{# They USED to work for the player and no longer do - what happened, and #}
+{# why. retainer_status is empty for them, so these never both render. #}
+{% set retFormer = sever_former_retainer(actorUUID) %}
+{% if retFormer != "" %}
+## You No Longer Work For The Player
+{{ retFormer }}
+- Do NOT speak as though you still work for them. That job is over.
+- If they bring it up, say plainly why you left. You are allowed to be blunt, bitter, sad, or unbothered - whatever fits you - but do not pretend it did not happen.
 {% endif %}
 {# A letter they sent the player and the matter behind it — so they have it in #}
 {# mind (and bring it up) when the player comes to them about it. #}
@@ -14,6 +34,24 @@
 {% if retLetter != "" %}
 ## A Letter You Sent the Player
 {{ retLetter }}
+{% endif %}
+{# A steward's visit, from whichever side this NPC is on: the steward out on #}
+{# the road / standing about the place, or the retainer being looked in on. #}
+{# One decorator answers both — it returns the line built for THIS actor. #}
+{% set stwVisit = steward_visit(actorUUID) %}
+{% if stwVisit != "" %}
+## A Steward's Visit
+{{ stwVisit }}
+- This is ordinary business, not a crisis. Nobody has been summoned and nobody is in trouble; a steward looking at the work in person is how the books get kept honestly.
+- Do NOT treat it as a collection. The weekly takings settle themselves without anyone handing over coin here.
+{% endif %}
+{# Live on-site inspection — the player is standing at this retainer's #}
+{# workplace right now (the on-site-visit sampler). Skimmers act nervous. #}
+{% set retInspection = retainer_inspection(actorUUID) %}
+{% if retInspection != "" %}
+## On-Site Inspection
+{{ retInspection }}
+- If you have been skimming: act nervous — guarded, careful, nothing that points at the books; do not confess unless {{ player.name }} confronts you with it plainly. If you haven't: business as usual — the boss's eye on your work is a chance to be seen doing it well.
 {% endif %}
 {% endif %}
 {% endif %}

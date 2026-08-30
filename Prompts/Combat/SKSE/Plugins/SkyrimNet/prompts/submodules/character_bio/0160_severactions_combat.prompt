@@ -84,7 +84,7 @@ You just stopped fighting. The tension is still high but you are holding back. Y
    they fall back to their base hostile-faction behaviour. #}
 {% if not yield_broken and (post_truce_ceasefire or post_truce_yield) %}
 ## Resolved Conflict
-You and this person had a brief fight that ended without bloodshed. You are not the kind of person who carries that into renewed violence — the disagreement is behind you. Treat them with the demeanor your role and history with them would normally call for. Do not bring up the fight unprompted; do not re-engage.
+You and this person had a fight that ended in a truce. You are not the kind of person who carries that into renewed violence — the disagreement is behind you. Treat them with the demeanor your role and history with them would normally call for. Do not bring up the fight unprompted; do not re-engage.
 {% endif %}
 {# Active combat state #}
 {% if in_combat and not recent_ceasefire %}

@@ -1,6 +1,6 @@
 customCategory: arrest
 name: AppealDuringEscort
-description: "The prisoner, hands bound and being marched toward the cell door, makes one last try — pleading innocence, promising a fat purse the moment they're free, swearing on family, appealing to whatever shred of mercy the guard still has. The escort halts, blade still drawn, and listens. One attempt per arrest, and only valid while the speaker is actively being escorted."
+description: "Use only while the speaker is actively being escorted to jail: the prisoner makes a last plea — innocence, a bribe, mercy — and the escort halts to listen. The escorting guard then accepts or rejects the plea."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: AppealDuringEscort_Internal

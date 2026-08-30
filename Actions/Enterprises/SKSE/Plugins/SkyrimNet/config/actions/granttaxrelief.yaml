@@ -1,0 +1,27 @@
+name: GrantTaxRelief
+description: "Use when this jarl, speaking with {{ player.name }} IN PERSON, is genuinely persuaded to ease the hold's enterprise taxes — {{ player.name }} petitioned respectfully, argued the hold benefits from their businesses, performed a real service, or otherwise earned goodwill. The jarl must actually AGREE in their dialogue before this fires. Do NOT call for flattery alone, vague requests, or if the jarl remains unconvinced or noncommittal. Each grant eases the rate ~5 points."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: GrantTaxRelief
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the jarl granting the tax relief
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_jarl"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+eventString: "Jarl {{ actor.name }} agreed to ease the hold's taxes on {{ player.name }}'s enterprises"

@@ -51,10 +51,9 @@ Event OnInit()
     RegisterWheelKey()
 EndEvent
 
-Event OnPlayerLoadGame()
-    Debug.Trace("[SeverActions_WheelMenu] Game loaded, re-registering wheel key")
-    RegisterWheelKey()
-EndEvent
+; No OnPlayerLoadGame handler here — Quest scripts never receive that event
+; (it's Actor/alias-only). SeverActions_Init's InitializeWheelMenuSystem()
+; calls RegisterWheelKey() on every load instead.
 
 ; =============================================================================
 ; KEY REGISTRATION
@@ -110,8 +109,10 @@ Event OnKeyDown(int keyCode)
 
     Actor player = Game.GetPlayer()
 
-    ; Ignore if player is in dialogue, dead, or incapacitated
-    if player.IsInDialogueWithPlayer() || player.IsDead() || player.GetSitState() == 3
+    ; Ignore if player is in dialogue, dead, or incapacitated.
+    ; (IsInDialogueWithPlayer() on the player is always false -- the Dialogue
+    ; Menu check is the real vanilla-dialogue guard.)
+    if UI.IsMenuOpen("Dialogue Menu") || player.IsDead() || player.GetSitState() == 3
         return
     endif
 
@@ -453,6 +454,5 @@ EndFunction
 ; =============================================================================
 
 SeverActions_WheelMenu Function GetInstance() Global
-    ; Update this FormID to match your quest's FormID in CK
     return Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_WheelMenu
 EndFunction

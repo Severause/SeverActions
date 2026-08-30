@@ -21,7 +21,7 @@
 {% set subj = actor.subjectivePronoun %}
 {% set poss = actor.possessivePronoun %}
 ## ACTIVE PERSUASION CONFRONTATION
-{{ actor.name }} is currently confronting {{ playerName }} about a {{ confrontingBounty }} gold bounty. {{ playerName }} is trying to talk {{ poss }} way out of arrest.
+{{ actor.name }} is currently confronting {{ playerName }} about a {{ confrontingBounty }} gold bounty. {{ playerName }} is trying to talk their way out of arrest.
 
 **CRITICAL INSTRUCTIONS FOR THIS CONVERSATION:**
 - {{ actor.name }} MUST judge {{ playerName }}'s arguments and decide whether to let them go or demand justice.

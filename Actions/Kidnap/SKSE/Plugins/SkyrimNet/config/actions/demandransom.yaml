@@ -1,0 +1,71 @@
+name: DemandRansom
+description: "Send a ransom demand to a held captive's people (their home hold). The answer comes back by courier in a day or two: payment scaled by the captive's standing, or a refusal that sends hired searchers after the captive instead. Use when {{ player.name }} wants coin for a captive. Only works on captives currently held bound, one demand per captivity."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: DemandRansom
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: the companion sending the demand
+  - type: dynamic
+    name: targetName
+    description: "the captive's name (may be approximate; matched against current captives only)"
+    optional: true
+  - type: dynamic
+    name: aiAmount
+    description: "the gold amount to demand, if {{ player.name }} named a figure - omit to let the kidnapper set a fair price from the captive's standing (overreaching the fair price makes refusal likelier)"
+    optional: true
+    default: 0
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      # Opt-in feature toggle. Custom decorator — STRING compare, never == true.
+      - decoratorName: "sever_kidnap_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_sever_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives (the self-release hole class).
+      # String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Scene gates (audit sec.7-4 alignment): the kidnapnpc/movecaptive/
+      # restrainnpc siblings carry these; the speaker must not be mid-scene.
+      # get_faction_rank, never is_in_faction - rank -1 (stuck sentinel)
+      # must not gate the action forever (CLAUDE.md scene-gate rule).
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "SexLabAnimatingFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_faction_rank"
+        arguments: ["currentActor", "OStimExcitementFaction"]
+        comparisonOperator: "<"
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} sends out a ransom demand for the captive"

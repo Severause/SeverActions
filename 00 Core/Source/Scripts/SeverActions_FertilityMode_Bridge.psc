@@ -5,13 +5,16 @@ Scriptname SeverActions_FertilityMode_Bridge extends Quest
 
 Actor Property PlayerRef Auto
 Bool Property Enabled = True Auto
-Float Property UpdateInterval = 3.0 Auto
+Float Property UpdateInterval = 60.0 Auto
 
 ; Cached references
 _JSW_BB_Storage FertStorage
 _JSW_BB_Utility FertUtil
 Bool bInitialized = False
 Bool bNativeAvailable = False
+; Real-time deadline after a None TrackedActors read — the scan sleeps until it
+; passes so FM's benign per-read log line can't repeat every 3s while FM is idle.
+Float fNoneReadBackoffUntil = 0.0
 
 Event OnInit()
     ; Delay on first init to ensure all mods are loaded
@@ -19,11 +22,23 @@ Event OnInit()
     Maintenance()
 EndEvent
 
-Event OnPlayerLoadGame()
-    Maintenance()
-EndEvent
+; No OnPlayerLoadGame handler — Quest scripts never receive that event
+; (Actor/alias-only). SeverActions_Init's InitializeBridge() calls
+; Maintenance() on every load instead.
 
-Event OnUpdate()
+Function ChronoArm(Float afSeconds)
+    {Arm this script's one-shot chronometer tick - replaces the FORM-keyed
+     RegisterForSingleUpdate (canonical explanation: the Chronometer block in
+     SeverActionsNativeExt2.psc + the CLAUDE.md lesson). Event name AND
+     callback name are unique per script - both, always. Re-arm replaces the
+     pending tick; ticks do NOT survive save/load (load paths re-arm); at
+     most one already-in-flight wake can land after Cancel/Clear, so keep
+     the handler state-guarded.}
+    RegisterForModEvent("SeverActions_Tick_Fertility", "OnChronoTick_Fertility")
+    SeverActionsNativeExt2.Chrono_Request("SeverActions_Tick_Fertility", afSeconds)
+EndFunction
+
+Event OnChronoTick_Fertility(String eventName, String strArg, Float numArg, Form sender)
     ; Only run update loop if FM is actually installed and initialized
     if !bInitialized || !FertStorage
         return
@@ -41,7 +56,7 @@ Event OnUpdate()
     if Enabled
         UpdateNearbyActors()
     endif
-    RegisterForSingleUpdate(UpdateInterval)
+    ChronoArm(UpdateInterval)
 EndEvent
 
 Function Maintenance()
@@ -85,8 +100,19 @@ Function Maintenance()
     RegisterForModEvent("FertilityModeAddSperm", "OnFertilityModeAddSperm")
     RegisterForModEvent("FertilityModeConception", "OnFertilityModeConception")
 
+    ; Scan cadence floor: fertility state changes over game DAYS (cycle day,
+    ; pregnancy progress) — a 3s poll bought nothing but log noise, since every
+    ; read of an FM array that happens to be None logs a cast error the bridge
+    ; can neither prevent nor silence (FM-internal). 60s keeps prompt data
+    ; effectively fresh at 1/20th the reads. Applied HERE, not at the property
+    ; default, because Auto property defaults bake into existing saves — the
+    ; floor is what upgrades a save carrying the old 3.0.
+    if UpdateInterval < 60.0
+        UpdateInterval = 60.0
+    endif
+
     ; Start the update loop
-    RegisterForSingleUpdate(UpdateInterval)
+    ChronoArm(UpdateInterval)
     Debug.Trace("[SeverActions_FM] Update loop started with interval: " + UpdateInterval)
 EndFunction
 
@@ -116,8 +142,8 @@ Event OnFertilityModeAddSperm(Form akTarget, String fatherName, Form father)
     StorageUtil.SetStringValue(targetActor, "SkyrimNet_FM_InsemFather", actualFatherName)
     StorageUtil.SetFloatValue(targetActor, "SkyrimNet_FM_InsemTime", Utility.GetCurrentGameTime())
 
-    ; (No narration on insemination — intentionally removed. Data above is still
-    ;  recorded for prompt/decorator access.)
+    ; No narration on insemination — intentional. Data above is still
+    ; recorded for prompt/decorator access.
 
     Debug.Trace("[SeverActions_FM] Insemination: " + actualFatherName + " -> " + targetName)
 EndEvent
@@ -139,16 +165,29 @@ EndEvent
 ; NATIVE CACHE UPDATE FUNCTIONS - Pushes FM data to native module
 ; ============================================================================
 
-Function UpdateActorFertilityData(Actor akActor)
-    if !akActor || !bInitialized || !FertStorage
+Function UpdateActorFertilityData(Actor akActor, Form[] akTrackedActors = None)
+    ; Is3DLoaded guards the transient-actor CTD window: an actor mid-detach during a
+    ; cell transition passes the !akActor check but null-derefs inside the
+    ; FM_SetActorData native below. NPCs arrive pre-filtered by
+    ; Native_ScanPlayerCellFemales3DLoaded, but the player branch (and any future
+    ; caller) is not — so this is the final gate right before the native. Skipping a
+    ; transient actor is harmless: the 3s scan re-reads them once they settle.
+    ; (|| short-circuits, so Is3DLoaded is never called on a None akActor.)
+    if !akActor || !akActor.Is3DLoaded() || !bInitialized || !FertStorage
         return
     endif
 
-    ; Cache TrackedActors locally — FM's property getter can throw
-    ; "Cannot cast from None to Form[]" if FM hasn't fully initialized its arrays yet.
-    ; The error is logged but Papyrus continues, so we grab the result and guard on it.
-    Form[] trackedActors = FertStorage.TrackedActors
-    if trackedActors == None || trackedActors.Length == 0
+    ; TrackedActors: prefer the list UpdateNearbyActors already read this scan
+    ; (passed in) so we do NOT re-trigger FM's throwing getter once per actor — that
+    ; per-actor repetition was the bulk of the "Cannot cast from None to Form[]"
+    ; spam. Fall back to a direct read only for a caller that didn't supply it.
+    ; Truthiness (`!arr`), never `== None` — the equality form does not detect a
+    ; None array (field-proven 2026-08-30; see the scan-level guard).
+    Form[] trackedActors = akTrackedActors
+    if !trackedActors
+        trackedActors = FertStorage.TrackedActors
+    endif
+    if !trackedActors || trackedActors.Length == 0
         return
     endif
 
@@ -177,25 +216,25 @@ Function UpdateActorFertilityData(Actor akActor)
     int[] arrGameHoursDelta = FertStorage.LastGameHoursDelta
     string[] arrFather = FertStorage.CurrentFather
 
-    if arrConception != None && actorIndex < arrConception.Length
+    if arrConception && actorIndex < arrConception.Length
         lastConception = arrConception[actorIndex]
     endif
-    if arrBirth != None && actorIndex < arrBirth.Length
+    if arrBirth && actorIndex < arrBirth.Length
         lastBirth = arrBirth[actorIndex]
     endif
-    if arrBabyAdded != None && actorIndex < arrBabyAdded.Length
+    if arrBabyAdded && actorIndex < arrBabyAdded.Length
         babyAdded = arrBabyAdded[actorIndex]
     endif
-    if arrOvulation != None && actorIndex < arrOvulation.Length
+    if arrOvulation && actorIndex < arrOvulation.Length
         lastOvulation = arrOvulation[actorIndex]
     endif
-    if arrGameHours != None && actorIndex < arrGameHours.Length
+    if arrGameHours && actorIndex < arrGameHours.Length
         lastGameHours = arrGameHours[actorIndex]
     endif
-    if arrGameHoursDelta != None && actorIndex < arrGameHoursDelta.Length
+    if arrGameHoursDelta && actorIndex < arrGameHoursDelta.Length
         lastGameHoursDelta = arrGameHoursDelta[actorIndex]
     endif
-    if arrFather != None && actorIndex < arrFather.Length
+    if arrFather && actorIndex < arrFather.Length
         currentFather = arrFather[actorIndex]
     endif
 
@@ -245,27 +284,60 @@ Function UpdateNearbyActors()
         return
     endif
 
-    ; Verify FM arrays are available before scanning.
-    ; Don't access FertStorage.TrackedActors here — each call to UpdateActorFertilityData
-    ; already caches and guards it locally. Avoids redundant property access that can
-    ; throw "Cannot cast from None to Form[]" when FM hasn't initialized yet.
+    ; Suppress the whole scan during a cell transition. The player — and the actors
+    ; around them — can be mid-detach, which is the CTD window the FM_SetActorData
+    ; native falls into. The chronometer re-arm in OnChronoTick_Fertility fires
+    ; unconditionally AFTER this call, so a skipped tick simply retries next interval.
+    if !PlayerRef || !PlayerRef.Is3DLoaded()
+        return
+    endif
 
+    ; None-read backoff: when FM has nothing tracked, its TrackedActors getter
+    ; logs one "Cannot cast from None to Form[]" per read (FM-internal, benign,
+    ; caught below — present with bone-stock SA too). Reading every 3s turned
+    ; that into steady log spam, so after a None read the whole scan sleeps 60s
+    ; before probing again. Real time, session-local; resets naturally on load.
+    if fNoneReadBackoffUntil > 0.0 && Utility.GetCurrentRealTime() < fNoneReadBackoffUntil
+        return
+    endif
+
+    ; Read FM's tracked-actor list ONCE per scan and gate everything on it — one
+    ; potential log line per scan instead of one per female, and the cached list
+    ; is passed down to UpdateActorFertilityData so it never re-triggers the
+    ; getter. NOTE deliberately NO FertStorage.UpdateStorage() call here: an
+    ; earlier revision called it per scan to heal FM's parallel-array desync, but
+    ; the INSTALLED FM Reloaded (v1.0.3) re-initializes its SpawnedChildActorRefs
+    ; array on EVERY UpdateStorage call whenever its length disagrees with
+    ; AdultChildren (an FM-internal cap bug we cannot fix from here), so a per-
+    ; scan call churned FM-owned state every 3s (field log 2026-08-30). FM's own
+    ; handler calls UpdateStorage at load/its own cadence — array sizing is its
+    ; job, not the bridge's.
+    ; TRUTHINESS, not == None: field-proven 2026-08-30 that `arr == None` does
+    ; NOT detect a None array in Papyrus — execution sailed past this guard with
+    ; a None list every scan, so the backoff never armed and the per-actor calls
+    ; each logged their own cast error. `if !arr` is the form the per-field
+    ; guards already use, and the one that works.
+    Form[] trackedActors = FertStorage.TrackedActors
+    if !trackedActors || trackedActors.Length == 0
+        fNoneReadBackoffUntil = Utility.GetCurrentRealTime() + 300.0
+        return
+    endif
 
     ; Update player if female
     if PlayerRef.GetActorBase().GetSex() == 1
-        UpdateActorFertilityData(PlayerRef)
+        UpdateActorFertilityData(PlayerRef, trackedActors)
     endif
 
     ; Update nearby female NPCs. The cell scan + female + Is3DLoaded filter
     ; now lives in C++ (Native_ScanPlayerCellFemales3DLoaded) to avoid the
     ; per-tick GetNumRefs(43) + GetNthRef + GetSex + Is3DLoaded round-trips at
-    ; UpdateInterval=3.0s. UpdateActorFertilityData stays Papyrus — it reads FM's
+    ; UpdateInterval (60s floor). UpdateActorFertilityData stays Papyrus — it reads FM's
     ; external store.
     Actor[] females = SeverActionsNativeExt.Native_ScanPlayerCellFemales3DLoaded()
     if females
         int i = 0
         while i < females.Length
-            UpdateActorFertilityData(females[i])
+            UpdateActorFertilityData(females[i], trackedActors)
             i += 1
         endwhile
     endif

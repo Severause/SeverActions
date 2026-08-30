@@ -81,15 +81,10 @@ Function Initialize(Bool isFirstInit)
     InitializePrismaUI()
 
     ; Surface the "loaded" notification right after PrismaUI is wired rather
-    ; than at the very end of the chain. From the user's perspective this is
-    ; the moment the mod is interactive — the rest of the Maintenance work
-    ; (follower roster sync, outfit migration, etc.) runs in the background
-    ; without blocking the menu, so showing the notification here matches
-    ; perceived readiness instead of trailing it by ~20 seconds.
-    ; Honest about what's actually online — the rest of Initialize() (decorators,
-    ; bridge, travel/outfit/follower systems) is still chaining below. The
-    ; notification fires here because PrismaUI is what the player most
-    ; immediately interacts with; the trailing systems come up within ~1-2s.
+    ; than at the very end of the chain: PrismaUI is what the player most
+    ; immediately interacts with, so this matches perceived readiness. The rest
+    ; of Initialize() (decorators, bridge, travel/outfit/follower systems) keeps
+    ; chaining below without blocking the menu, and comes up within ~1-2s.
     Debug.Notification("SeverActions menu ready")
 
     RegisterDecorators()
@@ -102,6 +97,8 @@ Function Initialize(Bool isFirstInit)
     InitializeFollowerManagerSystem()
     InitializeDebtSystem()
     InitializeArrestSystem()
+    RunLoadRecovery()
+    InitializeSpellTeachSystem()
     SyncMCMSettings()
     ; SyncPluginConfig() — disabled: WebUI config clobbers PrismaUI/MCM settings on reload.
     ; Will revisit once SkyrimNet exposes a PluginConfig setter API for bidirectional sync.
@@ -243,11 +240,15 @@ SeverActions_Follow Function GetFollowSystem()
         Return FollowSystem
     EndIf
 
-    ; Try to find it via FormID
-    SeverActions_Follow followSys = Game.GetFormFromFile(0x000800, "SeverActions.esp") as SeverActions_Follow
-    If followSys
-        Debug.Trace("[SeverActions] Found Follow System via GetFormFromFile")
-        Return followSys
+    ; Try to find it on the owning quest (0x000800 was a phantom FormID --
+    ; the only quest in SeverActions.esp is 0x000D62, which owns this script)
+    Quest myQuest = GetOwningQuest()
+    If myQuest
+        SeverActions_Follow followSys = myQuest as SeverActions_Follow
+        If followSys
+            Debug.Trace("[SeverActions] Found Follow System via quest cast")
+            Return followSys
+        EndIf
     EndIf
 
     Return None
@@ -349,17 +350,19 @@ EndFunction
 
 ; =============================================================================
 ; ARREST SYSTEM INITIALIZATION
-; The arrest script has an "OnPlayerLoadGame" ModEvent handler internally,
-; but the ModEvent isn't reliably sent on save load, so Maintenance() did
-; not actually run after a save reload. That broke the native HoldResolver
-; table (in-memory only, no cosave), which made GetCrimeFactionForGuard
-; return None and every arrest action bail with
-; "Could not determine guard's crime faction".
+; SeverActions_Arrest is a Quest script — it NEVER receives OnPlayerLoadGame
+; (Actor/alias-only event), so its load-recovery body historically never ran:
+; the native HoldResolver table stayed empty (every arrest bailed with
+; "Could not determine guard's crime faction"), session cooldowns kept stale
+; real-time values across relaunches (silently blocking arrests for the
+; length of the previous session), and jailed-NPC migration/verification
+; never happened.
 ;
-; Chaining Maintenance() from here — the canonical load-time entry point —
-; guarantees it runs on every save load. Maintenance is idempotent:
-; RegisterForModEvent dedups, back-refs are no-op if already filled,
-; Hold_Clear runs at the top of the Hold_Register loop.
+; Chaining arrest.OnGameLoaded() from here — the canonical load-time entry
+; point — guarantees the full recovery runs on every save load. It calls
+; Maintenance() first and everything in it is idempotent: RegisterForModEvent
+; dedups, back-refs are no-op if already filled, Hold_Clear runs at the top
+; of the Hold_Register loop, migrations are sentinel-gated.
 ; =============================================================================
 
 Function InitializeArrestSystem()
@@ -372,16 +375,135 @@ Function InitializeArrestSystem()
 
     SeverActions_Arrest arrest = myQuest as SeverActions_Arrest
     If arrest
-        arrest.Maintenance()
-        Debug.Trace("[SeverActions] Arrest System initialized")
+        arrest.OnGameLoaded()
+        Debug.Trace("[SeverActions] Arrest System initialized (load recovery run)")
     Else
         Debug.Trace("[SeverActions] Arrest System not found (optional)")
     EndIf
 EndFunction
 
 ; =============================================================================
+; LOAD-RECOVERY ROUTER
+; Quest scripts NEVER receive OnPlayerLoadGame — it is an Actor/alias-only
+; event. This alias IS the reliably-loaded entry point, so every subsystem's
+; load-recovery body is invoked from here as a plain function (Arrest's via
+; InitializeArrestSystem above). All recovery functions are idempotent and
+; no-op on clean state, so running them on a brand-new game is safe.
+; =============================================================================
+
+Function RunLoadRecovery()
+    Quest myQuest = GetOwningQuest()
+    If !myQuest
+        Return
+    EndIf
+
+    SeverActions_Travel travel = GetTravelSystem()
+    If travel
+        travel.OnGameLoaded()
+        Debug.Trace("[SeverActions] Travel load recovery complete")
+    EndIf
+
+    SeverActions_Combat combat = myQuest as SeverActions_Combat
+    If combat
+        combat.OnGameLoaded()
+        Debug.Trace("[SeverActions] Combat load recovery complete")
+    EndIf
+
+    ; Currency owns the Final Audit ModEvent listeners. Its Maintenance() is
+    ; called ONLY from OnInit, which never re-fires on an existing save - so
+    ; without this the audit's deploy/arrival events were dead listeners for
+    ; every current player (field-verified: native logged the deploy, Papyrus
+    ; never heard it). Registration must ride the load path.
+    SeverActions_Currency currency = myQuest as SeverActions_Currency
+    If currency
+        currency.OnGameLoaded()
+        Debug.Trace("[SeverActions] Currency load recovery complete")
+    EndIf
+
+    SeverActions_Brawl brawl = myQuest as SeverActions_Brawl
+    If brawl
+        brawl.OnGameLoaded()
+        Debug.Trace("[SeverActions] Brawl load recovery complete")
+    EndIf
+
+    SeverActions_ArrestPlayer arrestPlayer = myQuest as SeverActions_ArrestPlayer
+    If arrestPlayer
+        arrestPlayer.OnGameLoaded()
+        Debug.Trace("[SeverActions] ArrestPlayer load recovery complete")
+    EndIf
+
+    SeverActions_FollowerManager fmRecovery = myQuest as SeverActions_FollowerManager
+    If fmRecovery
+        fmRecovery.OnGameLoaded()
+        Debug.Trace("[SeverActions] FollowerManager load recovery complete (captivity-sandbox sweep)")
+    EndIf
+
+    ; ── Chronometer heartbeat watchdog (PR #423 review) ──────────────────
+    ; The converted timer loops re-arm from inside their own tick handlers,
+    ; so a stale/missing SeverActionsNative.dll (mod-manager overwrite rule
+    ; keeping an old DLL under a new pex) kills EVERY periodic system with
+    ; nothing but a papyrus.0.log line to show for it. FollowerManager
+    ; stamps a real-time value on every chronometer tick; this alias-hosted
+    ; engine timer (LEGAL here - Init owns its own form handle) checks once
+    ; ~90s after load and warns the player if no tick ever landed.
+    StorageUtil.SetFloatValue(None, "SeverActions_ChronoTickRT", 0.0)
+    StorageUtil.SetIntValue(None, "SeverActions_ChronoKick", 0)
+    RegisterForSingleUpdate(90.0)
+EndFunction
+
+Event OnUpdate()
+    {Chronometer-liveness watchdog, armed at the end of RunLoadRecovery.
+     If FollowerManager's tick never stamped since load, the chain is dead:
+     either the DLL is stale/missing, or the first-tick ModEvent was lost
+     to post-load VM congestion (field-proven on a heavy rig, 2026-08-18 -
+     and that dead chain ALSO killed RunDeferredMaintenance, whose
+     track-only ownership reconcile is what keeps SA from dragging
+     DLC-owned followers like Serana through load doors). So RESTART the
+     chain once before complaining: ChronoArm re-registers and re-requests,
+     DeferredMaintenancePending is still unconsumed so the deferred passes
+     run on the revived tick. Only if a restarted chain is STILL dead 90s
+     later do we warn the player - at that point a stale DLL really is the
+     overwhelming suspect.}
+    If StorageUtil.GetFloatValue(None, "SeverActions_ChronoTickRT", 0.0) == 0.0
+        If StorageUtil.GetIntValue(None, "SeverActions_ChronoKick", 0) == 0
+            StorageUtil.SetIntValue(None, "SeverActions_ChronoKick", 1)
+            Quest q = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
+            SeverActions_FollowerManager fmKick = q as SeverActions_FollowerManager
+            If fmKick
+                fmKick.ChronoArm(0.1)
+                Debug.Trace("[SeverActions_Init] CHRONOMETER WATCHDOG: no tick stamp ~90s after load - restarting the chain (first-tick ModEvent likely lost to load congestion)")
+                RegisterForSingleUpdate(90.0)
+                Return
+            EndIf
+        EndIf
+        Debug.MessageBox("SeverActions: the periodic tick service never started, and a restart attempt did not take. SeverActionsNative.dll is likely out of date or missing - update it to match this version's scripts, or every periodic system (followers, travel, arrests, survival) will stay frozen.")
+        Debug.Trace("[SeverActions_Init] CHRONOMETER WATCHDOG: chain still dead after a restart kick - stale or missing SeverActionsNative.dll")
+    EndIf
+EndEvent
+
+; =============================================================================
+; SPELL TEACH INITIALIZATION
+; Sweeps any pending paralysis reset that a save/crash interrupted — the
+; alteration-failure effect writes Paralysis=1 with a timed reset, and a
+; save inside the window would otherwise bake the paralysis in permanently.
+; =============================================================================
+
+Function InitializeSpellTeachSystem()
+    Quest myQuest = GetOwningQuest()
+    If !myQuest
+        Return
+    EndIf
+    SeverActions_SpellTeach spellTeach = myQuest as SeverActions_SpellTeach
+    If spellTeach
+        spellTeach.Maintenance()
+        Debug.Trace("[SeverActions] SpellTeach System initialized (pending-paralysis sweep run)")
+    EndIf
+EndFunction
+
+; =============================================================================
 ; SURVIVAL SYSTEM INITIALIZATION
-; Runs AFTER SyncPluginConfig so the rates are already set from WebUI.
+; Runs after SyncMCMSettings; rates would be WebUI-synced here if
+; SyncPluginConfig were re-enabled (it is currently disabled at its call site).
 ; The Enabled toggle comes from the save (MCM property), not WebUI.
 ; =============================================================================
 
@@ -659,8 +781,10 @@ EndFunction
 
 ; =============================================================================
 ; SKYRIMNET WEBUI PLUGIN CONFIG SYNC
+; CURRENTLY DISABLED — never called (see the commented-out call in Initialize():
+; WebUI config clobbers PrismaUI/MCM settings on reload). Kept for re-enablement.
 ; Reads settings from SkyrimNet's Plugin Configuration WebUI and applies them.
-; Runs after SyncMCMSettings — WebUI values override MCM for shared settings.
+; Would run after SyncMCMSettings — WebUI values override MCM for shared settings.
 ; Gracefully skips if SkyrimNet doesn't support plugin config (older versions).
 ;
 ; Synced categories: Travel, Followers, Survival, General (dialogue anims + debug)

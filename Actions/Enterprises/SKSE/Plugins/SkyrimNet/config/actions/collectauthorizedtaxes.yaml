@@ -1,0 +1,34 @@
+name: CollectAuthorizedTaxes
+description: "Use when {{ player.name }} has AGREED, in dialogue, to pay the Imperial back-taxes the Final Audit is demanding. The speaker (one of the Treasury collectors) accepts the payment: the full assessed sum leaves {{ player.name }}'s purse and the detail stands down and returns to Dragonsreach. Only fires while the audit is live and only for the collectors themselves. Do NOT call unless {{ player.name }} clearly consents to pay — a grudging yes counts, a deflection does not."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: CollectAuthorizedTaxes
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the collector accepting the payment
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_tax_collector"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "tax_audit_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "demanding"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} collected the Imperial back-taxes from {{ player.name }} — the ledger closes, and the Final Audit stands down"

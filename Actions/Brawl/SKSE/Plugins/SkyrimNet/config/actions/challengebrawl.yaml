@@ -1,6 +1,6 @@
 customCategory: brawl
 name: ChallengeBrawl
-description: "The speaker steps in close, knuckles loose, and challenges the target to a fist-fight — a tavern argument boiling over, an old grudge settled the honest way, a Companion testing a new recruit. No blades, no spells, just hands. The target can accept, decline, or laugh it off."
+description: "Challenge the target to a fist-fight and await their answer. Fists only — no weapons, no spells. Use for tavern arguments, grudges, or tests of mettle that should stay non-lethal. To attack with weapons instead, use AttackTarget."
 questEditorId: SeverActions
 scriptName: SeverActions_Brawl
 executionFunctionName: ChallengeBrawl_Execute

@@ -1,5 +1,5 @@
 name: SitOrLayDown
-description: "The speaker drops into a chair by the hearth, stretches out on a tavern bench, kneels at a shrine, slumps onto a straw bed at the inn. Pick a piece of furniture from the nearby objects list and they'll use it."
+description: "The speaker settles onto furniture — a chair, bench, bed, or shrine. Use when they say they want to sit, rest, sleep, or pray, or would naturally settle in. Pick the FormID from the nearby objects list. NOT if they are already using furniture."
 questEditorId: SeverActions
 scriptName: SeverActions_Furniture
 executionFunctionName: UseFurniture_Execute
@@ -9,7 +9,7 @@ parameterMapping:
     description: the actor settling in
   - type: dynamic
     name: furnitureFormId
-    description: the FormID of the chair, bench, bed, or shrine to use (taken from the nearby objects list)
+    description: "FormID of the furniture to use. Copy it exactly from the nearby objects list; never invent one."
 enabled: true
 eligibilityRules:
   - conditions:
