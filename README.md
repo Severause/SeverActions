@@ -130,7 +130,7 @@ for schema changes — so updates land on existing saves without wiping anything
 ## Credits
 
 - **Author** — Severause
-- **[SkyrimNet](https://www.nexusmods.com/skyrimspecialedition/mods/148913)** by MinLL, which this builds on
+- **[SkyrimNet](https://github.com/MinLL/SkyrimNet-GamePlugin)** by MinLL, which this builds on
 - Map artwork by Caro Tuts ([Nexus #62705](https://www.nexusmods.com/skyrimspecialedition/mods/62705))
 - Hold sigils derived from CoMAP map markers by **Parapets** ([Nexus #56123](https://www.nexusmods.com/skyrimspecialedition/mods/56123)) and the Cities of the North marker pack, re-tinted to a parchment palette for the World page
 - Imperial Fiscal Levy armour **meshes and textures** by **NordwarUA** ([New Legion, Nexus #30468](https://www.nexusmods.com/skyrimspecialedition/mods/30468) — Base and Textures HD archives), recoloured to a Treasury livery for the Final Audit detail
