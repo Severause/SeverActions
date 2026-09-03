@@ -10,6 +10,10 @@
   <code>~63,000 Lines of Papyrus</code> &nbsp;&middot;&nbsp; <code>~135,000 Lines of C++</code>
 </p>
 
+<p align="center">
+  <a href="https://ko-fi.com/severause"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi"></a>
+</p>
+
 ---
 
 ## Overview
