@@ -1,106 +1,56 @@
 Scriptname SeverActions_OutfitAlias extends ReferenceAlias
 
 {
-    Per-follower outfit persistence via ReferenceAlias events.
-
-    Attached to alias slots on the SeverActions quest. When a follower is
-    recruited, they're ForceRefTo'd into an empty slot. The alias then
-    receives native OnLoad/OnCellLoad/OnEnable events directly on the NPC,
-    firing the instant their 3D loads — the earliest possible moment to
-    re-equip the locked outfit.
-
-    OnObjectUnequipped uses a DEBOUNCE approach: instead of re-equipping
-    instantly (which fights mods that strip actors), it records the unequip
-    in C++ and starts a 0.5s timer. If more unequips arrive during the window,
-    the timer resets. When the timer fires (no new unequips for 0.5s), we check
-    if the actor is in an animation scene or was bulk-stripped. Only then do
-    we re-equip if appropriate.
+    Per-follower outfit enforcement on a ReferenceAlias of the SeverActions quest.
+    A slot preset is applied with no SetOutfit (see SeverActions_OutfitSlot's
+    header), so the engine never re-applies it: this alias does, beside the
+    native 3D-load pass. Loads re-equip at once; unequips and intrusion equips
+    are debounced so strip mods are not fought, and OnUpdate yields to scenes,
+    bulk strips and helm/shield-only removals, else re-applies.
 }
 
 SeverActions_Outfit Property OutfitScript Auto
 {Optional: direct reference to the Outfit script. Falls back to GetFormFromFile.}
 
 Float Property ReequipDebounceSeconds = 0.5 Auto
-{Delay before re-equipping after an unequip event. Allows burst detection to work.}
+{Debounce window before re-equipping after an unequip or intrusion equip; lets burst detection work.}
+
+Bool IntrusionEquipPending = false
+; True while the open debounce window holds an INTRUSION equip (non-preset
+; armor put on, OnObjectEquipped). OnUpdate consumes it to veto the combat-gear
+; yield: such a burst is an auto-equip swap, not a bare helm/shield removal.
+; Equips stay out of the native burst counter, the bulk-strip detector (3+
+; calls in 500 ms, blind to equip vs unequip): a two-piece swap would latch
+; it and OnUpdate would leave the intruders on.
 
 
-; =============================================================================
-; EVENTS - Trigger re-equip on NPC load/cell/enable
-; =============================================================================
+
+; ---- Events ----
 
 Event OnLoad()
-    {Fires when the NPC's 3D model loads into the scene.}
     ReequipIfLocked()
 EndEvent
 
 Event OnCellLoad()
-    {Fires when the NPC's cell is loaded.}
     ReequipIfLocked()
 EndEvent
 
 Event OnEnable()
-    {Fires when the NPC is enabled (e.g. after being disabled).}
     ReequipIfLocked()
 EndEvent
 
-Event OnEnterBleedout()
-    {Healer self-bleedout fail-safe (Katana pattern).
-     If this follower is in healer mode AND the bleedout cheat-heal toggle
-     is on, force-restore HP so they don't die alone with no one to help.
-     Rate-limited via a 60-second real-time cooldown so combat stays
-     consequential — multiple bleedouts within 60s won't all be healed.
-
-     Doesn't cover non-healer followers (vanilla bleedout) or the player
-     (the regular HealerPoll already targets them when below the player
-     threshold; bleeding-out isn't dead, so they remain valid heal targets).}
-    Actor akActor = self.GetReference() as Actor
-    If !akActor
-        Return
-    EndIf
-    If !SeverActionsNativeExt.Native_IsHealer(akActor)
-        Return
-    EndIf
-    If !SeverActionsNativeExt.Native_IsBleedoutCheatHealEnabled()
-        Return
-    EndIf
-
-    ; 60-second real-time cooldown — prevents looping if HP drains again.
-    Float now = Utility.GetCurrentRealTime()
-    Float lastFired = StorageUtil.GetFloatValue(akActor, "SeverFollower_HealerBleedoutLast", 0.0)
-    If lastFired > 0.0 && (now - lastFired) < 60.0
-        Return
-    EndIf
-    StorageUtil.SetFloatValue(akActor, "SeverFollower_HealerBleedoutLast", now)
-
-    ; Restore enough HP to lift them out of bleedout. Half of base health gets
-    ; them up without trivializing combat — a follower at 200 max HP comes back
-    ; at 100 HP, still vulnerable but functional.
-    Float maxHP = akActor.GetBaseActorValue("Health")
-    If maxHP <= 0.0
-        maxHP = 100.0
-    EndIf
-    akActor.RestoreActorValue("Health", maxHP * 0.5)
-EndEvent
+; The healer bleedout fail-safe is HealerPoll's TESEnterBleedoutEvent sink, not
+; an alias event here: outfit-excluded healers hold no seat.
 
 Event OnObjectUnequipped(Form akBaseObject, ObjectReference akReference)
-    {Fires when the NPC unequips any item. Debounces: record the unequip
-     timestamp in C++ for burst detection, then (re-)arm a short single-shot
-     timer via RegisterForSingleUpdate. Successive unequip events within the
-     window re-arm the same timer; OnUpdate fires once after the burst settles
-     and decides whether to re-equip or yield.
-
-     Slot-preset path: with the wardrobe pattern (DirectEquip + SetOutfit blank),
-     the engine does NOT self-enforce — we MUST run the debounce and reapply via
-     DirectEquipPreset. Without this, an external mod strip or an engine
-     auto-equip swap (e.g. NPC equips a higher-AR item the user just gave them)
-     leaves the preset broken.}
+    {Records the unequip natively for burst detection and (re-)arms the debounce
+     timer; OnUpdate decides once the burst settles. Acts for a slot preset or a legacy lock.}
     If akBaseObject as Armor
         Actor follower = self.GetActorRef()
         If !follower
             Return
         EndIf
 
-        ; Skip outfit-excluded actors entirely
         If SeverActionsNative.Native_GetOutfitExcluded(follower)
             Return
         EndIf
@@ -113,38 +63,32 @@ Event OnObjectUnequipped(Form akBaseObject, ObjectReference akReference)
             Return
         EndIf
 
-        ; Slot-preset OR legacy lock — both want debounced reapply.
-        ; OnUpdate will choose the right path (DirectEquip vs ReapplyLockedOutfit).
-        ; Phase 3: read lock state from native (single source of truth).
-        ; StorageUtil mirror still written by phase-4 callers; this reader is
-        ; the first to flip and stop depending on the mirror staying in sync.
+        ; A HELD preset enforces nothing (IsSlotPresetHeld). Return before
+        ; RecordExternalChange so the per-item action's own unequips do not
+        ; feed burst suppression.
+        If IsSlotPresetHeld(follower)
+            Return
+        EndIf
+
+        ; Slot preset or legacy lock (read natively): OnUpdate picks the path.
         If IsSlotPresetActive(follower) || SeverActionsNativeExt.Native_Outfit_IsLockActive(follower)
-            ; Record unequip for burst detection (C++ timestamps it). Form-aware:
-            ; C++ also classifies whether this burst is nothing but helm/shield
-            ; removals, which drives the combat-gear yield in OnUpdate.
+            ; Form-aware: C++ also classifies whether the burst is only
+            ; helm/shield removals (OnUpdate's combat-gear yield).
             SeverActionsNativeExt2.Native_Outfit_RecordExternalChange(follower, akBaseObject, true)
 
-            ; Start/reset debounce timer — if more unequips arrive before it fires,
-            ; RegisterForSingleUpdate resets the countdown automatically.
+            ; Each event restarts the window (RegisterForSingleUpdate replaces the
+            ; pending timer; an alias owns its form handle, unlike 0D62 scripts).
             RegisterForSingleUpdate(ReequipDebounceSeconds)
         EndIf
     EndIf
 EndEvent
 
 Event OnObjectEquipped(Form akBaseObject, ObjectReference akReference)
-    {Fires when the NPC equips any item. The wardrobe pattern requires us to
-     react: NPCs have a built-in "wear best armor" auto-equip. If the user
-     gives Jenassa a high-AR item while she's wearing a preset, the engine
-     can swap her cuirass for the new item silently.
-
-     We debounce-reapply the preset just like OnObjectUnequipped — same
-     0.5s window catches both events from a single auto-swap. The reapply
-     in OnUpdate strips ALL worn armor and re-equips only preset items, so
-     intruders get cleaned up.
-
-     Only fires for slot presets — legacy outfit lock didn't have this
-     problem because it didn't make a distinction between "owned items"
-     and "preset items".}
+    {Slot presets only (the legacy lock re-equips its items and strips nothing).
+     An NPC's "wear best armor" auto-equip can swap a preset piece for a better
+     item it was given; the same debounce window catches both halves of the
+     swap, and OnUpdate's re-apply strips the intruder. The equip is marked in
+     IntrusionEquipPending, not the native burst counter.}
     If !(akBaseObject as Armor)
         Return
     EndIf
@@ -154,12 +98,12 @@ Event OnObjectEquipped(Form akBaseObject, ObjectReference akReference)
         Return
     EndIf
 
-    ; Only react when a slot preset is active
-    If !IsSlotPresetActive(follower)
+    ; Only while a slot preset is active and not HELD: a held preset's
+    ; intruders were put on deliberately by a per-item change.
+    If !IsSlotPresetActive(follower) || IsSlotPresetHeld(follower)
         Return
     EndIf
 
-    ; Skip outfit-excluded actors
     If SeverActionsNative.Native_GetOutfitExcluded(follower)
         Return
     EndIf
@@ -172,7 +116,8 @@ Event OnObjectEquipped(Form akBaseObject, ObjectReference akReference)
         Return
     EndIf
 
-    ; Was this a preset item? If yes, no action needed (we equipped it).
+    ; An item in the active preset's chest is ours (e.g. DirectEquip's own
+    ; equip loop): ignore it.
     Int activeIdx = SeverActionsNative.Native_OutfitSlot_GetActivePreset(follower)
     If activeIdx < 0
         Return
@@ -183,28 +128,34 @@ Event OnObjectEquipped(Form akBaseObject, ObjectReference akReference)
     EndIf
     ObjectReference chest = SeverActionsNative.Native_OutfitSlot_GetContainer(slotIdx, activeIdx)
     If chest
-        ; If the chest contains this exact form, the equip is one of OUR items
-        ; (e.g. fired during DirectEquip's own equip loop) — ignore.
         If chest.GetItemCount(akBaseObject) > 0
             Return
         EndIf
     EndIf
 
-    ; Non-preset armor entered the worn set — debounce-reapply the preset.
-    ; isUnequip=false poisons the combat-gear yield for this burst: a foreign
-    ; item ARRIVING is never a helm/shield removal, so enforcement proceeds.
-    SeverActionsNativeExt2.Native_Outfit_RecordExternalChange(follower, akBaseObject, false)
+    ; Non-preset armor put on: mark the burst (see IntrusionEquipPending),
+    ; then debounce-reapply the preset.
+    IntrusionEquipPending = true
     RegisterForSingleUpdate(ReequipDebounceSeconds)
 EndEvent
 
 Event OnUpdate()
-    {Debounce timer fired — no new unequips for 0.5s. Now decide: re-equip or yield.}
+    {The debounce window settled: re-apply the slot preset or legacy lock, or yield.}
+    ; Consume the intrusion mark on EVERY exit: one left by an early Return
+    ; would veto the yield of an unrelated later burst.
+    Bool intruderInBurst = IntrusionEquipPending
+    IntrusionEquipPending = false
+
     Actor follower = self.GetActorRef()
     If !follower || follower.IsDead()
         Return
     EndIf
 
-    ; Skip outfit-excluded actors (cheap check first)
+    ; Master switch off: SeverActions dresses nobody, enforcement included.
+    If !SeverActionsNativeExt2.Native_Outfit_IsSystemEnabled()
+        Return
+    EndIf
+
     If SeverActionsNative.Native_GetOutfitExcluded(follower)
         Return
     EndIf
@@ -221,31 +172,38 @@ Event OnUpdate()
 
     SeverActions_Outfit outfitSys = GetOutfitScript()
 
-    ; Check global animation scene flag (set by SexLab/OStim ModEvent hooks in Outfit script)
+    ; Animation scene flag, set by the Outfit script's SexLab/OStim ModEvent hooks
     If outfitSys && outfitSys.AnimationSceneActive
         Debug.Trace("[SeverActions_OutfitAlias] Animation scene active - yielding for " + follower.GetDisplayName())
         Return
     EndIf
 
-    ; Check if burst-suppressed (3+ rapid unequips detected by C++)
+    ; Bulk strip (3+ unequips in 500 ms): latched until a cell load or our own
+    ; outfit change clears it
     If SeverActionsNative.Native_Outfit_IsBurstSuppressed(follower)
         Debug.Trace("[SeverActions_OutfitAlias] Burst suppression active - yielding for " + follower.GetDisplayName())
         Return
     EndIf
 
-    ; Combat-gear yield: an external mod (FollowerLivePackage) removed ONLY
-    ; helm/shield gear while out of combat — that is a choice, not a strip.
-    ; Leave it off instead of forcing it back on; the mod re-equips for combat
-    ; itself, and a burst touching any body gear still enforces as before.
-    ; Applies to BOTH the slot-preset and legacy-lock paths below.
-    If SeverActionsNativeExt2.Native_Outfit_ShouldYieldCombatGear(follower)
+    ; Combat-gear yield (both paths below): an out-of-combat removal of ONLY
+    ; helm/shield (e.g. FollowerLivePackage, which re-equips for combat) is a
+    ; choice, not a strip, so leave it off. Not asked when the burst held an
+    ; intrusion equip: the native never saw it, and a helm swapped for a
+    ; better one would read as a helm-only removal.
+    If !intruderInBurst && SeverActionsNativeExt2.Native_Outfit_ShouldYieldCombatGear(follower)
         Debug.Trace("[SeverActions_OutfitAlias] Combat-gear yield - leaving helm/shield off for " + follower.GetDisplayName())
         Return
     EndIf
 
-    ; SLOT PRESET path: re-apply via DirectEquip if a slot preset is active.
-    ; The wardrobe/blank-outfit pattern means SetOutfit does not self-enforce,
-    ; so we reapply here rather than short-circuit.
+    ; HELD preset: enforce nothing, not even a legacy lock (IsSlotPresetHeld).
+    ; A hold keeps the active index, so the slot branch below would otherwise
+    ; undo the per-item change.
+    If IsSlotPresetHeld(follower)
+        Return
+    EndIf
+
+    ; Slot preset: re-apply. DirectEquipPreset leaves a preset already worn in
+    ; full alone (a piece taken off and put back).
     If IsSlotPresetActive(follower)
         Int activeIdx = SeverActionsNative.Native_OutfitSlot_GetActivePreset(follower)
         If activeIdx >= 0
@@ -259,30 +217,32 @@ Event OnUpdate()
         Return
     EndIf
 
-    ; Not in a scene, not burst-stripped — re-equip the locked outfit (legacy path)
+    ; Legacy lock
     If outfitSys
         outfitSys.ReapplyLockedOutfit(follower)
     EndIf
 EndEvent
 
-; =============================================================================
-; RE-EQUIP LOGIC (for cell load / OnLoad — immediate, no debounce)
-; =============================================================================
+; ---- Re-equip on load (immediate, no debounce) ----
 
 Function ReequipIfLocked()
-    {Direct re-equip for cell transitions — no debounce needed here since
-     cell loads aren't caused by external mods stripping actors.
+    {Immediate re-equip on load (a load is not an external strip, so no
+     debounce). A slot preset is re-run from its chest; DirectEquipPreset
+     leaves an actor already wearing it in full alone (e.g. the native 3D-load
+     pass got there first), so nothing flickers.}
+    ; A cell change ends any open burst, and its intrusion mark with it.
+    IntrusionEquipPending = false
 
-     Slot-preset path: the apply path uses DirectEquipPreset (atomic C++ equip
-     with SetOutfit(blank)), which does not self-enforce on cell load. So if a
-     slot preset is active, RE-RUN the atomic equip on cell load. The chest is
-     the persistent wardrobe and still has the items.}
     Actor follower = self.GetActorRef()
     If !follower || follower.IsDead()
         Return
     EndIf
 
-    ; Skip outfit-excluded actors (cheap check first)
+    ; Master switch off: SeverActions dresses nobody, enforcement included.
+    If !SeverActionsNativeExt2.Native_Outfit_IsSystemEnabled()
+        Return
+    EndIf
+
     If SeverActionsNative.Native_GetOutfitExcluded(follower)
         Return
     EndIf
@@ -297,9 +257,19 @@ Function ReequipIfLocked()
         Return
     EndIf
 
-    ; SLOT PRESET path: re-apply the active preset via DirectEquip.
-    ; The chest still has the source items; we just need to re-strip + re-equip
-    ; on the actor since cell unload may have wiped equipped state.
+    ; A cell change ends the external scene (bathing strip, animation framework):
+    ; clear burst suppression for EVERY enforced actor, before the slot branch,
+    ; or a preset wearer stays suppressed and OnUpdate yields to every later swap.
+    SeverActionsNative.Native_Outfit_ClearBurstSuppression(follower)
+
+    ; HELD preset: no re-apply and no legacy-lock re-equip, mirroring
+    ; OutfitDataStore::ReequipLockedItemsOnActor (IsSlotPresetHeld).
+    If IsSlotPresetHeld(follower)
+        Return
+    EndIf
+
+    ; Slot preset: re-equipped from the chest only if no longer worn in full
+    ; (a cell unload can wipe equipped state).
     If IsSlotPresetActive(follower)
         Int activeIdx = SeverActionsNative.Native_OutfitSlot_GetActivePreset(follower)
         If activeIdx >= 0
@@ -317,9 +287,6 @@ Function ReequipIfLocked()
         Return
     EndIf
 
-    ; Clear burst suppression — cell change means external mod scene is over
-    SeverActionsNative.Native_Outfit_ClearBurstSuppression(follower)
-
     SeverActions_Outfit outfitSys = GetOutfitScript()
     If outfitSys
         outfitSys.ReapplyLockedOutfit(follower)
@@ -330,9 +297,7 @@ SeverActions_OutfitSlot Function GetSlotScript()
     Return Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_OutfitSlot
 EndFunction
 
-; =============================================================================
-; HELPER
-; =============================================================================
+; ---- Helpers ----
 
 SeverActions_Outfit Function GetOutfitScript()
     If OutfitScript
@@ -342,20 +307,31 @@ SeverActions_Outfit Function GetOutfitScript()
 EndFunction
 
 Bool Function IsSlotPresetActive(Actor follower)
-    {Returns true if this actor has an active slot preset. Used as a routing
-     check by OnLoad/OnCellLoad/OnUpdate handlers to call DirectEquipPreset
-     (chest-canonical re-equip) instead of the legacy lock-list reapply.
-
-     The wardrobe pattern has no SetOutfit() calls for the engine to
-     self-enforce on cell load (see SeverActions_OutfitSlot.ApplyPresetBySlot),
-     so cell-load re-application runs through this alias.}
+    {True if the actor has an active slot preset: the handlers then re-apply
+     through DirectEquipPreset instead of the legacy lock list.}
     If !follower
         Return False
     EndIf
-    ; Native slot store is the source of truth for the active preset idx
-    ; (activePresetIdx >= 0 means a slot preset is active). The StorageUtil
-    ; mirror it replaced drifted whenever a C++ apply path ran without the
-    ; Papyrus mirror catching up.
+    ; The native slot store is the source of truth, never a StorageUtil mirror
+    ; (C++ apply paths bypass one).
     Return SeverActionsNative.Native_OutfitSlot_GetActivePreset(follower) >= 0
+EndFunction
+
+Bool Function IsSlotPresetHeld(Actor follower)
+    {True while the active slot preset is HELD: a per-item change
+     (EquipMultipleItems / UnequipMultipleItems) took over. It stays the active
+     index, so teardowns still reclaim its catalog copies, but this alias
+     enforces nothing - neither the preset nor a legacy lock, mirroring
+     OutfitDataStore::ReequipLockedItemsOnActor - until the next apply, clear
+     or GetDressed. Asks the native only when a preset is active, so on an
+     older DLL without it (an error per call, reads False) only preset wearers
+     log.}
+    If !follower
+        Return False
+    EndIf
+    If SeverActionsNative.Native_OutfitSlot_GetActivePreset(follower) < 0
+        Return False
+    EndIf
+    Return SeverActionsNativeExt2.Native_OutfitSlot_IsActivePresetHeld(follower)
 EndFunction
 

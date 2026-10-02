@@ -1,0 +1,219 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" %}
+{# What this NPC knows of the player: the tier from player_familiarity and the impression sever_reputation_assess writes #}
+{# (SeverFamiliarity_Blurb). World knowledge is read only to test whether the name has reached them; 0130 prints it. #}
+{% if not is_follower(actorUUID) and is_sever_follower(actorUUID) == "" and not is_player(actorUUID) %}
+{% set familiarity = player_familiarity(actorUUID) %}
+{% if isObject(familiarity) %}
+{# The native tier already reflects standing bonds and the assessment's verdict. Marriage needs the actor record, so the spouse floor is applied here. #}
+{% set eff_tier = familiarity.tier %}
+{% set married = get_relationship_rank(actorUUID, player.UUID) >= 4 %}
+{% if married %}{% set eff_tier = "familiar" %}{% endif %}
+{# World-knowledge name gate. Substring test against the per-NPC-filtered text. #}
+{% set wk_text = get_world_knowledge(actorUUID) %}
+{% set knows_name_via_world = wk_text != "" and contains(" " + replace(wk_text, "\n", " "), " " + player.name) %}
+
+{% set days_ago = default(familiarity.lastSeenDaysAgo, 0) %}
+{% set time_desc = "" %}
+{% if days_ago and days_ago >= 1 %}
+{% if days_ago > 30 %}{% set time_desc = "many weeks" %}
+{% elif days_ago > 14 %}{% set time_desc = "a few weeks" %}
+{% elif days_ago > 7 %}{% set time_desc = "about a week" %}
+{% elif days_ago > 3 %}{% set time_desc = "several days" %}
+{% else %}{% set time_desc = "a day or two" %}
+{% endif %}
+{% endif %}
+
+{# When the FIRST conversation happened (decorator stamps it on first contact). #}
+{% set first_ago = default(familiarity.firstMetDaysAgo, -1) %}
+{% set first_desc = "" %}
+{% if first_ago >= 0 %}
+{% if first_ago < 1 %}{% set first_desc = "only today" %}
+{% elif first_ago < 2 %}{% set first_desc = "yesterday" %}
+{% elif first_ago <= 7 %}{% set first_desc = "a few days ago" %}
+{% elif first_ago <= 30 %}{% set first_desc = "some weeks ago" %}
+{% else %}{% set first_desc = "a long time ago" %}
+{% endif %}
+{% endif %}
+
+{# A shared guild frames the relationship (camaraderie), not fame: titles come from world knowledge or memories. #}
+{% set shared_guild = "" %}
+{# Skyrim.esm FormIDs in decimal (EditorIDs do not resolve without po3 Tweaks): Companions, College, Thieves Guild, Dark Brotherhood. #}
+{% if get_faction_rank(actorUUID, 295778) >= 0 and get_faction_rank(player.UUID, 295778) >= 0 %}{% set shared_guild = "The Companions" %}
+{% elif get_faction_rank(actorUUID, 127577) >= 0 and get_faction_rank(player.UUID, 127577) >= 0 %}{% set shared_guild = "The College of Winterhold" %}
+{% elif get_faction_rank(actorUUID, 171433) >= 0 and get_faction_rank(player.UUID, 171433) >= 0 %}{% set shared_guild = "The Thieves Guild" %}
+{% elif get_faction_rank(actorUUID, 114099) >= 0 and get_faction_rank(player.UUID, 114099) >= 0 %}{% set shared_guild = "The Dark Brotherhood" %}
+{% endif %}
+
+{% set rep_blurb = papyrus_util("GetStringValue", actorUUID, "SeverFamiliarity_Blurb", "") %}
+{% set has_blurb = rep_blurb != "" %}
+
+{# The name is theirs once they have spoken (met_once and up), heard it tied to deeds, or formed an impression: a blurb #}
+{# outlives a recent-dialogue window that rolls off, so it still proves recognition. #}
+{% set knows_name = eff_tier == "met_once" or eff_tier == "acquainted" or eff_tier == "familiar" or knows_name_via_world or has_blurb or married %}
+
+{% if knows_name %}## What You Know About {{ player.name }}{% else %}## What You Know About This Person{% endif %}
+{% if married %}
+You are married to {{ player.name }}. Whatever else is written below, that is the ground you stand on — you know them as a husband or wife knows someone, not as an acquaintance.
+{% endif %}
+
+{# Without an impression (no blurb yet, background AI off, or no Familiarity prompt) the tier prose carries the relationship. #}
+{# With one, the blurb at the end does, so only what it cannot encode renders: the name, the footing, time and guild facts. #}
+{% if not has_blurb %}
+{% if shared_guild != "" %}
+{# Shared-guild variants — relationship framing only, no fame titles #}
+{% if eff_tier == "stranger" %}
+You are both members of {{ shared_guild }}, but you have never had a direct conversation with this person.
+- You don't know them — only that they wear the same colors. Treat them as an unproven fellow member: warmer than a complete outsider, but don't assume you've met, and don't invent shared history.
+{% if knows_name_via_world %}- The name **{{ player.name }}** is one you have heard tied to deeds beyond the guild. You may use it, but you do not know them personally — only their reputation.
+{% endif %}
+{% elif eff_tier == "passing" %}
+You are both members of {{ shared_guild }} and have exchanged a word or two before — no more than that.
+- You wouldn't claim to know them, and you don't know their name. Address them by what you can observe — their role, appearance, or a general greeting.
+- If they introduce themselves or their name comes up, you can use it going forward.{% if first_desc != "" %}
+- You first exchanged words {{ first_desc }}.{% endif %}
+{% if time_desc != "" %}- It has been {{ time_desc }} since your last encounter.
+{% endif %}
+{% elif eff_tier == "met_once" %}
+You are both members of {{ shared_guild }} and have spoken a few times.
+- You recognize them as a fellow member and know their name.
+- You have a sense of who they are within the guild, but your personal connection is still developing.
+- You can speak with the easy familiarity of shared membership — guild business, mutual acquaintances, recent goings-on.{% if first_desc != "" %}
+- You first met {{ first_desc }}.{% endif %}
+{% if time_desc != "" %}- It has been {{ time_desc }} since you last spoke.
+{% endif %}
+{% elif eff_tier == "acquainted" %}
+You are both members of {{ shared_guild }} and have had many conversations.
+- You know them well as a fellow member and have a solid sense of their character.
+- You can speak freely about guild matters and personal topics alike.
+- There is a natural camaraderie from shared experiences within the guild.
+{% if time_desc != "" %}- It has been {{ time_desc }} since you last saw each other.
+{% endif %}
+{% elif eff_tier == "familiar" %}
+You are both members of {{ shared_guild }} and know each other well after many conversations.
+- You can speak openly, reference shared history, and react with the comfort of a long acquaintance.
+- Your opinions about them are well-formed — let past interactions shape how you engage.
+{% if time_desc != "" %}- It has been {{ time_desc }} since you last crossed paths.
+{% endif %}
+{% endif %}
+{% else %}
+{# Standard (non-shared-guild) variants #}
+{% if eff_tier == "stranger" %}
+{% if knows_name_via_world %}
+You have never spoken to this person, but the name **{{ player.name }}** is one you have heard tied to deeds beyond their own circle.
+- Use the name if it fits, but you do not know them personally — only their reputation. Recognition is provisional until they confirm.
+- Let what you know of {{ player.name }} (already in your context) shape your manner — awed, wary, deferential, dismissive, whatever fits the deeds and your role.
+- If your character description establishes a prior relationship with this person, that backstory takes precedence.
+{% else %}
+You have not spoken with this person directly. Default to a stranger's manner in keeping with your personality and role.
+- Default to indirect address (their bearing, gear, role) unless an introduction or your character description establishes the name.
+- If memories, recent events, or other context elsewhere in this prompt clearly establish recognition, trust that signal — but don't invent familiarity that isn't grounded there.
+{% endif %}
+{% elif eff_tier == "passing" and knows_name %}
+You have crossed paths with this person before, and the name **{{ player.name }}** has since reached you — from talk of their deeds, not from them.
+- You may use the name, but you do not know them personally; what you know is reputation.
+- You are not strangers, but you are not familiar either — brief, polite, and somewhat guarded.
+{% if time_desc != "" %}- It has been {{ time_desc }} since your last encounter.
+{% endif %}
+{% elif eff_tier == "passing" %}
+You have exchanged a word or two with this person — nothing that counts as a meeting.
+- You wouldn't claim to know them, and you do not know their name. Address them by observation (appearance, gear, role) or a general greeting.
+- If they introduce themselves or their name comes up naturally, you can use it going forward.
+- Brief and polite; somewhat guarded is natural.{% if first_desc != "" %}
+- You first exchanged words {{ first_desc }}.{% endif %}
+{% if time_desc != "" %}- It has been {{ time_desc }} since your last encounter.
+{% endif %}
+{% elif eff_tier == "met_once" %}
+You have spoken to this person a few times before. You recognize them.
+- You know their name and have a general impression of them.
+- Polite and somewhat familiar, but you don't know them well yet.
+- You may reference that you've talked before, but don't assume deep knowledge of their life or motivations.{% if first_desc != "" %}
+- You first met {{ first_desc }}.{% endif %}
+{% if time_desc != "" %}- It has been {{ time_desc }} since you last spoke.
+{% endif %}
+{% elif eff_tier == "acquainted" %}
+You have had several conversations with this person. You know who they are.
+- You recognize them and can greet them by name.
+- You have a sense of their personality and intentions based on prior interactions.
+- Friendly but not deeply intimate unless your relationship has developed that way.
+{% if time_desc != "" %}- It has been {{ time_desc }} since you last saw each other.
+{% endif %}
+{% elif eff_tier == "familiar" %}
+You know this person well after many conversations. You have a strong sense of who they are.
+- You can speak openly, reference shared history, and react with the comfort of a long acquaintance.
+- Your opinions about them are well-formed — let past interactions and impressions shape how you engage.
+{% if time_desc != "" %}- It has been {{ time_desc }} since you last crossed paths.
+{% endif %}
+{% endif %}
+{% endif %}
+{% else %}
+{# Assessed: rules of engagement only — the impression below carries the rest. #}
+{% if eff_tier == "stranger" or eff_tier == "passing" %}
+- You do not know this person personally. {% if knows_name %}You may use the name **{{ player.name }}** — it reached you through talk, not from them.{% else %}You do not know their name — address them by their bearing, role, or a general greeting until it is offered.{% endif %}
+- Keep your manner brief and guarded unless the impression below gives you reason to be otherwise.
+{% elif eff_tier == "met_once" %}
+- You know this person by name and have spoken with them; you may use **{{ player.name }}** freely.
+- The footing is real but still new — let the impression below set how warm or wary you are.
+{% elif eff_tier == "acquainted" %}
+- You know {{ player.name }} and speak as acquaintances do: their name comes easily, and so does ordinary conversation.
+- Let the impression below set the warmth, the wariness, and what you actually make of them.
+{% else %}
+- You know {{ player.name }} well, and have for some time. Their name comes easily, you may reference shared history, and you speak with the comfort of long acquaintance.
+- Let the impression below carry what you actually make of them; it is settled, not something you need to state.
+{% endif %}
+{% if first_desc != "" %}- You first exchanged words {{ first_desc }}.
+{% endif %}{% if time_desc != "" %}- It has been {{ time_desc }} since your last encounter.
+{% endif %}{% if shared_guild != "" %}- You are both members of {{ shared_guild }}.
+{% endif %}
+{% endif %}
+
+{# 3A-guard: NPCs at these tiers have not tracked a numeric count of
+   encounters. The prose above is deliberately qualitative ("a word or
+   two"); this stops the model concretizing it into a specific number. #}
+{% if eff_tier == "stranger" or eff_tier == "passing" %}
+- You do not keep a running tally of your encounters with this person. Never state or imply a specific number of times you have met, seen, or spoken with them.
+{% endif %}
+
+{# ─── 3A-ter: PERSONA GUIDANCE (when the NPC has sexual-preference bio
+   blocks OR works a courtesan-type trade. sever_intimate_persona's content
+   is already printed by 0040 — flag only; sever_intimate_trade is printed
+   here since nothing else renders it) ─── #}
+{% set persona_flag = sever_intimate_persona(actorUUID) %}
+{% set persona_trade = sever_intimate_trade(actorUUID) %}
+{% if (persona_flag and persona_flag != "") or (persona_trade and persona_trade != "") %}
+{% if persona_trade and persona_trade != "" %}
+
+{{ persona_trade }}
+{% endif %}
+{% if persona_flag and persona_flag != "" and persona_trade and persona_trade != "" %}
+- Let your inclinations (in your profile above) and your trade color how you read this person: a courtesan appraises openly and professionally, a libertine warms quickly, a chaste temperament stays guarded. They shape your manner; never recite them aloud.
+{% elif persona_flag and persona_flag != "" %}
+- Your inclinations are written in your profile above — they are part of who you are. Let them color how you read this person: a courtesan appraises openly and professionally, a libertine warms quickly, a chaste temperament stays guarded. They shape your manner; never recite them aloud.
+{% else %}
+- Let your trade color how you read this person: a courtesan appraises openly and professionally, and warmth is part of the work, not a confession. Never recite its terms unprompted.
+{% endif %}
+{% endif %}
+
+{# The impression informs tone; it is not a script to recite. #}
+{% if has_blurb %}
+
+{% if eff_tier == "stranger" or eff_tier == "passing" %}
+{% if knows_name %}What you have heard or sense about {{ player.name }}{% else %}What you have heard or sense about this person{% endif %}:
+{{ rep_blurb }}
+Do not recite these details. Let them inform your tone and attitude naturally.
+{% elif eff_tier == "met_once" %}
+Now that you know {{ player.name }}'s name, you can connect it to what you have heard:
+{{ rep_blurb }}
+Let this recognition color how you treat them going forward. It should surface naturally, not all at once.
+{% elif eff_tier == "acquainted" %}
+Your impression of {{ player.name }}:
+{{ rep_blurb }}
+It is settled: let it shape how you treat them, without spelling it out.
+{% elif eff_tier == "familiar" %}
+How you see {{ player.name }} after all this time:
+{{ rep_blurb }}
+{% endif %}
+{% endif %}
+
+{% endif %}{# end familiarity truthy #}
+{% endif %}{# end not follower, not player #}
+{% endif %}{# end render_mode #}

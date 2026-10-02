@@ -1,0 +1,28 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# A merchant's stock at their usual asking prices and how far they will bargain ("action" covers the buy/sell
+   drill-downs). Not during a SexLab or OStim scene. #}
+{% if actorUUID and actorUUID != 0 and not is_player(actorUUID) %}
+{% if sever_in_scene(actorUUID) == "" %}
+{% set merchant_inventory = get_merchant_inventory(actorUUID) %}
+{% if merchant_inventory.items and length(merchant_inventory.items) > 0 %}
+## Merchant Inventory
+{% set price_multiplier = 4.5 %}
+{% for item in merchant_inventory.items %}
+{% set item_name = default(item.name, "") %}
+{% if item_name == "" %}{% set item_name = get_form_name(item.formID) %}{% endif %}
+{% if item_name != "" and item.value > 0 -%}
+{% set adjusted_value = round(item.value * price_multiplier, 0) %}
+- {{ item_name }}: {{ item.count }} ({{ adjusted_value }} gold)
+{% endif %}
+{% endfor %}
+
+## Pricing Guidelines
+These are your usual asking prices. Start from them and don't volunteer discounts.
+- A good customer or a bulk purchase may earn 5-15% off, and a member of your own faction 10-20%.
+- If {{ player.name }} haggles, charms or leans on you and it works, you may come down by up to 20%; if it doesn't, hold firm.
+- For rare items, low stock or a difficult customer, keep the price high.
+- Never go below 60% of your usual price.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

@@ -1,9 +1,25 @@
 Scriptname SeverActions_SLOArousal extends Quest
-{SkyrimNet integration for SL OAroused NG - Event Logging Version}
+{SL OAroused NG for SkyrimNet: the get_slo_* decorators and the ModifyArousal action (no action
+ YAML calls SetArousal_Execute). Neither _Execute registers an event: arousal is private (0155).}
 
-; =============================================================================
-; DECORATORS (Global for template access)
-; =============================================================================
+Function RegisterDecorators()
+    {Register the decorators when SexLabAroused.esm is loaded; the arousal_slo provider's stage 0
+     calls it on every load. Idempotent: SkyrimNet replaces a same-name registration.}
+    If Game.GetModByName("SexLabAroused.esm") == 255
+        Return
+    EndIf
+    Int result
+    result = SkyrimNetApi.RegisterDecorator("get_slo_arousal_state", "SeverActions_SLOArousal", "GetSLOArousalState")
+    Debug.Trace("[SeverActions] get_slo_arousal_state: " + (result == 0) as String)
+    result = SkyrimNetApi.RegisterDecorator("get_slo_arousal", "SeverActions_SLOArousal", "GetSLOArousal")
+    Debug.Trace("[SeverActions] get_slo_arousal: " + (result == 0) as String)
+    result = SkyrimNetApi.RegisterDecorator("get_slo_arousal_desc", "SeverActions_SLOArousal", "GetSLOArousalDesc")
+    Debug.Trace("[SeverActions] get_slo_arousal_desc: " + (result == 0) as String)
+    result = SkyrimNetApi.RegisterDecorator("get_slo_is_naked", "SeverActions_SLOArousal", "GetSLOIsNaked")
+    Debug.Trace("[SeverActions] get_slo_is_naked: " + (result == 0) as String)
+EndFunction
+
+; Decorators: Globals, called by SkyrimNet by script and function name.
 
 String Function GetSLOArousalState(Actor akActor) Global
     Int arousal
@@ -51,9 +67,7 @@ String Function GetSLOIsNaked(Actor akActor) Global
     Return "false"
 EndFunction
 
-; =============================================================================
-; ACTION EXECUTION (Instance Functions)
-; =============================================================================
+; Actions (member functions: SkyrimNet calls instance.Function()).
 
 Function ModifyArousal_Execute(Actor akActor, Float amount)
     If !akActor
@@ -70,19 +84,10 @@ Function ModifyArousal_Execute(Actor akActor, Float amount)
     slaMainScr main = Quest.GetQuest("sla_Main") as slaMainScr
 
     If sla && main
-        ; Add the delta directly to the exposure component via UpdateActorExposure.
-        ; SetActorExposure(GetActorArousal + amount) would treat total arousal as the
-        ; base, ballooning exposure when other sources are high.
+        ; Add the delta to exposure alone: SetActorExposure(GetActorArousal + amount) would take
+        ; total arousal as the base and balloon exposure when other sources are high.
         sla.UpdateActorExposure(akActor, amount as Int)
         main.UpdateSingleActorArousal(akActor)
-
-        String stateDesc = ArousalToDescription(sla.GetActorArousal(akActor))
-
-        If amount > 0
-            SkyrimNetApi.RegisterEvent("arousal_increase", akActor.GetDisplayName() + " arousal increased to " + stateDesc, akActor, None)
-        ElseIf amount < 0
-            SkyrimNetApi.RegisterEvent("arousal_decrease", akActor.GetDisplayName() + " arousal decreased to " + stateDesc, akActor, None)
-        EndIf
     EndIf
 EndFunction
 
@@ -97,36 +102,20 @@ Function SetArousal_Execute(Actor akActor, Float level)
         level = 0.0
     EndIf
 
-    Int oldArousal = GetActorArousal(akActor)
-
     slaFrameworkScr sla = Quest.GetQuest("sla_Framework") as slaFrameworkScr
     slaMainScr main = Quest.GetQuest("sla_Main") as slaMainScr
 
     If sla && main
-        ; Total arousal = exposure + other sources (TimeRate, Libido, keywords, etc.)
-        ; To reach a target total, set exposure to: target - (total - exposure)
-        ; This accounts for non-exposure contributions so the final total lands where intended.
+        ; Total = exposure + other sources (TimeRate, Libido, keywords), so the exposure that
+        ; lands the total on the target is target - (total - exposure).
         Int currentTotal = sla.GetActorArousal(akActor)
         Int currentExposure = sla.GetActorExposure(akActor)
         Int nonExposure = currentTotal - currentExposure
         Int targetExposure = (level as Int) - nonExposure
         sla.SetActorExposure(akActor, targetExposure)
         main.UpdateSingleActorArousal(akActor)
-
-        Int finalArousal = sla.GetActorArousal(akActor)
-        String stateDesc = ArousalToDescription(finalArousal)
-
-        If finalArousal > oldArousal
-            SkyrimNetApi.RegisterEvent("arousal_increase", akActor.GetDisplayName() + " arousal increased to " + stateDesc, akActor, None)
-        ElseIf finalArousal < oldArousal
-            SkyrimNetApi.RegisterEvent("arousal_decrease", akActor.GetDisplayName() + " arousal decreased to " + stateDesc, akActor, None)
-        EndIf
     EndIf
 EndFunction
-
-; =============================================================================
-; CORE HELPERS
-; =============================================================================
 
 Int Function GetActorArousal(Actor akActor) Global
     slaFrameworkScr sla = Quest.GetQuest("sla_Framework") as slaFrameworkScr
@@ -140,7 +129,7 @@ Bool Function IsActorNaked(Actor akActor) Global
     If !akActor
         Return False
     EndIf
-    ; Check body slot (32 = body)
+    ; Slot 32 (body) is mask 0x4.
     Return akActor.GetWornForm(0x00000004) == None
 EndFunction
 

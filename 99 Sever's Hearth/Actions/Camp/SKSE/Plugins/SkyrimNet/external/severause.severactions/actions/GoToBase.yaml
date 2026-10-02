@@ -1,0 +1,37 @@
+customCategory: camp
+name: GoToBase
+description: "Use when {{ player.name }} sends the speaker to the company's base to stay ('go back to the base', 'hold the base for me'), or the speaker says they are going there now on their own. The speaker leaves {{ player.name }}, travels to the base and lives there until told to follow again. While no field camp is pitched (GoToCamp is not listed), the base is the camp, so 'go back to camp' means this; while one is, 'camp' means tonight's field camp (GoToCamp). Not for going back together, where {{ player.name }} leads and the speaker simply comes along, or for plans for later."
+questEditorId: SeversHearth
+scriptName: SeversHearth_Camp
+executionFunctionName: GoToBase
+parameterMapping:
+  - type: speaker
+    name: akNPC
+    description: The NPC who will travel to the base.
+  - type: dynamic
+    name: speed
+    description: "how fast they go: 0 walk (unhurried), 1 jog (normal), 2 run (urgent or told to hurry)"
+    optional: true
+    default: 1
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+      - decoratorName: "camp_base"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act - see the is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

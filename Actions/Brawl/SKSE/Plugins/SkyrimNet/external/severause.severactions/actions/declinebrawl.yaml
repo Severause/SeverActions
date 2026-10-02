@@ -1,0 +1,49 @@
+customCategory: brawl
+name: DeclineBrawl
+description: "Use when a fist-fight challenge is waiting on the speaker's answer and they refuse in this line. The challenge is dropped and the challenger stops tailing them. Brushing off an idle 'fight me?' with no challenge waiting needs no action."
+questEditorId: SeverActions
+scriptName: SeverActions_Brawl
+executionFunctionName: DeclineBrawl_Execute
+parameterMapping:
+  - type: speaker
+    name: akDecliner
+    description: the actor refusing the challenge
+  - type: dynamic
+    name: challenger
+    # optional is load-bearing — see acceptbrawl.yaml: omission used to
+    # abort execution before Papyrus ever ran.
+    optional: true
+    description: "whose challenge is refused; leave empty when one is waiting on the speaker"
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # "ANSWER REQUIRED" is sever_brawl_state's marker text (SkyrimNetBridge.h);
+      # keep the two byte-identical.
+      - decoratorName: "sever_brawl_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "contains"
+        expectedValue: "ANSWER REQUIRED"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

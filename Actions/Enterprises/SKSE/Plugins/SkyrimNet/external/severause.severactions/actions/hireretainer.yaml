@@ -1,0 +1,67 @@
+customCategory: employment
+name: HireRetainer
+description: "Use when the speaker has just agreed, in this conversation, to work for {{ player.name }} running a venture (a mine, shop, farm, forge, fencing, a guard post, mercenary contracts and the like), with both the work and how the money flows settled. They become a retainer who earns gold and goods off-screen every week while {{ player.name }} is away. A coerced deal counts once they give in. Not for asking, offering, bargaining still under way, or maybe-someday talk; not for someone who will travel at {{ player.name }}'s side (Companionship) or a chief pledging a whole camp (OutlawCamp)."
+questEditorId: SeverActions
+scriptName: SeverActions_Enterprises
+executionFunctionName: HireRetainer
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the NPC agreeing to become {{ player.name }}'s retainer
+  - type: dynamic
+    name: job
+    description: "the work they agreed to, one word: miner, merchant, alchemist, farmer, fence (moving stolen goods; illegal), mercenary (contract fighting and caravan work), courtesan (paid companionship), guard (standing watch at a post), lumberjack, blacksmith, hunter, brewer or tanner"
+  - type: dynamic
+    name: arrangement
+    description: "how the money works, one word: employed (a fixed weekly wage, all output kept; the usual willing hire), partnership (no wage, earnings split 50/50), tribute (coerced: they hand over a cut under duress; also 'indentured', 'vassalage'), sworn (a wage for service alone: a kept guard at a post, or a servant; also 'retained'), enslaved (coerced and unpaid; also 'slave', 'thrall', 'captive')"
+    optional: true
+    default: "employed"
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # retainer_status == "" means "not already a retainer". Custom decorators
+      # return JSON strings, never bools — gate on empty vs non-empty, never == true.
+      - decoratorName: "retainer_status"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Final Audit officers are not hired; "" for everyone else.
+      - decoratorName: "is_tax_collector"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} agreed to work for {{ player.name }} as a {{ job }}"

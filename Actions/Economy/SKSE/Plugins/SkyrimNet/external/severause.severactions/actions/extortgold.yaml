@@ -1,0 +1,52 @@
+customCategory: economy
+name: ExtortGold
+description: "Use only when the victim gives in to the speaker's threat, or is overpowered, and the coin is taken now: a shakedown, toll or robbery that has succeeded. Takes the coin by force. The threat or demand itself is words: make it and wait for their answer. Not for payment that is fairly owed (CollectPayment)."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: ExtortGold_Execute
+parameterMapping:
+  - type: speaker
+    name: akExtorter
+    description: the actor making the threat
+  - type: dynamic
+    name: victim
+    description: "who is robbed: exact name as listed in Nearby Actors, or the player's name"
+  - type: dynamic
+    name: amount
+    description: "gold taken, a whole number"
+# Unregistered tags keep this action permanently ineligible (SkyrimNet ActionManager). Do not remove them until ExtortGold_Execute confirms with a player victim.
+tags:
+  - Currency
+  - Hostile
+  - Crime
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

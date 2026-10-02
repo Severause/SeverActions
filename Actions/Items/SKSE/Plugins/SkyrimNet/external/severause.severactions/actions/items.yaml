@@ -1,0 +1,20 @@
+customCategory: items
+name: Items
+description: "Category: the speaker handles things with their own hands, right now: give an item or take one being held out, pick up or fetch something lying nearby, search or loot a chest or a body, eat or drink something they carry, read a book or note aloud or stop reading, or formally grant the player a house or building they own. Only for a deed done in this line; offers for later and showing or discussing things are words, and an item already handed over needs no second action. Coin, buying and selling: Economy. Wearing or removing gear: Outfit. A finished smithing order: Crafting."
+enabled: true
+
+eligibilityRules:
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

@@ -1,0 +1,53 @@
+customCategory: arrest
+name: OrderArrest
+description: "Use when the speaker, a jarl or housecarl, decides in this line to have someone taken into custody; the nearest guard does it. A person here is arrested on the spot; someone elsewhere is fetched and brought back to the speaker for judgment; {{ player.name }} is confronted over their bounty. Not for rants about criminals, threats, or wishes that someone would arrest them; nothing happens without a guard within earshot."
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: OrderArrest_Execute
+parameterMapping:
+  - type: speaker
+    name: akAuthority
+    description: the jarl or housecarl giving the order
+  - type: dynamic
+    name: targetName
+    description: "full name of the person to arrest, exactly as known, or 'player' for the player"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  # The noble half of the old is_guard_or_authority: jarl or housecarl.
+  # Guards see ArrestNPC / ArrestPlayer / DispatchGuardToArrest instead.
+  - conditions:
+      - decoratorName: "is_hold_noble"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot act - see the is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

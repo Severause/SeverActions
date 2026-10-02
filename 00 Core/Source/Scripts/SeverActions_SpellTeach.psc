@@ -1,16 +1,13 @@
 Scriptname SeverActions_SpellTeach extends Quest
-{Handles teaching and learning spells between actors - by Severause
- Improved version with unified transfer function and ISL-inspired mechanics}
+{Teaches spells between actors (with school-specific failures) and Words of Power to the player - by Severause}
 
-; =============================================================================
-; PROPERTIES
-; =============================================================================
+; ===== Properties =====
 
 Idle Property IdleTeaching Auto
 Idle Property IdleLearning Auto
 Idle Property IdleForceDefaultState Auto
 
-; Fade to black effect
+; The three IMODs are unused: the fade runs through Game.FadeOutGame (see _StartFadeToBlack). Kept bindable.
 ImageSpaceModifier Property FadeToBlackImod Auto
 {ISFadeToBlackImod - fades screen to black}
 
@@ -20,7 +17,8 @@ ImageSpaceModifier Property FadeToBlackHoldImod Auto
 ImageSpaceModifier Property FadeToBlackBackImod Auto
 {ISFadeToBlackBackImod - fades screen back from black}
 
-; Optional: Configurable settings (could be tied to MCM or globals)
+; Tunables. EnableFailureSystem / FailureDifficultyMult are tier-P settings rows (spellFailEnabled /
+; spellFailDifficulty, MCM and web); the rest have no UI.
 Float Property LearningDurationBase = 5.0 Auto Hidden
 {Base duration in seconds for spell transfer}
 
@@ -39,24 +37,19 @@ Float Property SkillXPAmount = 25.0 Auto Hidden
 Bool Property UseFadeToBlack = True Auto Hidden
 {If true, screen fades to black during spell transfer}
 
-; Failure System Settings
 Bool Property EnableFailureSystem = True Auto Hidden
 {If true, spell learning can fail with school-specific consequences}
 
 Float Property FailureDifficultyMult = 1.0 Auto Hidden
-{Multiplier for failure chance (0.5 = easier, 2.0 = harder). MCM adjustable.}
+{Multiplier for failure chance (0.5 = easier, 2.0 = harder)}
 
 ObjectReference Property PendingCleanupCreature = None Auto Hidden
-{Internal: creature spawned by failed Conjuration, auto-cleaned after 10s (partial success) / 30s (full failure)}
+{Internal: creature from a failed Conjuration lesson, despawned by the tick after 10 s (partial) / 30 s (full failure)}
 
-; Visual FX
 EffectShader Property SpellLearnedFXS Auto
-{Optional: EffectShader played on learner when a spell is successfully learned.
- Fill in CK with any EFSH — e.g. search for EnchantHeal, AbsorbHealth, Reanimate, Ward.}
+{Optional EffectShader played on the learner on success (any EFSH).}
 
-; =============================================================================
-; SPELL SCHOOL DETECTION (for XP and difficulty)
-; =============================================================================
+; ===== Spell school and difficulty =====
 
 String Function GetSpellSchool(Spell akSpell)
     {Returns the magic school name for a spell}
@@ -100,7 +93,7 @@ Int Function GetSpellDifficulty(Spell akSpell)
     
     Int baseCost = akSpell.GetGoldValue()
     
-    ; Rough mapping based on spell tome costs
+    ; Rough tiers by spell-tome price bands
     if baseCost <= 50
         return 0  ; Novice
     elseif baseCost <= 150
@@ -134,9 +127,7 @@ Float Function GetLearningDuration(Int difficulty)
     return LearningDurationBase + (difficulty * 2.0)
 EndFunction
 
-; =============================================================================
-; FAILURE SYSTEM - Chance Calculation & Outcome Roll
-; =============================================================================
+; ===== Failure chance and outcome roll =====
 
 Float Function CalculateFailureChance(Actor learner, Spell akSpell)
     {Calculate probability of failure (0.0 to 0.95) based on skill gap and difficulty}
@@ -147,10 +138,10 @@ Float Function CalculateFailureChance(Actor learner, Spell akSpell)
         return 0.0
     endif
 
-    ; Base rate: difficulty * 5% (keeps tension even when meeting the requirement)
+    ; 5% per tier, even when the skill requirement is met
     Float failChance = difficulty * 0.05
 
-    ; Gap rate: +1% per skill point below requirement
+    ; +1% per skill point below the requirement
     String school = GetSpellSchool(akSpell)
     String avName = GetActorValueForSchool(school)
     if avName != ""
@@ -162,10 +153,9 @@ Float Function CalculateFailureChance(Actor learner, Spell akSpell)
         endif
     endif
 
-    ; Apply MCM multiplier
     failChance = failChance * FailureDifficultyMult
 
-    ; Cap at 95% - never impossible
+    ; Cap at 95%: never impossible
     if failChance > 0.95
         failChance = 0.95
     endif
@@ -176,23 +166,21 @@ EndFunction
 Int Function RollOutcome(Float failChance)
     {Roll for outcome: 0=Full Failure, 1=Partial Success, 2=Full Success}
     if failChance <= 0.0
-        return 2  ; Full success
+        return 2
     endif
 
     Float roll = Utility.RandomFloat(0.0, 1.0)
 
     if roll <= failChance * 0.5
-        return 0  ; Full failure - worst outcome
+        return 0  ; Full failure (half of all failures)
     elseif roll <= failChance
-        return 1  ; Partial success - learn but suffer consequence
+        return 1  ; Partial success
     else
-        return 2  ; Full success
+        return 2
     endif
 EndFunction
 
-; =============================================================================
-; INTERNAL HELPERS
-; =============================================================================
+; ===== Internal helpers =====
 
 Bool Function _CanLearn(Actor learner, Spell akSpell)
     if learner == None || akSpell == None
@@ -214,7 +202,7 @@ Bool Function _MeetsSkillRequirement(Actor learner, Spell akSpell)
     String avName = GetActorValueForSchool(school)
     
     if avName == ""
-        return True  ; Unknown school, allow learning
+        return True  ; Unknown school: allow
     endif
     
     Int difficulty = GetSpellDifficulty(akSpell)
@@ -231,7 +219,7 @@ Function _ApplyExhaustion(Actor learner, Spell akSpell)
     endif
     
     Int difficulty = GetSpellDifficulty(akSpell)
-    ; MAX magicka is what we want here -- GetActorValue returns CURRENT (already-drained) magicka; GetBaseActorValue is the vanilla-safe maximum.
+    ; Base value as the maximum: GetActorValue is the current, already-drained magicka.
     Float maxMagicka = learner.GetBaseActorValue("Magicka")
     Float drainAmount = maxMagicka * ExhaustionPercentage * (1.0 + (difficulty * 0.25))
     
@@ -268,37 +256,15 @@ Function _ResetIdles(Actor actor1, Actor actor2)
     endif
 EndFunction
 
-; =============================================================================
-; FADE TO BLACK FUNCTIONS
-; =============================================================================
+; ===== Fade to black =====
 
-; Fade-to-black via Game.FadeOutGame with a long-duration animation.
-; The three-IMOD pattern works under stock Skyrim but Community Shaders'
-; replacement post-process drops the IMOD stage (Apply calls fire but never
-; reach the final tonemap). FadeOutGame routes through Bethesda's high-level
-; fade machinery (sleep / wait / hit-the-bed path), which CS lets through,
-; but it doesn't hold black — the screen releases when the animation
-; duration elapses.
-;
-; The trick: make the fade-out duration LONG enough to span the whole
-; spell-teach sequence. While the animation is in-flight the screen is held
-; in its interpolated state — never completes, never releases; _EndFadeToBlack
-; interrupts with the reverse animation to bring it back. The screen
-; progressively darkens over LongFadeOutSeconds rather than snapping at 1s,
-; reading as "the scene dims while the teacher concentrates".
-;
-; Do not reach for the alternatives: a snap-and-hold doesn't hold, and an
-; OnUpdate refresh loop re-animates every refresh (flicker). FadeOutGame
-; locks player controls during the transition, which is correct here — the
-; player shouldn't be wandering mid-lesson.
-;
-; The IMOD properties stay declared and bindable in CK for a future revert;
-; they're not referenced by the current bodies.
+; Game.FadeOutGame, not the FadeToBlack IMODs: Community Shaders drops the IMOD stage.
+; FadeOutGame does not hold black, so the fade-out runs for LongFadeOutSeconds (the screen
+; stays mid-animation, dimming gradually) and _EndFadeToBlack interrupts it with the reverse
+; fade. A snap-and-hold does not hold and a refresh loop flickers. FadeOutGame also locks
+; player controls, which is wanted mid-lesson.
 
-; Long enough to cover the full lesson at default difficulty (~5-15s).
-; If the lesson runs longer than this, the animation will complete and
-; the screen will release mid-lesson — tunable property so we can
-; lengthen for hard-difficulty spells.
+; Must outlast the lesson (about 6-14 s at the defaults), or the screen releases mid-lesson.
 Float Property LongFadeOutSeconds = 30.0 Auto Hidden
 Float Property FadeBackSeconds    = 1.5  Auto Hidden
 
@@ -307,17 +273,12 @@ Function _StartFadeToBlack()
     if !UseFadeToBlack
         return
     endif
-    ; bFadingOut=true → fade TO black; bBlackFade=true → black (vs white)
-    ; Long animation duration acts as the hold mechanism — the screen
-    ; stays in its in-flight interpolated state until we interrupt
-    ; with _EndFadeToBlack.
+    ; abFadingOut = to black, abBlackFade = black (not white)
     Game.FadeOutGame(true, true, 0.0, LongFadeOutSeconds)
 EndFunction
 
 Function _HoldFadeToBlack()
-    {No-op — the long fade-out duration handles the hold. Kept as a
-     function so the call sites don't need to change shape.}
-    ; intentionally empty
+    {No-op: the long fade-out holds the black (see LongFadeOutSeconds).}
 EndFunction
 
 Function _EndFadeToBlack()
@@ -328,9 +289,7 @@ Function _EndFadeToBlack()
     Game.FadeOutGame(false, true, 0.0, FadeBackSeconds)
 EndFunction
 
-; =============================================================================
-; FAILURE CONSEQUENCES - School-specific effects when spells go wrong
-; =============================================================================
+; ===== Failure consequences, per school =====
 
 Function _ApplyFailureConsequence(Actor teacher, Actor learner, String school, Int difficulty, Int outcome)
     {Dispatch to school-specific consequence}
@@ -354,67 +313,59 @@ EndFunction
 Function _ApplyDestructionFailure(Actor teacher, Actor learner, Int difficulty, Int outcome)
     {Magical energy explodes outward - spell impact explosion + controlled HP damage}
 
-    ; Pick a destruction spell to cast for the explosion visual
-    ; Firebolt = small impact, Fireball = big AoE explosion
+    ; A spell cast at the learner for the impact visual: small for low tiers, AoE for high.
     Spell explosionSpell = None
     if difficulty <= 2
-        explosionSpell = Game.GetFormFromFile(0x00012FCD, "Skyrim.esm") as Spell  ; Firebolt
+        explosionSpell = Game.GetFormFromFile(0x0007E56D, "Skyrim.esm") as Spell  ; TrapFirebolt01 (fire-and-forget)
     else
         explosionSpell = Game.GetFormFromFile(0x0001C789, "Skyrim.esm") as Spell  ; Fireball
     endif
 
-    ; Ghost teacher to protect from splash damage
-    ; Learner is NOT ghosted — the spell must impact them to create the explosion VFX
+    ; Ghost the teacher against the splash. Not the learner: the spell must hit them for the VFX.
     Bool teacherWasGhost = teacher.IsGhost()
     if !teacherWasGhost
         teacher.SetGhost(true)
     endif
 
-    ; Place invisible marker above learner as spell origin
-    ; This avoids any casting animation on actors — the spell just appears
+    ; Cast from an XMarker 200 units above the learner, so no actor plays a cast animation.
     ObjectReference marker = None
     Form xMarker = Game.GetFormFromFile(0x0000003B, "Skyrim.esm")  ; XMarker
     if xMarker
         marker = learner.PlaceAtMe(xMarker)
         if marker
-            marker.MoveTo(learner, 0.0, 0.0, 200.0)  ; 200 units above
+            marker.MoveTo(learner, 0.0, 0.0, 200.0)
         endif
     endif
 
-    ; Cast spell from marker toward learner — projectile impacts and creates explosion
     if explosionSpell && marker
         explosionSpell.Cast(marker, learner)
     endif
 
-    ; Camera shake scales with difficulty
     Game.ShakeCamera(None, 1.0 + (difficulty as Float))
 
-    ; Stagger the learner
     Debug.SendAnimationEvent(learner, "staggerStart")
 
-    ; Wait for spell projectile to travel and impact
+    ; Let the projectile land before un-ghosting the teacher
     Utility.Wait(1.0)
 
-    ; Restore teacher ghost state
     if !teacherWasGhost
         teacher.SetGhost(false)
     endif
 
-    ; Clean up marker
     if marker
         marker.Disable()
         marker.Delete()
     endif
 
-    ; Apply controlled HP damage to learner (on top of any spell damage)
+    ; Scripted HP damage on top of the spell's own
     Float maxHP = learner.GetBaseActorValue("Health")
     Float damagePercent = 0.10 + (difficulty * 0.05)  ; 10% to 30%
-    if outcome == 0  ; Full failure = more damage
+    if outcome == 0
         damagePercent = damagePercent * 1.5
     endif
     Float damage = maxHP * damagePercent
 
-    ; Safety cap: never reduce below 10% HP (covers both spell + our damage)
+    ; Floor at 10% max HP, counting the spell's damage
     Float currentHP = learner.GetActorValue("Health")
     Float minHP = maxHP * 0.10
     if (currentHP - damage) < minHP
@@ -424,7 +375,7 @@ Function _ApplyDestructionFailure(Actor teacher, Actor learner, Int difficulty, 
         learner.DamageActorValue("Health", damage)
     endif
 
-    ; Final safety: if spell damage alone pushed below 10%, heal back up
+    ; The spell alone may have gone below the floor: heal back to it
     currentHP = learner.GetActorValue("Health")
     if currentHP < minHP
         learner.RestoreActorValue("Health", minHP - currentHP)
@@ -433,24 +384,22 @@ EndFunction
 
 Function _ApplyConjurationFailure(Actor learner, Int difficulty, Int outcome)
     {A hostile creature tears through the failed conjuration with purple vortex VFX}
-    ; Clean up any existing creature first
     _CleanupSpawnedCreature()
 
-    ; Determine creature type based on difficulty
-    ; Using vanilla Skyrim.esm ActorBase (Enc*) forms
+    ; One untemplated Enc* ActorBase per tier.
     Form creatureForm = None
     if difficulty <= 1
-        creatureForm = Game.GetFormFromFile(0x000829B4, "Skyrim.esm")  ; EncSkeever
+        creatureForm = Game.GetFormFromFile(0x00023AB7, "Skyrim.esm")  ; EncSkeever
     elseif difficulty == 2
-        creatureForm = Game.GetFormFromFile(0x0002D770, "Skyrim.esm")  ; EncSkeleton
+        creatureForm = Game.GetFormFromFile(0x0002D1DE, "Skyrim.esm")  ; EncSkeleton01Melee1H
     elseif difficulty == 3
-        creatureForm = Game.GetFormFromFile(0x00023AAB, "Skyrim.esm")  ; EncAtronachFrost
+        creatureForm = Game.GetFormFromFile(0x00023AA7, "Skyrim.esm")  ; EncAtronachFrost
     else
-        creatureForm = Game.GetFormFromFile(0x0010DDDC, "Skyrim.esm")  ; DremoraMerchant (hostile)
+        creatureForm = Game.GetFormFromFile(0x00023A95, "Skyrim.esm")  ; EncDremoraMelee01
     endif
 
     if !creatureForm
-        ; Fallback: just stagger + magicka drain if forms not found
+        ; Form missing: stagger + magicka drain
         Debug.SendAnimationEvent(learner, "staggerStart")
         learner.DamageActorValue("Magicka", learner.GetActorValue("Magicka") * 0.3)
         return
@@ -458,38 +407,35 @@ Function _ApplyConjurationFailure(Actor learner, Int difficulty, Int outcome)
 
     ActorBase creatureBase = creatureForm as ActorBase
     if !creatureBase
+        ; An override made it something else: the same punishment as a missing form
         Debug.SendAnimationEvent(learner, "staggerStart")
+        learner.DamageActorValue("Magicka", learner.GetActorValue("Magicka") * 0.3)
         return
     endif
 
-    ; === Conjuration Portal VFX ===
-    ; Place vanilla SummonTargetFXActivator at learner's position — this is the purple
-    ; swirling vortex from vanilla conjuration spells. It auto-disables/deletes itself.
-    ; Same pattern used by MGRitual03EffectScript and dunMiddenHandSculptureSCRIPT.
+    ; The vanilla summon vortex; it disables and deletes itself (MGRitual03EffectScript's pattern).
     Form portalForm = Game.GetFormFromFile(0x0007CD55, "Skyrim.esm")  ; SummonTargetFXActivator
     if portalForm
         learner.PlaceAtMe(portalForm)
     endif
 
-    ; Wait for portal animation to appear before spawning creature (vanilla uses 0.33s)
+    ; Let the portal appear first (vanilla waits 0.33 s)
     Utility.Wait(0.5)
 
-    ; Spawn creature at learner's location — emerges from the portal
     Actor creature = learner.PlaceActorAtMe(creatureBase)
     if creature
         if outcome == 0
-            ; Full failure: hostile creature, player must deal with it
+            ; Full failure: it attacks; despawned after 30 s
             creature.StartCombat(learner)
             PendingCleanupCreature = creature as ObjectReference
             ChronoArm(30.0)
         else
-            ; Partial success: non-hostile, brief apparition before lesson resumes
+            ; Partial success: no StartCombat, despawned after 10 s (its own AI may still attack)
             PendingCleanupCreature = creature as ObjectReference
             ChronoArm(10.0)
         endif
     endif
 
-    ; Camera shake
     Game.ShakeCamera(None, 1.5)
 EndFunction
 
@@ -497,14 +443,13 @@ Function _ApplyRestorationFailure(Actor learner, Int difficulty, Int outcome)
     {Healing energy inverts - drains HP and Stamina}
     Debug.SendAnimationEvent(learner, "staggerStart")
 
-    ; HP drain (inverted healing) - scales with difficulty
     Float maxHP = learner.GetBaseActorValue("Health")
     Float hpDrain = maxHP * (0.08 + (difficulty * 0.04))  ; 8% to 24%
-    if outcome == 0  ; Full failure = more drain
+    if outcome == 0
         hpDrain = hpDrain * 1.5
     endif
 
-    ; Safety cap: never reduce below 10% HP
+    ; Floor at 10% max HP
     Float currentHP = learner.GetActorValue("Health")
     if (currentHP - hpDrain) < (maxHP * 0.10)
         hpDrain = currentHP - (maxHP * 0.10)
@@ -513,7 +458,6 @@ Function _ApplyRestorationFailure(Actor learner, Int difficulty, Int outcome)
         learner.DamageActorValue("Health", hpDrain)
     endif
 
-    ; Stamina drain
     Float maxStamina = learner.GetBaseActorValue("Stamina")
     Float staminaDrain = maxStamina * (0.15 + (difficulty * 0.10))  ; 15% to 55%
     learner.DamageActorValue("Stamina", staminaDrain)
@@ -524,17 +468,21 @@ Function _ApplyIllusionFailure(Actor learner, Int difficulty, Int outcome)
     Actor player = Game.GetPlayer()
 
     if learner == player
-        ; Player safety: just stagger + stamina drain (no fear/frenzy on player)
+        ; No fear/frenzy on the player: stagger and drains only
         Debug.SendAnimationEvent(learner, "staggerStart")
         Float maxStamina = learner.GetBaseActorValue("Stamina")
         Float drain = maxStamina * (0.20 + (difficulty * 0.15))  ; 20% to 80%
         learner.DamageActorValue("Stamina", drain)
-        ; Also drain some magicka from the mental strain
         learner.DamageActorValue("Magicka", learner.GetActorValue("Magicka") * 0.2)
     else
-        ; NPC learner: apply actual fear (low tier) or frenzy (high tier)
+        ; NPC, full failure: 4DEEF Rout (fear) for low tiers, 4DEEE Frenzy for high. A partial
+        ; success only staggers: the lesson resumes on this NPC.
+        Debug.SendAnimationEvent(learner, "staggerStart")
+        if outcome >= 1
+            return
+        endif
         if difficulty <= 2
-            Spell fearSpell = Game.GetFormFromFile(0x0004DEED, "Skyrim.esm") as Spell
+            Spell fearSpell = Game.GetFormFromFile(0x0004DEEF, "Skyrim.esm") as Spell
             if fearSpell
                 fearSpell.Cast(learner, learner)
             endif
@@ -550,42 +498,36 @@ EndFunction
 Function _ApplyAlterationFailure(Actor learner, Int difficulty, Int outcome)
     {Reality warps around the learner - push or paralysis}
     if difficulty <= 2
-        ; Low tier: stagger + stamina drain
+        ; Low tier: stagger; an NPC is pushed away, the player loses stamina
         Debug.SendAnimationEvent(learner, "staggerStart")
         Game.ShakeCamera(None, 1.0)
         Actor player = Game.GetPlayer()
         if learner != player
-            ; Push NPC away
             player.PushActorAway(learner, 2.0)
         else
-            ; Player just gets stamina drain
             learner.DamageActorValue("Stamina", learner.GetActorValue("Stamina") * 0.3)
         endif
     else
-        ; High tier: brief paralysis (3-5 seconds)
+        ; High tier: paralysis, 3 s (5 s at Master)
         Float paralyzeTime = 3.0
         if difficulty >= 4
             paralyzeTime = 5.0
         endif
-        ; Crash safety: persist the pending reset BEFORE paralyzing. A bare
-        ; SetActorValue + blocking Wait + reset bakes Paralysis=1 into the
-        ; actor (possibly the PLAYER) forever if the game crashes, quits, or
-        ; a save is loaded from inside the window -- a suspended Utility.Wait
-        ; stack is not guaranteed to survive, but a registered single update
-        ; is, and Maintenance() force-clears leftovers on load.
+        ; Persist the pending reset BEFORE paralyzing: a save made inside the window would
+        ; otherwise keep Paralysis=1 (possibly on the player) for good, since the suspended
+        ; Wait is not guaranteed to resume. Maintenance() clears the list on load; the tick
+        ; re-checks it after the window.
         StorageUtil.FormListAdd(Self, "SeverSpellTeach_PendingParalyze", learner, false)
         StorageUtil.SetFloatValue(learner, "SeverSpellTeach_ParalyzeUntil", Utility.GetCurrentRealTime() + paralyzeTime)
         learner.SetActorValue("Paralysis", 1.0)
         ChronoArm(paralyzeTime + 0.5)
         Utility.Wait(paralyzeTime)
-        ; Normal path: reset + unpersist. The OnUpdate sweep then no-ops.
+        ; Normal path; the tick's sweep then finds nothing.
         _ClearPendingParalysis(learner)
     endif
 EndFunction
 
-; =============================================================================
-; FAILURE NARRATION - Generate descriptive text for SkyrimNet events
-; =============================================================================
+; ===== Failure narration (SkyrimNet event text) =====
 
 String Function _GetFailureNarration(String teacherName, String learnerName, String spellName, String school, Int difficulty, Int outcome)
     {Generate school-specific failure narration for SkyrimNet events}
@@ -624,9 +566,7 @@ String Function _GetFailureNarration(String teacherName, String learnerName, Str
     endif
 EndFunction
 
-; =============================================================================
-; CREATURE CLEANUP - Auto-despawn conjuration failure creatures
-; =============================================================================
+; ===== Creature cleanup and the chrono tick =====
 
 Function _CleanupSpawnedCreature()
     {Clean up any pending conjuration failure creature}
@@ -641,38 +581,34 @@ Function _CleanupSpawnedCreature()
 EndFunction
 
 Function ChronoArm(Float afSeconds)
-    {Arm this script's one-shot chronometer tick - replaces the FORM-keyed
-     RegisterForSingleUpdate (canonical explanation: the Chronometer block in
-     SeverActionsNativeExt2.psc + the CLAUDE.md lesson). Event name AND
-     callback name are unique per script - both, always. Re-arm replaces the
-     pending tick; ticks do NOT survive save/load (load paths re-arm); at
-     most one already-in-flight wake can land after Cancel/Clear, so keep
-     the handler state-guarded.}
+    {Arm this script's one-shot chronometer tick (see the Chronometer block in SeverActionsNativeExt2.psc).
+     Event and callback names are unique to this script. Re-arm replaces the pending tick; ticks do
+     not survive a load; one in-flight tick can land after a Cancel, so the handler stays state-guarded.}
     RegisterForModEvent("SeverActions_Tick_SpellTeach", "OnChronoTick_SpellTeach")
     SeverActionsNativeExt2.Chrono_Request("SeverActions_Tick_SpellTeach", afSeconds)
+    _TickRearmed = true
 EndFunction
 
+; Set by ChronoArm, cleared at the top of the tick. A tick that did not re-arm must Cancel:
+; a fired tick is acknowledged only by a re-Request or a Cancel, else the DLL re-sends it.
+Bool _TickRearmed = false
+
 Event OnChronoTick_SpellTeach(String eventName, String strArg, Float numArg, Form sender)
-    ; Shared single-update channel: the conjuration-creature despawn AND the
-    ; paralysis-reset safety net both arm this event. Both passes are
-    ; idempotent, so whichever deadline fires first can safely run both.
+    ; One tick serves the creature despawn and the paralysis sweep: whichever deadline fires
+    ; first runs both (so the creature can go early).
+    _TickRearmed = false
     _CleanupSpawnedCreature()
     _SweepPendingParalysis(false)
+    If !_TickRearmed
+        SeverActionsNativeExt2.Chrono_Cancel("SeverActions_Tick_SpellTeach")
+    EndIf
 EndEvent
 
-; =============================================================================
-; PARALYSIS RESET SAFETY NET - crash-safe recovery for _ApplyAlterationFailure
-; =============================================================================
+; ===== Paralysis reset (see _ApplyAlterationFailure) =====
 
 Function Maintenance()
-    {Load-time recovery. Force-clears any paralysis reset left pending by a
-     crash/quit/save made inside the failure-paralysis window. Real-time
-     deadlines from a previous session are meaningless after a load, so
-     sweep everything rather than leave an actor stuck at Paralysis=1.
-     Called by SeverActions_Init's load path (InitializeSpellTeachSystem).}
-    ; Chronometer: one idempotent wake on load - runs the creature-despawn
-    ; and paralysis sweeps once in case their deadline tick was pending at
-    ; the save (chronometer ticks do not survive save/load).
+    {Load recovery, called from SeverActions_Mod_Items stage 1. Clears every pending paralysis
+     (real-time deadlines mean nothing after a load) and arms one tick for a creature left from the save.}
     ChronoArm(1.0)
     _SweepPendingParalysis(true)
 EndFunction
@@ -691,7 +627,7 @@ Function _SweepPendingParalysis(Bool abForce)
         i -= 1
         Actor pending = StorageUtil.FormListGet(Self, "SeverSpellTeach_PendingParalyze", i) as Actor
         if !pending
-            ; Entry went stale (actor unloaded/deleted) - drop it.
+            ; Stale entry: drop it
             StorageUtil.FormListRemoveAt(Self, "SeverSpellTeach_PendingParalyze", i)
         else
             Float deadline = StorageUtil.GetFloatValue(pending, "SeverSpellTeach_ParalyzeUntil", 0.0)
@@ -707,15 +643,13 @@ Function _SweepPendingParalysis(Bool abForce)
     endwhile
 
     if nextWait > 0.0
-        ; A window is still open (this update fired early, e.g. armed by the
-        ; creature-cleanup path) - keep the safety net armed for it.
+        ; A window is still open (the tick fired early, e.g. the creature's): re-arm for it
         ChronoArm(nextWait + 0.1)
     endif
 EndFunction
 
 Function _ClearPendingParalysis(Actor akActor)
-    {Reset the failure paralysis and unpersist its pending marker. Safe to
-     call more than once for the same actor.}
+    {Reset the failure paralysis and drop its pending entry. Idempotent.}
     if !akActor
         return
     endif
@@ -724,25 +658,20 @@ Function _ClearPendingParalysis(Actor akActor)
     StorageUtil.FormListRemove(Self, "SeverSpellTeach_PendingParalyze", akActor, true)
 EndFunction
 
-; =============================================================================
-; NARRATION SYNC - Wait for DirectNarration audio to finish before continuing
-; =============================================================================
+; ===== Narration sync =====
 
 Function _WaitForNarrationComplete()
-    {Wait for DirectNarration TTS audio to finish playing.
-     Two-phase: first wait for audio to enter the queue, then wait for it to drain.
-     This prevents failures/consequences from firing while the teacher is still talking.}
+    {Block until DirectNarration audio has played (it enters the speech queue, then the queue
+     drains), so consequences do not fire while the teacher is still talking.}
 
-    ; Phase 1: Wait for TTS to process and audio to enter the queue
-    ; Typical TTS takes 1-5 seconds. Timeout at 10 seconds.
+    ; Enter the queue: up to 10 s (TTS typically 1-5 s)
     int waitForQueue = 0
     while SkyrimNetApi.GetSpeechQueueSize() == 0 && waitForQueue < 20
         Utility.Wait(0.5)
         waitForQueue += 1
     endwhile
 
-    ; Phase 2: Wait for audio to finish playing
-    ; Typical narration is 5-15 seconds. Timeout at 60 seconds.
+    ; Drain: up to 60 s (narration typically 5-15 s)
     int waitForDrain = 0
     while SkyrimNetApi.GetSpeechQueueSize() > 0 && waitForDrain < 120
         Utility.Wait(0.5)
@@ -750,31 +679,26 @@ Function _WaitForNarrationComplete()
     endwhile
 EndFunction
 
-; =============================================================================
-; UNIFIED SPELL TRANSFER FUNCTION
-; This consolidates TeachSpell and LearnSpell into a single function
-; =============================================================================
+; ===== Spell transfer (shared by TeachSpell and LearnSpell) =====
 
 Bool Function TransferSpell_IsEligible(Actor teacher, Actor learner, Spell akSpell)
-    {Unified eligibility check for spell transfer}
+    {Teacher knows it, learner does not, neither in combat, skill gate if enabled}
     if !teacher || !learner || !akSpell
         return false
     endif
     
-    ; Basic checks
     if !teacher.HasSpell(akSpell)
-        return false  ; Teacher must know the spell
+        return false
     endif
     
     if !_CanLearn(learner, akSpell)
-        return false  ; Learner already knows it or invalid
+        return false
     endif
     
     if teacher.IsInCombat() || learner.IsInCombat()
-        return false  ; Neither can be in combat
+        return false
     endif
     
-    ; Optional skill requirement check
     if RequireSkillCheck && !_MeetsSkillRequirement(learner, akSpell)
         return false
     endif
@@ -783,24 +707,15 @@ Bool Function TransferSpell_IsEligible(Actor teacher, Actor learner, Spell akSpe
 EndFunction
 
 Function TransferSpell_Execute(Actor teacher, Actor learner, Spell akSpell)
-    {Unified spell transfer execution with failure system}
+    {Runs the lesson: fade, idles, a mid-lesson failure roll, then the spell, exhaustion and XP}
     if !teacher || !learner || !akSpell
         return
     endif
 
-    ; --- One-handed-spell fix -------------------------------------------------
-    ; The spell was resolved by NAME against the TEACHER's known spells, and
-    ; magic overhauls distribute NPCs hand-locked copies: MAG_FireboltRightHand
-    ; carries the RightHand equip slot while the tome's MAG_Firebolt carries
-    ; EitherHand - and BOTH display as Firebolt. Handing the teacher's copy
-    ; straight to the player gave them a spell they could only ever hold in one
-    ; hand (no off-hand, no dual-cast). Swap to the tome-taught version.
-    ;
-    ; PLAYER ONLY on purpose. For an NPC learner the teacher's exact variant is
-    ; the right thing to copy: overhauls pair a hand-locked spell with the perk
-    ; that lets that NPC cast it, and substituting a different variant pulls in
-    ; a perk requirement they do not have. NPC casting already routes through
-    ; GetUnrestrictedVariantForCast, which grants the perk alongside.
+    ; Magic overhauls give NPCs hand-locked copies (MAG_FireboltRightHand) with the same name as
+    ; the tome's either-hand spell: teach the PLAYER the tome version, or they can use it in one
+    ; hand only. Player only: an NPC keeps the teacher's exact variant, since another one can need
+    ; a perk the NPC lacks (SA's CastSpell casts a perk-free clone, see SpellCastManager::CloneSpellForCast).
     if learner == Game.GetPlayer()
         Spell learnable = SeverActionsNative.GetLearnableSpellVariant(akSpell) as Spell
         if learnable && learnable != akSpell
@@ -816,13 +731,10 @@ Function TransferSpell_Execute(Actor teacher, Actor learner, Spell akSpell)
     Int difficulty = GetSpellDifficulty(akSpell)
     Bool isPartialSuccess = false
 
-    ; Start fade to black
     _StartFadeToBlack()
 
-    ; Brief pause for fade to take effect
     Utility.Wait(1.0)
 
-    ; Hold at black and start animations
     _HoldFadeToBlack()
 
     if IdleTeaching
@@ -832,47 +744,40 @@ Function TransferSpell_Execute(Actor teacher, Actor learner, Spell akSpell)
         learner.PlayIdle(IdleLearning)
     endif
 
-    ; Calculate learning duration based on difficulty
     Float duration = GetLearningDuration(difficulty)
 
-    ; === Wait first half of practice ===
+    ; First half of the practice, then the failure roll
     Utility.Wait(duration * 0.5)
 
-    ; === MID-PRACTICE FAILURE CHECK ===
     if EnableFailureSystem && difficulty > 0
         Float failChance = CalculateFailureChance(learner, akSpell)
         Int outcome = RollOutcome(failChance)
 
-        if outcome < 2  ; Not full success — something went wrong
-            ; End fade so player sees the consequence
+        if outcome < 2
+            ; Lift the fade so the player sees the consequence
             _ResetIdles(teacher, learner)
             _EndFadeToBlack()
             Utility.Wait(0.5)
 
-            ; Apply school-specific consequence
             _ApplyFailureConsequence(teacher, learner, school, difficulty, outcome)
 
-            ; Generate narration
             String narration = _GetFailureNarration(teacherName, learnerName, spellName, school, difficulty, outcome)
 
             if outcome == 0
-                ; FULL FAILURE: no spell learned, double exhaustion
+                ; Full failure: nothing learned, double exhaustion
                 _ApplyExhaustion(learner, akSpell)
                 _ApplyExhaustion(learner, akSpell)
-                SkyrimNetApi.RegisterEvent("spell_transfer_failed", narration, teacher, learner)
                 SkyrimNetApi.DirectNarration(narration, teacher, learner)
                 _WaitForNarrationComplete()
-                Debug.Notification("[SeverActions] Spell failed: " + spellName)
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("spellteach.spellFailed", ("" + spellName)))
                 return
             else
-                ; PARTIAL SUCCESS: suffer consequence but continue learning
+                ; Partial success: the lesson resumes after the narration
                 isPartialSuccess = true
                 SkyrimNetApi.DirectNarration(narration, teacher, learner)
 
-                ; Wait for the failure narration to finish before resuming lesson
                 _WaitForNarrationComplete()
 
-                ; Re-fade and resume the lesson
                 _StartFadeToBlack()
                 Utility.Wait(1.0)
                 _HoldFadeToBlack()
@@ -887,10 +792,10 @@ Function TransferSpell_Execute(Actor teacher, Actor learner, Spell akSpell)
         endif
     endif
 
-    ; === Wait second half of practice ===
+    ; Second half of the practice
     Utility.Wait(duration * 0.5)
 
-    ; Re-verify eligibility after wait
+    ; Re-check: the learner may have gained the spell meanwhile
     if !_CanLearn(learner, akSpell)
         SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
             teacherName + " attempted to teach " + spellName + " but " + learnerName + " already possesses this knowledge.", \
@@ -900,7 +805,7 @@ Function TransferSpell_Execute(Actor teacher, Actor learner, Spell akSpell)
         return
     endif
 
-    ; Check skill requirement (can fail even after animation if enabled)
+    ; Skill gate for callers that skip TransferSpell_IsEligible (the SkyrimNet actions do)
     if RequireSkillCheck && !_MeetsSkillRequirement(learner, akSpell)
         SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
             learnerName + " struggled to comprehend the " + school + " magic. The " + spellName + " spell proves too advanced for their current skill level.", \
@@ -911,22 +816,21 @@ Function TransferSpell_Execute(Actor teacher, Actor learner, Spell akSpell)
         return
     endif
 
-    ; Success (full or partial)! Transfer the spell
+    ; Success, full or partial
     learner.AddSpell(akSpell, false)
     if isPartialSuccess
-        Debug.Notification("[SeverActions] Spell learned (partial): " + spellName)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("spellteach.spellLearnedPartial", ("" + spellName)))
     else
-        Debug.Notification("[SeverActions] Spell learned: " + spellName)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("spellteach.spellLearned", ("" + spellName)))
     endif
 
-    ; Apply exhaustion (normal amount for both full and partial)
     _ApplyExhaustion(learner, akSpell)
 
     ; Grant XP: full for clean success, half for partial
     if !isPartialSuccess
         _GrantSkillExperience(learner, akSpell)
     else
-        ; Partial success: grant half XP
+        ; Half of _GrantSkillExperience's amount (same formula; keep in step)
         if GrantSkillXP
             String avName = GetActorValueForSchool(school)
             if avName != ""
@@ -936,18 +840,14 @@ Function TransferSpell_Execute(Actor teacher, Actor learner, Spell akSpell)
         endif
     endif
 
-    ; Reset animations before fading back
     _ResetIdles(teacher, learner)
 
-    ; Fade back from black
     _EndFadeToBlack()
 
-    ; Play visual effect on learner to mark successful spell acquisition
     if SpellLearnedFXS
         SpellLearnedFXS.Play(learner, 3.0)
     endif
 
-    ; Generate appropriate event message based on difficulty
     String difficultyDesc = ""
     if difficulty == 0
         difficultyDesc = "basic"
@@ -962,7 +862,7 @@ Function TransferSpell_Execute(Actor teacher, Actor learner, Spell akSpell)
     endif
 
     if isPartialSuccess
-        ; Partial success: narration was already sent, just register the event
+        ; The failure narration already played: event only
         SkyrimNetApi.RegisterEvent("spell_learned_partial", \
             learnerName + " learned the " + difficultyDesc + " " + school + " spell " + spellName + " from " + teacherName + ", though the practice was rough and had consequences.", \
             teacher, learner)
@@ -973,12 +873,9 @@ Function TransferSpell_Execute(Actor teacher, Actor learner, Spell akSpell)
     endif
 EndFunction
 
-; =============================================================================
-; WRAPPER FUNCTIONS FOR BACKWARDS COMPATIBILITY
-; These call the unified function but maintain the original API
-; =============================================================================
+; ===== Older public entry points (no caller in this tree); they forward to TransferSpell_* =====
 
-; ACTION: TeachSpell (Actor = Teacher, student = Learner)
+; akActor = the teacher
 Bool Function TeachSpell_IsEligible(Actor akActor, Actor student, Spell akSpell)
     return TransferSpell_IsEligible(akActor, student, akSpell)
 EndFunction
@@ -987,7 +884,7 @@ Function TeachSpell_Execute(Actor akActor, Actor student, Spell akSpell)
     TransferSpell_Execute(akActor, student, akSpell)
 EndFunction
 
-; ACTION: LearnSpell (Actor = Learner, teacher = Teacher)
+; akActor = the learner
 Bool Function LearnSpell_IsEligible(Actor akActor, Actor teacher, Spell akSpell)
     return TransferSpell_IsEligible(teacher, akActor, akSpell)
 EndFunction
@@ -996,23 +893,18 @@ Function LearnSpell_Execute(Actor akActor, Actor teacher, Spell akSpell)
     TransferSpell_Execute(teacher, akActor, akSpell)
 EndFunction
 
-; =============================================================================
-; SKYRIMNET ACTION ENTRY POINTS
-; These are called by SkyrimNet action YAMLs via executionFunctionName.
-; They resolve spell names to forms using the native SpellDB, then delegate
-; to TransferSpell_Execute for the actual teaching sequence.
-; =============================================================================
+; ===== SkyrimNet actions (teachspell/learnspell YAMLs; also the Actions-page verbs via Loot) =====
+; Each resolves the spell by name (native SpellDB) and runs TransferSpell_Execute.
 
-; ACTION: TeachSpell — NPC teaches a spell to the player
-; Called by teachspell.yaml: akActor = the NPC teacher, spellName = LLM-provided name
+; The NPC akActor teaches the player; spellName is the LLM's name for the spell.
 Function TeachSpell(Actor akActor, String spellName)
-    ; Prevent action spam — 10 second cooldown on both teach/learn
+    ; One 10 s cooldown across teach and learn
     SkyrimNetApi.SetActionCooldown("teachspell", 10)
     SkyrimNetApi.SetActionCooldown("learnspell", 10)
 
     Actor player = Game.GetPlayer()
 
-    ; Resolve spell name to form via native fuzzy search on the NPC's known spells
+    ; Fuzzy match against the teacher's known spells
     Form spellForm = SeverActionsNative.FindSpellOnActor(akActor, spellName)
     if !spellForm
         SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
@@ -1026,16 +918,13 @@ Function TeachSpell(Actor akActor, String spellName)
         return
     endif
 
-    ; Resolve to the tome-taught, either-hand version BEFORE the already-knows
-    ; check - otherwise a player who owns the real Firebolt still passed this
-    ; gate (they lack the teacher's RightHand copy) and sat through a whole
-    ; lesson that TransferSpell_Execute then refused.
+    ; Swap to the tome variant BEFORE the already-knows check, or a player who owns it passes the
+    ; check (they lack the teacher's hand-locked copy) and TransferSpell_Execute refuses at the end.
     Spell learnable = SeverActionsNative.GetLearnableSpellVariant(akSpell) as Spell
     if learnable
         akSpell = learnable
     endif
 
-    ; Check if player already knows it
     if player.HasSpell(akSpell)
         SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
             player.GetDisplayName() + " already knows " + akSpell.GetName() + ".", \
@@ -1043,30 +932,26 @@ Function TeachSpell(Actor akActor, String spellName)
         return
     endif
 
-    ; Narrate the start of the lesson with school info
     String school = GetSpellSchool(akSpell)
     String diffName = _DifficultyName(GetSpellDifficulty(akSpell))
     String narration = akActor.GetDisplayName() + " begins teaching " + player.GetDisplayName() + \
         " the " + diffName + "-level " + school + " spell " + akSpell.GetName() + "."
-    SkyrimNetApi.RegisterEvent("spell_teaching_started", narration, akActor, player)
     SkyrimNetApi.DirectNarration(narration, akActor, player)
 
-    ; Wait for the teaching narration to finish before starting practice
     _WaitForNarrationComplete()
 
     TransferSpell_Execute(akActor, player, akSpell)
 EndFunction
 
-; ACTION: LearnSpell — NPC learns a spell from the player
-; Called by learnspell.yaml: akActor = the NPC learner, spellName = LLM-provided name
+; The NPC akActor learns a spell from the player.
 Function LearnSpell(Actor akActor, String spellName)
-    ; Prevent action spam — 10 second cooldown on both teach/learn
+    ; One 10 s cooldown across teach and learn
     SkyrimNetApi.SetActionCooldown("teachspell", 10)
     SkyrimNetApi.SetActionCooldown("learnspell", 10)
 
     Actor player = Game.GetPlayer()
 
-    ; Resolve spell name to form via native fuzzy search on the player's known spells
+    ; Fuzzy match against the player's known spells
     Form spellForm = SeverActionsNative.FindSpellOnActor(player, spellName)
     if !spellForm
         SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
@@ -1080,7 +965,6 @@ Function LearnSpell(Actor akActor, String spellName)
         return
     endif
 
-    ; Check if NPC already knows it
     if akActor.HasSpell(akSpell)
         SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
             akActor.GetDisplayName() + " already knows " + akSpell.GetName() + ".", \
@@ -1088,21 +972,17 @@ Function LearnSpell(Actor akActor, String spellName)
         return
     endif
 
-    ; Narrate the start of the lesson with school info
     String school = GetSpellSchool(akSpell)
     String diffName = _DifficultyName(GetSpellDifficulty(akSpell))
     String narration = player.GetDisplayName() + " begins teaching " + akActor.GetDisplayName() + \
         " the " + diffName + "-level " + school + " spell " + akSpell.GetName() + "."
-    SkyrimNetApi.RegisterEvent("spell_learning_started", narration, player, akActor)
     SkyrimNetApi.DirectNarration(narration, akActor, player)
 
-    ; Wait for the teaching narration to finish before starting practice
     _WaitForNarrationComplete()
 
     TransferSpell_Execute(player, akActor, akSpell)
 EndFunction
 
-; Helper: Convert difficulty tier to readable name
 String Function _DifficultyName(Int difficulty)
     if difficulty == 0
         return "Novice"
@@ -1117,20 +997,11 @@ String Function _DifficultyName(Int difficulty)
     endif
 EndFunction
 
-; =============================================================================
-; SHOUT TEACHING (dev142) - the way of the Voice, freely given
-; -----------------------------------------------------------------------------
-; The Greybeards (or any NPC whose EFFECTIVE record carries Shouts - own
-; record, or the template chain's when the NPC is templated for Spells;
-; SpellDB::EffectiveShoutSource resolves it and the can_teach_shouts
-; decorator gates the action on exactly that, issue #411) teach the
-; player ONE Word of Power per lesson: the next word of the named Shout the
-; player does not yet know. A master's gift includes the understanding -
-; TeachWord AND UnlockWord, no dragon soul spent - mirroring MQ105, where
-; the Greybeards share their knowledge of Whirlwind Sprint outright. Word
-; state is player-global (the same flags word walls set), so wall-learned
-; and master-taught words compose; three lessons complete a Shout.
-; =============================================================================
+; ===== Shout teaching =====
+; An NPC whose effective record carries Shouts (SpellDB::EffectiveShoutSource; the
+; can_teach_shouts decorator gates the action) teaches the player the next unknown word of the
+; named Shout, one per lesson: TeachWord AND UnlockWord, no dragon soul (as in MQ105). Word
+; state is player-global, so wall-learned and taught words combine.
 
 Function TeachShout(Actor akActor, String shoutName)
     SkyrimNetApi.SetActionCooldown("teachshout", 10)
@@ -1163,8 +1034,7 @@ Function TeachShout(Actor akActor, String shoutName)
 
     String wordName = SeverActionsNativeExt.Native_Shout_WordName(wordForm)
 
-    ; The gift: the word AND its understanding. TeachWord is what a wall
-    ; does; UnlockWord is what a dragon soul does - a master grants both.
+    ; TeachWord is a word wall's part, UnlockWord a dragon soul's
     Game.TeachWord(word)
     Game.UnlockWord(word)
     if !player.HasSpell(akShout)

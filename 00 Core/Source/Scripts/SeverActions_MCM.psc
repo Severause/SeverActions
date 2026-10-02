@@ -1,61 +1,41 @@
 Scriptname SeverActions_MCM extends SKI_ConfigBase
-{MCM Configuration menu for SeverActions - includes hotkey configuration}
+{The MCM, rendered from the layout table (M-D): OnPageReset draws the rows Mcm_PageRows serves (generated
+ Native/src/McmLayout.h) and each option event maps the clicked option back to its row, whose setting contract
+ says how to read and write it. Hand-written because no table holds them: GateOpen, ComputedLabel / ComputedValue,
+ the Do*Action dispatchers and the Modular-only Modules page. The MCM names no module type (D34, check 17):
+ presence comes from Module_IsUsable, state from natives, Papyrus-only reads and redrawn actions from the
+ synchronous provider services (DR13), and fire-and-forget writes go through Verb_Send.}
 
 ; =============================================================================
-; SCRIPT REFERENCES - Set in CK or use GetInstance functions
+; SETTINGS PROPERTIES: the legacy hosts of the settings table's K/M rows, kept so an old save still has a value to
+; migrate. Only the DLL writes them (check 22c fails a Papyrus write); deleting one deletes that save's only copy.
 ; =============================================================================
 
-SeverActions_Currency Property CurrencyScript Auto
-SeverActions_Travel Property TravelScript Auto
-SeverActions_Hotkeys Property HotkeyScript Auto
-SeverActions_Combat Property CombatScript Auto
-SeverActions_Outfit Property OutfitScript Auto
-SeverActions_WheelMenu Property WheelMenuScript Auto
-SeverActions_Arrest Property ArrestScript Auto
-SeverActions_ArrestBounty Property BountyScript Auto
-SeverActions_Survival Property SurvivalScript Auto
-SeverActions_FollowerManager Property FollowerManagerScript Auto
-SeverActions_Loot Property LootScript Auto
-SeverActions_SpellTeach Property SpellTeachScript Auto
+; Currency
+bool Property AllowConjuredGold = false Auto
 
-; =============================================================================
-; SETTINGS - These mirror the properties in other scripts
-; =============================================================================
-
-; Currency Settings
-bool Property AllowConjuredGold = true Auto
-
-; Dialogue Animation Settings (stored here, applied to native DLL)
+; Dialogue animations
 bool Property DialogueAnimEnabled = true Auto Hidden
 int Property SilenceChance = 50 Auto Hidden
 
-; Mannequin renderer fallback (Outfits page) — when true, PrismaUI skips the
-; mannequin bake and renders the viewport as a transparent cutout so the user
-; can see the live NPC in the world. Read/written by the native settings
-; gatherer/handler via GetProperty/SetProperty; no MCM page UI (PrismaUI owns it).
+; Mannequin renderer fallback: the UI viewport renders the live NPC as a cutout instead. Read and written by the
+; native settings gatherer/handler; no MCM row.
 bool Property MannequinRenderDisabled = false Auto Hidden
 
-; Followers auto-stand from furniture when the player walks this far away (0 =
-; disabled). Lives here so it survives game restarts: the native FurnitureManager
-; singleton holds only a volatile runtime copy, so PrismaUI writes BOTH this
-; cosaved property and the singleton, and OnGameReload pushes this value back into
-; the singleton on load. Default 500 mirrors the C++ default.
+; Followers auto-stand from furniture at this distance (0 = off). FurnitureManager holds only a volatile copy;
+; the Authority's per-save replay pushes it on load.
 Float Property FurnitureAutoStandDistance = 500.0 Auto Hidden
 
-; Situation-stability threshold for outfit auto-switching (Followers page
-; slider, in seconds). Lives here so it survives game restarts: the native
-; SituationMonitor threshold is RAM-only and resets to its C++ default on
-; every launch, so the slider accept handler writes BOTH this cosaved
-; property and the native value, and SyncAllSettings re-pushes it on load.
-; Default 5.0 mirrors the slider default / C++ default.
+; Outfit auto-switch stability threshold in SECONDS; the native takes milliseconds (the row's liveApply scale is
+; 1000) and is RAM-only, so the Authority replays it.
 Float Property FMStabilityDelay = 5.0 Auto Hidden
 
-; Speaker Tag Toggles (stored here, synced to StorageUtil for prompt access)
+; Speaker tags (mirrored to StorageUtil for the prompts by Init's M-X service)
 bool Property TagCompanionEnabled = true Auto Hidden
 bool Property TagEngagedEnabled = true Auto Hidden
 bool Property TagInSceneEnabled = true Auto Hidden
 
-; Inventory Limits (stored here + synced to StorageUtil for prompt access)
+; Inventory limits
 int Property InvLimit_Weapons = 10 Auto Hidden
 int Property InvLimit_Armor = 10 Auto Hidden
 int Property InvLimit_Potions = 10 Auto Hidden
@@ -66,7 +46,7 @@ int Property InvLimit_Ammo = 5 Auto Hidden
 int Property InvLimit_Keys = 5 Auto Hidden
 int Property InvLimit_Misc = 5 Auto Hidden
 
-; Hotkey Settings (stored here, applied to HotkeyScript)
+; Hotkey codes. The DLL's input sink matches the Authority's codes; these are the legacy hosts.
 int Property FollowToggleKey = -1 Auto Hidden
 int Property DismissKey = -1 Auto Hidden
 int Property StandUpKey = -1 Auto Hidden
@@ -84,310 +64,114 @@ int Property TieUntieKey = -1 Auto Hidden
 int Property TargetMode = 0 Auto Hidden
 float Property NearestNPCRadius = 500.0 Auto Hidden
 
-; Wheel Menu Settings (stored here, applied to WheelMenuScript)
+; Quick wheel
 int Property WheelMenuKey = -1 Auto Hidden
 
-; Config Menu Key (opens PrismaUI config — stored here, applied to HotkeyScript)
+; Config menu (opens the Magelight/PrismaUI config view)
 int Property ConfigMenuKey = -1 Auto Hidden
 bool Property ConfigMenuRequireShift = true Auto Hidden
 
-; =============================================================================
-; MCM STATE - Option IDs
-; =============================================================================
-
-; General page
-int OID_Version
-
-; Currency page
-int OID_AllowConjuredGold
-int OID_DebtActiveCount
-int OID_DebtPlayerOwes
-int OID_DebtOwedToPlayer
-
-; Travel page
-int OID_ResetTravelSlots
-int OID_TravelSlot0
-int OID_TravelSlot1
-int OID_TravelSlot2
-int OID_TravelSlot3
-int OID_TravelSlot4
-int OID_ActiveSlotCount
-
-; Hotkeys page
-int OID_FollowToggleKey
-int OID_DismissKey
-int OID_StandUpKey
-int OID_UseFurnitureKey
-int OID_YieldKey
-int OID_UndressKey
-int OID_DressKey
-int OID_SetCompanionKey
-int OID_CompanionWaitKey
-int OID_AssignHomeKey
-int OID_ClearHomeKey
-int OID_SetupCampKey
-int OID_DropMarkerKey
-int OID_TieUntieKey
-int OID_TargetMode
-int OID_NearestNPCRadius
-int OID_WheelMenuKey
-int OID_ConfigMenuKey
-int OID_ConfigMenuShift
-
-; Bounty page
-int OID_BountyWhiterun
-int OID_BountyRift
-int OID_BountyHaafingar
-int OID_BountyEastmarch
-int OID_BountyReach
-int OID_BountyFalkreath
-int OID_BountyPale
-int OID_BountyHjaalmarch
-int OID_BountyWinterhold
-int OID_ClearAllBounties
-int OID_ArrestCooldown
-int OID_PersuasionTimeLimit
-
-; General page - PrismaUI escape hatch
-int OID_UIScale
-
-; General page - Native DLL toggles
-int OID_LLMCallsEnabled
-int OID_TruceEnabled
-int OID_TruceRadius
-int OID_TruceLeaders
-int OID_TruceQuestNPCs
-int OID_TruceDungeons
-int OID_TruceNecro
-int OID_TruceForsworn
-int OID_TruceVampires
-int OID_CampTakeover
-int OID_CampChallenge
-int OID_CampChallengeCard
-int OID_ChallengeParleySeconds
-int OID_CampFreezeRespawn
-int OID_YieldPersistence
-int OID_CombatCooldown
-int OID_DebuffSeverity
-int OID_SurvNotifHunger
-int OID_SurvNotifFatigue
-int OID_SurvNotifCold
-int OID_ArrestBountyThreshold
-int OID_BribeMult
-int OID_ResistBounty
-int OID_DebtOverdue
-int OID_DebtGrace
-int OID_DebtReport
-int OID_TravelMapMarkers
-int OID_FollowersCanTravel
-int OID_Outfit_UseAnimations
-int OID_FM_AutoQuestAwareness
-int OID_FM_AutoNPCReputation
-int OID_FM_AutoFollowerBanter
-int OID_FM_AutoAmbientActions
-int OID_FM_SchedWorkStart
-int OID_FM_SchedWorkEnd
-int OID_FM_SchedPlayStart
-int OID_FM_SchedPlayEnd
-int OID_FM_HomeSleepEnabled
-int OID_FM_HomeSleepStart
-int OID_FM_HomeSleepEnd
-int OID_FM_TeleportDist
-int OID_FM_TeleportCooldown
-int OID_FM_CellCatchup
-int OID_Ent_Loans
-int OID_Ent_Raises
-int OID_Ent_Ambushes
-int OID_Ent_Temper
-int OID_Ent_RenownCap
-int OID_Ent_StoryCap
-int OID_Ent_OutputPct
-int OID_DialogueAnimEnabled
-int OID_IntimacyEnabled
-int OID_IntimacyGenderGate
-int OID_SilenceChance
-int OID_BookReadMode
-
-; General page - Inventory Limits (per-category)
-int OID_InvLimit_Weapons
-int OID_InvLimit_Armor
-int OID_InvLimit_Potions
-int OID_InvLimit_Ingredients
-int OID_InvLimit_Books
-int OID_InvLimit_Scrolls
-int OID_InvLimit_Ammo
-int OID_InvLimit_Keys
-int OID_InvLimit_Misc
-
-; General page - Speaker Tags
-int OID_TagCompanion
-int OID_TagEngaged
-int OID_TagInScene
-
-; General page - Spell Teaching
-int OID_SpellFailEnabled
-int OID_SpellFailDifficulty
-
-; Survival page
-int OID_SurvivalEnabled
-int OID_HungerEnabled
-int OID_HungerRate
-int OID_AutoEatThreshold
-int OID_FatigueEnabled
-int OID_FatigueRate
-int OID_ColdEnabled
-int OID_ColdRate
-int OID_SurvivalNotifications
-int OID_SurvivalDebug
-
-; Per-follower exclusion toggles (up to 10 followers shown)
-int[] OID_FollowerExclude
-Actor[] CachedFollowers
-
-; Follower Manager page
-int OID_FM_MaxFollowers
-int OID_FM_AllowLeaving
-int OID_FM_RoomRotation
-int OID_FM_KidnapEnabled
-int OID_FM_RestrainEnabled
-int OID_FM_LeavingThreshold
-int OID_FM_Notifications
-int OID_FM_Debug
-int OID_FM_RelCooldown
-; The outfit-lock toggle lives ONLY on the PrismaUI Outfits page — an MCM copy
-; would duplicate it across three surfaces with inconsistent defaults and, with
-; no write-through to the global settings file, silently revert on load.
-int OID_FM_AutoSwitch
-int OID_FM_StabilityDelay
-int OID_FM_PerActorAutoSwitch
-int OID_FM_FrameworkMode
-int OID_FM_AutoAssessment
-int OID_FM_AssessCooldownMin
-int OID_FM_AssessCooldownMax
-int OID_FM_AutoInterAssessment
-int OID_FM_InterAssessCooldownMin
-int OID_FM_InterAssessCooldownMax
-int OID_FM_ResetAll
-int OID_FM_DeathGracePeriod
-int OID_FM_AutoOffScreenLife
-int OID_FM_OffScreenCooldownMin
-int OID_FM_OffScreenCooldownMax
-int OID_FM_OffScreenConsequences
-int OID_FM_ConsequenceCooldown
-int OID_FM_AutoAmbientBanter
-int OID_FM_AmbientBanterCooldownMin
-int OID_FM_AmbientBanterCooldownMax
-int OID_FM_QuestAwarenessOutputCap
-int OID_FM_MaxBounty
-int OID_FM_MaxGoldChange
-int[] OID_FM_DismissFollower
-int OID_FM_ForceRemove
-int[] OID_FM_ClearHome
-int[] OID_FM_AssignHome
-int[] OID_FM_Rapport
-int[] OID_FM_Trust
-int[] OID_FM_Loyalty
-int[] OID_FM_Mood
-int[] OID_FM_CombatStyle
-int[] OID_FM_DeletePreset
-String[] CachedPresetNames
-Actor[] CachedManagedFollowers
-
-; NPC Homes section (Homes page)
-int[] OID_ClearNPCHome
-Actor[] CachedHomedNPCs
-
-; Dismissed NPCs section (Homes page)
-int OID_FM_DismissedSelect
-int[] OID_FM_DismissedClearHome
-int[] OID_FM_DismissedReRecruit
-Actor[] CachedDismissedFollowers
-int SelectedDismissedIdx = 0
-
-; Combat style dropdown options
-string[] CombatStyleOptions
-
-; Framework mode dropdown options
-string[] FrameworkModeOptions
-
-; Book reading mode dropdown options
-string[] BookReadModeOptions
-string[] IntimacyGenderOptions
-
-; Companion selector
-int OID_FM_CompanionSelect
-int SelectedCompanionIdx = 0
-
-; Page names
-string PAGE_INTERFACE = "Interface"
-string PAGE_HOTKEYS = "Hotkeys"
-string PAGE_PROMPTS = "Prompt Filters"
-string PAGE_FOLLOWERS = "Followers"
-string PAGE_HOMES = "Homes"
-string PAGE_OFFSCREEN = "Off-Screen Life"
-string PAGE_OUTFITS = "Outfits"
-string PAGE_SURVIVAL = "Survival"
-string PAGE_COMBAT = "Combat && Outlaws"
-string PAGE_BOUNTY = "Crime && Bounty"
-string PAGE_ECONOMY = "Economy"
-string PAGE_ENTERPRISES = "Enterprises"
-string PAGE_TRAVEL = "Travel"
-string PAGE_READING = "Reading && Spells"
-string PAGE_BIOBLOCKS = "Bio Blocks"
-
-; Gate for the Enterprises debug harness. The project docs (ENTERPRISES.md)
-; say the debug page must not ship in a public release, so the Enterprises
-; page only draws the debug controls while this is toggled on. Cosaved.
+; The Enterprises debug harness; must not ship enabled (ENTERPRISES.md). While on, the layout's enterprisesDebug
+; variant page is drawn instead of the Enterprises page.
 bool Property EnableEnterpriseDebug = false Auto
 
-; --- Enterprises (Debug) page — temporary harness for the off-screen
-;     labor/economy simulation. See ENTERPRISES.md. ---
-int OID_Ent_DebugToggle
-int OID_Ent_Target
-int OID_Ent_Job
-int OID_Ent_Arrangement
-int OID_Ent_Wage
-int OID_Ent_Hire
-int OID_Ent_Remove
-int OID_Ent_Settle
-int OID_Ent_Dump
-int OID_Ent_Count
-int OID_Ent_Enabled
-int OID_Ent_Collect
-int OID_Ent_CollectAll
-int OID_Ent_Bail
-int OID_Ent_ForceArrest
-int OID_Ent_TestLetter
-int OID_Ent_TestCourier
-int OID_Ent_TestCourierLLM
-int OID_Ent_ForceAmbush
-int EntJob = 0
-int EntArrangement = 0
-int EntWage = 200
-bool EntEnabled = true
-string[] EntJobOptions
-string[] EntArrangementOptions
+; =============================================================================
+; ROW PAYLOAD: one pipe-delimited string per row, decoded with SeverActions_ModuleBase.VerbField. The indices
+; mirror McmPayload::Field (Native/src/McmPayloadCore.h), which only appends: an insert would shift every index here.
+; =============================================================================
 
-; Outfits page OIDs
-int OID_Outfit_NPCSelect
-int OID_Outfit_Lock
-int[] OID_Outfit_DeletePreset
-int OID_Outfit_DeferBondage
-String[] CachedOutfitPresetNames
+Int Property ROW_TYPE = 0 AutoReadOnly          ; header | empty | text | setting | keymap | action | dynamic | state
+Int Property ROW_CONTROL = 1 AutoReadOnly       ; "" | toggle | slider | menu | keymap | button
+Int Property ROW_ID = 2 AutoReadOnly            ; settings key / hotkey id / action id
+Int Property ROW_SOURCE = 3 AutoReadOnly        ; a dynamic row's list
+Int Property ROW_LABEL = 4 AutoReadOnly
+Int Property ROW_VALUE = 5 AutoReadOnly         ; "" when the value is built at draw time
+Int Property ROW_FORMAT = 6 AutoReadOnly        ; a slider's format string
+Int Property ROW_TOOLTIP = 7 AutoReadOnly
+Int Property ROW_VERB = 8 AutoReadOnly
+Int Property ROW_FLAGS = 9 AutoReadOnly
+Int Property ROW_SMIN = 10 AutoReadOnly
+Int Property ROW_SMAX = 11 AutoReadOnly
+Int Property ROW_SSTEP = 12 AutoReadOnly
+Int Property ROW_SDEF = 13 AutoReadOnly         ; where the slider DIALOG opens
+Int Property ROW_MENULIST = 14 AutoReadOnly     ; a compile-time option list (Mcm_MenuOptions)
+Int Property ROW_MENUSOURCE = 15 AutoReadOnly   ; a RUNTIME option list (a dynamic source)
+Int Property ROW_GATES = 16 AutoReadOnly        ; comma-joined atoms, '!' negating one
+Int Property ROW_TIER = 17 AutoReadOnly         ; K | M | P
+Int Property ROW_READ = 18 AutoReadOnly         ; authority | property
+Int Property ROW_WRITE = 19 AutoReadOnly        ; handler | set | property
+Int Property ROW_HOST = 20 AutoReadOnly         ; "Script.Property"
+Int Property ROW_VALUETYPE = 21 AutoReadOnly    ; bool | int | float | string
+Int Property ROW_HANDLERPAGE = 22 AutoReadOnly
+Int Property ROW_LIVECALL = 23 AutoReadOnly
+Int Property ROW_LIVESCALE = 24 AutoReadOnly
+Int Property ROW_CLAMPSIB = 25 AutoReadOnly
+Int Property ROW_CLAMPRULE = 26 AutoReadOnly    ; raisesMax | lowersMin
+Int Property ROW_DEFAULT = 27 AutoReadOnly      ; what the Reset key restores (the table's DR18 default)
+
+Int Property FLAG_CONFIRM = 1 AutoReadOnly
+Int Property FLAG_DISABLED = 2 AutoReadOnly
+Int Property FLAG_CONDITIONAL = 4 AutoReadOnly
+Int Property FLAG_COMPUTEDVALUE = 8 AutoReadOnly
+Int Property FLAG_DISABLEDWHEN = 16 AutoReadOnly
+Int Property FLAG_LIVEREFRESH = 32 AutoReadOnly
+Int Property FLAG_COMPUTEDLABEL = 64 AutoReadOnly
+
+; SkyUI's ceiling: AddOption advances the cursor by the fill mode and returns -1 silently from slot 128 on.
+; TOP_TO_BOTTOM (2) fills the even slots, so the left column holds 64 rows and SetCursorPosition(1) starts the
+; right one (as SKI_ConfigMenu does). A row past 128 is logged, not dropped silently.
+Int Property SKYUI_COLUMN_ROWS = 64 AutoReadOnly
+Int Property SKYUI_MAX_ROWS = 128 AutoReadOnly
+
+; =============================================================================
+; RENDERER STATE  (per page reset - never read outside the page it was built for)
+; =============================================================================
+
+String _pageId                  ; the layout page being drawn ("" before the first reset)
+String[] _rows                  ; its row payloads, in draw order
+String[] _sources               ; the dynamic-source table, fetched once per menu session (see SourceField)
+Int[] _slotRow                  ; option slot -> index into _rows, -1 when the slot is not ours
+Int[] _slotEntry                ; option slot -> the dynamic entry that slot draws, -1 on a static row
+Int _optionsUsed                ; how many options this reset has spent (the ceiling bookkeeping)
+Int _optionsDropped
+String _modulesPageLabel        ; the Modules page's name in Pages, "" outside Modular (BuildPageList)
+Int _leftoverSlot = -1          ; the Modules page's leftover-files line (its info text is the whole sentence), -1 when not drawn
+String _leftoverInfo
+
+; =============================================================================
+; PAGE STATE  (rebuilt by RefreshPageState before the rows are drawn)
+; =============================================================================
+
+; Followers
+Actor[] CachedManagedFollowers
+String[] CachedPresetNames
+int SelectedCompanionIdx = 0
+Actor _selCompanion
+String _selCompanionHome
+String _selCompanionSituation
+
+; Outfits
 Actor[] CachedPresetActors
+String[] CachedOutfitPresetNames
 int SelectedOutfitNPCIdx = 0
+Actor _selPresetActor
 
-; Target mode options
-string[] TargetModeOptions
+; Survival
+Actor[] CachedFollowers
 
-; Bio Blocks (VR) page OIDs + cached library state
-int OID_Bio_Target
-int OID_Bio_Tab
-int OID_Bio_Block
-int OID_Bio_Apply
-int OID_Bio_GrantFaction
-int OID_Bio_RemoveBlock
-int[] OID_Bio_Rule
+; Homes
+Actor[] CachedHomedNPCs
+Actor[] CachedDismissedFollowers
+int SelectedDismissedIdx = 0
+Actor _selDismissed
+
+; Economy
+int _debtPlayerOwes
+int _debtOwedToPlayer
+String[] _debtOwesDetails
+String[] _debtOwedDetails
+
+; Bio Blocks
 string[] BioTabs
 int BioTabIdx = 0
 string[] BioBlockTitles
@@ -399,228 +183,839 @@ int[] BioAssignedIds
 string[] BioTargetFactions
 string[] BioRuleNames
 
+; Enterprises (debug harness). The option lists are the layout's enterpriseJob / enterpriseArrangement menuLists;
+; the picked INDEX goes straight to Venture_DebugAdd, so it must match the enums in VentureStore.h.
+int EntJob = 0
+int EntArrangement = 0
+int EntWage = 200
+
 ; =============================================================================
 ; INITIALIZATION
 ; =============================================================================
 
 Int Function GetVersion()
-    {Override SKI_ConfigBase. SkyUI compares this against the saved version
-     to trigger OnVersionUpdate. Increment when MCM structure changes.}
-    Return 123
+    {Override SKI_ConfigBase. SkyUI compares this against the saved version to trigger OnVersionUpdate.}
+    Return 124
 EndFunction
 
+Event OnConfigOpen()
+    ; Rebuilt on every open (SkyUI reads Pages right after this event): OnGameReload never fires on quest
+    ; 0x000D62, so SkyUI's OnVersionUpdate never runs. _sources rides the save, so drop it too, or a table an older DLL served would be used for the save's life.
+    _sources = PapyrusUtil.StringArray(0)
+    BuildPageList()
+EndEvent
+
 Event OnConfigInit()
-    ModName = "SeverActions"
-
-    ; Set current version - increment this when you make MCM changes
-    ; Format: major * 100 + minor (e.g., 107 = version 1.07)
-    CurrentVersion = 124
-
-    Pages = new string[15]
-    Pages[0] = PAGE_INTERFACE
-    Pages[1] = PAGE_HOTKEYS
-    Pages[2] = PAGE_PROMPTS
-    Pages[3] = PAGE_FOLLOWERS
-    Pages[4] = PAGE_OFFSCREEN
-    Pages[5] = PAGE_OUTFITS
-    Pages[6] = PAGE_SURVIVAL
-    Pages[7] = PAGE_COMBAT
-    Pages[8] = PAGE_BOUNTY
-    Pages[9] = PAGE_ECONOMY
-    Pages[10] = PAGE_ENTERPRISES
-    Pages[11] = PAGE_TRAVEL
-    Pages[12] = PAGE_READING
-    Pages[13] = PAGE_HOMES
-    Pages[14] = PAGE_BIOBLOCKS
-
-    InitEnterpriseDropdowns()
-
-    ; Initialize target mode dropdown options
-    TargetModeOptions = new string[3]
-    TargetModeOptions[0] = "Crosshair Target"
-    TargetModeOptions[1] = "Nearest NPC"
-    TargetModeOptions[2] = "Last Talked To"
-
-    ; Initialize combat style dropdown options
-    CombatStyleOptions = new string[5]
-    CombatStyleOptions[0] = "balanced"
-    CombatStyleOptions[1] = "aggressive"
-    CombatStyleOptions[2] = "defensive"
-    CombatStyleOptions[3] = "ranged"
-    CombatStyleOptions[4] = "healer"
-
-    ; Initialize framework mode dropdown options
-    FrameworkModeOptions = new string[2]
-    FrameworkModeOptions[0] = "SeverActions"
-    FrameworkModeOptions[1] = "Tracking"
-
-    ; Initialize book reading mode dropdown options
-    BookReadModeOptions = new string[2]
-    BookReadModeOptions[0] = "Read Aloud (Verbatim)"
-    BookReadModeOptions[1] = "Summarize & React"
-
-    ; Register for PrismaUI inventory sync event
-    RegisterForModEvent("SeverActions_SyncInvLimits", "OnSyncInvLimits")
-
-    ; Make sure the Enterprises courier-letter event is registered. The handler
-    ; lives on SeverActions_Travel, whose OnPlayerLoadGame is unreliable on churned
-    ; saves; the MCM's lifecycle is reliable, so kick the registration from here.
-    If TravelScript != None
-        TravelScript.EnsureCourierEvents()
-    EndIf
-EndEvent
-
-Event OnGameReload()
-    parent.OnGameReload()
-    ; Re-assert the courier-letter registration on every load (see OnConfigInit).
-    If TravelScript != None
-        TravelScript.EnsureCourierEvents()
-    EndIf
-    ; Restore the cosaved furniture auto-stand distance into the native singleton,
-    ; which only keeps a volatile runtime copy (resets to its C++ default on boot).
-    SeverActionsNative.SetDefaultAutoStandDistance(FurnitureAutoStandDistance)
-EndEvent
-
-; Called by PrismaUI (via ModEvent) after writing inventory limit properties
-; Syncs MCM properties → StorageUtil so prompt templates can read them
-Event OnSyncInvLimits(string eventName, string strArg, float numArg, Form sender)
-    StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Weapons", InvLimit_Weapons)
-    StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Armor", InvLimit_Armor)
-    StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Potions", InvLimit_Potions)
-    StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Ingredients", InvLimit_Ingredients)
-    StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Books", InvLimit_Books)
-    StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Scrolls", InvLimit_Scrolls)
-    StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Ammo", InvLimit_Ammo)
-    StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Keys", InvLimit_Keys)
-    StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Misc", InvLimit_Misc)
+    BuildPageList()
 EndEvent
 
 Event OnVersionUpdate(int newVersion)
-    ; Called when CurrentVersion is higher than saved version
     Debug.Trace("[SeverActions_MCM] Updating from version " + CurrentVersion + " to " + newVersion)
-
-    ; Force page rebuild on any version change
-    Pages = new string[15]
-    Pages[0] = PAGE_INTERFACE
-    Pages[1] = PAGE_HOTKEYS
-    Pages[2] = PAGE_PROMPTS
-    Pages[3] = PAGE_FOLLOWERS
-    Pages[4] = PAGE_OFFSCREEN
-    Pages[5] = PAGE_OUTFITS
-    Pages[6] = PAGE_SURVIVAL
-    Pages[7] = PAGE_COMBAT
-    Pages[8] = PAGE_BOUNTY
-    Pages[9] = PAGE_ECONOMY
-    Pages[10] = PAGE_ENTERPRISES
-    Pages[11] = PAGE_TRAVEL
-    Pages[12] = PAGE_READING
-    Pages[13] = PAGE_HOMES
-    Pages[14] = PAGE_BIOBLOCKS
-
-    InitEnterpriseDropdowns()
-
-    ; Re-initialize dropdown options
-    TargetModeOptions = new string[3]
-    TargetModeOptions[0] = "Crosshair Target"
-    TargetModeOptions[1] = "Nearest NPC"
-    TargetModeOptions[2] = "Last Talked To"
-
-    ; Re-initialize combat style dropdown options
-    CombatStyleOptions = new string[5]
-    CombatStyleOptions[0] = "balanced"
-    CombatStyleOptions[1] = "aggressive"
-    CombatStyleOptions[2] = "defensive"
-    CombatStyleOptions[3] = "ranged"
-    CombatStyleOptions[4] = "healer"
-
-    ; Re-initialize framework mode dropdown options
-    FrameworkModeOptions = new string[2]
-    FrameworkModeOptions[0] = "SeverActions"
-    FrameworkModeOptions[1] = "Tracking"
-
-    ; Re-initialize book reading mode dropdown options
-    BookReadModeOptions = new string[2]
-    BookReadModeOptions[0] = "Read Aloud (Verbatim)"
-    BookReadModeOptions[1] = "Summarize & React"
+    BuildPageList()
 EndEvent
 
-; Get singleton instance
+Function BuildPageList()
+    {Build Pages (order and names) from the layout table. A variant page is drawn instead of its base page, so it
+     gets no entry of its own.}
+    ModName = "SeverActions"
+    CurrentVersion = 124
+    _modulesPageLabel = ""
+
+    String[] served = SeverActionsNativeExt2.Mcm_Pages()
+    If !served || served.Length == 0
+        ; An older DLL or an empty table (Init's ABI handshake reports real skew). An empty Pages would show no
+        ; pages at all.
+        Debug.Trace("[SeverActions_MCM] Mcm_Pages served nothing - the MCM has no pages to draw")
+        Pages = new String[1]
+        Pages[0] = "$SA_Interface"
+        Return
+    EndIf
+
+
+    Int kept = 0
+    Int i = 0
+    While i < served.Length
+        If SeverActions_ModuleBase.VerbField(served[i], 2) == ""
+            kept += 1
+        EndIf
+        i += 1
+    EndWhile
+
+    Pages = PapyrusUtil.StringArray(kept)
+    Int n = 0
+    i = 0
+    While i < served.Length
+        If SeverActions_ModuleBase.VerbField(served[i], 2) == ""
+            Pages[n] = SeverActions_ModuleBase.VerbField(served[i], 1)
+            n += 1
+        EndIf
+        i += 1
+    EndWhile
+
+    ; Modular's own page, drawn by hand (DrawModulesPage), so Legacy keeps exactly the table's pages (DR7).
+    If SeverActionsNativeExt2.Module_IsModular()
+        _modulesPageLabel = SeverActionsNativeExt2.Native_L10n("mcm.modulesPage")
+        If _modulesPageLabel == "" || _modulesPageLabel == "mcm.modulesPage"
+            _modulesPageLabel = "Modules"
+        EndIf
+        Pages = PapyrusUtil.PushString(Pages, _modulesPageLabel)
+    EndIf
+EndFunction
+
 SeverActions_MCM Function GetInstance() Global
     return Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_MCM
 EndFunction
 
 ; =============================================================================
-; PAGE LAYOUT
+; THE RENDER LOOP
 ; =============================================================================
 
 Event OnPageReset(string page)
     SetCursorFillMode(TOP_TO_BOTTOM)
+    _optionsUsed = 0
+    _optionsDropped = 0
+    _leftoverSlot = -1
+    _slotRow = new Int[128]
+    _slotEntry = new Int[128]
+    Int s = 0
+    While s < 128
+        _slotRow[s] = -1
+        _slotEntry[s] = -1
+        s += 1
+    EndWhile
 
-    if page == "" || page == PAGE_INTERFACE
-        DrawInterfacePage()
-    elseif page == PAGE_HOTKEYS
-        DrawHotkeysPage()
-    elseif page == PAGE_PROMPTS
-        DrawPromptFiltersPage()
-    elseif page == PAGE_FOLLOWERS
-        DrawFollowersPage()
-    elseif page == PAGE_OFFSCREEN
-        DrawOffScreenPage()
-    elseif page == PAGE_OUTFITS
-        DrawOutfitsPage()
-    elseif page == PAGE_SURVIVAL
-        DrawSurvivalPage()
-    elseif page == PAGE_COMBAT
-        DrawCombatPage()
-    elseif page == PAGE_BOUNTY
-        DrawCrimePage()
-    elseif page == PAGE_ECONOMY
-        DrawEconomyPage()
-    elseif page == PAGE_ENTERPRISES
-        If EnableEnterpriseDebug
-            DrawEnterprisesDebugPage()
-        Else
-            DrawEnterprisesPage()
-        EndIf
-    elseif page == PAGE_TRAVEL
-        DrawTravelPage()
-    elseif page == PAGE_READING
-        DrawReadingPage()
-    elseif page == PAGE_HOMES
-        DrawHomesPage()
-    elseif page == PAGE_BIOBLOCKS
-        DrawBioBlocksPage()
-    endif
+    If _modulesPageLabel != "" && page == _modulesPageLabel
+        _pageId = ""
+        _rows = PapyrusUtil.StringArray(0)
+        DrawModulesPage()
+        Return
+    EndIf
+
+    _pageId = PageIdForLabel(page)
+    If _pageId == ""
+        ; Say so on the page too: a blank page reads as "empty", not "the lookup failed".
+        AddTextOption("", "$SA_ERROR_Script_not_linked", OPTION_FLAG_DISABLED)
+        _rows = PapyrusUtil.StringArray(0)
+        Debug.Trace("[SeverActions_MCM] OnPageReset: no layout page for '" + page + "'")
+        TracePageDiag(page)
+        Return
+    EndIf
+
+    _rows = SeverActionsNativeExt2.Mcm_PageRows(_pageId)
+    If !_rows || _rows.Length == 0
+        AddTextOption("", "$SA_ERROR_Script_not_linked", OPTION_FLAG_DISABLED)
+        Debug.Trace("[SeverActions_MCM] OnPageReset: the layout page '" + _pageId + "' served no rows")
+        TracePageDiag(page)
+        Return
+    EndIf
+
+    RefreshPageState()
+
+    Int i = 0
+    While i < _rows.Length
+        i = DrawRun(i)
+    EndWhile
+
+    If _optionsDropped > 0
+        ; SkyUI's AddOption drops a row past the ceiling without a word; log it.
+        Debug.Trace("[SeverActions_MCM] page '" + _pageId + "': " + _optionsDropped + " row(s) past SkyUI's " + SKYUI_MAX_ROWS + "-option ceiling were not drawn")
+    EndIf
 EndEvent
 
+String Function PageIdForLabel(String asLabel)
+    {The layout page id behind the page name SkyUI hands OnPageReset, or its live variant; "" (SkyUI's first
+     open) means the first page. The name arrives as the raw $SA_ key from Pages, and Papyrus == folds case, so
+     the match is safe. The returned id may come back re-cased by the BSFixedString pool; the DLL folds case on
+     input (Native/src/IdCase.h), so never "correct" it here.}
+    String[] served = SeverActionsNativeExt2.Mcm_Pages()
+    If !served || served.Length == 0
+        Return ""
+    EndIf
+    String want = asLabel
+    If want == ""
+        want = SeverActions_ModuleBase.VerbField(served[0], 1)
+    EndIf
+
+    String baseId = ""
+    Int i = 0
+    While i < served.Length
+        If SeverActions_ModuleBase.VerbField(served[i], 1) == want && SeverActions_ModuleBase.VerbField(served[i], 2) == ""
+            baseId = SeverActions_ModuleBase.VerbField(served[i], 0)
+            i = served.Length
+        Else
+            i += 1
+        EndIf
+    EndWhile
+    If baseId == ""
+        Return ""
+    EndIf
+
+    ; a variant is drawn INSTEAD of the page it varies, when its own switch is on
+    i = 0
+    While i < served.Length
+        String variantOf = SeverActions_ModuleBase.VerbField(served[i], 2)
+        If variantOf == baseId
+            String variantId = SeverActions_ModuleBase.VerbField(served[i], 0)
+            If VariantActive(variantId)
+                Return variantId
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+    Return baseId
+EndFunction
+
+Function TracePageDiag(String asPage)
+    {Log what a failed page lookup saw, raw payload included: the served id and the id Papyrus hands back can
+     differ in case alone (see PageIdForLabel).}
+    String[] served = SeverActionsNativeExt2.Mcm_Pages()
+    Int n = 0
+    If served
+        n = served.Length
+    EndIf
+    String line = "[SeverActions_MCM] page diag: arg='" + asPage + "' resolved='" + _pageId + "' served=" + n
+    Int i = 0
+    While i < n && i < 3
+        line += " [" + i + "]='" + served[i] + "'"
+        i += 1
+    EndWhile
+    Debug.Trace(line)
+EndFunction
+
+Bool Function VariantActive(String asVariantId)
+    {Whether a variant page is drawn instead of its base page. The debug harness must be off in a public
+     release (ENTERPRISES.md), so its switch is the gate.}
+    If asVariantId == "enterprisesDebug"
+        Return EnableEnterpriseDebug
+    EndIf
+    Return false
+EndFunction
+
+Function DrawModulesPage()
+    {The Modular-only Modules page: the install mode, how many modules are installed, and each module's state
+     under its installer option name, verbatim (never translated: the player looks for it in the installer).
+     Every option is bound to no row, so no option event acts on it.}
+    String[] mods = SeverActionsNativeExt2.Mcm_ModuleRows()
+    Int total = 0
+    If mods
+        total = mods.Length
+    EndIf
+    Int installed = 0
+    String leftover = ""
+    Int i = 0
+    While i < total
+        String modState = SeverActions_ModuleBase.VerbField(mods[i], 2)
+        If modState == "Installed"
+            installed += 1
+        ElseIf modState == "PresentNotSelected"
+            If leftover != ""
+                leftover += ", "
+            EndIf
+            leftover += SeverActions_ModuleBase.VerbField(mods[i], 1)
+        EndIf
+        i += 1
+    EndWhile
+
+    BindSlot(AddHeaderOptionAt(_modulesPageLabel), -1, -1)
+    AddTextOptionSlotted(-1, -1, SeverActionsNativeExt2.Native_L10n("mcm.installMode"), SeverActionsNativeExt2.Native_L10n("mcm.installModeModular"), OPTION_FLAG_DISABLED)
+    AddTextOptionSlotted(-1, -1, SeverActionsNativeExt2.Native_L10n("mcm.modulesInstalled"), installed + " / " + total, OPTION_FLAG_DISABLED)
+    BindSlot(AddEmptyOptionAt(), -1, -1)
+    i = 0
+    While i < total
+        String optionName = SeverActions_ModuleBase.VerbField(mods[i], 1)
+        String stateText = SeverActionsNativeExt2.Native_L10n("mcm.moduleState" + SeverActions_ModuleBase.VerbField(mods[i], 2))
+        AddTextOptionSlotted(-1, -1, optionName, stateText, OPTION_FLAG_DISABLED)
+        i += 1
+    EndWhile
+    If leftover != ""
+        ; an option holds about 45 characters: the line is the short form, highlighting it shows the sentence
+        _leftoverInfo = SeverActionsNativeExt2.Native_L10nFmt("module.leftoverFiles", leftover)
+        Int opt = AddTextOptionAt("", SeverActionsNativeExt2.Native_L10n("mcm.leftoverFilesShort"), OPTION_FLAG_NONE)
+        BindSlot(opt, -1, -1)
+        If opt >= 0
+            _leftoverSlot = opt % 256
+        EndIf
+    EndIf
+EndFunction
+
+Int Function DrawRun(Int aiFirst)
+    {Draw the run of rows starting at aiFirst; returns where the next run starts. A run is one row plus any
+     consecutive rows from the same dynamic source, and the run repeats per entry, so a pair such as the Homes
+     page's "<name> / Clear Home" stays together.}
+    String first = _rows[aiFirst]
+    String type = SeverActions_ModuleBase.VerbField(first, ROW_TYPE)
+    If type != "dynamic"
+        If GatesOpen(SeverActions_ModuleBase.VerbField(first, ROW_GATES), 0)
+            DrawOne(aiFirst, first, type, 0)
+        EndIf
+        Return aiFirst + 1
+    EndIf
+
+    String source = SeverActions_ModuleBase.VerbField(first, ROW_SOURCE)
+    Int last = aiFirst
+    While last + 1 < _rows.Length && SeverActions_ModuleBase.VerbField(_rows[last + 1], ROW_TYPE) == "dynamic" \
+        && SeverActions_ModuleBase.VerbField(_rows[last + 1], ROW_SOURCE) == source
+        last += 1
+    EndWhile
+
+    ; A per-slot source already has one row per entry (the nine holds, the three schedule pools): each row is
+    ; drawn once, for the slot at its position in the run.
+    If SourcePerSlot(source)
+        Int k = aiFirst
+        While k <= last
+            If GatesOpen(SeverActions_ModuleBase.VerbField(_rows[k], ROW_GATES), k - aiFirst)
+                DrawOne(k, _rows[k], "dynamic", k - aiFirst)
+            EndIf
+            k += 1
+        EndWhile
+        Return last + 1
+    EndIf
+
+    ; A source a SELECTOR picks one entry of: the run is drawn once, for the pick.
+    If !SourcePerEntry(source)
+        DrawRunAt(aiFirst, last, SelectedEntryFor(source))
+        Return last + 1
+    EndIf
+
+    Int total = EntryCount(source)
+    Int shown = total
+    Int cap = SourceCap(source)
+    If cap > 0 && shown > cap
+        shown = cap
+    EndIf
+    Int e = 0
+    While e < shown
+        DrawRunAt(aiFirst, last, e)
+        e += 1
+    EndWhile
+    If shown < total
+        ; Say the list was cut, or the player cannot tell it ended at the cap.
+        AddTextOptionSlotted(-1, -1, "", "$SA_ShowingNOfM{" + shown + "}{" + total + "}", OPTION_FLAG_DISABLED)
+    EndIf
+    Return last + 1
+EndFunction
+
+Function DrawRunAt(Int aiFirst, Int aiLast, Int aiEntry)
+    {Every row of a run, for one entry. A row whose gates are shut for this entry is skipped (how the schedule
+     pools draw one of their two alternative lines).}
+    Int k = aiFirst
+    While k <= aiLast
+        If GatesOpen(SeverActions_ModuleBase.VerbField(_rows[k], ROW_GATES), aiEntry)
+            DrawOne(k, _rows[k], "dynamic", aiEntry)
+        EndIf
+        k += 1
+    EndWhile
+EndFunction
+
+Function DrawOne(Int aiRow, String asRow, String asType, Int aiEntry)
+    {One option for one row, at the next free slot.}
+    String control = SeverActions_ModuleBase.VerbField(asRow, ROW_CONTROL)
+    String label = RowLabel(asRow, aiEntry)
+    Int flags = RowFlags(asRow, asType, aiEntry)
+
+    If asType == "header"
+        BindSlot(AddHeaderOptionAt(label), aiRow, aiEntry)
+    ElseIf asType == "empty"
+        BindSlot(AddEmptyOptionAt(), aiRow, aiEntry)
+    ElseIf control == "toggle"
+        BindSlot(AddToggleOptionAt(label, RowBool(asRow, aiEntry), flags), aiRow, aiEntry)
+    ElseIf control == "slider"
+        BindSlot(AddSliderOptionAt(label, RowFloat(asRow, aiEntry), SeverActions_ModuleBase.VerbField(asRow, ROW_FORMAT), flags), aiRow, aiEntry)
+    ElseIf control == "menu"
+        BindSlot(AddMenuOptionAt(label, RowValue(asRow, aiEntry), flags), aiRow, aiEntry)
+    ElseIf asType == "keymap"
+        BindSlot(AddKeyMapOptionAt(label, RowKeyCode(asRow), flags), aiRow, aiEntry)
+    Else
+        ; text, action and the button/text dynamic rows are all a text option; the action ones are clickable
+        BindSlot(AddTextOptionAt(label, RowValue(asRow, aiEntry), flags), aiRow, aiEntry)
+    EndIf
+EndFunction
+
+; --- the ceiling bookkeeping -------------------------------------------------
+; Every Add* goes through these so the column jump and drop count live in one place; a direct SkyUI call would
+; spend a slot the map never learns about.
+
+Function BeforeAdd()
+    If _optionsUsed == SKYUI_COLUMN_ROWS
+        SetCursorPosition(1)   ; fill mode 2 walked the EVEN slots; this starts the odd ones
+    EndIf
+EndFunction
+
+Int Function AddHeaderOptionAt(String asLabel)
+    BeforeAdd()
+    Return AddHeaderOption(asLabel)
+EndFunction
+
+Int Function AddEmptyOptionAt()
+    BeforeAdd()
+    Return AddEmptyOption()
+EndFunction
+
+Int Function AddTextOptionAt(String asLabel, String asValue, Int aiFlags)
+    BeforeAdd()
+    Return AddTextOption(asLabel, asValue, aiFlags)
+EndFunction
+
+Int Function AddToggleOptionAt(String asLabel, Bool abValue, Int aiFlags)
+    BeforeAdd()
+    Return AddToggleOption(asLabel, abValue, aiFlags)
+EndFunction
+
+Int Function AddSliderOptionAt(String asLabel, Float afValue, String asFormat, Int aiFlags)
+    BeforeAdd()
+    Return AddSliderOption(asLabel, afValue, asFormat, aiFlags)
+EndFunction
+
+Int Function AddMenuOptionAt(String asLabel, String asValue, Int aiFlags)
+    BeforeAdd()
+    Return AddMenuOption(asLabel, asValue, aiFlags)
+EndFunction
+
+Int Function AddKeyMapOptionAt(String asLabel, Int aiKeyCode, Int aiFlags)
+    BeforeAdd()
+    Return AddKeyMapOption(asLabel, aiKeyCode, aiFlags)
+EndFunction
+
+Function AddTextOptionSlotted(Int aiRow, Int aiEntry, String asLabel, String asValue, Int aiFlags)
+    {A line the renderer adds itself (the "showing N of M" note), bound to no table row.}
+    BindSlot(AddTextOptionAt(asLabel, asValue, aiFlags), aiRow, aiEntry)
+EndFunction
+
+Function BindSlot(Int aiOption, Int aiRow, Int aiEntry)
+    {Remember which row an option belongs to. SkyUI returns pos + pageNum * 256, so `option % 256` is the cursor
+     slot.}
+    If aiOption < 0
+        _optionsDropped += 1
+        Return
+    EndIf
+    _optionsUsed += 1
+    Int slot = aiOption % 256
+    If slot >= 0 && slot < 128
+        _slotRow[slot] = aiRow
+        _slotEntry[slot] = aiEntry
+    EndIf
+EndFunction
+
+Int Function RowAt(Int aiOption)
+    {The table row an option belongs to, or -1.}
+    If !_slotRow
+        Return -1
+    EndIf
+    Int slot = aiOption % 256
+    If slot < 0 || slot >= 128
+        Return -1
+    EndIf
+    Int row = _slotRow[slot]
+    If row < 0 || !_rows || row >= _rows.Length
+        Return -1
+    EndIf
+    Return row
+EndFunction
+
+Int Function EntryAt(Int aiOption)
+    Int slot = aiOption % 256
+    If !_slotEntry || slot < 0 || slot >= 128
+        Return 0
+    EndIf
+    Int e = _slotEntry[slot]
+    If e < 0
+        Return 0
+    EndIf
+    Return e
+EndFunction
+
+Int Function RowFlags(String asRow, String asType, Int aiEntry)
+    {The SkyUI option flags a row is drawn with: the table's static flag, or a computed disabled state.}
+    Int f = SeverActions_ModuleBase.VerbField(asRow, ROW_FLAGS) as Int
+    If Math.LogicalAnd(f, FLAG_DISABLED) != 0
+        Return OPTION_FLAG_DISABLED
+    EndIf
+    If Math.LogicalAnd(f, FLAG_DISABLEDWHEN) != 0 && RowDisabledNow(SeverActions_ModuleBase.VerbField(asRow, ROW_ID))
+        Return OPTION_FLAG_DISABLED
+    EndIf
+    If asType == "keymap" && KeymapAbsentModule(asRow) != ""
+        Return OPTION_FLAG_DISABLED
+    EndIf
+    Return OPTION_FLAG_NONE
+EndFunction
+
+String Function KeymapAbsentModule(String asRow)
+    {The player-facing module whose absence refuses a keymap row's hotkey, "" when it works or the row is no
+     keymap. Only a Modular install asks the DLL: nothing is refused outside it (DR7).}
+    If SeverActions_ModuleBase.VerbField(asRow, ROW_TYPE) != "keymap" || !SeverActionsNativeExt2.Module_IsModular()
+        Return ""
+    EndIf
+    ; a keymap row's id is its hotkey id
+    Return SeverActionsNativeExt2.Hotkey_AbsentModule(SeverActions_ModuleBase.VerbField(asRow, ROW_ID))
+EndFunction
+
+Bool Function RowDisabledNow(String asRowId)
+    {The rows whose greying-out is a runtime test rather than a fixed table flag.}
+    If asRowId == "bioApply" || asRowId == "bioGrantFaction"
+        ; both need a crosshair target AND a real selected block
+        Return !BioTargetActor || !BioBlockTitles || BioBlockTitles[BioBlockIdx] == ""
+    ElseIf asRowId == "followerExclude"
+        ; Greyed out while survival is off (its update loop early-outs on !Enabled); the choices are kept.
+        ; Enabled is read as GateOpen's survival switches read it.
+        Return !SeverActionsNativeExt2.Module_IsUsable("survival") || !SeverActionsNativeExt2.Script_GetBool("SeverActions_Survival", "Enabled", true)
+    EndIf
+    Return false
+EndFunction
+
 ; =============================================================================
-; BIO BLOCKS (VR) PAGE — apply/remove Bio Blocks without PrismaUI.
-; Author blocks in PrismaUI (or the library JSON); this page only assigns them.
-; Drives the Native_BioBlock_* natives on SeverActionsNativeExt2.
+; GATES: a conditional row carries the atoms it is drawn under (all must hold). Each atom's source condition is
+; beside the row in Native/data/mcm_layout.json; check 13 (f) fails an atom GateOpen does not answer, and a
+; branch no row is gated on.
 ; =============================================================================
 
-Function DrawBioBlocksPage()
-    AddHeaderOption("Bio Blocks")
-    AddTextOption("", "Aim at an NPC, pick a block, then Apply.")
-    AddTextOption("", "Write the blocks themselves in PrismaUI.")
+Bool Function GatesOpen(String asGates, Int aiEntry)
+    If asGates == ""
+        Return true
+    EndIf
+    Int pos = 0
+    Int len = StringUtil.GetLength(asGates)
+    While pos < len
+        String atom
+        Int comma = StringUtil.Find(asGates, ",", pos)
+        If comma < 0
+            atom = StringUtil.Substring(asGates, pos)
+            pos = len
+        Else
+            atom = StringUtil.Substring(asGates, pos, comma - pos)
+            pos = comma + 1
+        EndIf
+        Bool want = true
+        If StringUtil.GetNthChar(atom, 0) == "!"
+            want = false
+            atom = StringUtil.Substring(atom, 1)
+        EndIf
+        If GateOpen(atom, aiEntry) != want
+            Return false
+        EndIf
+    EndWhile
+    Return true
+EndFunction
 
+Bool Function GateOpen(String asGate, Int aiEntry)
+    {One gate atom. aiEntry is the dynamic-list entry being drawn, which a few atoms need (one schedule pool,
+     one follower's survival exclusion).}
+
+    ; --- the module a page needs: the registry (Legacy: every id Installed, DR7) ---
+    ; Atom names are the old owner-script names; each asks for the module that owns the rows.
+    If asGate == "followerManager"
+        Return SeverActionsNativeExt2.Module_IsUsable("followers")
+    ElseIf asGate == "survival"
+        Return SeverActionsNativeExt2.Module_IsUsable("survival")
+    ElseIf asGate == "combat"
+        Return SeverActionsNativeExt2.Module_IsUsable("combat")
+    ElseIf asGate == "enterprises"
+        ; The Enterprises page, and the camp-takeover row on Combat & Outlaws: enterprises owns that setting though
+        ; SeverActions_Combat hosts it, and an absent owner refuses the write (the toggle would snap back).
+        Return SeverActionsNativeExt2.Module_IsUsable("enterprises")
+    ElseIf asGate == "companions"
+        ; The Off-Screen Life page's rows are the companions module's.
+        Return SeverActionsNativeExt2.Module_IsUsable("companions")
+    ElseIf asGate == "arrest"
+        Return SeverActionsNativeExt2.Module_IsUsable("arrest")
+    ElseIf asGate == "travel"
+        Return SeverActionsNativeExt2.Module_IsUsable("travel")
+    ElseIf asGate == "outfit"
+        Return SeverActionsNativeExt2.Module_IsUsable("outfit")
+    ElseIf asGate == "hotkeySink"
+        ; The DLL's input sink is the hotkey system. Never ask for the Hotkeys shim: naming a Legacy-shim type
+        ; breaks the link on a Modular install.
+        Return SeverActionsNativeExt2.Hotkey_SinkInstalled()
+    ElseIf asGate == "spellTeach"
+        Return SeverActionsNativeExt2.Module_IsUsable("items")
+    ElseIf asGate == "loot"
+        Return SeverActionsNativeExt2.Module_IsUsable("items")
+    ElseIf asGate == "debt"
+        ; SeverActions_Debt is the economy module's; it does not depend on followers.
+        Return SeverActionsNativeExt2.Module_IsUsable("economy")
+    ElseIf asGate == "social"
+        ; The social module's rows on the Followers and Interface pages: an absent owner refuses the write.
+        Return SeverActionsNativeExt2.Module_IsUsable("social")
+
+    ; --- is the list this row belongs to non-empty ---
+    ElseIf asGate == "hasCompanions"
+        Return CachedManagedFollowers && CachedManagedFollowers.Length > 0
+    ElseIf asGate == "hasDismissed"
+        Return CachedDismissedFollowers && CachedDismissedFollowers.Length > 0
+    ElseIf asGate == "hasPresetActors"
+        Return CachedPresetActors && CachedPresetActors.Length > 0
+    ElseIf asGate == "hasHomedNpcs"
+        Return CachedHomedNPCs && CachedHomedNPCs.Length > 0
+    ElseIf asGate == "hasSurvivalFollowers"
+        Return CachedFollowers && CachedFollowers.Length > 0
+    ElseIf asGate == "hasCompanionPresets"
+        Return CachedPresetNames && CachedPresetNames.Length > 0
+    ElseIf asGate == "hasOutfitPresets"
+        Return CachedOutfitPresetNames && CachedOutfitPresetNames.Length > 0
+    ElseIf asGate == "hasBioTabs"
+        Return BioTabs && BioTabs.Length > 0
+    ElseIf asGate == "hasBioAssigned"
+        Return BioAssignedTitles && BioAssignedTitles.Length > 0
+    ElseIf asGate == "hasBioRules"
+        Return BioRuleNames && BioRuleNames.Length > 0
+
+    ; --- does the actor this row is about resolve ---
+    ElseIf asGate == "companionSelected"
+        Return RowActor(aiEntry) != None
+    ElseIf asGate == "dismissedSelected"
+        Return _selDismissed != None
+    ElseIf asGate == "presetActorSelected"
+        Return _selPresetActor != None
+    ElseIf asGate == "bioTarget"
+        Return BioTargetActor != None
+
+    ; --- that actor's state ---
+    ElseIf asGate == "companionHasHome"
+        Return _selCompanionHome != ""
+    ElseIf asGate == "companionHasSituation"
+        Return _selCompanionSituation != ""
+    ElseIf asGate == "companionOutfitLocked"
+        Return _selCompanion != None && SeverActionsNativeExt.Native_Outfit_IsLockActive(_selCompanion)
+    ElseIf asGate == "companionExcluded"
+        ; the exclusion lives in the survival module's StorageUtil key: the provider service reads it
+        Return SeverActionsNativeExt2.Module_IsUsable("survival") && RowActor(aiEntry) != None && SeverActions_ModuleBase.CallBool("survival", "isFollowerExcluded", RowActor(aiEntry))
+
+    ; --- module switches the page branches on ---
+    ; The four survival switches are tier-P rows: read the owner property through the ScriptObjectAccess gate,
+    ; never Settings_Get* (a P row is never migrated). The fallback is the runtime default (DR18: true). Every
+    ; row they gate is also gated 'survival'.
+    ElseIf asGate == "survivalOn"
+        Return SeverActionsNativeExt2.Script_GetBool("SeverActions_Survival", "Enabled", true)
+    ElseIf asGate == "survivalHunger"
+        Return SeverActionsNativeExt2.Script_GetBool("SeverActions_Survival", "HungerEnabled", true)
+    ElseIf asGate == "survivalFatigue"
+        Return SeverActionsNativeExt2.Script_GetBool("SeverActions_Survival", "FatigueEnabled", true)
+    ElseIf asGate == "survivalCold"
+        Return SeverActionsNativeExt2.Script_GetBool("SeverActions_Survival", "ColdEnabled", true)
+    ElseIf asGate == "schedMigrated"
+        Return SeverActionsNativeExt2.Module_IsUsable("followers") && SeverActionsNativeExt.Native_GetAliasesMigrated()
+    ElseIf asGate == "schedPoolFull"
+        ; the sticky exhaustion flag is FollowerManager's StorageUtil key: the provider service reads it
+        Return SeverActions_ModuleBase.CallBool("followers", "schedPoolExhausted", None, None, "", aiEntry as Float)
+    ElseIf asGate == "playerOwes"
+        Return _debtPlayerOwes > 0
+    ElseIf asGate == "owedToPlayer"
+        Return _debtOwedToPlayer > 0
+
+    ; --- platform and binding probes ---
+    ElseIf asGate == "modular"
+        ; The notice rows an absent module leaves: Legacy never draws them, so check 13 (g) skips them.
+        Return SeverActionsNativeExt2.Module_IsModular()
+    ElseIf asGate == "vr"
+        Return SeverActionsNativeExt2.Native_IsVRRuntime()
+    ElseIf asGate == "wheelNative"
+        Return SeverActionsNativeExt2.Wheel_IsNative()
+    ElseIf asGate == "wheelBound"
+        ; VR can open the wheel from the controller chord as well as the key (a VRIK gesture can send the key)
+        Bool bound = SeverActionsNativeExt2.Settings_GetInt("WheelMenuKey") > 0
+        If !bound && SeverActionsNativeExt2.Native_IsVRRuntime()
+            bound = SeverActionsNativeExt2.Native_GetVRChord("wheelButton") > 0
+        EndIf
+        Return bound
+    ElseIf asGate == "targetModeNearest"
+        Return SeverActionsNativeExt2.Settings_GetInt("targetMode") == 1
+    EndIf
+
+    Debug.Trace("[SeverActions_MCM] GateOpen: no branch for the gate '" + asGate + "' - the row is not drawn")
+    Return false
+EndFunction
+
+Actor Function RowActor(Int aiEntry)
+    {The actor a row on the page in hand is about: the selected companion on the Followers page, the aiEntry-th
+     tracked follower on Survival. One concept, two lists.}
+    If _pageId == "survival"
+        If CachedFollowers && aiEntry < CachedFollowers.Length
+            Return CachedFollowers[aiEntry]
+        EndIf
+        Return None
+    EndIf
+    Return _selCompanion
+EndFunction
+
+; =============================================================================
+; PAGE STATE
+; =============================================================================
+
+Function RefreshPageState()
+    {Gather everything the page's rows read at draw time, once, so a gate and the row it guards read the same
+     list.}
+    If _pageId == "followers"
+        RefreshFollowersState()
+    ElseIf _pageId == "outfits"
+        RefreshOutfitsState()
+    ElseIf _pageId == "survival"
+        CachedFollowers = PapyrusUtil.ActorArray(0)
+        If SeverActionsNativeExt2.Module_IsUsable("survival")
+            ; SeverActions_Survival.GetCurrentFollowers' native branch
+            Actor[] got = SeverActionsNative.Survival_GetCurrentFollowers()
+            If got
+                CachedFollowers = got
+            EndIf
+        EndIf
+    ElseIf _pageId == "homes"
+        RefreshHomesState()
+    ElseIf _pageId == "economy"
+        RefreshEconomyState()
+    ElseIf _pageId == "bioBlocks"
+        RefreshBioState()
+    EndIf
+EndFunction
+
+Function RefreshFollowersState()
+    CachedManagedFollowers = PapyrusUtil.ActorArray(0)
+    CachedPresetNames = PapyrusUtil.StringArray(0)
+    _selCompanion = None
+    _selCompanionHome = ""
+    _selCompanionSituation = ""
+    If !SeverActionsNativeExt2.Module_IsUsable("followers")
+        Return
+    EndIf
+    ; FollowerManager.GetAllFollowers is this one native call
+    Actor[] roster = SeverActionsNativeExt.Native_GetActiveFollowerRoster()
+    If roster
+        CachedManagedFollowers = roster
+    EndIf
+    If CachedManagedFollowers.Length == 0
+        Return
+    EndIf
+    If SelectedCompanionIdx < 0 || SelectedCompanionIdx >= CachedManagedFollowers.Length
+        SelectedCompanionIdx = 0
+    EndIf
+    _selCompanion = CachedManagedFollowers[SelectedCompanionIdx]
+    If !_selCompanion
+        Return
+    EndIf
+    _selCompanionHome = SeverActionsNative.Native_GetHome(_selCompanion)   ; FollowerManager.GetAssignedHome's body
+    If SeverActionsNativeExt2.Module_IsUsable("outfit")
+        _selCompanionSituation = SeverActionsNative.Native_Outfit_GetCurrentSituation(_selCompanion)
+        CachedPresetNames = VisiblePresetNames(_selCompanion)
+    EndIf
+EndFunction
+
+Function RefreshOutfitsState()
+    CachedPresetActors = PapyrusUtil.ActorArray(0)
+    CachedOutfitPresetNames = PapyrusUtil.StringArray(0)
+    _selPresetActor = None
+    If !SeverActionsNativeExt2.Module_IsUsable("outfit")
+        Return
+    EndIf
+    ; Registered followers are managed on the Followers page, so they are left out (only when the Followers
+    ; module is installed). Same natives as Outfit.GetPresetActors and FollowerManager.IsRegisteredFollower.
+    Actor[] all = SeverActionsNative.Native_Outfit_GetActorsWithPresets()
+    Bool haveFollowers = SeverActionsNativeExt2.Module_IsUsable("followers")
+    If all
+        Int f = 0
+        While f < all.Length
+            If all[f] && (!haveFollowers || !SeverActionsNativeExt.Native_GetIsFollower(all[f]))
+                CachedPresetActors = PapyrusUtil.PushActor(CachedPresetActors, all[f])
+            EndIf
+            f += 1
+        EndWhile
+    EndIf
+    If CachedPresetActors.Length == 0
+        Return
+    EndIf
+    If SelectedOutfitNPCIdx < 0 || SelectedOutfitNPCIdx >= CachedPresetActors.Length
+        SelectedOutfitNPCIdx = 0
+    EndIf
+    _selPresetActor = CachedPresetActors[SelectedOutfitNPCIdx]
+    If _selPresetActor
+        CachedOutfitPresetNames = VisiblePresetNames(_selPresetActor)
+    EndIf
+EndFunction
+
+Function RefreshHomesState()
+    CachedHomedNPCs = PapyrusUtil.ActorArray(0)
+    CachedDismissedFollowers = PapyrusUtil.ActorArray(0)
+    _selDismissed = None
+    If !SeverActionsNativeExt2.Module_IsUsable("followers")
+        Return
+    EndIf
+    ; Homed NPCs in ASSIGNMENT order, from FollowerManager's FormList (its sharedKeys row in fomod/modules.json
+    ; names this reader); GetAllHomedNPCs' filter, read-only - FollowerManager prunes on its schedule tick. Not a
+    ; native list: FollowerDataStore is an unordered map and would reorder the page.
+    Int n = StorageUtil.FormListCount(None, "SeverActions_HomedNPCs")
+    Int i = 0
+    While i < n
+        Actor homed = StorageUtil.FormListGet(None, "SeverActions_HomedNPCs", i) as Actor
+        If homed && !homed.IsDeleted() && SeverActionsNative.Native_GetHome(homed) != ""
+            CachedHomedNPCs = PapyrusUtil.PushActor(CachedHomedNPCs, homed)
+        EndIf
+        i += 1
+    EndWhile
+    ; Dismissed NPCs who keep a home (FollowerManager.GetDismissedWithHomes' filter: every tracked actor has a
+    ; home; drop the player and registered followers).
+    Actor player = Game.GetPlayer()
+    Actor[] tracked = SeverActionsNative.Native_GetAllTrackedFollowers()
+    If tracked
+        Int t = 0
+        While t < tracked.Length
+            If tracked[t] && tracked[t] != player && !SeverActionsNativeExt.Native_GetIsFollower(tracked[t])
+                CachedDismissedFollowers = PapyrusUtil.PushActor(CachedDismissedFollowers, tracked[t])
+            EndIf
+            t += 1
+        EndWhile
+    EndIf
+    If CachedDismissedFollowers.Length == 0
+        Return
+    EndIf
+    If SelectedDismissedIdx < 0 || SelectedDismissedIdx >= CachedDismissedFollowers.Length
+        SelectedDismissedIdx = 0
+    EndIf
+    _selDismissed = CachedDismissedFollowers[SelectedDismissedIdx]
+EndFunction
+
+Function RefreshEconomyState()
+    _debtPlayerOwes = 0
+    _debtOwedToPlayer = 0
+    _debtOwesDetails = PapyrusUtil.StringArray(0)
+    _debtOwedDetails = PapyrusUtil.StringArray(0)
+    If !SeverActionsNativeExt2.Module_IsUsable("economy")
+        Return
+    EndIf
+    ; SeverActions_Debt's GetTotalOwedBy / GetTotalOwedTo are these natives; the lines are the World page's
+    ; formatter, in GetPlayerOwesDetails' format
+    Actor player = Game.GetPlayer()
+    _debtPlayerOwes = SeverActionsNativeExt.Native_Debt_SumOwedBy(player)
+    _debtOwedToPlayer = SeverActionsNativeExt.Native_Debt_SumOwedTo(player)
+    If _debtPlayerOwes > 0
+        String[] owes = SeverActionsNativeExt2.Native_Debt_GetPlayerViewLines(false)
+        If owes
+            _debtOwesDetails = owes
+        EndIf
+    EndIf
+    If _debtOwedToPlayer > 0
+        String[] owed = SeverActionsNativeExt2.Native_Debt_GetPlayerViewLines(true)
+        If owed
+            _debtOwedDetails = owed
+        EndIf
+    EndIf
+EndFunction
+
+Function RefreshBioState()
     BioTabs = SeverActionsNativeExt2.Native_BioBlock_TabList()
+    BioBlockTitles = PapyrusUtil.StringArray(0)
+    BioAssignedTitles = PapyrusUtil.StringArray(0)
+    BioTargetFactions = PapyrusUtil.StringArray(0)
+    BioRuleNames = SeverActionsNativeExt2.Native_BioBlock_FactionRuleNames()
+    BioTargetActor = Game.GetCurrentCrosshairRef() as Actor
+    If BioTargetActor
+        BioTargetFactions = SeverActionsNativeExt2.Native_BioBlock_TargetFactionNames(BioTargetActor)
+    EndIf
     If !BioTabs || BioTabs.Length == 0
-        AddEmptyOption()
-        AddTextOption("", "No bio blocks exist yet.")
-        AddTextOption("", "Create some in PrismaUI first.")
         Return
     EndIf
     If BioTabIdx < 0 || BioTabIdx >= BioTabs.Length
         BioTabIdx = 0
     EndIf
-    String curTab = BioTabs[BioTabIdx]
-    BioBlockTitles = SeverActionsNativeExt2.Native_BioBlock_BlockTitlesInTab(curTab)
-    BioBlockIds = SeverActionsNativeExt2.Native_BioBlock_BlockIdsInTab(curTab)
-    ; Guard the EMPTY (length-0) array too, not just None: a tab with no blocks
-    ; (the shipped default library's first tab "Library" is empty) returns a
-    ; non-None length-0 array, and the unguarded BioBlockTitles[BioBlockIdx]
-    ; reads below would go out of bounds on first open.
+    BioBlockTitles = SeverActionsNativeExt2.Native_BioBlock_BlockTitlesInTab(BioTabs[BioTabIdx])
+    BioBlockIds = SeverActionsNativeExt2.Native_BioBlock_BlockIdsInTab(BioTabs[BioTabIdx])
+    ; An empty tab returns a length-0 array (the shipped library's first tab is one), and BioBlockTitles[BioBlockIdx]
+    ; would then read out of bounds.
     If !BioBlockTitles || BioBlockTitles.Length == 0
         BioBlockTitles = new string[1]
         BioBlockTitles[0] = ""
@@ -628,4098 +1023,1771 @@ Function DrawBioBlocksPage()
     If BioBlockIdx < 0 || BioBlockIdx >= BioBlockTitles.Length
         BioBlockIdx = 0
     EndIf
-
-    BioTargetActor = Game.GetCurrentCrosshairRef() as Actor
-    String tname = "(none - aim at an NPC)"
-    If BioTargetActor
-        tname = BioTargetActor.GetDisplayName()
-    EndIf
-    OID_Bio_Target = AddTextOption("Crosshair Target", tname)
-
-    OID_Bio_Tab = AddMenuOption("Tab", curTab)
-    String blabel = "(no blocks in this tab)"
-    If BioBlockTitles.Length > 0 && BioBlockTitles[BioBlockIdx] != ""
-        blabel = BioBlockTitles[BioBlockIdx]
-    EndIf
-    OID_Bio_Block = AddMenuOption("Block", blabel)
-
-    ; One gate for Apply and Grant: needs a crosshair target AND a real
-    ; (non-empty) selected block. BioBlockTitles is length >= 1 by here.
-    Int gateFlags = OPTION_FLAG_NONE
-    If !BioTargetActor || BioBlockTitles[BioBlockIdx] == ""
-        gateFlags = OPTION_FLAG_DISABLED
-    EndIf
-    OID_Bio_Apply = AddTextOption("Apply to Target", "CLICK", gateFlags)
-    OID_Bio_GrantFaction = AddMenuOption("Grant to a Faction", "select...", gateFlags)
-
-    AddHeaderOption("On This Target")
-    OID_Bio_RemoveBlock = -1
     If BioTargetActor
         BioAssignedTitles = SeverActionsNativeExt2.Native_BioBlock_AssignedTitles(BioTargetActor)
         BioAssignedIds = SeverActionsNativeExt2.Native_BioBlock_AssignedIds(BioTargetActor)
-        If BioAssignedTitles && BioAssignedTitles.Length > 0
-            OID_Bio_RemoveBlock = AddMenuOption("Remove a Block", "select...")
-            Int a = 0
-            While a < BioAssignedTitles.Length
-                AddTextOption("  - " + BioAssignedTitles[a], "")
-                a += 1
-            EndWhile
-        Else
-            AddTextOption("", "(nothing applied to this NPC)")
+    EndIf
+EndFunction
+
+; =============================================================================
+; DYNAMIC SOURCES
+; =============================================================================
+
+Bool Function SourcePerEntry(String asSource)
+    {Whether a dynamic run draws once per entry (false: a selector picks one entry). Read from the served table,
+     so the renderer and the ceiling report count the same thing.}
+    Return SourceField(asSource, 4) != ""
+EndFunction
+
+Bool Function SourcePerSlot(String asSource)
+    {Whether the table carries one ROW per entry of this source, so each row draws once instead of the run
+     repeating.}
+    Return SourceField(asSource, 3) != ""
+EndFunction
+
+Int Function SelectedEntryFor(String asSource)
+    If asSource == "companionRoster"
+        Return SelectedCompanionIdx
+    ElseIf asSource == "dismissedWithHomes"
+        Return SelectedDismissedIdx
+    EndIf
+    Return 0
+EndFunction
+
+String Function SourceField(String asSource, Int aiField)
+    {One field of a dynamic source's row in the table the DLL serves, so the drawn list and check 13 (f)'s
+     ceiling report agree on a cap. Cached until the menu next opens (OnConfigOpen drops it).}
+    If !_sources || _sources.Length == 0
+        _sources = SeverActionsNativeExt2.Mcm_Sources()
+    EndIf
+    If !_sources || _sources.Length == 0
+        Return ""
+    EndIf
+    Int i = 0
+    While i < _sources.Length
+        If SeverActions_ModuleBase.VerbField(_sources[i], 0) == asSource
+            Return SeverActions_ModuleBase.VerbField(_sources[i], aiField)
         EndIf
-    Else
-        AddTextOption("", "(aim at an NPC to manage its blocks)")
-    EndIf
-
-    AddHeaderOption("Faction Rules")
-    AddTextOption("", "Each rule grants a block to a whole faction.")
-    BioRuleNames = SeverActionsNativeExt2.Native_BioBlock_FactionRuleNames()
-    OID_Bio_Rule = new int[20]
-    If BioRuleNames && BioRuleNames.Length > 0
-        Int r = 0
-        While r < BioRuleNames.Length && r < 20
-            OID_Bio_Rule[r] = AddTextOption(BioRuleNames[r], "remove")
-            r += 1
-        EndWhile
-    Else
-        AddTextOption("", "(no faction rules)")
-    EndIf
-EndFunction
-
-; =============================================================================
-; ENTERPRISES (DEBUG) PAGE — temporary harness for the Enterprises simulation.
-; See ENTERPRISES.md. Drives the Venture_* natives on SeverActionsNativeExt.
-; =============================================================================
-
-Function InitEnterpriseDropdowns()
-    ; Order matters: the selected index is passed straight to
-    ; Venture_DebugAdd(entT, EntJob, EntArrangement, EntWage), so these map
-    ; 1:1 to the VentureJob / VentureArrangement enums in VentureStore.h.
-    EntJobOptions = new string[14]
-    EntJobOptions[0] = "Miner"
-    EntJobOptions[1] = "Merchant"
-    EntJobOptions[2] = "Alchemist"
-    EntJobOptions[3] = "Farmer"
-    EntJobOptions[4] = "Fence"
-    EntJobOptions[5] = "Mercenary"
-    EntJobOptions[6] = "Courtesan"
-    EntJobOptions[7] = "Guard"
-    EntJobOptions[8] = "Lumberjack"
-    EntJobOptions[9] = "Custom"
-    EntJobOptions[10] = "Blacksmith"
-    EntJobOptions[11] = "Hunter"
-    EntJobOptions[12] = "Brewer"
-    EntJobOptions[13] = "Tanner"
-    EntArrangementOptions = new string[5]
-    EntArrangementOptions[0] = "Employed (you pay wage)"
-    EntArrangementOptions[1] = "Partnership (you get cut)"
-    EntArrangementOptions[2] = "Tribute (they pay you cut)"
-    EntArrangementOptions[3] = "Sworn (wage, no production)"
-    EntArrangementOptions[4] = "Enslaved (coerced, no wage)"
-EndFunction
-
-; Main Enterprises page (public). The simulation is driven from the PrismaUI
-; Enterprises board; the only MCM control here is the gate for the debug
-; harness below.
-Function DrawEnterprisesPage()
-    SetCursorFillMode(TOP_TO_BOTTOM)
-    AddHeaderOption("Enterprises")
-    AddTextOption("", "Retainers are hired & managed from the")
-    AddTextOption("", "PrismaUI Enterprises board.")
-
-    If FollowerManagerScript
-        AddEmptyOption()
-        AddHeaderOption("Economy")
-        OID_Ent_OutputPct = AddSliderOption("Venture Output", FollowerManagerScript.EnterpriseOutputPct as Float, "{0}%")
-        OID_Ent_StoryCap = AddSliderOption("Weekly Story Budget", FollowerManagerScript.EnterpriseStoryCap as Float, "{0}")
-        AddTextOption("", "Story budget: -1 = Auto, 0 = Off, else per week.")
-
-        AddEmptyOption()
-        AddHeaderOption("Retainer Systems")
-        OID_Ent_Loans = AddToggleOption("Loans", FollowerManagerScript.EnterpriseLoansEnabled)
-        OID_Ent_Raises = AddToggleOption("Wage Raises", FollowerManagerScript.EnterpriseRaisesEnabled)
-        OID_Ent_Temper = AddToggleOption("Temper / Morale", FollowerManagerScript.EnterpriseTemperEnabled)
-        OID_Ent_Ambushes = AddToggleOption("Grudge Ambushes", FollowerManagerScript.EnterpriseAmbushesEnabled)
-        OID_Ent_RenownCap = AddToggleOption("Renown Roster Cap", FollowerManagerScript.EnterpriseRenownCapEnabled)
-    EndIf
-
-    AddEmptyOption()
-    AddHeaderOption("Advanced")
-    OID_Ent_DebugToggle = AddToggleOption("Enable Debug Harness", EnableEnterpriseDebug)
-EndFunction
-
-Function DrawEnterprisesDebugPage()
-    If !EntJobOptions
-        InitEnterpriseDropdowns()
-    EndIf
-
-    OID_Ent_DebugToggle = AddToggleOption("Enable Debug Harness", EnableEnterpriseDebug)
-    AddHeaderOption("Enterprises - Debug Harness")
-    AddTextOption("", "Aim your crosshair at an NPC, pick a")
-    AddTextOption("", "job/arrangement, then Hire.")
-
-    Actor target = Game.GetCurrentCrosshairRef() as Actor
-    string tname = "(none - aim at an NPC)"
-    If target
-        tname = target.GetDisplayName()
-    EndIf
-    OID_Ent_Target = AddTextOption("Crosshair Target", tname)
-
-    OID_Ent_Job         = AddMenuOption("Job", EntJobOptions[EntJob])
-    OID_Ent_Arrangement = AddMenuOption("Arrangement", EntArrangementOptions[EntArrangement])
-    OID_Ent_Wage        = AddSliderOption("Weekly Wage (Employed)", EntWage as Float, "{0}g")
-
-    OID_Ent_Hire   = AddTextOption("Hire Retainer", "")
-    OID_Ent_Remove = AddTextOption("Remove Retainer", "")
-
-    AddHeaderOption("Simulation")
-    OID_Ent_Count   = AddTextOption("Active Ventures", "" + SeverActionsNativeExt2.Venture_Count())
-    OID_Ent_Settle  = AddTextOption("Force Weekly Settle", "")
-    OID_Ent_Dump    = AddTextOption("Dump All To Log", "")
-    OID_Ent_Enabled = AddToggleOption("Auto Settlement Enabled", EntEnabled)
-
-    AddHeaderOption("Collect")
-    OID_Ent_Collect    = AddTextOption("Collect From Target", "")
-    OID_Ent_CollectAll = AddTextOption("Collect From All", "")
-
-    AddHeaderOption("Law")
-    OID_Ent_ForceArrest = AddTextOption("Force Arrest Target", "")
-    OID_Ent_Bail        = AddTextOption("Bail Out Target", "")
-
-    AddHeaderOption("Letters (Debug)")
-    OID_Ent_TestLetter     = AddTextOption("Deliver Test Letter", "" + SeverActionsNativeExt.Letter_Count() + " archived")
-    OID_Ent_TestCourier    = AddTextOption("Dispatch Courier (canned)", "walks up & hands over")
-    OID_Ent_TestCourierLLM = AddTextOption("Send Real Letter (LLM)", "a retainer writes one")
-    OID_Ent_ForceAmbush    = AddTextOption("Force Thug Ambush", "grudge thugs attack now")
-EndFunction
-
-; =============================================================================
-; OUTFITS PAGE
-; =============================================================================
-
-Function DrawOutfitsPage()
-    If !OutfitScript
-        AddTextOption("", "Outfit system not connected!")
-        return
-    EndIf
-
-    ; --- Global outfit behaviour (moved here from the Followers page) ---
-    AddHeaderOption("Global Settings")
-    OID_Outfit_UseAnimations = AddToggleOption("Dress/Undress Animations", OutfitScript.UseAnimations)
-    OID_FM_AutoSwitch = AddToggleOption("Situational Auto-Switching", SeverActionsNativeExt.SituationMonitor_IsEnabled())
-    OID_FM_StabilityDelay = AddSliderOption("Situation Stability", (SeverActionsNativeExt.SituationMonitor_GetStabilityThreshold() as Float) / 1000.0, "{0} sec")
-    Bool deferBondage = StorageUtil.GetIntValue(None, "SeverOutfit_DeferBondage", 1) as Bool
-    OID_Outfit_DeferBondage = AddToggleOption("Defer to Bondage Mods (DOM/PAH)", deferBondage)
-    AddEmptyOption()
-
-    ; Get all actors with saved presets
-    Actor[] allPresetActors = OutfitScript.GetPresetActors()
-
-    ; Filter out registered followers (they're managed on the Followers page)
-    CachedPresetActors = PapyrusUtil.ActorArray(0)
-    Int f = 0
-    While f < allPresetActors.Length
-        If allPresetActors[f] && FollowerManagerScript
-            If !FollowerManagerScript.IsRegisteredFollower(allPresetActors[f])
-                CachedPresetActors = PapyrusUtil.PushActor(CachedPresetActors, allPresetActors[f])
-            EndIf
-        ElseIf allPresetActors[f]
-            CachedPresetActors = PapyrusUtil.PushActor(CachedPresetActors, allPresetActors[f])
-        EndIf
-        f += 1
+        i += 1
     EndWhile
+    Debug.Trace("[SeverActions_MCM] SourceField: the dynamic source '" + asSource + "' is not in the served table")
+    Return ""
+EndFunction
 
-    If CachedPresetActors.Length == 0
-        AddTextOption("", "No outfit presets saved for non-followers.")
-        AddTextOption("", "Dress an NPC and save a preset to see them here.")
-        return
-    EndIf
+Int Function SourceCap(String asSource)
+    {How many entries of a source may be drawn, 0 for no cap.}
+    Return SourceField(asSource, 1) as Int
+EndFunction
 
-    ; Clamp selection index
-    If SelectedOutfitNPCIdx >= CachedPresetActors.Length
-        SelectedOutfitNPCIdx = 0
-    EndIf
-
-    AddHeaderOption("NPC Outfits")
-    AddTextOption("NPCs with presets", CachedPresetActors.Length + " tracked", OPTION_FLAG_DISABLED)
-    OID_Outfit_NPCSelect = AddMenuOption("Select NPC", CachedPresetActors[SelectedOutfitNPCIdx].GetDisplayName())
-
-    AddEmptyOption()
-
-    ; Show selected NPC's details
-    Actor selected = CachedPresetActors[SelectedOutfitNPCIdx]
-    If selected
-        AddHeaderOption(selected.GetDisplayName())
-
-        ; Outfit lock toggle
-        Bool hasLock = OutfitScript.HasNonFollowerOutfitLock(selected)
-        OID_Outfit_Lock = AddToggleOption("Outfit Lock", hasLock)
-
-        ; List presets
-        CachedOutfitPresetNames = OutfitScript.GetPresetNames(selected)
-        If CachedOutfitPresetNames.Length > 0
-            AddHeaderOption("Saved Presets")
-            OID_Outfit_DeletePreset = new int[20]
-            Int p = 0
-            While p < CachedOutfitPresetNames.Length && p < 20
-                Int presetItems = OutfitScript.GetPresetItemCount(selected, CachedOutfitPresetNames[p])
-                AddTextOption(CachedOutfitPresetNames[p], presetItems + " items", OPTION_FLAG_DISABLED)
-                OID_Outfit_DeletePreset[p] = AddTextOption("Delete '" + CachedOutfitPresetNames[p] + "'", "CLICK")
-                p += 1
-            EndWhile
-        Else
-            CachedOutfitPresetNames = PapyrusUtil.StringArray(0)
-            OID_Outfit_DeletePreset = new int[1]
+Int Function EntryCount(String asSource)
+    {How many entries the source has RIGHT NOW.}
+    If asSource == "companionRoster"
+        Return ArrayLen(CachedManagedFollowers)
+    ElseIf asSource == "companionPresets"
+        Return StrArrayLen(CachedPresetNames)
+    ElseIf asSource == "followerExclusions"
+        Return ArrayLen(CachedFollowers)
+    ElseIf asSource == "outfitPresets"
+        Return StrArrayLen(CachedOutfitPresetNames)
+    ElseIf asSource == "outfitPresetActors"
+        Return ArrayLen(CachedPresetActors)
+    ElseIf asSource == "homedNpcs"
+        Return ArrayLen(CachedHomedNPCs)
+    ElseIf asSource == "dismissedWithHomes"
+        Return ArrayLen(CachedDismissedFollowers)
+    ElseIf asSource == "bioBlockRules"
+        Return StrArrayLen(BioRuleNames)
+    ElseIf asSource == "appliedBioBlocks"
+        Return StrArrayLen(BioAssignedTitles)
+    ElseIf asSource == "bioTabs"
+        Return StrArrayLen(BioTabs)
+    ElseIf asSource == "bioBlocksInTab"
+        Return StrArrayLen(BioBlockTitles)
+    ElseIf asSource == "bioTargetFactions"
+        Return StrArrayLen(BioTargetFactions)
+    ElseIf asSource == "schedulePools"
+        Return 3
+    ElseIf asSource == "travelJourneys"
+        ; The orchestrator's player-ordered journeys, all of them: DrawRun caps the drawn rows at the layout's
+        ; cap and adds the "showing N of M" line. The module test stays: DrawRun asks for the count before any
+        ; gate, and that line is drawn ungated.
+        If !SeverActionsNativeExt2.Module_IsUsable("travel")
+            Return 0
         EndIf
+        Return JourneyCount()
+    ElseIf asSource == "holdBounties"
+        Return 9
+    ElseIf asSource == "debtsPlayerOwes"
+        Return StrArrayLen(_debtOwesDetails)
+    ElseIf asSource == "debtsOwedToPlayer"
+        Return StrArrayLen(_debtOwedDetails)
     EndIf
+    Debug.Trace("[SeverActions_MCM] EntryCount: no branch for the dynamic source '" + asSource + "'")
+    Return 0
 EndFunction
 
-Function DrawInterfacePage()
-    SetCursorFillMode(TOP_TO_BOTTOM)
-
-    AddHeaderOption("SeverActions")
-    AddEmptyOption()
-    OID_Version = AddTextOption("Version", "3.x")
-    AddTextOption("Author", "Severause")
-    AddEmptyOption()
-
-    ; PrismaUI escape hatch — if Prisma renders too large to reach the in-app
-    ; scale slider, MCM is the fallback (source of truth: FollowerManager.UIScale).
-    AddHeaderOption("PrismaUI Display")
-    Float curScale = 1.0
-    If FollowerManagerScript
-        curScale = FollowerManagerScript.UIScale
+Int Function ArrayLen(Actor[] akList)
+    If !akList
+        Return 0
     EndIf
-    OID_UIScale = AddSliderOption("UI Scale", curScale, "{2}x")
-
-    AddEmptyOption()
-    AddHeaderOption("Dialogue")
-    OID_DialogueAnimEnabled = AddToggleOption("Dialogue Animations", DialogueAnimEnabled)
-    OID_SilenceChance = AddSliderOption("Silence Chance", SilenceChance as Float, "{0}%")
-
-    AddEmptyOption()
-    AddHeaderOption("Speaker Tags")
-    OID_TagCompanion = AddToggleOption("[COMPANION] Tag", TagCompanionEnabled)
-    OID_TagEngaged = AddToggleOption("[ENGAGED] Tag", TagEngagedEnabled)
-    OID_TagInScene = AddToggleOption("[IN SCENE] Tag", TagInSceneEnabled)
-
-    AddEmptyOption()
-    AddHeaderOption("Background AI")
-    ; Master kill-switch for every BACKGROUND LLM call SeverActions makes
-    ; (assessments, banter, stories, letters, quest summaries, intimacy read).
-    ; Does NOT touch SkyrimNet's own dialogue. Per-feature toggles are on the
-    ; Followers page.
-    Bool llmOn = SeverActionsNativeExt2.Native_GetLLMCallsEnabled()
-    OID_LLMCallsEnabled = AddToggleOption("Background AI Calls", llmOn)
-    AddTextOption("", "Off = no LLM cost from background features.")
+    Return akList.Length
 EndFunction
 
-Function DrawPromptFiltersPage()
-    SetCursorFillMode(TOP_TO_BOTTOM)
-
-    AddHeaderOption("Player Inventory Display")
-    AddTextOption("", "How many of each item type the AI is")
-    AddTextOption("", "told the player is carrying.")
-    AddEmptyOption()
-    OID_InvLimit_Weapons = AddSliderOption("Weapons", InvLimit_Weapons as Float, "{0} items")
-    OID_InvLimit_Armor = AddSliderOption("Armor & Jewelry", InvLimit_Armor as Float, "{0} items")
-    OID_InvLimit_Potions = AddSliderOption("Potions", InvLimit_Potions as Float, "{0} items")
-    OID_InvLimit_Ingredients = AddSliderOption("Ingredients", InvLimit_Ingredients as Float, "{0} items")
-    OID_InvLimit_Books = AddSliderOption("Books", InvLimit_Books as Float, "{0} items")
-    OID_InvLimit_Scrolls = AddSliderOption("Scrolls", InvLimit_Scrolls as Float, "{0} items")
-    OID_InvLimit_Ammo = AddSliderOption("Ammo", InvLimit_Ammo as Float, "{0} items")
-    OID_InvLimit_Keys = AddSliderOption("Keys", InvLimit_Keys as Float, "{0} items")
-    OID_InvLimit_Misc = AddSliderOption("Misc", InvLimit_Misc as Float, "{0} items")
+Int Function StrArrayLen(String[] asList)
+    If !asList
+        Return 0
+    EndIf
+    Return asList.Length
 EndFunction
 
-Function DrawReadingPage()
-    SetCursorFillMode(TOP_TO_BOTTOM)
-
-    AddHeaderOption("Book Reading")
-    if !LootScript
-        Quest myQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
-        if myQuest
-            LootScript = myQuest as SeverActions_Loot
-        endif
-    endif
-    if LootScript
-        if !BookReadModeOptions
-            BookReadModeOptions = new string[2]
-            BookReadModeOptions[0] = "Read Aloud (Verbatim)"
-            BookReadModeOptions[1] = "Summarize & React"
-        endif
-        OID_BookReadMode = AddMenuOption("Book Reading Style", BookReadModeOptions[LootScript.BookReadMode])
-    else
-        AddTextOption("", "Loot script not connected.")
-    endif
-
-    AddEmptyOption()
-    AddHeaderOption("Spell Teaching")
-    if !SpellTeachScript
-        Quest myQuest2 = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
-        if myQuest2
-            SpellTeachScript = myQuest2 as SeverActions_SpellTeach
-        endif
-    endif
-    if SpellTeachScript
-        OID_SpellFailEnabled = AddToggleOption("Failure System", SpellTeachScript.EnableFailureSystem)
-        OID_SpellFailDifficulty = AddSliderOption("Failure Difficulty", SpellTeachScript.FailureDifficultyMult, "{1}x")
-    else
-        AddTextOption("", "Spell-teach script not connected.")
-    endif
-EndFunction
-
-Function DrawOffScreenPage()
-    SetCursorFillMode(TOP_TO_BOTTOM)
-
-    AddHeaderOption("Off-Screen Life")
-    AddTextOption("", "What dismissed companions get up to")
-    AddTextOption("", "when you are not around.")
-    AddEmptyOption()
-
-    If FollowerManagerScript
-        AddHeaderOption("Events")
-        OID_FM_AutoOffScreenLife = AddToggleOption("Off-Screen Life Events", FollowerManagerScript.AutoOffScreenLife)
-        OID_FM_OffScreenCooldownMin = AddSliderOption("Off-Screen Min Cooldown", FollowerManagerScript.OffScreenLifeCooldownMinHours, "{1} hrs")
-        OID_FM_OffScreenCooldownMax = AddSliderOption("Off-Screen Max Cooldown", FollowerManagerScript.OffScreenLifeCooldownMaxHours, "{1} hrs")
-
-        AddEmptyOption()
-        AddHeaderOption("Consequences")
-        OID_FM_OffScreenConsequences = AddToggleOption("Off-Screen Consequences", FollowerManagerScript.OffScreenConsequences)
-        OID_FM_ConsequenceCooldown = AddSliderOption("Consequence Cooldown", FollowerManagerScript.ConsequenceCooldownHours, "{1} hrs")
-        OID_FM_MaxBounty = AddSliderOption("Max Off-Screen Bounty", FollowerManagerScript.MaxOffScreenBounty as Float, "{0}")
-        OID_FM_MaxGoldChange = AddSliderOption("Max Gold Change", FollowerManagerScript.MaxOffScreenGoldChange as Float, "{0}")
+Faction Function HoldFactionAt(Int aiEntry)
+    {The nine crime factions in holdBounties order, as Skyrim.esm FormID literals (DR3; the same values as
+     SeverActions_Arrest's CrimeFaction* fills and HoldResolver's seed). The rows are gated 'arrest'.}
+    Int fid = 0
+    If aiEntry == 0
+        fid = 0x000267EA   ; CrimeFactionWhiterun
+    ElseIf aiEntry == 1
+        fid = 0x0002816B   ; CrimeFactionRift
+    ElseIf aiEntry == 2
+        fid = 0x00029DB0   ; CrimeFactionHaafingar
+    ElseIf aiEntry == 3
+        fid = 0x000267E3   ; CrimeFactionEastmarch
+    ElseIf aiEntry == 4
+        fid = 0x0002816C   ; CrimeFactionReach
+    ElseIf aiEntry == 5
+        fid = 0x00028170   ; CrimeFactionFalkreath
+    ElseIf aiEntry == 6
+        fid = 0x0002816E   ; CrimeFactionPale
+    ElseIf aiEntry == 7
+        fid = 0x0002816D   ; CrimeFactionHjaalmarch
+    ElseIf aiEntry == 8
+        fid = 0x0002816F   ; CrimeFactionWinterhold
     Else
-        AddTextOption("", "Follower Manager not connected!")
+        Return None
     EndIf
+    Return Game.GetFormFromFile(fid, "Skyrim.esm") as Faction
 EndFunction
 
-Function DrawCombatPage()
-    SetCursorFillMode(TOP_TO_BOTTOM)
+String Function HoldNameAt(Int aiEntry)
+    If aiEntry == 0
+        Return "Whiterun"
+    ElseIf aiEntry == 1
+        Return "The Rift"
+    ElseIf aiEntry == 2
+        Return "Haafingar"
+    ElseIf aiEntry == 3
+        Return "Eastmarch"
+    ElseIf aiEntry == 4
+        Return "The Reach"
+    ElseIf aiEntry == 5
+        Return "Falkreath"
+    ElseIf aiEntry == 6
+        Return "The Pale"
+    ElseIf aiEntry == 7
+        Return "Hjaalmarch"
+    ElseIf aiEntry == 8
+        Return "Winterhold"
+    EndIf
+    Return ""
+EndFunction
 
-    If !CombatScript
-        AddTextOption("", "Combat script not connected!")
+; =============================================================================
+; LABELS AND VALUES: a translation-key row draws straight from the table; a row built at draw time carries a
+; computed flag and is built here by id.
+; =============================================================================
+
+String Function RowLabel(String asRow, Int aiEntry)
+    String label = SeverActions_ModuleBase.VerbField(asRow, ROW_LABEL)
+    If Math.LogicalAnd(SeverActions_ModuleBase.VerbField(asRow, ROW_FLAGS) as Int, FLAG_COMPUTEDLABEL) == 0
+        Return label
+    EndIf
+    String built = ComputedLabel(SeverActions_ModuleBase.VerbField(asRow, ROW_ID), SeverActions_ModuleBase.VerbField(asRow, ROW_SOURCE), aiEntry)
+    If built != ""
+        Return built
+    EndIf
+    Return label
+EndFunction
+
+String Function RowValue(String asRow, Int aiEntry)
+    String value = SeverActions_ModuleBase.VerbField(asRow, ROW_VALUE)
+    String control = SeverActions_ModuleBase.VerbField(asRow, ROW_CONTROL)
+    String type = SeverActions_ModuleBase.VerbField(asRow, ROW_TYPE)
+
+    If control == "menu" && type == "setting"
+        Return MenuValueText(asRow)
+    EndIf
+    If Math.LogicalAnd(SeverActions_ModuleBase.VerbField(asRow, ROW_FLAGS) as Int, FLAG_COMPUTEDVALUE) != 0
+        Return ComputedValue(SeverActions_ModuleBase.VerbField(asRow, ROW_ID), SeverActions_ModuleBase.VerbField(asRow, ROW_SOURCE), aiEntry)
+    EndIf
+    Return value
+EndFunction
+
+String Function ComputedLabel(String asRowId, String asSource, Int aiEntry)
+    {A row whose LABEL is built at draw time, by row id. "" falls back to the table's label key.}
+    If asRowId == "fmCompanionHeader"
+        If _selCompanion
+            Return _selCompanion.GetDisplayName()
+        EndIf
+        Return ""
+    ElseIf asRowId == "outfitActorHeader"
+        If _selPresetActor
+            Return _selPresetActor.GetDisplayName()
+        EndIf
+        Return ""
+    ElseIf asRowId == "fmDeletePreset"
+        Return "Delete '" + CachedPresetNames[aiEntry] + "'"
+    ElseIf asRowId == "fmPresetLine"
+        Return CachedPresetNames[aiEntry]
+    ElseIf asRowId == "outfitDeletePreset"
+        Return "Delete '" + CachedOutfitPresetNames[aiEntry] + "'"
+    ElseIf asRowId == "outfitPresetLine"
+        Return CachedOutfitPresetNames[aiEntry]
+    ElseIf asRowId == "followerExclude"
+        Actor f = RowActor(aiEntry)
+        If f
+            Return f.GetDisplayName()
+        EndIf
+        Return ""
+    ElseIf asRowId == "bioRule"
+        Return BioRuleNames[aiEntry]
+    ElseIf asRowId == "bioAssignedLine"
+        Return "  - " + BioAssignedTitles[aiEntry]
+    ElseIf asRowId == "debtOwesLine"
+        Return "  " + _debtOwesDetails[aiEntry]
+    ElseIf asRowId == "travelJourneyLine"
+        ; "<name>: Traveling to <place>" / "<name>: Waiting at <place>" - SeverActions_Travel.GetJourneyLine
+        ; through the travel provider ("" without the module)
+        Return SeverActions_ModuleBase.CallString("travel", "journeyLine", None, None, "", aiEntry as Float)
+    ElseIf asRowId == "debtOwedLine"
+        Return "  " + _debtOwedDetails[aiEntry]
+    ElseIf asRowId == "clearNPCHome" || asRowId == "homedNpcLine"
+        If CachedHomedNPCs && aiEntry < CachedHomedNPCs.Length && CachedHomedNPCs[aiEntry]
+            Return CachedHomedNPCs[aiEntry].GetDisplayName()
+        EndIf
+        Return ""
+    ElseIf asRowId == "schedPoolLine" || asRowId == "schedPoolFullLine"
+        Return SchedPoolName(aiEntry) + " aliases"
+    EndIf
+    Debug.Trace("[SeverActions_MCM] ComputedLabel: no branch for the row '" + asRowId + "'")
+    Return ""
+EndFunction
+
+String Function SchedPoolName(Int aiEntry)
+    {The schedule pool's name (FollowerManager.GetSchedTypeName, HOME / WORK / PLAY = 0 / 1 / 2). Frozen in saves -
+     the pool-exhaustion StorageUtil key is built from it - so the literal cannot drift (DR3).}
+    If aiEntry == 0
+        Return "home"
+    ElseIf aiEntry == 1
+        Return "work"
+    ElseIf aiEntry == 2
+        Return "relax"
+    EndIf
+    Return "unknown"
+EndFunction
+
+String Function ComputedValue(String asRowId, String asSource, Int aiEntry)
+    {A row whose VALUE is built at draw time.}
+
+    ; --- an absent module's notice rows, by id prefix: modNotice-<module>-<where> / modHowTo-<module>-<where>;
+    ; each draws a short line and OnOptionHighlight shows the whole notice ---
+    If StringUtil.Find(asRowId, "modNotice-") == 0
+        Return ModuleNoticeLine(ModuleOfRowId(asRowId))
+    ElseIf StringUtil.Find(asRowId, "modHowTo-") == 0
+        Return SeverActionsNativeExt2.Native_L10nFmt("mcm.moduleHowToShort", SeverActionsNativeExt2.Module_Option(ModuleOfRowId(asRowId)))
+    EndIf
+
+    ; --- the selected companion ---
+    If asRowId == "fmCompanionSelect"
+        If _selCompanion
+            Return _selCompanion.GetDisplayName()
+        EndIf
+        Return ""
+    ElseIf asRowId == "fmRapport"
+        ; the four relationship values: FollowerManager's Get<X> are these natives
+        Return "" + SeverActionsNative.Native_GetRapport(_selCompanion)
+    ElseIf asRowId == "fmTrust"
+        Return "" + SeverActionsNative.Native_GetTrust(_selCompanion)
+    ElseIf asRowId == "fmLoyalty"
+        Return "" + SeverActionsNative.Native_GetLoyalty(_selCompanion)
+    ElseIf asRowId == "fmMood"
+        Return "" + SeverActionsNative.Native_GetMood(_selCompanion)
+    ElseIf asRowId == "fmCombatStyle"
+        Return CompanionCombatStyle(_selCompanion)
+    ElseIf asRowId == "fmCompanionCount"
+        Return CachedManagedFollowers.Length + " recruited"
+    ElseIf asRowId == "fmHome"
+        Return _selCompanionHome
+    ElseIf asRowId == "fmSituation"
+        ; Names the ACTIVE preset, not the one mapped to this situation: they differ whenever something else
+        ; dressed the companion last.
+        String preset = SeverActionsNative.Native_Outfit_GetActivePreset(_selCompanion)
+        If preset != ""
+            Return _selCompanionSituation + " (" + preset + ")"
+        EndIf
+        Return _selCompanionSituation
+    ElseIf asRowId == "fmPresetLine"
+        Return PresetItemCount(_selCompanion, CachedPresetNames[aiEntry]) + " items"
+    ElseIf asRowId == "fmHunger"
+        ; SeverActions_Survival.GetFollower<Need> is the native truncated to Int; the word is its
+        ; Get<Need>LevelName table (0 hunger / 1 fatigue / 2 cold)
+        Int hunger = SeverActionsNative.Native_Survival_GetHunger(_selCompanion) as Int
+        Return hunger + "% (" + SeverActionsNativeExt2.Native_Survival_GetSeverityLabel(0, hunger) + ")"
+    ElseIf asRowId == "fmFatigue"
+        Int fatigue = SeverActionsNative.Native_Survival_GetFatigue(_selCompanion) as Int
+        Return fatigue + "% (" + SeverActionsNativeExt2.Native_Survival_GetSeverityLabel(1, fatigue) + ")"
+    ElseIf asRowId == "fmCold"
+        Int cold = SeverActionsNative.Native_Survival_GetCold(_selCompanion) as Int
+        Return cold + "% (" + SeverActionsNativeExt2.Native_Survival_GetSeverityLabel(2, cold) + ")"
+    ElseIf asRowId == "fmOutfitLock"
+        Form[] locked = SeverActionsNative.Native_Outfit_GetLockedItems(_selCompanion)
+        Int itemCount = 0
+        If locked
+            itemCount = locked.Length
+        EndIf
+        Return "Active (" + itemCount + " items)"
+
+    ; --- outfits ---
+    ElseIf asRowId == "outfitNPCSelect"
+        If _selPresetActor
+            Return _selPresetActor.GetDisplayName()
+        EndIf
+        Return ""
+    ElseIf asRowId == "outfitActorCount"
+        Return CachedPresetActors.Length + " tracked"
+    ElseIf asRowId == "outfitPresetLine"
+        Return PresetItemCount(_selPresetActor, CachedOutfitPresetNames[aiEntry]) + " items"
+
+    ; --- survival ---
+    ElseIf asRowId == "survivalFollowerCount"
+        ; tracked / total: the difference IS the excluded followers, which is what the line is for
+        Return SeverActions_ModuleBase.CallInt("survival", "trackedFollowerCount") + " / " + CachedFollowers.Length
+
+    ; --- travel ---
+    ElseIf asRowId == "travelJourneyCount"
+        Return "" + JourneyCount()
+
+    ; --- crime ---
+    ElseIf asSource == "holdBounties"
+        Return GetBountyDisplayText(HoldFactionAt(aiEntry))
+
+    ; --- homes ---
+    ElseIf asRowId == "homedNpcLine"
+        If CachedHomedNPCs && aiEntry < CachedHomedNPCs.Length && CachedHomedNPCs[aiEntry]
+            Return SeverActionsNative.Native_GetHome(CachedHomedNPCs[aiEntry])   ; FollowerManager.GetAssignedHome's body
+        EndIf
+        Return ""
+    ElseIf asRowId == "fmDismissedSelect"
+        If _selDismissed
+            Return _selDismissed.GetDisplayName()
+        EndIf
+        Return ""
+    ElseIf asRowId == "fmDismissedCount"
+        Return CachedDismissedFollowers.Length + " NPCs"
+    ElseIf asRowId == "fmDismissedHome"
+        If _selDismissed
+            Return SeverActionsNative.Native_GetHome(_selDismissed)
+        EndIf
+        Return ""
+    ElseIf asRowId == "schedPoolLine" || asRowId == "schedPoolFullLine"
+        String tail = ""
+        If asRowId == "schedPoolFullLine"
+            tail = " - FULL!"
+        EndIf
+        ; FollowerManager.GetSchedPoolUsed: 0..300 for a valid pool, -1 otherwise
+        Int used = -1
+        If aiEntry >= 0 && aiEntry <= 2
+            Int[] usage = SeverActionsNativeExt.Native_GetSchedPoolUsage()
+            If usage && usage.Length >= 3
+                used = usage[aiEntry]
+            EndIf
+        EndIf
+        Return used + " / 300" + tail
+
+    ; --- hotkeys ---
+    ElseIf asRowId == "wheelStatus"
+        Return SeverActionsNativeExt2.Native_L10n("hud.uiNotInstalled")
+
+    ; --- economy ---
+    ElseIf asRowId == "debtOwesLine" || asRowId == "debtOwedLine"
+        Return ""
+
+    ElseIf asRowId == "debtActiveCount"
+        Return "" + SeverActionsNativeExt.Native_Debt_GetCount()   ; SeverActions_Debt.GetDebtCount's body
+    ElseIf asRowId == "debtPlayerOwes"
+        Return _debtPlayerOwes + " gold"
+    ElseIf asRowId == "debtOwedToPlayer"
+        Return _debtOwedToPlayer + " gold"
+
+    ; --- bio blocks ---
+    ElseIf asRowId == "bioTarget"
+        If BioTargetActor
+            Return BioTargetActor.GetDisplayName()
+        EndIf
+        Return "(none - aim at an NPC)"
+    ElseIf asRowId == "bioTab"
+        Return BioTabs[BioTabIdx]
+    ElseIf asRowId == "bioBlock"
+        If BioBlockTitles[BioBlockIdx] != ""
+            Return BioBlockTitles[BioBlockIdx]
+        EndIf
+        Return "(no blocks in this tab)"
+
+    ; --- hotkeys ---
+    ; The N/A placeholder. Not "nearestNPCRadius": ids that differ from the setting key nearestNpcRadius only
+    ; in case collide after the BSFixedString fold (IdCase.h).
+    ElseIf asRowId == "nearestRadiusNA"
+        Return MenuEntryAt("targetMode", SeverActionsNativeExt2.Settings_GetInt("targetMode"))
+    ; --- enterprises (debug harness) ---
+    ElseIf asRowId == "entTarget"
+        Actor t = Game.GetCurrentCrosshairRef() as Actor
+        If t
+            Return t.GetDisplayName()
+        EndIf
+        Return "(none)"
+    ElseIf asRowId == "entJob"
+        Return MenuEntryAt("enterpriseJob", EntJob)
+    ElseIf asRowId == "entArrangement"
+        Return MenuEntryAt("enterpriseArrangement", EntArrangement)
+    ElseIf asRowId == "entWage"
+        Return "" + EntWage
+    ElseIf asRowId == "entCount"
+        Return "" + SeverActionsNativeExt2.Venture_Count()
+    ElseIf asRowId == "entTestLetter"
+        Return "" + SeverActionsNativeExt.Letter_Count() + " archived"
+    EndIf
+
+    Debug.Trace("[SeverActions_MCM] ComputedValue: no branch for the row '" + asRowId + "' (source '" + asSource + "')")
+    Return ""
+EndFunction
+
+String Function ModuleOfRowId(String asRowId)
+    {The module a notice row names: the text between the first and second '-' of its id.}
+    Int first = StringUtil.Find(asRowId, "-")
+    If first < 0
+        Return ""
+    EndIf
+    Int second = StringUtil.Find(asRowId, "-", first + 1)
+    If second < 0
+        Return StringUtil.Substring(asRowId, first + 1)
+    EndIf
+    Return StringUtil.Substring(asRowId, first + 1, second - first - 1)
+EndFunction
+
+String Function ModuleNoticeLine(String asModule)
+    {A notice row's line, "<module>: not installed": an option holds about 45 characters, so the reason and
+     the installer option are ModuleNoticeInfo's, shown when the row is highlighted.}
+    Return SeverActionsNativeExt2.Native_L10nFmt("mcm.moduleNoticeShort", SeverActionsNativeExt2.Native_L10n("module.name." + asModule))
+EndFunction
+
+String Function ModuleNoticeInfo(String asModule)
+    {Why a module is absent and, in a Modular install, how to add it, for the info text. The module name is
+     translated; the option never is, since the player looks for it verbatim in the installer.}
+    String opt = SeverActionsNativeExt2.Module_Option(asModule)
+    If SeverActionsNativeExt2.Module_State(asModule) == "ScriptMissing"
+        Return SeverActionsNativeExt2.Native_L10nFmt("mcm.moduleScriptsMissing", opt)
+    EndIf
+    String line = SeverActionsNativeExt2.Native_L10nFmt("mcm.moduleNotInstalled", SeverActionsNativeExt2.Native_L10n("module.name." + asModule), opt)
+    If SeverActionsNativeExt2.Module_IsModular()
+        line += " " + SeverActionsNativeExt2.Native_L10nFmt("mcm.moduleHowTo", opt)
+    EndIf
+    Return line
+EndFunction
+
+; =============================================================================
+; THE CONTRACT: reading and writing a setting row
+; =============================================================================
+
+Bool Function RowBool(String asRow, Int aiEntry)
+    String type = SeverActions_ModuleBase.VerbField(asRow, ROW_TYPE)
+    If type == "setting"
+        Return SettingBool(SeverActions_ModuleBase.VerbField(asRow, ROW_ID), SeverActions_ModuleBase.VerbField(asRow, ROW_READ), SeverActions_ModuleBase.VerbField(asRow, ROW_HOST))
+    EndIf
+    Return StateBool(SeverActions_ModuleBase.VerbField(asRow, ROW_ID), aiEntry)
+EndFunction
+
+Float Function RowFloat(String asRow, Int aiEntry)
+    String type = SeverActions_ModuleBase.VerbField(asRow, ROW_TYPE)
+    If type == "setting"
+        Return SettingFloat(SeverActions_ModuleBase.VerbField(asRow, ROW_ID), SeverActions_ModuleBase.VerbField(asRow, ROW_READ), SeverActions_ModuleBase.VerbField(asRow, ROW_HOST), SeverActions_ModuleBase.VerbField(asRow, ROW_VALUETYPE), SeverActions_ModuleBase.VerbField(asRow, ROW_LIVESCALE) as Float)
+    EndIf
+    Return StateFloat(SeverActions_ModuleBase.VerbField(asRow, ROW_ID), aiEntry)
+EndFunction
+
+Bool Function SettingBool(String asKey, String asRead, String asHost)
+    If asRead == "property"
+        Return SeverActionsNativeExt2.Script_GetBool(HostScript(asHost), HostProp(asHost), false)
+    EndIf
+    Return SeverActionsNativeExt2.Settings_GetBool(asKey)
+EndFunction
+
+Int Function SettingInt(String asKey, String asRead, String asHost)
+    If asRead == "property"
+        Return SeverActionsNativeExt2.Script_GetInt(HostScript(asHost), HostProp(asHost), 0)
+    EndIf
+    Return SeverActionsNativeExt2.Settings_GetInt(asKey)
+EndFunction
+
+Float Function SettingFloat(String asKey, String asRead, String asHost, String asValueType, Float afLiveScale)
+    {A slider's value (an int row drawn as a float). A row whose live call takes another unit is stored in the
+     slider's unit; ApplyLive scales it on the way out.}
+    Float v
+    If asValueType == "int"
+        v = SettingInt(asKey, asRead, asHost) as Float
+    ElseIf asRead == "property"
+        v = SeverActionsNativeExt2.Script_GetFloat(HostScript(asHost), HostProp(asHost), 0.0)
+    Else
+        v = SeverActionsNativeExt2.Settings_GetFloat(asKey)
+    EndIf
+    Return v
+EndFunction
+
+String Function HostScript(String asHost)
+    Int dot = StringUtil.Find(asHost, ".")
+    If dot < 0
+        Return ""
+    EndIf
+    Return StringUtil.Substring(asHost, 0, dot)
+EndFunction
+
+String Function HostProp(String asHost)
+    Int dot = StringUtil.Find(asHost, ".")
+    If dot < 0
+        Return ""
+    EndIf
+    Return StringUtil.Substring(asHost, dot + 1)
+EndFunction
+
+Function WriteSetting(String asRow, String asValueText)
+    {The one write path for a setting row, then ApplyLive:
+       handler  - Native_SettingsApply: host property, live push, global settings file and Authority in one call.
+       set      - Settings_Set: the Authority row alone, for a K/M key the handler has no branch for (it would
+                  be lost in the handler's final else).
+       property - Script_Set*: a tier-P key, whose owner property is its only record.}
+    String settingKey = SeverActions_ModuleBase.VerbField(asRow, ROW_ID)
+    String write = SeverActions_ModuleBase.VerbField(asRow, ROW_WRITE)
+
+    If write == "handler"
+        SeverActionsNativeExt2.Native_SettingsApply(SeverActions_ModuleBase.VerbField(asRow, ROW_HANDLERPAGE), settingKey, asValueText)
+    ElseIf write == "set"
+        SeverActionsNativeExt2.Settings_Set(settingKey, asValueText)
+    ElseIf write == "property"
+        WriteProperty(SeverActions_ModuleBase.VerbField(asRow, ROW_HOST), SeverActions_ModuleBase.VerbField(asRow, ROW_VALUETYPE), asValueText)
+    Else
+        Debug.Trace("[SeverActions_MCM] WriteSetting: the row '" + settingKey + "' has no write contract")
         Return
     EndIf
 
-    AddHeaderOption("Outlaw Truce")
-    AddTextOption("", "Bandits & other outlaws hold their fire")
-    AddTextOption("", "until provoked - so you can talk to them.")
-    OID_TruceEnabled = AddToggleOption("Peaceful Until Provoked", CombatScript.TruceEnabled)
-    OID_TruceRadius = AddSliderOption("Truce Reach", CombatScript.TruceRadius, "{0} units")
-    OID_TruceLeaders = AddToggleOption("Include Camp Leaders", CombatScript.TruceLeaders)
-    OID_TruceQuestNPCs = AddToggleOption("Include Quest Outlaws", CombatScript.TruceQuestNPCs)
-    OID_TruceDungeons = AddToggleOption("Include Dungeon Outlaws", CombatScript.TruceDungeons)
-    OID_TruceNecro = AddToggleOption("Include Necromancers", CombatScript.TruceNecromancers)
-    OID_TruceForsworn = AddToggleOption("Include Forsworn", CombatScript.TruceForsworn)
-    OID_TruceVampires = AddToggleOption("Include Vampires", CombatScript.TruceVampires)
-
-    AddEmptyOption()
-    AddHeaderOption("Outlaw Camps")
-    OID_CampTakeover = AddToggleOption("Camp Takeover", CombatScript.CampTakeoverEnabled)
-    OID_CampChallenge = AddToggleOption("Camp Challenge Encounter", CombatScript.CampChallengeEnabled)
-    OID_CampChallengeCard = AddToggleOption("Show Challenge Card", CombatScript.CampChallengeCardEnabled)
-    OID_ChallengeParleySeconds = AddSliderOption("Parley Time", CombatScript.ChallengeParleySeconds, "{0} sec")
-    OID_CampFreezeRespawn = AddToggleOption("Freeze Sworn Camp Respawn", CombatScript.CampFreezeRespawn)
-
-    AddEmptyOption()
-    AddHeaderOption("Combat")
-    OID_YieldPersistence = AddToggleOption("Persist Surrendered NPCs", CombatScript.YieldPersistenceEnabled)
-    OID_CombatCooldown = AddSliderOption("Forced-Combat Cooldown", CombatScript.CombatCooldownDuration, "{0} sec")
+    ApplyLive(asRow, asValueText)
 EndFunction
 
-Function DrawHotkeysPage()
-    SetCursorFillMode(TOP_TO_BOTTOM)
-
-    ; --- Config Menu (PrismaUI) ---
-    AddHeaderOption("Config Menu (Requires PrismaUI)")
-    OID_ConfigMenuKey = AddKeyMapOption("Open Config Menu", ConfigMenuKey)
-    OID_ConfigMenuShift = AddToggleOption("Require Shift", ConfigMenuRequireShift)
-
-    AddEmptyOption()
-
-    ; --- Wheel Menu (at the top since it's a combined interface) ---
-    AddHeaderOption("Wheel Menu (Requires UIExtensions)")
-    OID_WheelMenuKey = AddKeyMapOption("Open Wheel Menu", WheelMenuKey)
-    AddTextOption("", "All actions in one menu - crosshair target")
-
-    AddEmptyOption()
-    AddHeaderOption("Follow System Hotkeys")
-    OID_FollowToggleKey = AddKeyMapOption("Toggle Follow", FollowToggleKey)
-    OID_DismissKey = AddKeyMapOption("Dismiss Companion", DismissKey)
-    OID_SetCompanionKey = AddKeyMapOption("Set Companion", SetCompanionKey)
-    OID_CompanionWaitKey = AddKeyMapOption("Wait Here / Resume", CompanionWaitKey)
-    OID_AssignHomeKey = AddKeyMapOption("Assign Home Here", AssignHomeKey)
-    OID_ClearHomeKey = AddKeyMapOption("Clear Home (Target)", ClearHomeKey)
-    OID_SetupCampKey = AddKeyMapOption("Set Up Camp (Hearth)", SetupCampKey)
-    OID_DropMarkerKey = AddKeyMapOption("Drop Named Marker", DropMarkerKey)
-    OID_TieUntieKey = AddKeyMapOption("Tie / Untie NPC", TieUntieKey)
-
-    AddEmptyOption()
-    AddHeaderOption("Furniture Hotkeys")
-    OID_StandUpKey = AddKeyMapOption("Make NPC Stand Up", StandUpKey)
-    OID_UseFurnitureKey = AddKeyMapOption("Use Furniture (NPC, then furniture)", UseFurnitureKey)
-
-    AddEmptyOption()
-    AddHeaderOption("Combat Hotkeys")
-    OID_YieldKey = AddKeyMapOption("Make NPC Yield/Surrender", YieldKey)
-
-    AddEmptyOption()
-    AddHeaderOption("Outfit Hotkeys")
-    OID_UndressKey = AddKeyMapOption("Undress NPC", UndressKey)
-    OID_DressKey = AddKeyMapOption("Dress NPC", DressKey)
-
-    AddEmptyOption()
-    AddHeaderOption("Target Selection (Hotkeys Only)")
-    OID_TargetMode = AddMenuOption("Target Mode", TargetModeOptions[TargetMode])
-
-    ; Only show radius option if using Nearest NPC mode
-    if TargetMode == 1
-        OID_NearestNPCRadius = AddSliderOption("Search Radius", NearestNPCRadius, "{0} units")
-    else
-        OID_NearestNPCRadius = AddTextOption("Search Radius", "N/A (using " + TargetModeOptions[TargetMode] + ")")
-    endif
-
-    ; Show hotkey script status
-    AddEmptyOption()
-    AddHeaderOption("Status")
-    if HotkeyScript
-        if HotkeyScript.IsRegistered
-            AddTextOption("Hotkey System", "Active", OPTION_FLAG_DISABLED)
-        else
-            AddTextOption("Hotkey System", "Not Registered", OPTION_FLAG_DISABLED)
-        endif
-    else
-        AddTextOption("Hotkey System", "ERROR: Script not linked!", OPTION_FLAG_DISABLED)
-    endif
-
-    ; Show wheel menu status
-    if WheelMenuScript
-        if Game.GetModByName("UIExtensions.esp") != 255
-            if WheelMenuScript.IsRegistered
-                AddTextOption("Wheel Menu", "Active", OPTION_FLAG_DISABLED)
-            else
-                AddTextOption("Wheel Menu", "Key not set", OPTION_FLAG_DISABLED)
-            endif
-        else
-            AddTextOption("Wheel Menu", "UIExtensions not found!", OPTION_FLAG_DISABLED)
-        endif
-    else
-        AddTextOption("Wheel Menu", "Script not linked", OPTION_FLAG_DISABLED)
-    endif
-EndFunction
-
-Function DrawEconomyPage()
-    SetCursorFillMode(TOP_TO_BOTTOM)
-    
-    AddHeaderOption("Gold Settings")
-    OID_AllowConjuredGold = AddToggleOption("Allow Conjured Gold", AllowConjuredGold)
-    AddTextOption("", "When enabled, NPCs can give gold")
-    AddTextOption("", "even if they don't have any.")
-    AddEmptyOption()
-    AddTextOption("", "Disable for more realistic economy")
-    AddTextOption("", "where NPCs need actual gold to give.")
-
-    AddEmptyOption()
-    AddHeaderOption("Debt")
-    If FollowerManagerScript && FollowerManagerScript.DebtScript
-        OID_DebtOverdue = AddToggleOption("Overdue Reminders", FollowerManagerScript.DebtScript.EnableOverdueReminders)
-        OID_DebtGrace = AddSliderOption("Overdue Grace", FollowerManagerScript.DebtScript.OverdueGracePeriodHours, "{0} hrs")
-        OID_DebtReport = AddSliderOption("Report-to-Guards Delay", FollowerManagerScript.DebtScript.ReportThresholdHours, "{0} hrs")
-    EndIf
-    AddEmptyOption()
-    AddHeaderOption("Debt Tracking")
-    If FollowerManagerScript && FollowerManagerScript.DebtScript
-        SeverActions_Debt debtSys = FollowerManagerScript.DebtScript
-        Int totalPlayerOwes = debtSys.GetTotalOwedBy(Game.GetPlayer())
-        Int totalOwedToPlayer = debtSys.GetTotalOwedTo(Game.GetPlayer())
-        Int activeDebts = debtSys.GetDebtCount()
-        OID_DebtActiveCount = AddTextOption("Active Debts", activeDebts)
-
-        ; --- You Owe ---
-        OID_DebtPlayerOwes = AddTextOption("You Owe", totalPlayerOwes + " gold")
-        If totalPlayerOwes > 0
-            String[] owesDetails = debtSys.GetPlayerOwesDetails()
-            Int i = 0
-            While i < owesDetails.Length
-                AddTextOption("  " + owesDetails[i], "")
-                i += 1
-            EndWhile
-        EndIf
-
-        ; --- Owed to You ---
-        OID_DebtOwedToPlayer = AddTextOption("Owed to You", totalOwedToPlayer + " gold")
-        If totalOwedToPlayer > 0
-            String[] owedDetails = debtSys.GetOwedToPlayerDetails()
-            Int i = 0
-            While i < owedDetails.Length
-                AddTextOption("  " + owedDetails[i], "")
-                i += 1
-            EndWhile
-        EndIf
+Function WriteProperty(String asHost, String asValueType, String asValueText)
+    {A tier-P row's write to its owner's property, through the ScriptObjectAccess gate. The setter follows the
+     table's valueType, not the text, so "0" reaches an Int row as 0 and a String row as "0".}
+    If asValueType == "bool"
+        SeverActionsNativeExt2.Script_SetBool(HostScript(asHost), HostProp(asHost), asValueText == "true")
+    ElseIf asValueType == "int"
+        SeverActionsNativeExt2.Script_SetInt(HostScript(asHost), HostProp(asHost), asValueText as Int)
+    ElseIf asValueType == "float"
+        SeverActionsNativeExt2.Script_SetFloat(HostScript(asHost), HostProp(asHost), asValueText as Float)
     Else
-        AddTextOption("", "Debt system not connected")
+        SeverActionsNativeExt2.Script_SetString(HostScript(asHost), HostProp(asHost), asValueText)
     EndIf
 EndFunction
 
-Function DrawTravelPage()
-    SetCursorFillMode(TOP_TO_BOTTOM)
-    
-    If TravelScript
-        AddHeaderOption("Settings")
-        OID_TravelMapMarkers = AddToggleOption("Objective Map Markers", TravelScript.TravelMapMarkersEnabled)
-        OID_FollowersCanTravel = AddToggleOption("Followers Can Travel", SeverActionsNativeExt2.Native_GetFollowersCanTravel())
-        AddEmptyOption()
+Function ApplyLive(String asRow, String asValueText)
+    {The live call a row needs beyond its write path, then the page refresh some rows ask for. Check 13 (f)
+     fails a liveApply call with no branch here.}
+    String call = SeverActions_ModuleBase.VerbField(asRow, ROW_LIVECALL)
+    Float scale = SeverActions_ModuleBase.VerbField(asRow, ROW_LIVESCALE) as Float
+    If scale == 0.0
+        scale = 1.0
     EndIf
 
-    AddHeaderOption("Travel Slot Status")
-    
-    If TravelScript
-        Int activeCount = TravelScript.GetActiveTravelCount()
-        OID_ActiveSlotCount = AddTextOption("Active Slots", activeCount + " / 5")
-        AddEmptyOption()
-        
-        ; Show each slot's status - clickable to clear if active
-        OID_TravelSlot0 = AddTextOption("Slot 0", TravelScript.GetSlotStatusText(0))
-        OID_TravelSlot1 = AddTextOption("Slot 1", TravelScript.GetSlotStatusText(1))
-        OID_TravelSlot2 = AddTextOption("Slot 2", TravelScript.GetSlotStatusText(2))
-        OID_TravelSlot3 = AddTextOption("Slot 3", TravelScript.GetSlotStatusText(3))
-        OID_TravelSlot4 = AddTextOption("Slot 4", TravelScript.GetSlotStatusText(4))
-        
-        AddEmptyOption()
-        AddTextOption("", "Click a slot to clear it.")
-        
-        AddEmptyOption()
-        AddHeaderOption("Maintenance")
-        OID_ResetTravelSlots = AddTextOption("Reset All Travel Slots", "CLICK")
-        AddTextOption("", "Use if slots are stuck or broken.")
-    Else
-        AddTextOption("", "Travel script not connected!")
-        AddTextOption("", "Set TravelScript property in CK.")
+    If call == "SeverActionsNativeExt.SituationMonitor_SetEnabled"
+        SeverActionsNativeExt.SituationMonitor_SetEnabled(asValueText == "true")
+    ElseIf call == "SeverActionsNativeExt.SituationMonitor_SetStabilityThreshold"
+        SeverActionsNativeExt.SituationMonitor_SetStabilityThreshold(((asValueText as Float) * scale) as Int)
+    ElseIf call == "SeverActionsNativeExt.Native_Outfit_SetDeferBondage"
+        SeverActionsNativeExt.Native_Outfit_SetDeferBondage(asValueText == "true")
+    ElseIf call == "SeverActionsNativeExt2.Venture_SetEnabled"
+        SeverActionsNativeExt2.Venture_SetEnabled(asValueText == "true")
+    ElseIf call != ""
+        Debug.Trace("[SeverActions_MCM] ApplyLive: no branch for the call '" + call + "'")
+    EndIf
+
+    If Math.LogicalAnd(SeverActions_ModuleBase.VerbField(asRow, ROW_FLAGS) as Int, FLAG_LIVEREFRESH) != 0
+        ForcePageReset()
     EndIf
 EndFunction
 
-Function DrawCrimePage()
-    SetCursorFillMode(TOP_TO_BOTTOM)
+Bool Function ApplyClamp(String asRow, Float afValue)
+    {Move a min/max row's sibling so neither passes the other; true when it moved. The sibling is a settings
+     key, not necessarily on this page, so its contract comes from Mcm_Contract.}
+    String sibling = SeverActions_ModuleBase.VerbField(asRow, ROW_CLAMPSIB)
+    If sibling == ""
+        Return false
+    EndIf
+    String rule = SeverActions_ModuleBase.VerbField(asRow, ROW_CLAMPRULE)
+    String c = SeverActionsNativeExt2.Mcm_Contract(sibling)
+    If c == ""
+        Return false
+    EndIf
+    ; Mcm_Contract serves the payload's contract tail, so each field sits at ROW_<X> - ROW_TIER.
+    String read = SeverActions_ModuleBase.VerbField(c, ROW_READ - ROW_TIER)
+    String host = SeverActions_ModuleBase.VerbField(c, ROW_HOST - ROW_TIER)
+    String vtype = SeverActions_ModuleBase.VerbField(c, ROW_VALUETYPE - ROW_TIER)
+    Float other = SettingFloat(sibling, read, host, vtype, 0.0)
 
-    AddHeaderOption("Tracked Bounties")
-    AddTextOption("", "Bounties tracked by SeverActions.")
-    AddTextOption("", "Vanilla guards won't see these.")
-    AddEmptyOption()
+    If rule == "raisesMax" && other >= afValue
+        Return false
+    EndIf
+    If rule == "lowersMin" && other <= afValue
+        Return false
+    EndIf
+    WriteSettingByKey(sibling, c, FloatText(afValue, vtype))
+    Return true
+EndFunction
 
-    If ArrestScript
-        ; Display bounty for each hold
-        OID_BountyWhiterun = AddTextOption("$Whiterun", GetBountyDisplayText(ArrestScript.CrimeFactionWhiterun))
-        OID_BountyRift = AddTextOption("$The Rift", GetBountyDisplayText(ArrestScript.CrimeFactionRift))
-        OID_BountyHaafingar = AddTextOption("$Haafingar", GetBountyDisplayText(ArrestScript.CrimeFactionHaafingar))
-        OID_BountyEastmarch = AddTextOption("$Eastmarch", GetBountyDisplayText(ArrestScript.CrimeFactionEastmarch))
-        OID_BountyReach = AddTextOption("$The Reach", GetBountyDisplayText(ArrestScript.CrimeFactionReach))
-        OID_BountyFalkreath = AddTextOption("$Falkreath", GetBountyDisplayText(ArrestScript.CrimeFactionFalkreath))
-        OID_BountyPale = AddTextOption("$The Pale", GetBountyDisplayText(ArrestScript.CrimeFactionPale))
-        OID_BountyHjaalmarch = AddTextOption("$Hjaalmarch", GetBountyDisplayText(ArrestScript.CrimeFactionHjaalmarch))
-        OID_BountyWinterhold = AddTextOption("$Winterhold", GetBountyDisplayText(ArrestScript.CrimeFactionWinterhold))
-
-        AddEmptyOption()
-        AddHeaderOption("Settings")
-        OID_ArrestBountyThreshold = AddSliderOption("Arrest Threshold", ArrestScript.ArrestBountyThreshold as Float, "{0}g")
-        AddTextOption("", "Bounty at/above which a guard arrests (below = fine only).")
-        OID_BribeMult = AddSliderOption("Bribe Multiplier", ArrestScript.BribeMultiplier, "{2}x")
-        OID_ResistBounty = AddSliderOption("Resist-Arrest Penalty", ArrestScript.ResistBountyIncrease as Float, "{0}g")
-        OID_ArrestCooldown = AddSliderOption("Arrest Cooldown", ArrestScript.ArrestPlayerCooldown, "{0} sec")
-        OID_PersuasionTimeLimit = AddSliderOption("Persuasion Time", ArrestScript.PersuasionTimeLimit, "{0} sec")
-
-        AddEmptyOption()
-        AddHeaderOption("Maintenance")
-        OID_ClearAllBounties = AddTextOption("Clear All Bounties", "CLICK")
-        AddTextOption("", "Clears all tracked bounties.")
-    Else
-        AddTextOption("", "Arrest script not connected!")
-        AddTextOption("", "Set ArrestScript property in CK.")
+Function WriteSettingByKey(String asKey, String asContract, String asValueText)
+    {Write a setting reached by key rather than row (a clamp sibling), by its contract tail.}
+    String write = SeverActions_ModuleBase.VerbField(asContract, ROW_WRITE - ROW_TIER)
+    If write == "handler"
+        SeverActionsNativeExt2.Native_SettingsApply(SeverActions_ModuleBase.VerbField(asContract, ROW_HANDLERPAGE - ROW_TIER), asKey, asValueText)
+    ElseIf write == "set"
+        SeverActionsNativeExt2.Settings_Set(asKey, asValueText)
+    ElseIf write == "property"
+        WriteProperty(SeverActions_ModuleBase.VerbField(asContract, ROW_HOST - ROW_TIER), SeverActions_ModuleBase.VerbField(asContract, ROW_VALUETYPE - ROW_TIER), asValueText)
     EndIf
 EndFunction
 
-String Function GetBountyDisplayText(Faction akCrimeFaction)
-    {Get display text for a bounty amount}
-    If !BountyScript
-        Quest myQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
-        If myQuest
-            BountyScript = myQuest as SeverActions_ArrestBounty
-        EndIf
+String Function FloatText(Float afValue, String asValueType)
+    {A slider value as settings text; an int row must not arrive as "5.000000".}
+    If asValueType == "int"
+        Return "" + (afValue as Int)
     EndIf
-    If BountyScript
-        Int bounty = BountyScript.GetTrackedBounty(akCrimeFaction)
-        If bounty > 0
-            Return bounty + " gold"
-        Else
-            Return "None"
-        EndIf
-    EndIf
-    Return "N/A"
-EndFunction
-
-Function DrawSurvivalPage()
-    SetCursorFillMode(TOP_TO_BOTTOM)
-
-    AddHeaderOption("Follower Survival System")
-    AddTextOption("", "Track hunger, fatigue, and cold")
-    AddTextOption("", "for your followers.")
-    AddEmptyOption()
-
-    If SurvivalScript
-        ; Master toggle
-        OID_SurvivalEnabled = AddToggleOption("Enable Survival System", SurvivalScript.Enabled)
-        AddEmptyOption()
-
-        ; Hunger settings
-        AddHeaderOption("Hunger")
-        OID_HungerEnabled = AddToggleOption("Track Hunger", SurvivalScript.HungerEnabled)
-        OID_HungerRate = AddSliderOption("Hunger Rate", SurvivalScript.HungerRate, "{1}x")
-        OID_AutoEatThreshold = AddSliderOption("Auto-Eat Threshold", SurvivalScript.AutoEatThreshold as Float, "{0}%")
-        AddTextOption("", "Auto-eat when hunger exceeds threshold.")
-
-        AddEmptyOption()
-
-        ; Fatigue settings
-        AddHeaderOption("Fatigue")
-        OID_FatigueEnabled = AddToggleOption("Track Fatigue", SurvivalScript.FatigueEnabled)
-        OID_FatigueRate = AddSliderOption("Fatigue Rate", SurvivalScript.FatigueRate, "{1}x")
-        AddTextOption("", "Fatigue resets when player sleeps.")
-
-        AddEmptyOption()
-
-        ; Cold settings
-        AddHeaderOption("Cold")
-        OID_ColdEnabled = AddToggleOption("Track Cold", SurvivalScript.ColdEnabled)
-        OID_ColdRate = AddSliderOption("Cold Rate", SurvivalScript.ColdRate, "{1}x")
-        AddTextOption("", "Based on weather and location.")
-
-        AddEmptyOption()
-        AddHeaderOption("Penalties")
-        OID_DebuffSeverity = AddSliderOption("Debuff Severity", SurvivalScript.DebuffSeverity, "{2}x")
-        AddTextOption("", "0x = needs still tracked, but no penalties.")
-
-        AddEmptyOption()
-        AddHeaderOption("Notifications")
-        OID_SurvivalNotifications = AddToggleOption("Show Notifications", SurvivalScript.ShowNotifications)
-        OID_SurvNotifHunger = AddToggleOption("  Hunger Alerts", SurvivalScript.ShowHungerNotifications)
-        OID_SurvNotifFatigue = AddToggleOption("  Fatigue Alerts", SurvivalScript.ShowFatigueNotifications)
-        OID_SurvNotifCold = AddToggleOption("  Cold Alerts", SurvivalScript.ShowColdNotifications)
-        OID_SurvivalDebug = AddToggleOption("Debug Mode", SurvivalScript.DebugMode)
-
-        ; Per-follower tracking
-        AddEmptyOption()
-        AddHeaderOption("Follower Tracking")
-        AddTextOption("", "Toggle survival for individual followers.")
-        AddTextOption("", "Excluded followers won't get hungry/tired/cold.")
-
-        ; When the master switch is off, these per-follower toggles do nothing
-        ; (the update loop early-outs on !Enabled), so grey them out — the choices
-        ; are preserved, just inactive until the system is turned back on.
-        Int perFollowerFlags = 0
-        If !SurvivalScript.Enabled
-            perFollowerFlags = OPTION_FLAG_DISABLED
-            AddTextOption("", "Survival system is OFF - toggles inactive.", OPTION_FLAG_DISABLED)
-        EndIf
-
-        ; Cache current followers and create toggles
-        CachedFollowers = SurvivalScript.GetCurrentFollowers()
-        OID_FollowerExclude = new int[20]
-
-        If CachedFollowers.Length == 0
-            AddTextOption("", "No followers detected", OPTION_FLAG_DISABLED)
-        Else
-            Int j = 0
-            While j < CachedFollowers.Length && j < 20
-                Actor follower = CachedFollowers[j]
-                If follower
-                    Bool isExcluded = SurvivalScript.IsFollowerExcluded(follower)
-                    OID_FollowerExclude[j] = AddToggleOption(follower.GetDisplayName(), !isExcluded, perFollowerFlags)
-                EndIf
-                j += 1
-            EndWhile
-        EndIf
-
-        ; Status display
-        AddEmptyOption()
-        AddHeaderOption("Status")
-        Int followerCount = SurvivalScript.GetTrackedFollowerCount()
-        Int totalFollowers = CachedFollowers.Length
-        AddTextOption("Tracked Followers", followerCount + " / " + totalFollowers)
-    Else
-        AddTextOption("", "Survival script not connected!")
-        AddTextOption("", "Set SurvivalScript property in CK.")
-    EndIf
-EndFunction
-
-Function DrawFollowersPage()
-    SetCursorFillMode(TOP_TO_BOTTOM)
-
-    AddHeaderOption("Companion Framework")
-    AddTextOption("", "Manage recruited companions and")
-    AddTextOption("", "relationship settings.")
-    AddEmptyOption()
-
-    If FollowerManagerScript
-        ; ── Roster ──────────────────────────────────────────────────────
-        AddHeaderOption("Roster")
-        OID_FM_MaxFollowers = AddSliderOption("Max Companions", FollowerManagerScript.MaxFollowers as Float, "{0}")
-        OID_FM_AllowLeaving = AddToggleOption("Allow Autonomous Leaving", FollowerManagerScript.AllowAutonomousLeaving)
-        OID_FM_LeavingThreshold = AddSliderOption("Leaving Threshold", FollowerManagerScript.LeavingThreshold, "{0}")
-        OID_FM_RoomRotation = AddToggleOption("Home Room Rotation", FollowerManagerScript.RoomRotationEnabled)
-        OID_FM_RelCooldown = AddSliderOption("Relationship Cooldown", FollowerManagerScript.RelationshipCooldown, "{0} sec")
-        OID_FM_FrameworkMode = AddMenuOption("Recruitment Mode", FrameworkModeOptions[FollowerManagerScript.FrameworkMode])
-        OID_FM_DeathGracePeriod = AddSliderOption("Death Cleanup Delay", FollowerManagerScript.DeathGracePeriodHours, "{0} hrs")
-        OID_FM_Notifications = AddToggleOption("Show Notifications", FollowerManagerScript.ShowNotifications)
-        OID_FM_Debug = AddToggleOption("Debug Mode", FollowerManagerScript.DebugMode)
-
-        AddEmptyOption()
-        AddHeaderOption("Restraint")
-        OID_FM_KidnapEnabled = AddToggleOption("Enable Kidnap Actions", FollowerManagerScript.EnableKidnapActions)
-        OID_FM_RestrainEnabled = AddToggleOption("Enable Restrain Action", FollowerManagerScript.EnableRestrainAction)
-
-        AddEmptyOption()
-        AddHeaderOption("Intimacy & Consent")
-        OID_IntimacyEnabled = AddToggleOption("Intimacy && Consent Section", FollowerManagerScript.IntimateHistoryEnabled)
-        If !IntimacyGenderOptions
-            IntimacyGenderOptions = new string[3]
-            IntimacyGenderOptions[0] = "Everyone"
-            IntimacyGenderOptions[1] = "Women only"
-            IntimacyGenderOptions[2] = "Men only"
-        EndIf
-        OID_IntimacyGenderGate = AddMenuOption("Show Intimacy Section For", IntimacyGenderOptions[FollowerManagerScript.IntimacyGenderGate])
-
-        AddEmptyOption()
-        AddHeaderOption("Relationship Assessment")
-        OID_FM_AutoAssessment = AddToggleOption("Auto Relationship Assessment", FollowerManagerScript.AutoRelAssessment)
-        OID_FM_AssessCooldownMin = AddSliderOption("Assessment Min Cooldown", FollowerManagerScript.AssessmentCooldownMinHours, "{1} hrs")
-        OID_FM_AssessCooldownMax = AddSliderOption("Assessment Max Cooldown", FollowerManagerScript.AssessmentCooldownMaxHours, "{1} hrs")
-        OID_FM_AutoInterAssessment = AddToggleOption("Inter-Follower Assessment", FollowerManagerScript.AutoInterFollowerAssessment)
-        OID_FM_InterAssessCooldownMin = AddSliderOption("Inter-Follower Min Cooldown", FollowerManagerScript.InterFollowerCooldownMinHours, "{1} hrs")
-        OID_FM_InterAssessCooldownMax = AddSliderOption("Inter-Follower Max Cooldown", FollowerManagerScript.InterFollowerCooldownMaxHours, "{1} hrs")
-
-        AddEmptyOption()
-        AddHeaderOption("Ambient Banter")
-        OID_FM_AutoAmbientBanter = AddToggleOption("Ambient NPC Banter", FollowerManagerScript.AutoAmbientBanter)
-        OID_FM_AmbientBanterCooldownMin = AddSliderOption("Ambient Banter Min Cooldown", FollowerManagerScript.AmbientBanterCooldownMinHours, "{1} hrs")
-        OID_FM_AmbientBanterCooldownMax = AddSliderOption("Ambient Banter Max Cooldown", FollowerManagerScript.AmbientBanterCooldownMaxHours, "{1} hrs")
-
-        AddEmptyOption()
-        AddHeaderOption("Quest Awareness")
-        OID_FM_AutoQuestAwareness = AddToggleOption("Quest Awareness Summaries", FollowerManagerScript.AutoQuestAwareness)
-        OID_FM_QuestAwarenessOutputCap = AddSliderOption("Quest Awareness Entries", FollowerManagerScript.QuestAwarenessOutputCap as Float, "{0}")
-
-        AddEmptyOption()
-        AddHeaderOption("Background AI (per-feature)")
-        OID_FM_AutoNPCReputation = AddToggleOption("NPC Reputation Blurbs", FollowerManagerScript.AutoNPCReputation)
-        OID_FM_AutoFollowerBanter = AddToggleOption("Follower-to-Follower Banter", FollowerManagerScript.AutoFollowerBanter)
-        OID_FM_AutoAmbientActions = AddToggleOption("Ambient Follower Actions", FollowerManagerScript.AutoAmbientActions)
-
-        AddEmptyOption()
-        AddHeaderOption("Schedule & Sleep")
-        OID_FM_SchedWorkStart = AddSliderOption("Work Start", FollowerManagerScript.SCHEDULE_WORK_START, "{0}:00")
-        OID_FM_SchedWorkEnd = AddSliderOption("Work End", FollowerManagerScript.SCHEDULE_WORK_END, "{0}:00")
-        OID_FM_SchedPlayStart = AddSliderOption("Relax Start", FollowerManagerScript.SCHEDULE_PLAY_START, "{0}:00")
-        OID_FM_SchedPlayEnd = AddSliderOption("Relax End", FollowerManagerScript.SCHEDULE_PLAY_END, "{0}:00")
-        OID_FM_HomeSleepEnabled = AddToggleOption("Homed Followers Sleep", FollowerManagerScript.HomeSleepEnabled)
-        OID_FM_HomeSleepStart = AddSliderOption("Sleep Start", FollowerManagerScript.HomeSleepStart, "{0}:00")
-        OID_FM_HomeSleepEnd = AddSliderOption("Sleep End", FollowerManagerScript.HomeSleepEnd, "{0}:00")
-
-        AddEmptyOption()
-        AddHeaderOption("Movement")
-        OID_FM_CellCatchup = AddToggleOption("Catch Up On Cell Load", FollowerManagerScript.CellCatchupEnabled)
-        OID_FM_TeleportDist = AddSliderOption("Teleport-If-Behind Distance", FollowerManagerScript.FollowerTeleportDistance, "{0}")
-        OID_FM_TeleportCooldown = AddSliderOption("Teleport Cooldown", FollowerManagerScript.TeleportCooldownSeconds as Float, "{0} sec")
-
-        AddEmptyOption()
-
-        ; Current companions - dropdown selector
-        AddHeaderOption("Current Companions")
-        CachedManagedFollowers = FollowerManagerScript.GetAllFollowers()
-        OID_FM_DismissFollower = new int[20]
-        OID_FM_ClearHome = new int[20]
-        OID_FM_AssignHome = new int[20]
-        OID_FM_Rapport = new int[20]
-        OID_FM_Trust = new int[20]
-        OID_FM_Loyalty = new int[20]
-        OID_FM_Mood = new int[20]
-        OID_FM_CombatStyle = new int[20]
-
-        If CachedManagedFollowers.Length == 0
-            AddTextOption("", "No companions recruited", OPTION_FLAG_DISABLED)
-            AddTextOption("", "Adjust values here for mid-playthrough", OPTION_FLAG_DISABLED)
-            AddTextOption("", "followers once they are recruited.", OPTION_FLAG_DISABLED)
-        Else
-            ; Clamp selection to valid range
-            If SelectedCompanionIdx >= CachedManagedFollowers.Length
-                SelectedCompanionIdx = 0
-            EndIf
-
-            AddTextOption("Companions", CachedManagedFollowers.Length + " recruited", OPTION_FLAG_DISABLED)
-            OID_FM_CompanionSelect = AddMenuOption("Select Companion", CachedManagedFollowers[SelectedCompanionIdx].GetDisplayName())
-
-            AddEmptyOption()
-
-            ; Draw only the selected companion's details
-            Int j = SelectedCompanionIdx
-            Actor follower = CachedManagedFollowers[j]
-            If follower
-                Float rapport = FollowerManagerScript.GetRapport(follower)
-                Float trust = FollowerManagerScript.GetTrust(follower)
-                Float loyalty = FollowerManagerScript.GetLoyalty(follower)
-                Float mood = FollowerManagerScript.GetMood(follower)
-                String style = FollowerManagerScript.GetCombatStyle(follower)
-                String home = FollowerManagerScript.GetAssignedHome(follower)
-
-                AddHeaderOption(follower.GetDisplayName())
-
-                ; Survival needs (read-only, only if survival is enabled)
-                If SurvivalScript && SurvivalScript.Enabled && !SurvivalScript.IsFollowerExcluded(follower)
-                    If SurvivalScript.HungerEnabled
-                        Int hunger = SurvivalScript.GetFollowerHunger(follower)
-                        AddTextOption("Hunger", hunger + "% (" + SurvivalScript.GetHungerLevelName(hunger) + ")", OPTION_FLAG_DISABLED)
-                    EndIf
-                    If SurvivalScript.FatigueEnabled
-                        Int fatigue = SurvivalScript.GetFollowerFatigue(follower)
-                        AddTextOption("Fatigue", fatigue + "% (" + SurvivalScript.GetFatigueLevelName(fatigue) + ")", OPTION_FLAG_DISABLED)
-                    EndIf
-                    If SurvivalScript.ColdEnabled
-                        Int cold = SurvivalScript.GetFollowerCold(follower)
-                        AddTextOption("Cold", cold + "% (" + SurvivalScript.GetColdLevelName(cold) + ")", OPTION_FLAG_DISABLED)
-                    EndIf
-                EndIf
-
-                ; Outfit lock status (read-only). Phase 3: read from native —
-                ; the StorageUtil mirror could drift behind C++ catalog writes
-                ; that updated lockedItems without going through Papyrus.
-                If SeverActionsNativeExt.Native_Outfit_IsLockActive(follower)
-                    Form[] nativeLocked = SeverActionsNative.Native_Outfit_GetLockedItems(follower)
-                    Int itemCount = 0
-                    If nativeLocked
-                        itemCount = nativeLocked.Length
-                    EndIf
-                    AddTextOption("Outfit Lock", "Active (" + itemCount + " items)", OPTION_FLAG_DISABLED)
-                Else
-                    AddTextOption("Outfit Lock", "Inactive", OPTION_FLAG_DISABLED)
-                EndIf
-
-                ; Per-follower auto-switch toggle
-                If OutfitScript
-                    Bool actorAutoSwitch = SeverActionsNative.Native_Outfit_GetAutoSwitchEnabled(follower)
-                    OID_FM_PerActorAutoSwitch = AddToggleOption("Auto-Switch Outfits", actorAutoSwitch)
-
-                    ; Show current situation if available
-                    String curSit = SeverActionsNative.Native_Outfit_GetCurrentSituation(follower)
-                    String activePreset = SeverActionsNative.Native_Outfit_GetActivePreset(follower)
-                    If curSit != ""
-                        String sitDisplay = curSit
-                        If activePreset != ""
-                            sitDisplay = curSit + " (" + activePreset + ")"
-                        EndIf
-                        AddTextOption("Current Situation", sitDisplay, OPTION_FLAG_DISABLED)
-                    EndIf
-                EndIf
-
-                OID_FM_Rapport[j] = AddSliderOption("Rapport", rapport, "{0}")
-                OID_FM_Trust[j] = AddSliderOption("Trust", trust, "{0}")
-                OID_FM_Loyalty[j] = AddSliderOption("Loyalty", loyalty, "{0}")
-                OID_FM_Mood[j] = AddSliderOption("Mood", mood, "{0}")
-                OID_FM_CombatStyle[j] = AddMenuOption("Combat Style", style)
-                If home != ""
-                    AddTextOption("Home", home, OPTION_FLAG_DISABLED)
-                    OID_FM_AssignHome[j] = AddTextOption("Assign Home Here", "CLICK")
-                    OID_FM_ClearHome[j] = AddTextOption("Clear Home", "CLICK")
-                Else
-                    AddTextOption("Home", "Not assigned", OPTION_FLAG_DISABLED)
-                    OID_FM_AssignHome[j] = AddTextOption("Assign Home Here", "CLICK")
-                EndIf
-                OID_FM_DismissFollower[j] = AddTextOption("Dismiss", "CLICK")
-                OID_FM_ForceRemove = AddTextOption("Force Remove", "CLICK")
-
-                ; Saved outfit presets
-                If OutfitScript
-                    CachedPresetNames = OutfitScript.GetPresetNames(follower)
-                    If CachedPresetNames.Length > 0
-                        AddHeaderOption("Saved Outfits")
-                        OID_FM_DeletePreset = new int[20]
-                        Int p = 0
-                        While p < CachedPresetNames.Length && p < 20
-                            Int presetItems = OutfitScript.GetPresetItemCount(follower, CachedPresetNames[p])
-                            AddTextOption(CachedPresetNames[p], presetItems + " items", OPTION_FLAG_DISABLED)
-                            OID_FM_DeletePreset[p] = AddTextOption("Delete '" + CachedPresetNames[p] + "'", "CLICK")
-                            p += 1
-                        EndWhile
-                    Else
-                        CachedPresetNames = PapyrusUtil.StringArray(0)
-                        OID_FM_DeletePreset = new int[1]
-                    EndIf
-                EndIf
-            EndIf
-        EndIf
-
-    Else
-        AddTextOption("", "Follower Manager not connected!")
-        AddTextOption("", "Set FollowerManagerScript property in CK.")
-    EndIf
-EndFunction
-
-Function DrawHomesPage()
-    {Home assignments + schedule/roster maintenance. Split off the Followers
-     page (2026-08): the settings wall + companion list + these lists on one
-     page exceeded SkyUI's ~128-option cap and truncated the bottom sections,
-     so the home-clearing controls vanished (DZ report, 3.9.9). Also reachable
-     from anywhere by the Clear Home (Target) hotkey.}
-    SetCursorFillMode(TOP_TO_BOTTOM)
-    If FollowerManagerScript
-        AddHeaderOption("NPC Homes")
-        CachedHomedNPCs = FollowerManagerScript.GetAllHomedNPCs()
-        OID_ClearNPCHome = new int[50]
-        If CachedHomedNPCs.Length > 0
-            Int hh = 0
-            While hh < CachedHomedNPCs.Length && hh < 50
-                String homeLoc = FollowerManagerScript.GetAssignedHome(CachedHomedNPCs[hh])
-                AddTextOption(CachedHomedNPCs[hh].GetDisplayName(), homeLoc, OPTION_FLAG_DISABLED)
-                OID_ClearNPCHome[hh] = AddTextOption("Clear Home", "CLICK")
-                hh += 1
-            EndWhile
-        Else
-            AddTextOption("No custom homes assigned", "", OPTION_FLAG_DISABLED)
-        EndIf
-
-        ; --- Schedule Alias Pools (scheduling status) ---
-        AddEmptyOption()
-        AddHeaderOption("Schedule Alias Pools")
-        If FollowerManagerScript.GetSchedMigrationDone()
-            Int schedType = 0
-            While schedType < 3
-                Int used = FollowerManagerScript.GetSchedPoolUsed(schedType)
-                String typeName = FollowerManagerScript.GetSchedTypeName(schedType)
-                If FollowerManagerScript.GetSchedPoolExhausted(schedType)
-                    AddTextOption(typeName + " aliases", used + " / 300 - FULL!", OPTION_FLAG_DISABLED)
-                Else
-                    AddTextOption(typeName + " aliases", used + " / 300", OPTION_FLAG_DISABLED)
-                EndIf
-                schedType += 1
-            EndWhile
-        Else
-            AddTextOption("Legacy scheduling active", "upgrade pending", OPTION_FLAG_DISABLED)
-        EndIf
-
-        ; --- Dismissed NPCs with Homes ---
-        AddEmptyOption()
-        AddHeaderOption("Assigned NPCs")
-        CachedDismissedFollowers = FollowerManagerScript.GetDismissedWithHomes()
-        OID_FM_DismissedClearHome = new int[20]
-        OID_FM_DismissedReRecruit = new int[20]
-
-        If CachedDismissedFollowers.Length == 0
-            AddTextOption("", "No dismissed NPCs with homes", OPTION_FLAG_DISABLED)
-        Else
-            If SelectedDismissedIdx >= CachedDismissedFollowers.Length
-                SelectedDismissedIdx = 0
-            EndIf
-            AddTextOption("Assigned", CachedDismissedFollowers.Length + " NPCs", OPTION_FLAG_DISABLED)
-            OID_FM_DismissedSelect = AddMenuOption("Select NPC", CachedDismissedFollowers[SelectedDismissedIdx].GetDisplayName())
-
-            Int d = SelectedDismissedIdx
-            Actor dismissed = CachedDismissedFollowers[d]
-            If dismissed
-                String dHome = FollowerManagerScript.GetAssignedHome(dismissed)
-                AddTextOption("Home", dHome, OPTION_FLAG_DISABLED)
-                OID_FM_DismissedClearHome[d] = AddTextOption("Clear Home", "CLICK")
-                OID_FM_DismissedReRecruit[d] = AddTextOption("Re-Recruit", "CLICK")
-            EndIf
-        EndIf
-
-        AddEmptyOption()
-        AddHeaderOption("Maintenance")
-        OID_FM_ResetAll = AddTextOption("Reset All Companions", "CLICK")
-        AddTextOption("", "Emergency: dismiss and clear all data.")
-    Else
-        AddTextOption("", "Follower Manager not connected!")
-    EndIf
+    Return "" + afValue
 EndFunction
 
 ; =============================================================================
-; OPTION SELECTION
+; MENUS
 ; =============================================================================
 
-String Function BoolToStr(Bool b)
-    {Write-through helper: format a bool as the "true"/"false" string the
-     PrismaUI settings file + handler expect (Native_SettingsRecord).}
-    If b
-        Return "true"
+String[] Function MenuEntries(String asRow)
+    {The option list a menu row offers: a compile-time list from the table, or a runtime one this page built.}
+    String list = SeverActions_ModuleBase.VerbField(asRow, ROW_MENULIST)
+    If list != ""
+        Return SeverActionsNativeExt2.Mcm_MenuOptions(list)
     EndIf
-    Return "false"
+    Return RuntimeMenuEntries(SeverActions_ModuleBase.VerbField(asRow, ROW_MENUSOURCE))
 EndFunction
+
+String[] Function RuntimeMenuEntries(String asSource)
+    If asSource == "companionRoster"
+        Return DisplayNames(CachedManagedFollowers)
+    ElseIf asSource == "dismissedWithHomes"
+        Return DisplayNames(CachedDismissedFollowers)
+    ElseIf asSource == "outfitPresetActors"
+        Return DisplayNames(CachedPresetActors)
+    ElseIf asSource == "bioTabs"
+        Return BioTabs
+    ElseIf asSource == "bioBlocksInTab"
+        Return BioBlockTitles
+    ElseIf asSource == "appliedBioBlocks"
+        Return BioAssignedTitles
+    ElseIf asSource == "bioTargetFactions"
+        Return BioTargetFactions
+    EndIf
+    Debug.Trace("[SeverActions_MCM] RuntimeMenuEntries: no branch for the source '" + asSource + "'")
+    Return PapyrusUtil.StringArray(0)
+EndFunction
+
+String[] Function DisplayNames(Actor[] akList)
+    Int n = ArrayLen(akList)
+    String[] out = PapyrusUtil.StringArray(n)
+    Int i = 0
+    While i < n
+        If akList[i]
+            out[i] = akList[i].GetDisplayName()
+        EndIf
+        i += 1
+    EndWhile
+    Return out
+EndFunction
+
+String Function MenuEntryAt(String asListId, Int aiIndex)
+    String[] entries = SeverActionsNativeExt2.Mcm_MenuOptions(asListId)
+    If !entries || aiIndex < 0 || aiIndex >= entries.Length
+        Return ""
+    EndIf
+    Return entries[aiIndex]
+EndFunction
+
+String Function MenuValueText(String asRow)
+    {What a setting menu row shows: the entry its stored value selects. A VR chord button/modifier row stores a
+     controller CODE (0/1/7/2/32/33/35), not an index; MenuStartIndex converts it.}
+    String settingKey = SeverActions_ModuleBase.VerbField(asRow, ROW_ID)
+    Return EntryTextAt(asRow, MenuStartIndex(asRow, 0))
+EndFunction
+
+String Function VRChordSlot(String asKey)
+    {The Native_GetVRChord / Native_SetVRChord slot name behind a vr* settings key.}
+    If asKey == "vrMenuHand"
+        Return "menuHand"
+    ElseIf asKey == "vrMenuModifier"
+        Return "menuModifier"
+    ElseIf asKey == "vrMenuButton"
+        Return "menuButton"
+    ElseIf asKey == "vrWheelHand"
+        Return "wheelHand"
+    ElseIf asKey == "vrWheelModifier"
+        Return "wheelModifier"
+    ElseIf asKey == "vrWheelButton"
+        Return "wheelButton"
+    EndIf
+    Return ""
+EndFunction
+
+Bool Function IsVRChordKey(String asKey)
+    Return VRChordSlot(asKey) != ""
+EndFunction
+
+; =============================================================================
+; OPTION EVENTS: each finds the row behind the clicked option and acts on what it says; a non-setting row falls
+; through to DoAction / DoSliderAction / DoMenuAction / DoDefaultAction.
+; =============================================================================
 
 Event OnOptionSelect(int option)
-    if option == OID_DialogueAnimEnabled
-        DialogueAnimEnabled = !DialogueAnimEnabled
-        SetToggleOptionValue(OID_DialogueAnimEnabled, DialogueAnimEnabled)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "dialogueAnimEnabled", BoolToStr(DialogueAnimEnabled))
-        SeverActionsNative.SetDialogueAnimEnabled(DialogueAnimEnabled)
+    Int row = RowAt(option)
+    If row < 0
+        Return
+    EndIf
+    String r = _rows[row]
+    String type = SeverActions_ModuleBase.VerbField(r, ROW_TYPE)
+    Int entry = EntryAt(option)
 
-    elseif option == OID_IntimacyEnabled
-        If FollowerManagerScript
-            FollowerManagerScript.IntimateHistoryEnabled = !FollowerManagerScript.IntimateHistoryEnabled
-            SetToggleOptionValue(OID_IntimacyEnabled, FollowerManagerScript.IntimateHistoryEnabled)
-            ; Write through to the GLOBAL settings file with the same page/key
-            ; PrismaUI uses - otherwise the load-time replay ("global file
-            ; always wins") reverts this choice (the Tracking-reverts lesson).
-            String ihVal = "false"
-            If FollowerManagerScript.IntimateHistoryEnabled
-                ihVal = "true"
+    If type == "setting" && SeverActions_ModuleBase.VerbField(r, ROW_CONTROL) == "toggle"
+        Bool newValue = !SettingBool(SeverActions_ModuleBase.VerbField(r, ROW_ID), SeverActions_ModuleBase.VerbField(r, ROW_READ), SeverActions_ModuleBase.VerbField(r, ROW_HOST))
+        WriteSetting(r, BoolToStr(newValue))
+        SetToggleOptionValue(option, newValue)
+        Return
+    EndIf
+
+    DoAction(SeverActions_ModuleBase.VerbField(r, ROW_ID), entry, option)
+EndEvent
+
+Event OnOptionSliderOpen(int option)
+    Int row = RowAt(option)
+    If row < 0
+        Return
+    EndIf
+    String r = _rows[row]
+    SetSliderDialogStartValue(RowFloat(r, EntryAt(option)))
+    SetSliderDialogRange(SeverActions_ModuleBase.VerbField(r, ROW_SMIN) as Float, SeverActions_ModuleBase.VerbField(r, ROW_SMAX) as Float)
+    SetSliderDialogInterval(SeverActions_ModuleBase.VerbField(r, ROW_SSTEP) as Float)
+    SetSliderDialogDefaultValue(SeverActions_ModuleBase.VerbField(r, ROW_SDEF) as Float)
+EndEvent
+
+Event OnOptionSliderAccept(int option, float value)
+    Int row = RowAt(option)
+    If row < 0
+        Return
+    EndIf
+    String r = _rows[row]
+    String format = SeverActions_ModuleBase.VerbField(r, ROW_FORMAT)
+
+    If SeverActions_ModuleBase.VerbField(r, ROW_TYPE) == "setting"
+        WriteSetting(r, FloatText(value, SeverActions_ModuleBase.VerbField(r, ROW_VALUETYPE)))
+        SetSliderOptionValue(option, value, format)
+        ; Only when the sibling moved: a reset on every accept would close the slider the player is using.
+        If ApplyClamp(r, value)
+            ForcePageReset()
+        EndIf
+        Return
+    EndIf
+
+    DoSliderAction(SeverActions_ModuleBase.VerbField(r, ROW_ID), EntryAt(option), option, value, format)
+EndEvent
+
+Event OnOptionMenuOpen(int option)
+    Int row = RowAt(option)
+    If row < 0
+        Return
+    EndIf
+    String r = _rows[row]
+    String[] entries = MenuEntries(r)
+    If !entries || entries.Length == 0
+        Return
+    EndIf
+    SetMenuDialogOptions(entries)
+    SetMenuDialogStartIndex(MenuStartIndex(r, EntryAt(option)))
+    SetMenuDialogDefaultIndex(MenuDefaultIndex(r))
+EndEvent
+
+Int Function MenuStartIndex(String asRow, Int aiEntry)
+    String settingKey = SeverActions_ModuleBase.VerbField(asRow, ROW_ID)
+    If SeverActions_ModuleBase.VerbField(asRow, ROW_TYPE) == "setting"
+        ; chord button/modifier rows store a controller CODE; the hand rows store the index
+        If IsVRChordKey(settingKey) && settingKey != "vrMenuHand" && settingKey != "vrWheelHand"
+            Return VRChordIndexOf(SeverActionsNativeExt2.Native_GetVRChord(VRChordSlot(settingKey)))
+        EndIf
+        If IsVRChordKey(settingKey)
+            Return SeverActionsNativeExt2.Native_GetVRChord(VRChordSlot(settingKey))
+        EndIf
+        Return SettingInt(settingKey, SeverActions_ModuleBase.VerbField(asRow, ROW_READ), SeverActions_ModuleBase.VerbField(asRow, ROW_HOST))
+    EndIf
+    Return StateMenuIndex(settingKey, aiEntry)
+EndFunction
+
+Int Function MenuDefaultIndex(String asRow)
+    String settingKey = SeverActions_ModuleBase.VerbField(asRow, ROW_ID)
+    String def = SeverActions_ModuleBase.VerbField(asRow, ROW_DEFAULT)
+    If def == ""
+        Return 0
+    EndIf
+    If IsVRChordKey(settingKey) && settingKey != "vrMenuHand" && settingKey != "vrWheelHand"
+        Return VRChordIndexOf(def as Int)
+    EndIf
+    Return def as Int
+EndFunction
+
+Event OnOptionMenuAccept(int option, int index)
+    Int row = RowAt(option)
+    If row < 0
+        Return
+    EndIf
+    String r = _rows[row]
+    String settingKey = SeverActions_ModuleBase.VerbField(r, ROW_ID)
+
+    If SeverActions_ModuleBase.VerbField(r, ROW_TYPE) == "setting"
+        If IsVRChordKey(settingKey)
+            Int code = index
+            If settingKey != "vrMenuHand" && settingKey != "vrWheelHand"
+                code = VRChordCodeAt(index)
             EndIf
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "intimacyEnabled", ihVal)
-            ; Live-apply to the native store so SURFACING reacts now, not just
-            ; recording (the property gates recording; the decorator's gate reads
-            ; the native atomic). PrismaUI already does this. (PR #442 review)
-            SeverActionsNativeExt2.Native_IntimateHistory_SetEnabled(FollowerManagerScript.IntimateHistoryEnabled)
+            SetVRChord(settingKey, code, option)
+            Return
+        EndIf
+        WriteSetting(r, "" + index)
+        SetMenuOptionValue(option, EntryTextAt(r, index))
+        Return
+    EndIf
+
+    DoMenuAction(settingKey, EntryAt(option), option, index, EntryTextAt(r, index))
+EndEvent
+
+String Function EntryTextAt(String asRow, Int aiIndex)
+    {The text of the aiIndex-th entry of the option list a menu row offers.}
+    String[] entries = MenuEntries(asRow)
+    If !entries || aiIndex < 0 || aiIndex >= entries.Length
+        Return ""
+    EndIf
+    Return entries[aiIndex]
+EndFunction
+
+Event OnOptionKeyMapChange(int option, int keyCode, string conflictControl, string conflictName)
+    Int row = RowAt(option)
+    If row < 0
+        Return
+    EndIf
+    String r = _rows[row]
+    If SeverActions_ModuleBase.VerbField(r, ROW_TYPE) != "keymap"
+        Return
+    EndIf
+    String hotkeyId = SeverActions_ModuleBase.VerbField(r, ROW_ID)
+
+    If conflictControl != ""
+        String msg = "$SA_ThisKeyIsAlreadyUsedBy{" + conflictControl + "}"
+        If conflictName != ""
+            msg = "$SA_ThisKeyIsAlreadyUsedByFrom{" + conflictControl + "}{" + conflictName + "}"
+        EndIf
+        If !ShowMessage(msg, true, "$SA_Yes", "$SA_No")
+            Return
+        EndIf
+    EndIf
+
+    ; The code IS the setting (rule 17): Hotkey_SetCode feeds the Authority row the DLL's input sink reads.
+    SeverActionsNativeExt2.Hotkey_SetCode(hotkeyId, keyCode)
+    SetKeyMapOptionValue(option, keyCode)
+EndEvent
+
+
+Event OnOptionHighlight(int option)
+    If _leftoverSlot >= 0 && option % 256 == _leftoverSlot
+        SetInfoText(_leftoverInfo)
+        Return
+    EndIf
+    Int row = RowAt(option)
+    If row < 0
+        SetInfoText("")
+        Return
+    EndIf
+    ; a notice row draws a short line (ComputedValue); its whole text is the info text
+    String rowId = SeverActions_ModuleBase.VerbField(_rows[row], ROW_ID)
+    If StringUtil.Find(rowId, "modNotice-") == 0
+        SetInfoText(ModuleNoticeInfo(ModuleOfRowId(rowId)))
+        Return
+    ElseIf StringUtil.Find(rowId, "modHowTo-") == 0
+        SetInfoText(SeverActionsNativeExt2.Native_L10nFmt("mcm.moduleHowTo", SeverActionsNativeExt2.Module_Option(ModuleOfRowId(rowId))))
+        Return
+    EndIf
+    ; a greyed hotkey row says which module it needs instead of what the hotkey does (see RowFlags)
+    String absent = KeymapAbsentModule(_rows[row])
+    If absent != ""
+        SetInfoText(ModuleNoticeInfo(absent))
+        Return
+    EndIf
+    SetInfoText(RowTooltip(_rows[row], EntryAt(option)))
+EndEvent
+
+String Function RowTooltip(String asRow, Int aiEntry)
+    ; A row's info text. Eight tooltips name the actor or preset they are about: the table holds the constant
+    ; part (a $SA_ key SkyUI substitutes into, so the closing brace is added here) and this completes it. Not a
+    ; doc string: a brace inside one ends it.
+    String tip = SeverActions_ModuleBase.VerbField(asRow, ROW_TOOLTIP)
+    If tip == ""
+        Return ""
+    EndIf
+    String rowId = SeverActions_ModuleBase.VerbField(asRow, ROW_ID)
+
+    If rowId == "fmRapport" || rowId == "fmTrust" || rowId == "fmLoyalty" || rowId == "fmCombatStyle"
+        Return tip + CompanionName() + "}"
+    ElseIf rowId == "fmMood"
+        Return CompanionName() + tip
+    ElseIf rowId == "fmDeletePreset"
+        Return tip + CachedPresetNames[aiEntry] + "}"
+    ElseIf rowId == "outfitDeletePreset"
+        Return tip + CachedOutfitPresetNames[aiEntry] + "}"
+    ElseIf rowId == "followerExclude"
+        Actor f = RowActor(aiEntry)
+        If f
+            Return f.GetDisplayName() + tip
+        EndIf
+        Return tip
+    EndIf
+    Return tip
+EndFunction
+
+String Function CompanionName()
+    If _selCompanion
+        Return _selCompanion.GetDisplayName()
+    EndIf
+    Return ""
+EndFunction
+
+Event OnOptionDefault(int option)
+    Int row = RowAt(option)
+    If row < 0
+        Return
+    EndIf
+    String r = _rows[row]
+    String type = SeverActions_ModuleBase.VerbField(r, ROW_TYPE)
+    String control = SeverActions_ModuleBase.VerbField(r, ROW_CONTROL)
+    Int entry = EntryAt(option)
+
+    If type == "setting"
+        ; the table's DR18 runtime default; a slider's dialog default is only where its dialog opens
+        String def = SeverActions_ModuleBase.VerbField(r, ROW_DEFAULT)
+        String settingKey = SeverActions_ModuleBase.VerbField(r, ROW_ID)
+        If IsVRChordKey(settingKey)
+            SetVRChord(settingKey, def as Int, option)
+            Return
+        EndIf
+        WriteSetting(r, def)
+        If control == "toggle"
+            SetToggleOptionValue(option, def == "true")
+        ElseIf control == "slider"
+            SetSliderOptionValue(option, def as Float, SeverActions_ModuleBase.VerbField(r, ROW_FORMAT))
+            ApplyClamp(r, def as Float)
+        ElseIf control == "menu"
+            SetMenuOptionValue(option, EntryTextAt(r, def as Int))
+        EndIf
+        Return
+    EndIf
+
+    If type == "keymap"
+        SeverActionsNativeExt2.Hotkey_SetCode(SeverActions_ModuleBase.VerbField(r, ROW_ID), -1)
+        SetKeyMapOptionValue(option, -1)
+        Return
+    EndIf
+
+    DoDefaultAction(SeverActions_ModuleBase.VerbField(r, ROW_ID), entry, option)
+EndEvent
+
+; =============================================================================
+; BESPOKE ROWS: what an action, selector or per-entry row reads and does. The layout's `calls` column records
+; the functions each reaches; check 13 (f) fails a call whose script no longer declares it.
+; =============================================================================
+
+Bool Function StateBool(String asRowId, Int aiEntry)
+    {A non-setting toggle's value.}
+    If asRowId == "fmPerActorAutoSwitch"
+        Return _selCompanion != None && SeverActionsNative.Native_Outfit_GetAutoSwitchEnabled(_selCompanion)
+    ElseIf asRowId == "outfitLock"
+        ; SeverActions_Outfit.HasNonFollowerOutfitLock's test through the natives (not a cross site, check 17)
+        Return _selPresetActor != None && SeverActionsNativeExt.Native_Outfit_IsLockActive(_selPresetActor) && !SeverActionsNativeExt.Native_Outfit_IsFollowerLock(_selPresetActor)
+    ElseIf asRowId == "followerExclude"
+        ; the toggle reads INCLUDED, so it is the negation of the exclusion
+        Return SeverActionsNativeExt2.Module_IsUsable("survival") && RowActor(aiEntry) != None && !SeverActions_ModuleBase.CallBool("survival", "isFollowerExcluded", RowActor(aiEntry))
+    EndIf
+    Debug.Trace("[SeverActions_MCM] StateBool: no branch for the row '" + asRowId + "'")
+    Return false
+EndFunction
+
+Float Function StateFloat(String asRowId, Int aiEntry)
+    {A non-setting slider's value.}
+    If asRowId == "fmRapport"
+        Return SeverActionsNative.Native_GetRapport(_selCompanion)
+    ElseIf asRowId == "fmTrust"
+        Return SeverActionsNative.Native_GetTrust(_selCompanion)
+    ElseIf asRowId == "fmLoyalty"
+        Return SeverActionsNative.Native_GetLoyalty(_selCompanion)
+    ElseIf asRowId == "fmMood"
+        Return SeverActionsNative.Native_GetMood(_selCompanion)
+    ElseIf asRowId == "entWage"
+        Return EntWage as Float
+    EndIf
+    Debug.Trace("[SeverActions_MCM] StateFloat: no branch for the row '" + asRowId + "'")
+    Return 0.0
+EndFunction
+
+Int Function StateMenuIndex(String asRowId, Int aiEntry)
+    {Where a non-setting menu's dialog opens.}
+    If asRowId == "fmCompanionSelect"
+        Return SelectedCompanionIdx
+    ElseIf asRowId == "fmDismissedSelect"
+        Return SelectedDismissedIdx
+    ElseIf asRowId == "outfitNPCSelect"
+        Return SelectedOutfitNPCIdx
+    ElseIf asRowId == "fmCombatStyle"
+        Return CombatStyleIndexFromString(CompanionCombatStyle(_selCompanion))
+    ElseIf asRowId == "bioTab"
+        Return BioTabIdx
+    ElseIf asRowId == "bioBlock"
+        Return BioBlockIdx
+    ElseIf asRowId == "entJob"
+        Return EntJob
+    ElseIf asRowId == "entArrangement"
+        Return EntArrangement
+    ElseIf asRowId == "bioGrantFaction" || asRowId == "bioRemoveBlock"
+        ; pick-and-act: no standing selection, so the dialog opens at the top and the pick performs the action
+        Return 0
+    EndIf
+    Return 0
+EndFunction
+
+Function DoAction(String asRowId, Int aiEntry, Int aiOption)
+    {A button press.}
+
+    ; --- followers ---
+    If asRowId == "fmPerActorAutoSwitch"
+        If _selCompanion
+            ; Outfit state, not a setting: the verb reaches the module that owns the native flag and its per-actor
+            ; StorageUtil mirror. Verb_Send's args are the 7-field tail target|target2|str|int|str2|targetFid|
+            ; target2Fid: the value rides in str, the actor as the sender.
+            Bool newVal = !SeverActionsNative.Native_Outfit_GetAutoSwitchEnabled(_selCompanion)
+            SeverActionsNativeExt2.Verb_Send("outfit", "setActorAutoSwitch", "||" + BoolToStr(newVal), _selCompanion)
+            SetToggleOptionValue(aiOption, newVal)
         EndIf
 
-    elseif option == OID_Ent_DebugToggle
-        EnableEnterpriseDebug = !EnableEnterpriseDebug
-        SetToggleOptionValue(OID_Ent_DebugToggle, EnableEnterpriseDebug)
-        ForcePageReset()  ; swap between the public page and the debug harness
-    elseif option == OID_Ent_Hire
+    ; Actions the page redraws from go through a provider service: CallBool runs synchronously, so the
+    ; ForcePageReset after it draws the new state (DR13; a verb is queued and would still be pending). CallBool
+    ; answers False without the module.
+    ElseIf asRowId == "fmDismissFollower"
+        If SeverActionsNativeExt2.Module_IsUsable("followers") && _selCompanion
+            If ShowMessage("$SA_DismissX{" + _selCompanion.GetDisplayName() + "}", true, "$SA_Yes", "$SA_No")
+                ; FollowerManager.DismissCompanion with send-home and a deliberate exit, so NFF's alias seat comes
+                ; down with our roster entry (otherwise the follower is left undismissable).
+                SeverActions_ModuleBase.CallBool("followers", "dismiss", _selCompanion)
+                ForcePageReset()
+            EndIf
+        EndIf
+
+    ElseIf asRowId == "fmAssignHome" || asRowId == "fmAssignHomeUnset"
+        ; two ids, one action: Assign Home draws under the current home or in its place, and an id is the
+        ; dispatch key
+        If SeverActionsNativeExt2.Module_IsUsable("followers") && _selCompanion
+            Location currentLoc = Game.GetPlayer().GetCurrentLocation()
+            If currentLoc && currentLoc.GetName() != ""
+                SeverActions_ModuleBase.CallBool("followers", "assignHome", _selCompanion, None, currentLoc.GetName())
+                ForcePageReset()
+            ElseIf currentLoc
+                Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.currentLocationNoName"))
+            Else
+                Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.noLocationDetected"))
+            EndIf
+        EndIf
+
+    ElseIf asRowId == "fmClearHome"
+        If SeverActionsNativeExt2.Module_IsUsable("followers") && _selCompanion
+            SeverActions_ModuleBase.CallBool("followers", "clearHome", _selCompanion)
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("mcm.homeCleared", ("" + _selCompanion.GetDisplayName())))
+            ForcePageReset()
+        EndIf
+
+    ElseIf asRowId == "fmForceRemove"
+        If SeverActionsNativeExt2.Module_IsUsable("followers") && _selCompanion
+            String fName = _selCompanion.GetDisplayName()
+            If ShowMessage("$SA_ForceRemoveXThisErases{" + fName + "}", true, "$SA_Yes", "$SA_No")
+                ; the whole removal is the service's (FollowerManager.ForceRemoveFollower: the combat style
+                ; back, PurgeFollower, then the native follower and outfit rows, in that order)
+                SeverActions_ModuleBase.CallBool("followers", "purge", _selCompanion)
+                ForcePageReset()
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("mcm.forceRemoved", ("" + fName)))
+            EndIf
+        EndIf
+
+    ElseIf asRowId == "fmDeletePreset"
+        If SeverActionsNativeExt2.Module_IsUsable("outfit") && _selCompanion && CachedPresetNames && aiEntry < CachedPresetNames.Length
+            If ShowMessage("Delete outfit preset '" + CachedPresetNames[aiEntry] + "' for " + _selCompanion.GetDisplayName() + "?", true, "$SA_Yes", "$SA_No")
+                ; the STORED name, verbatim - never re-normalised
+                SeverActions_ModuleBase.CallBool("outfit", "deletePreset", _selCompanion, None, CachedPresetNames[aiEntry])
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("mcm.deletedPreset", ("" + CachedPresetNames[aiEntry])))
+                ForcePageReset()
+            EndIf
+        EndIf
+
+    ElseIf asRowId == "fmResetAll"
+        If SeverActionsNativeExt2.Module_IsUsable("followers")
+            If ShowMessage("$SA_This_will_dismiss_ALL_companions_and_clear_all_r", true, "$SA_Yes", "$SA_No")
+                ; Every rostered follower is dismissed without send-home or a deliberate exit (so
+                ; NFF keeps its followers).
+                SeverActions_ModuleBase.CallBool("followers", "resetAll")
+                ForcePageReset()
+                Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.allCompanionsDismissed"))
+            EndIf
+        EndIf
+
+    ; --- outfits ---
+    ElseIf asRowId == "outfitLock"
+        If SeverActionsNativeExt2.Module_IsUsable("outfit") && _selPresetActor
+            ; HasNonFollowerOutfitLock's test, as in StateBool
+            Bool currentLock = SeverActionsNativeExt.Native_Outfit_IsLockActive(_selPresetActor) && !SeverActionsNativeExt.Native_Outfit_IsFollowerLock(_selPresetActor)
+            ; Turning the lock ON needs the outfit system, the global Outfit Lock toggle and armor to capture, or
+            ; SetNonFollowerOutfitLock refuses; so the toggle is drawn from the store AFTER the call. Neither switch
+            ; has an MCM row, so the notice points to the Magelight Settings page.
+            If !currentLock && !SeverActionsNativeExt2.Native_Outfit_IsSystemEnabled()
+                Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.outfitSystemOff"))
+            ElseIf !currentLock && !SeverActionsNativeExt2.Script_GetBool("SeverActions_Outfit", "OutfitLockEnabled", false)   ; tier-P property through the kernel gate, not a cross site (check 17)
+                Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.outfitLockOff"))
+            EndIf
+            ; SeverActions_Outfit.SetNonFollowerOutfitLock, synchronously
+            Float want = 1.0
+            If currentLock
+                want = 0.0
+            EndIf
+            SeverActions_ModuleBase.CallBool("outfit", "setNonFollowerLock", _selPresetActor, None, "", want)
+            Bool nowLocked = SeverActionsNativeExt.Native_Outfit_IsLockActive(_selPresetActor) && !SeverActionsNativeExt.Native_Outfit_IsFollowerLock(_selPresetActor)
+            SetToggleOptionValue(aiOption, nowLocked)
+            If !currentLock && !nowLocked
+                Debug.Trace("[SeverActions_MCM] outfitLock: no lock written for " + _selPresetActor.GetDisplayName() + " (Outfit Lock or the outfit system is off, or nothing is worn)")
+            EndIf
+            ; an outfit alias seat only for a lock that exists
+            If nowLocked
+                SeverActions_ModuleBase.CallBool("outfit", "assignOutfitSlot", _selPresetActor)
+            Else
+                SeverActions_ModuleBase.CallBool("outfit", "clearOutfitSlot", _selPresetActor)
+            EndIf
+        EndIf
+
+    ElseIf asRowId == "outfitDeletePreset"
+        If SeverActionsNativeExt2.Module_IsUsable("outfit") && _selPresetActor && CachedOutfitPresetNames && aiEntry < CachedOutfitPresetNames.Length
+            If ShowMessage("Delete outfit preset '" + CachedOutfitPresetNames[aiEntry] + "' for " + _selPresetActor.GetDisplayName() + "?", true, "$SA_Yes", "$SA_No")
+                ; the STORED name, verbatim - never re-normalised
+                SeverActions_ModuleBase.CallBool("outfit", "deletePreset", _selPresetActor, None, CachedOutfitPresetNames[aiEntry])
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("mcm.deletedPreset", ("" + CachedOutfitPresetNames[aiEntry])))
+                ForcePageReset()
+            EndIf
+        EndIf
+
+    ; --- survival ---
+    ElseIf asRowId == "followerExclude"
+        Actor f = RowActor(aiEntry)
+        If SeverActionsNativeExt2.Module_IsUsable("survival") && f
+            ; the service toggles and answers the NEW exclusion
+            Bool isExcluded = SeverActions_ModuleBase.CallBool("survival", "toggleExcluded", f)
+            SetToggleOptionValue(aiOption, !isExcluded)
+            If isExcluded
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("mcm.excludedFromSurvival", ("" + f.GetDisplayName())))
+            Else
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("mcm.includedInSurvival", ("" + f.GetDisplayName())))
+            EndIf
+        EndIf
+
+    ; --- crime ---
+    ElseIf asRowId == "bountyWhiterun" || asRowId == "bountyRift" || asRowId == "bountyHaafingar" || asRowId == "bountyEastmarch" || asRowId == "bountyReach" || asRowId == "bountyFalkreath" || asRowId == "bountyPale" || asRowId == "bountyHjaalmarch" || asRowId == "bountyWinterhold"
+        ClearBountyWithConfirm(HoldFactionAt(aiEntry), HoldNameAt(aiEntry))
+
+    ElseIf asRowId == "clearAllBounties"
+        ClearAllBountiesWithConfirm()
+
+    ; --- travel ---
+    ElseIf asRowId == "travelJourneyLine"
+        CancelJourneyWithConfirm(aiEntry)
+
+    ElseIf asRowId == "resetTravelSlots"
+        If ShowMessage("$SA_This_will_cancel_ALL_active_NPC_travel_restore_f", true, "$SA_Yes", "$SA_No") && SeverActionsNativeExt2.Module_IsUsable("travel")
+            ; SeverActions_Travel.ForceResetAllSlots(true) through the travel provider: 1.0 restores followers
+            SeverActions_ModuleBase.CallBool("travel", "cancelAllJourneys", None, None, "", 1.0)
+            ForcePageReset()
+        EndIf
+
+    ; --- homes ---
+    ElseIf asRowId == "clearNPCHome"
+        If SeverActionsNativeExt2.Module_IsUsable("followers") && CachedHomedNPCs && aiEntry < CachedHomedNPCs.Length && CachedHomedNPCs[aiEntry]
+            SeverActions_ModuleBase.CallBool("followers", "clearHome", CachedHomedNPCs[aiEntry])
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("mcm.homeCleared", ("" + CachedHomedNPCs[aiEntry].GetDisplayName())))
+            ForcePageReset()
+        EndIf
+
+    ElseIf asRowId == "fmDismissedClearHome"
+        If SeverActionsNativeExt2.Module_IsUsable("followers") && _selDismissed
+            SeverActions_ModuleBase.CallBool("followers", "clearHome", _selDismissed)
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("mcm.homeCleared", ("" + _selDismissed.GetDisplayName())))
+            ForcePageReset()
+        EndIf
+
+    ElseIf asRowId == "fmDismissedReRecruit"
+        If SeverActionsNativeExt2.Module_IsUsable("followers") && _selDismissed
+            If ShowMessage("$SA_ReRecruitX{" + _selDismissed.GetDisplayName() + "}", true, "$SA_Yes", "$SA_No")
+                ; the existing "rerecruit" service: FollowerManager.RegisterFollower
+                SeverActions_ModuleBase.CallBool("followers", "rerecruit", _selDismissed)
+                ForcePageReset()
+            EndIf
+        EndIf
+
+    ; --- bio blocks ---
+    ElseIf asRowId == "bioApply"
+        If BioTargetActor && BioBlockIds && BioBlockIds.Length > 0 && BioBlockIdx < BioBlockIds.Length
+            If SeverActionsNativeExt2.Native_BioBlock_Apply(BioTargetActor, BioBlockIds[BioBlockIdx])
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("mcm.bioBlockApplied", ("" + BioTargetActor.GetDisplayName())))
+            Else
+                Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.bioBlocksAlreadyApplied"))
+            EndIf
+            ForcePageReset()
+        Else
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.bioBlocksAimNpc"))
+        EndIf
+
+    ElseIf asRowId == "bioRule"
+        If BioRuleNames && aiEntry < BioRuleNames.Length
+            If SeverActionsNativeExt2.Native_BioBlock_RemoveFactionRule(aiEntry)
+                Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.factionRuleRemoved"))
+            EndIf
+            ForcePageReset()
+        EndIf
+
+    ; --- enterprises (debug harness) ---
+    ElseIf asRowId == "entHire"
         Actor entT = Game.GetCurrentCrosshairRef() as Actor
         If entT
             SeverActionsNativeExt2.Venture_DebugAdd(entT, EntJob, EntArrangement, EntWage)
         Else
-            Debug.Notification("Enterprises: aim your crosshair at an NPC first.")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.enterprisesAimNpc"))
         EndIf
         ForcePageReset()
-    elseif option == OID_Ent_Remove
+
+    ElseIf asRowId == "entRemove"
         Actor entR = Game.GetCurrentCrosshairRef() as Actor
         If entR
             SeverActionsNativeExt2.Venture_DebugRemove(entR)
         EndIf
         ForcePageReset()
-    elseif option == OID_Ent_Settle
+
+    ElseIf asRowId == "entSettle"
         SeverActionsNativeExt2.Venture_ForceSettle()
         ForcePageReset()
-    elseif option == OID_Ent_Dump
+
+    ElseIf asRowId == "entDump"
         SeverActionsNativeExt2.Venture_Dump()
-    elseif option == OID_Ent_Collect
+
+    ElseIf asRowId == "entCollect"
         Actor entC = Game.GetCurrentCrosshairRef() as Actor
         If entC
             SeverActionsNativeExt2.Venture_Collect(entC)
             ForcePageReset()
         Else
-            Debug.Notification("Enterprises: aim your crosshair at a retainer first.")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.enterprisesAimRetainer"))
         EndIf
-    elseif option == OID_Ent_CollectAll
+
+    ElseIf asRowId == "entCollectAll"
         SeverActionsNativeExt2.Venture_CollectAll()
         ForcePageReset()
-    elseif option == OID_Ent_ForceArrest
+
+    ElseIf asRowId == "entForceArrest"
         Actor entA = Game.GetCurrentCrosshairRef() as Actor
         If entA
             SeverActionsNativeExt2.Venture_ForceArrest(entA)
             ForcePageReset()
         Else
-            Debug.Notification("Enterprises: aim your crosshair at a fence retainer first.")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.enterprisesAimFence"))
         EndIf
-    elseif option == OID_Ent_Bail
+
+    ElseIf asRowId == "entBail"
         Actor entB = Game.GetCurrentCrosshairRef() as Actor
         If entB
             SeverActionsNativeExt2.Venture_Bail(entB)
             ForcePageReset()
         Else
-            Debug.Notification("Enterprises: aim your crosshair at a jailed retainer first.")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.enterprisesAimJailed"))
         EndIf
-    elseif option == OID_Ent_TestLetter
+
+    ElseIf asRowId == "entTestLetter"
         int letterId = SeverActionsNativeExt.Letter_DebugDeliverTest()
         If letterId > 0
-            Debug.Notification("A courier's letter (#" + letterId + ") is in your inventory - read it.")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("mcm.courierLetterInInventory", ("" + letterId)))
         Else
-            Debug.Notification("Letter delivery failed - check the log.")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.letterDeliveryFailed"))
         EndIf
         ForcePageReset()
-    elseif option == OID_Ent_TestCourier
-        ; Bring a sample letter via a walking courier so the whole walk-up /
-        ; handoff loop is testable. Pick one of the player's retainers at random
-        ; as the sender so the courier names them (and the letter is attributed).
-        Actor letterSender = None
-        int retCount = SeverActionsNativeExt2.Venture_Count()
-        If retCount > 0
-            letterSender = SeverActionsNativeExt2.Venture_GetAssigneeAt(Utility.RandomInt(0, retCount - 1))
-        EndIf
-        String subj = "A Word, When You Can"
-        String body = "I'll keep this short, since paper costs me what little I've got.\n\nThe work goes - not well, not poorly, just on. But there's a matter I'd rather put to you in person than trust to a courier's pocket. Come find me when your road bends back this way.\n\nDon't make me send another of these. They're dear."
-        If TravelScript == None
-            Debug.Notification("Courier system unavailable - check the log.")
+
+    ElseIf asRowId == "entTestCourier"
+        DoCourierTest()
+
+    ElseIf asRowId == "entTestCourierLLM"
+        DoCourierLLMTest()
+
+    ElseIf asRowId == "entForceAmbush"
+        ; Fire a grudge thug ambush now (no delay/cooldown/location checks), arming a grudge if none is pending.
+        ; The ambush listener is SeverActions_Ambush's own, registered on every load.
+        If SeverActionsNativeExt2.Venture_DebugForceAmbush()
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.thugsOnTheirWay"))
         Else
-            int dispatched = TravelScript.DispatchCourier(letterSender, subj, body, "meet")
-            If dispatched > 0
-                If letterSender != None
-                    Debug.Notification("A courier is on the way with a letter from " + letterSender.GetDisplayName() + ".")
-                Else
-                    Debug.Notification("A courier is on the way with a letter (no retainers - unsigned).")
-                EndIf
-            Else
-                Debug.Notification("Courier dispatch failed - check the log.")
-            EndIf
-        EndIf
-    elseif option == OID_Ent_TestCourierLLM
-        ; Force a REAL per-NPC letter: a random retainer writes one via the LLM,
-        ; and a courier brings it when the model returns (a few seconds).
-        int rc = SeverActionsNativeExt2.Venture_Count()
-        If rc <= 0
-            Debug.Notification("No retainers - hire one first.")
-        Else
-            Actor r = SeverActionsNativeExt2.Venture_GetAssigneeAt(Utility.RandomInt(0, rc - 1))
-            If r != None
-                If TravelScript != None
-                    TravelScript.EnsureCourierEvents()  ; guarantee the courier event is live
-                EndIf
-                SeverActionsNativeExt2.Venture_DebugRequestLetter(r)
-                Debug.Notification(r.GetDisplayName() + " is penning a letter - a courier will follow shortly.")
-            Else
-                Debug.Notification("Could not resolve a retainer - check the log.")
-            EndIf
-        EndIf
-    elseif option == OID_Ent_ForceAmbush
-        ; Force a grudge thug ambush right now (bypasses delay/cooldown/location).
-        ; Arms a grudge if none is pending so it always fires while testing.
-        If TravelScript != None
-            TravelScript.EnsureCourierEvents()  ; guarantee the ambush event is live
-        EndIf
-        Bool fired = SeverActionsNativeExt2.Venture_DebugForceAmbush()
-        If fired
-            Debug.Notification("Thugs are on their way - watch your back.")
-        Else
-            Debug.Notification("No retainers to ambush from - hire one first.")
-        EndIf
-    elseif option == OID_Ent_Enabled
-        EntEnabled = !EntEnabled
-        SetToggleOptionValue(OID_Ent_Enabled, EntEnabled)
-        SeverActionsNativeExt2.Venture_SetEnabled(EntEnabled)
-
-    elseif option == OID_ConfigMenuShift
-        ConfigMenuRequireShift = !ConfigMenuRequireShift
-        SetToggleOptionValue(OID_ConfigMenuShift, ConfigMenuRequireShift)
-        ApplyConfigMenuKeySettings()
-
-    elseif option == OID_LLMCallsEnabled
-        Bool llmNow = !SeverActionsNativeExt2.Native_GetLLMCallsEnabled()
-        SeverActionsNativeExt2.Native_SetLLMCallsEnabled(llmNow)
-        SetToggleOptionValue(OID_LLMCallsEnabled, llmNow)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "llmCallsEnabled", BoolToStr(llmNow))
-
-    elseif option == OID_TruceEnabled
-        CombatScript.TruceEnabled = !CombatScript.TruceEnabled
-        SetToggleOptionValue(OID_TruceEnabled, CombatScript.TruceEnabled)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceEnabled", BoolToStr(CombatScript.TruceEnabled))
-    elseif option == OID_TruceLeaders
-        CombatScript.TruceLeaders = !CombatScript.TruceLeaders
-        SetToggleOptionValue(OID_TruceLeaders, CombatScript.TruceLeaders)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceLeaders", BoolToStr(CombatScript.TruceLeaders))
-    elseif option == OID_TruceQuestNPCs
-        CombatScript.TruceQuestNPCs = !CombatScript.TruceQuestNPCs
-        SetToggleOptionValue(OID_TruceQuestNPCs, CombatScript.TruceQuestNPCs)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceQuestNPCs", BoolToStr(CombatScript.TruceQuestNPCs))
-    elseif option == OID_TruceDungeons
-        CombatScript.TruceDungeons = !CombatScript.TruceDungeons
-        SetToggleOptionValue(OID_TruceDungeons, CombatScript.TruceDungeons)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceDungeons", BoolToStr(CombatScript.TruceDungeons))
-    elseif option == OID_TruceNecro
-        CombatScript.TruceNecromancers = !CombatScript.TruceNecromancers
-        SetToggleOptionValue(OID_TruceNecro, CombatScript.TruceNecromancers)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceNecromancers", BoolToStr(CombatScript.TruceNecromancers))
-    elseif option == OID_TruceForsworn
-        CombatScript.TruceForsworn = !CombatScript.TruceForsworn
-        SetToggleOptionValue(OID_TruceForsworn, CombatScript.TruceForsworn)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceForsworn", BoolToStr(CombatScript.TruceForsworn))
-    elseif option == OID_TruceVampires
-        CombatScript.TruceVampires = !CombatScript.TruceVampires
-        SetToggleOptionValue(OID_TruceVampires, CombatScript.TruceVampires)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceVampires", BoolToStr(CombatScript.TruceVampires))
-    elseif option == OID_CampTakeover
-        CombatScript.CampTakeoverEnabled = !CombatScript.CampTakeoverEnabled
-        SetToggleOptionValue(OID_CampTakeover, CombatScript.CampTakeoverEnabled)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "campTakeoverEnabled", BoolToStr(CombatScript.CampTakeoverEnabled))
-    elseif option == OID_CampChallenge
-        CombatScript.CampChallengeEnabled = !CombatScript.CampChallengeEnabled
-        SetToggleOptionValue(OID_CampChallenge, CombatScript.CampChallengeEnabled)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "campChallengeEnabled", BoolToStr(CombatScript.CampChallengeEnabled))
-    elseif option == OID_CampChallengeCard
-        CombatScript.CampChallengeCardEnabled = !CombatScript.CampChallengeCardEnabled
-        SetToggleOptionValue(OID_CampChallengeCard, CombatScript.CampChallengeCardEnabled)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "campChallengeCard", BoolToStr(CombatScript.CampChallengeCardEnabled))
-    elseif option == OID_CampFreezeRespawn
-        CombatScript.CampFreezeRespawn = !CombatScript.CampFreezeRespawn
-        SetToggleOptionValue(OID_CampFreezeRespawn, CombatScript.CampFreezeRespawn)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "campFreezeRespawn", BoolToStr(CombatScript.CampFreezeRespawn))
-    elseif option == OID_YieldPersistence
-        CombatScript.YieldPersistenceEnabled = !CombatScript.YieldPersistenceEnabled
-        SetToggleOptionValue(OID_YieldPersistence, CombatScript.YieldPersistenceEnabled)
-    elseif option == OID_SurvNotifHunger
-        SurvivalScript.ShowHungerNotifications = !SurvivalScript.ShowHungerNotifications
-        SetToggleOptionValue(OID_SurvNotifHunger, SurvivalScript.ShowHungerNotifications)
-    elseif option == OID_SurvNotifFatigue
-        SurvivalScript.ShowFatigueNotifications = !SurvivalScript.ShowFatigueNotifications
-        SetToggleOptionValue(OID_SurvNotifFatigue, SurvivalScript.ShowFatigueNotifications)
-    elseif option == OID_SurvNotifCold
-        SurvivalScript.ShowColdNotifications = !SurvivalScript.ShowColdNotifications
-        SetToggleOptionValue(OID_SurvNotifCold, SurvivalScript.ShowColdNotifications)
-    elseif option == OID_DebtOverdue
-        FollowerManagerScript.DebtScript.EnableOverdueReminders = !FollowerManagerScript.DebtScript.EnableOverdueReminders
-        SetToggleOptionValue(OID_DebtOverdue, FollowerManagerScript.DebtScript.EnableOverdueReminders)
-        SeverActionsNativeExt2.Native_SettingsRecord("world", "overdueReminders", BoolToStr(FollowerManagerScript.DebtScript.EnableOverdueReminders))
-    elseif option == OID_TravelMapMarkers
-        TravelScript.TravelMapMarkersEnabled = !TravelScript.TravelMapMarkersEnabled
-        SetToggleOptionValue(OID_TravelMapMarkers, TravelScript.TravelMapMarkersEnabled)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "travelMapMarkersEnabled", BoolToStr(TravelScript.TravelMapMarkersEnabled))
-    elseif option == OID_FollowersCanTravel
-        Bool fctNow = !SeverActionsNativeExt2.Native_GetFollowersCanTravel()
-        SeverActionsNativeExt2.Native_SetFollowersCanTravel(fctNow)
-        SetToggleOptionValue(OID_FollowersCanTravel, fctNow)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "followersCanTravel", BoolToStr(fctNow))
-    elseif option == OID_Outfit_UseAnimations
-        OutfitScript.UseAnimations = !OutfitScript.UseAnimations
-        SetToggleOptionValue(OID_Outfit_UseAnimations, OutfitScript.UseAnimations)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "useAnimations", BoolToStr(OutfitScript.UseAnimations))
-    elseif option == OID_FM_AutoQuestAwareness
-        FollowerManagerScript.AutoQuestAwareness = !FollowerManagerScript.AutoQuestAwareness
-        SetToggleOptionValue(OID_FM_AutoQuestAwareness, FollowerManagerScript.AutoQuestAwareness)
-        SeverActionsNativeExt.Native_QuestAwareness_SetEnabled(FollowerManagerScript.AutoQuestAwareness)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "questAwarenessEnabled", BoolToStr(FollowerManagerScript.AutoQuestAwareness))
-    elseif option == OID_FM_AutoNPCReputation
-        FollowerManagerScript.AutoNPCReputation = !FollowerManagerScript.AutoNPCReputation
-        SetToggleOptionValue(OID_FM_AutoNPCReputation, FollowerManagerScript.AutoNPCReputation)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "npcReputationEnabled", BoolToStr(FollowerManagerScript.AutoNPCReputation))
-    elseif option == OID_FM_AutoFollowerBanter
-        FollowerManagerScript.AutoFollowerBanter = !FollowerManagerScript.AutoFollowerBanter
-        SetToggleOptionValue(OID_FM_AutoFollowerBanter, FollowerManagerScript.AutoFollowerBanter)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "followerBanterEnabled", BoolToStr(FollowerManagerScript.AutoFollowerBanter))
-    elseif option == OID_FM_AutoAmbientActions
-        FollowerManagerScript.AutoAmbientActions = !FollowerManagerScript.AutoAmbientActions
-        SetToggleOptionValue(OID_FM_AutoAmbientActions, FollowerManagerScript.AutoAmbientActions)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "ambientActionsEnabled", BoolToStr(FollowerManagerScript.AutoAmbientActions))
-    elseif option == OID_FM_HomeSleepEnabled
-        FollowerManagerScript.HomeSleepEnabled = !FollowerManagerScript.HomeSleepEnabled
-        SetToggleOptionValue(OID_FM_HomeSleepEnabled, FollowerManagerScript.HomeSleepEnabled)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "homeSleepEnabled", BoolToStr(FollowerManagerScript.HomeSleepEnabled))
-    elseif option == OID_FM_CellCatchup
-        FollowerManagerScript.CellCatchupEnabled = !FollowerManagerScript.CellCatchupEnabled
-        SetToggleOptionValue(OID_FM_CellCatchup, FollowerManagerScript.CellCatchupEnabled)
-    elseif option == OID_Ent_Loans
-        FollowerManagerScript.EnterpriseLoansEnabled = !FollowerManagerScript.EnterpriseLoansEnabled
-        SetToggleOptionValue(OID_Ent_Loans, FollowerManagerScript.EnterpriseLoansEnabled)
-        SeverActionsNativeExt2.Venture_SetLoansEnabled(FollowerManagerScript.EnterpriseLoansEnabled)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "enterpriseLoansEnabled", BoolToStr(FollowerManagerScript.EnterpriseLoansEnabled))
-    elseif option == OID_Ent_Raises
-        FollowerManagerScript.EnterpriseRaisesEnabled = !FollowerManagerScript.EnterpriseRaisesEnabled
-        SetToggleOptionValue(OID_Ent_Raises, FollowerManagerScript.EnterpriseRaisesEnabled)
-        SeverActionsNativeExt2.Venture_SetRaisesEnabled(FollowerManagerScript.EnterpriseRaisesEnabled)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "enterpriseRaisesEnabled", BoolToStr(FollowerManagerScript.EnterpriseRaisesEnabled))
-    elseif option == OID_Ent_Temper
-        FollowerManagerScript.EnterpriseTemperEnabled = !FollowerManagerScript.EnterpriseTemperEnabled
-        SetToggleOptionValue(OID_Ent_Temper, FollowerManagerScript.EnterpriseTemperEnabled)
-        SeverActionsNativeExt2.Venture_SetTemperEnabled(FollowerManagerScript.EnterpriseTemperEnabled)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "enterpriseTemperEnabled", BoolToStr(FollowerManagerScript.EnterpriseTemperEnabled))
-    elseif option == OID_Ent_Ambushes
-        FollowerManagerScript.EnterpriseAmbushesEnabled = !FollowerManagerScript.EnterpriseAmbushesEnabled
-        SetToggleOptionValue(OID_Ent_Ambushes, FollowerManagerScript.EnterpriseAmbushesEnabled)
-        SeverActionsNativeExt2.Venture_SetAmbushesEnabled(FollowerManagerScript.EnterpriseAmbushesEnabled)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "enterpriseAmbushesEnabled", BoolToStr(FollowerManagerScript.EnterpriseAmbushesEnabled))
-    elseif option == OID_Ent_RenownCap
-        FollowerManagerScript.EnterpriseRenownCapEnabled = !FollowerManagerScript.EnterpriseRenownCapEnabled
-        SetToggleOptionValue(OID_Ent_RenownCap, FollowerManagerScript.EnterpriseRenownCapEnabled)
-        SeverActionsNativeExt2.Venture_SetRenownCapEnabled(FollowerManagerScript.EnterpriseRenownCapEnabled)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "enterpriseRenownCapEnabled", BoolToStr(FollowerManagerScript.EnterpriseRenownCapEnabled))
-
-    elseif option == OID_TagCompanion
-        TagCompanionEnabled = !TagCompanionEnabled
-        SetToggleOptionValue(OID_TagCompanion, TagCompanionEnabled)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "tagCompanion", BoolToStr(TagCompanionEnabled))
-        StorageUtil.SetIntValue(None, "SeverActions_TagCompanion", TagCompanionEnabled as Int)
-
-    elseif option == OID_TagEngaged
-        TagEngagedEnabled = !TagEngagedEnabled
-        SetToggleOptionValue(OID_TagEngaged, TagEngagedEnabled)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "tagEngaged", BoolToStr(TagEngagedEnabled))
-        StorageUtil.SetIntValue(None, "SeverActions_TagEngaged", TagEngagedEnabled as Int)
-
-    elseif option == OID_TagInScene
-        TagInSceneEnabled = !TagInSceneEnabled
-        SetToggleOptionValue(OID_TagInScene, TagInSceneEnabled)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "tagInScene", BoolToStr(TagInSceneEnabled))
-        StorageUtil.SetIntValue(None, "SeverActions_TagInScene", TagInSceneEnabled as Int)
-
-    elseif option == OID_SpellFailEnabled
-        if SpellTeachScript
-            SpellTeachScript.EnableFailureSystem = !SpellTeachScript.EnableFailureSystem
-            SetToggleOptionValue(OID_SpellFailEnabled, SpellTeachScript.EnableFailureSystem)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "spellFailEnabled", BoolToStr(SpellTeachScript.EnableFailureSystem))
-            StorageUtil.SetIntValue(None, "SeverActions_SpellFailEnabled", SpellTeachScript.EnableFailureSystem as Int)
-        endif
-
-    elseif option == OID_AllowConjuredGold
-        AllowConjuredGold = !AllowConjuredGold
-        SetToggleOptionValue(OID_AllowConjuredGold, AllowConjuredGold)
-        SeverActionsNativeExt2.Native_SettingsRecord("world", "allowConjuredGold", BoolToStr(AllowConjuredGold))
-        ApplyCurrencySettings()
-        
-    elseif option == OID_ResetTravelSlots
-        bool confirm = ShowMessage("This will cancel ALL active NPC travel, restore follower status, and reset all slots. Continue?", true, "Yes", "No")
-        if confirm && TravelScript
-            TravelScript.ForceResetAllSlots(true)
-            ForcePageReset()
-        endif
-        
-    elseif option == OID_TravelSlot0
-        ClearTravelSlotWithConfirm(0)
-    elseif option == OID_TravelSlot1
-        ClearTravelSlotWithConfirm(1)
-    elseif option == OID_TravelSlot2
-        ClearTravelSlotWithConfirm(2)
-    elseif option == OID_TravelSlot3
-        ClearTravelSlotWithConfirm(3)
-    elseif option == OID_TravelSlot4
-        ClearTravelSlotWithConfirm(4)
-
-    ; Bounty page - clear individual bounties
-    elseif option == OID_BountyWhiterun
-        ClearBountyWithConfirm(ArrestScript.CrimeFactionWhiterun, "Whiterun")
-    elseif option == OID_BountyRift
-        ClearBountyWithConfirm(ArrestScript.CrimeFactionRift, "The Rift")
-    elseif option == OID_BountyHaafingar
-        ClearBountyWithConfirm(ArrestScript.CrimeFactionHaafingar, "Haafingar")
-    elseif option == OID_BountyEastmarch
-        ClearBountyWithConfirm(ArrestScript.CrimeFactionEastmarch, "Eastmarch")
-    elseif option == OID_BountyReach
-        ClearBountyWithConfirm(ArrestScript.CrimeFactionReach, "The Reach")
-    elseif option == OID_BountyFalkreath
-        ClearBountyWithConfirm(ArrestScript.CrimeFactionFalkreath, "Falkreath")
-    elseif option == OID_BountyPale
-        ClearBountyWithConfirm(ArrestScript.CrimeFactionPale, "The Pale")
-    elseif option == OID_BountyHjaalmarch
-        ClearBountyWithConfirm(ArrestScript.CrimeFactionHjaalmarch, "Hjaalmarch")
-    elseif option == OID_BountyWinterhold
-        ClearBountyWithConfirm(ArrestScript.CrimeFactionWinterhold, "Winterhold")
-    elseif option == OID_ClearAllBounties
-        ClearAllBountiesWithConfirm()
-
-    ; Survival page toggles
-    elseif option == OID_SurvivalEnabled
-        If SurvivalScript
-            SurvivalScript.Enabled = !SurvivalScript.Enabled
-            SetToggleOptionValue(OID_SurvivalEnabled, SurvivalScript.Enabled)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "survivalEnabled", BoolToStr(SurvivalScript.Enabled))
-            If SurvivalScript.Enabled
-                SurvivalScript.StartTracking()
-            Else
-                SurvivalScript.StopTracking()
-            EndIf
-        EndIf
-    elseif option == OID_HungerEnabled
-        If SurvivalScript
-            SurvivalScript.HungerEnabled = !SurvivalScript.HungerEnabled
-            SetToggleOptionValue(OID_HungerEnabled, SurvivalScript.HungerEnabled)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "hungerEnabled", BoolToStr(SurvivalScript.HungerEnabled))
-        EndIf
-    elseif option == OID_FatigueEnabled
-        If SurvivalScript
-            SurvivalScript.FatigueEnabled = !SurvivalScript.FatigueEnabled
-            SetToggleOptionValue(OID_FatigueEnabled, SurvivalScript.FatigueEnabled)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "fatigueEnabled", BoolToStr(SurvivalScript.FatigueEnabled))
-        EndIf
-    elseif option == OID_ColdEnabled
-        If SurvivalScript
-            SurvivalScript.ColdEnabled = !SurvivalScript.ColdEnabled
-            SetToggleOptionValue(OID_ColdEnabled, SurvivalScript.ColdEnabled)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "coldEnabled", BoolToStr(SurvivalScript.ColdEnabled))
-        EndIf
-    elseif option == OID_SurvivalNotifications
-        If SurvivalScript
-            SurvivalScript.ShowNotifications = !SurvivalScript.ShowNotifications
-            SetToggleOptionValue(OID_SurvivalNotifications, SurvivalScript.ShowNotifications)
-        EndIf
-    elseif option == OID_SurvivalDebug
-        If SurvivalScript
-            SurvivalScript.DebugMode = !SurvivalScript.DebugMode
-            SetToggleOptionValue(OID_SurvivalDebug, SurvivalScript.DebugMode)
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.noRetainersToAmbush"))
         EndIf
 
-    ; Follower Manager page toggles
-    elseif option == OID_FM_AllowLeaving
-        If FollowerManagerScript
-            FollowerManagerScript.AllowAutonomousLeaving = !FollowerManagerScript.AllowAutonomousLeaving
-            SetToggleOptionValue(OID_FM_AllowLeaving, FollowerManagerScript.AllowAutonomousLeaving)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "allowAutonomousLeaving", BoolToStr(FollowerManagerScript.AllowAutonomousLeaving))
-        EndIf
-    elseif option == OID_FM_RoomRotation
-        If FollowerManagerScript
-            FollowerManagerScript.RoomRotationEnabled = !FollowerManagerScript.RoomRotationEnabled
-            SetToggleOptionValue(OID_FM_RoomRotation, FollowerManagerScript.RoomRotationEnabled)
-        EndIf
-    elseif option == OID_FM_KidnapEnabled
-        If FollowerManagerScript
-            FollowerManagerScript.EnableKidnapActions = !FollowerManagerScript.EnableKidnapActions
-            SetToggleOptionValue(OID_FM_KidnapEnabled, FollowerManagerScript.EnableKidnapActions)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "kidnapEnabled", BoolToStr(FollowerManagerScript.EnableKidnapActions))
-            ; Push to the native flag the sever_kidnap_enabled decorator reads.
-            SeverActionsNativeExt.Native_Kidnap_SetEnabled(FollowerManagerScript.EnableKidnapActions)
-        EndIf
-    elseif option == OID_FM_RestrainEnabled
-        If FollowerManagerScript
-            FollowerManagerScript.EnableRestrainAction = !FollowerManagerScript.EnableRestrainAction
-            SetToggleOptionValue(OID_FM_RestrainEnabled, FollowerManagerScript.EnableRestrainAction)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "restrainEnabled", BoolToStr(FollowerManagerScript.EnableRestrainAction))
-            ; Push to the native flag the sever_restrain_enabled decorator reads.
-            SeverActionsNativeExt.Native_Restrain_SetEnabled(FollowerManagerScript.EnableRestrainAction)
-        EndIf
-    elseif option == OID_FM_AutoSwitch
-        Bool curEnabled = SeverActionsNativeExt.SituationMonitor_IsEnabled()
-        SeverActionsNativeExt.SituationMonitor_SetEnabled(!curEnabled)
-        StorageUtil.SetIntValue(None, "SeverOutfit_GlobalAutoSwitch", (!curEnabled) as Int)
-        SetToggleOptionValue(OID_FM_AutoSwitch, !curEnabled)
-    elseif option == OID_FM_PerActorAutoSwitch
-        If CachedManagedFollowers && SelectedCompanionIdx < CachedManagedFollowers.Length
-            Actor follower = CachedManagedFollowers[SelectedCompanionIdx]
-            If follower
-                Bool curVal = SeverActionsNative.Native_Outfit_GetAutoSwitchEnabled(follower)
-                Bool newVal = !curVal
-                Debug.Trace("[SeverActions_MCM] PerActorAutoSwitch: " + follower.GetDisplayName() + " (" + follower.GetFormID() + ") curVal=" + curVal + " -> newVal=" + newVal)
-                SeverActionsNative.Native_Outfit_SetAutoSwitchEnabled(follower, newVal)
-                StorageUtil.SetIntValue(follower, "SeverOutfit_AutoSwitch", newVal as Int)
-                ; Verify the write took effect
-                Bool verifyVal = SeverActionsNative.Native_Outfit_GetAutoSwitchEnabled(follower)
-                Debug.Trace("[SeverActions_MCM] PerActorAutoSwitch verify: " + verifyVal)
-                ForcePageReset()
-            EndIf
-        EndIf
-    elseif option == OID_FM_Notifications
-        If FollowerManagerScript
-            FollowerManagerScript.ShowNotifications = !FollowerManagerScript.ShowNotifications
-            SetToggleOptionValue(OID_FM_Notifications, FollowerManagerScript.ShowNotifications)
-        EndIf
-    elseif option == OID_FM_Debug
-        If FollowerManagerScript
-            FollowerManagerScript.DebugMode = !FollowerManagerScript.DebugMode
-            SetToggleOptionValue(OID_FM_Debug, FollowerManagerScript.DebugMode)
-        EndIf
-    elseif option == OID_FM_AutoAssessment
-        If FollowerManagerScript
-            FollowerManagerScript.AutoRelAssessment = !FollowerManagerScript.AutoRelAssessment
-            SetToggleOptionValue(OID_FM_AutoAssessment, FollowerManagerScript.AutoRelAssessment)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "trackRelationships", BoolToStr(FollowerManagerScript.AutoRelAssessment))
-        EndIf
-    elseif option == OID_FM_AutoInterAssessment
-        If FollowerManagerScript
-            FollowerManagerScript.AutoInterFollowerAssessment = !FollowerManagerScript.AutoInterFollowerAssessment
-            SetToggleOptionValue(OID_FM_AutoInterAssessment, FollowerManagerScript.AutoInterFollowerAssessment)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "interFollowerAssessment", BoolToStr(FollowerManagerScript.AutoInterFollowerAssessment))
-        EndIf
-    elseif option == OID_FM_AutoOffScreenLife
-        If FollowerManagerScript
-            FollowerManagerScript.AutoOffScreenLife = !FollowerManagerScript.AutoOffScreenLife
-            SetToggleOptionValue(OID_FM_AutoOffScreenLife, FollowerManagerScript.AutoOffScreenLife)
-            SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "autoOffScreenLife", BoolToStr(FollowerManagerScript.AutoOffScreenLife))
-        EndIf
-    elseif option == OID_FM_OffScreenConsequences
-        If FollowerManagerScript
-            FollowerManagerScript.OffScreenConsequences = !FollowerManagerScript.OffScreenConsequences
-            SetToggleOptionValue(OID_FM_OffScreenConsequences, FollowerManagerScript.OffScreenConsequences)
-            SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "consequencesEnabled", BoolToStr(FollowerManagerScript.OffScreenConsequences))
-        EndIf
-    elseif option == OID_FM_AutoAmbientBanter
-        If FollowerManagerScript
-            FollowerManagerScript.AutoAmbientBanter = !FollowerManagerScript.AutoAmbientBanter
-            SetToggleOptionValue(OID_FM_AutoAmbientBanter, FollowerManagerScript.AutoAmbientBanter)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "ambientBanterEnabled", BoolToStr(FollowerManagerScript.AutoAmbientBanter))
-        EndIf
-    elseif option == OID_FM_ForceRemove
-        If FollowerManagerScript && CachedManagedFollowers && SelectedCompanionIdx < CachedManagedFollowers.Length
-            Actor follower = CachedManagedFollowers[SelectedCompanionIdx]
-            String fName = "this follower"
-            If follower
-                fName = follower.GetDisplayName()
-            EndIf
-            bool confirm = ShowMessage("Force remove " + fName + "? This erases ALL data (factions, aliases, relationships, outfits, home) and cannot be undone.", true, "Yes", "No")
-            If confirm
-                If follower
-                    FollowerManagerScript.PurgeFollower(follower)
-                EndIf
-                ; Also clear from native stores
-                If follower
-                    SeverActionsNative.Native_RemoveFollowerData(follower)
-                    SeverActionsNative.Native_Outfit_RemoveActor(follower)
-                EndIf
-                ForcePageReset()
-                Debug.Notification(fName + " force-removed.")
-            EndIf
-        EndIf
-    elseif option == OID_FM_ResetAll
-        If FollowerManagerScript
-            bool confirm = ShowMessage("This will dismiss ALL companions and clear all relationship data. Continue?", true, "Yes", "No")
-            If confirm
-                Actor[] managed = FollowerManagerScript.GetAllFollowers()
-                Int j = 0
-                While j < managed.Length
-                    If managed[j]
-                        FollowerManagerScript.UnregisterFollower(managed[j], false)
-                    EndIf
-                    j += 1
-                EndWhile
-                ForcePageReset()
-                Debug.Notification("All companions dismissed and data cleared.")
-            EndIf
-        EndIf
-
-    ; Per-follower exclusion toggles and follower manager per-follower actions
-    else
-        ; Follower Manager dismiss/clear home buttons
-        If FollowerManagerScript && OID_FM_DismissFollower && CachedManagedFollowers
-            Int j = 0
-            While j < CachedManagedFollowers.Length && j < 20
-                If option == OID_FM_DismissFollower[j] && CachedManagedFollowers[j]
-                    bool confirm = ShowMessage("Dismiss " + CachedManagedFollowers[j].GetDisplayName() + "?", true, "Yes", "No")
-                    If confirm
-                        ; abDeliberateExit = TRUE: a player clicking Dismiss and
-                        ; confirming is as deliberate as the dialogue action, so
-                        ; NFF's alias seat must come down with our roster entry.
-                        ; Left false, this button reproduced the undismissable-
-                        ; follower bug on the MCM surface. The Reset All sweep
-                        ; above stays false - that is bookkeeping, not intent.
-                        FollowerManagerScript.UnregisterFollower(CachedManagedFollowers[j], true, true)
-                        ForcePageReset()
-                    EndIf
-                ElseIf OID_FM_AssignHome && option == OID_FM_AssignHome[j] && CachedManagedFollowers[j]
-                    Location currentLoc = Game.GetPlayer().GetCurrentLocation()
-                    If currentLoc
-                        String locName = currentLoc.GetName()
-                        If locName != ""
-                            FollowerManagerScript.AssignHome(CachedManagedFollowers[j], locName)
-                            ForcePageReset()
-                        Else
-                            Debug.Notification("Current location has no name.")
-                        EndIf
-                    Else
-                        Debug.Notification("No location detected - try from inside a named area.")
-                    EndIf
-                ElseIf OID_FM_ClearHome && option == OID_FM_ClearHome[j] && CachedManagedFollowers[j]
-                    FollowerManagerScript.ClearHome(CachedManagedFollowers[j])
-                    Debug.Notification(CachedManagedFollowers[j].GetDisplayName() + "'s home cleared.")
-                    ForcePageReset()
-                EndIf
-                j += 1
-            EndWhile
-        EndIf
-
-        ; Dismissed NPCs: clear home / re-recruit
-        If FollowerManagerScript && OID_FM_DismissedClearHome && CachedDismissedFollowers
-            Int d = 0
-            While d < CachedDismissedFollowers.Length && d < 20
-                If option == OID_FM_DismissedClearHome[d] && CachedDismissedFollowers[d]
-                    FollowerManagerScript.ClearHome(CachedDismissedFollowers[d])
-                    Debug.Notification(CachedDismissedFollowers[d].GetDisplayName() + "'s home cleared.")
-                    ForcePageReset()
-                ElseIf OID_FM_DismissedReRecruit && option == OID_FM_DismissedReRecruit[d] && CachedDismissedFollowers[d]
-                    bool confirm = ShowMessage("Re-recruit " + CachedDismissedFollowers[d].GetDisplayName() + "?", true, "Yes", "No")
-                    If confirm
-                        FollowerManagerScript.RegisterFollower(CachedDismissedFollowers[d])
-                        ForcePageReset()
-                    EndIf
-                EndIf
-                d += 1
-            EndWhile
-        EndIf
-
-        ; Homes page: NPC Home clear buttons
-        If FollowerManagerScript && OID_ClearNPCHome && CachedHomedNPCs
-            Int h = 0
-            While h < CachedHomedNPCs.Length && h < 50
-                If option == OID_ClearNPCHome[h] && CachedHomedNPCs[h]
-                    FollowerManagerScript.ClearHome(CachedHomedNPCs[h])
-                    Debug.Notification(CachedHomedNPCs[h].GetDisplayName() + "'s home cleared.")
-                    ForcePageReset()
-                EndIf
-                h += 1
-            EndWhile
-        EndIf
-
-        ; --- Outfits page: lock toggle ---
-        If option == OID_Outfit_Lock && OutfitScript && CachedPresetActors
-            If SelectedOutfitNPCIdx < CachedPresetActors.Length
-                Actor target = CachedPresetActors[SelectedOutfitNPCIdx]
-                If target
-                    Bool currentLock = OutfitScript.HasNonFollowerOutfitLock(target)
-                    OutfitScript.SetNonFollowerOutfitLock(target, !currentLock)
-                    SetToggleOptionValue(OID_Outfit_Lock, !currentLock)
-                    ; Assign/clear outfit alias slot via FollowerManager
-                    If FollowerManagerScript
-                        If !currentLock
-                            FollowerManagerScript.AssignOutfitSlot(target)
-                        Else
-                            FollowerManagerScript.ClearOutfitSlot(target)
-                        EndIf
-                    EndIf
-                EndIf
-            EndIf
-        EndIf
-
-        ; --- Outfits page: defer-to-bondage-mods global toggle ---
-        If option == OID_Outfit_DeferBondage
-            Bool curDefer = StorageUtil.GetIntValue(None, "SeverOutfit_DeferBondage", 1) as Bool
-            Bool newDefer = !curDefer
-            StorageUtil.SetIntValue(None, "SeverOutfit_DeferBondage", newDefer as Int)
-            SeverActionsNativeExt.Native_Outfit_SetDeferBondage(newDefer)
-            SetToggleOptionValue(OID_Outfit_DeferBondage, newDefer)
-        EndIf
-
-        ; --- Outfits page: preset delete buttons ---
-        If OutfitScript && OID_Outfit_DeletePreset && CachedOutfitPresetNames && CachedPresetActors
-            Int p = 0
-            While p < CachedOutfitPresetNames.Length && p < 20
-                If option == OID_Outfit_DeletePreset[p]
-                    If SelectedOutfitNPCIdx < CachedPresetActors.Length
-                        Actor target = CachedPresetActors[SelectedOutfitNPCIdx]
-                        If target
-                            bool confirm = ShowMessage("Delete outfit preset '" + CachedOutfitPresetNames[p] + "' for " + target.GetDisplayName() + "?", true, "Yes", "No")
-                            If confirm
-                                OutfitScript.DeletePreset(target, CachedOutfitPresetNames[p])
-                                Debug.Notification("Deleted preset: " + CachedOutfitPresetNames[p])
-                                ForcePageReset()
-                            EndIf
-                        EndIf
-                    EndIf
-                    return
-                EndIf
-                p += 1
-            EndWhile
-        EndIf
-
-        ; Follower page: Preset delete buttons
-        If OutfitScript && OID_FM_DeletePreset && CachedPresetNames && CachedManagedFollowers
-            Int p = 0
-            While p < CachedPresetNames.Length && p < 20
-                If option == OID_FM_DeletePreset[p]
-                    Actor target = CachedManagedFollowers[SelectedCompanionIdx]
-                    If target
-                        bool confirm = ShowMessage("Delete outfit preset '" + CachedPresetNames[p] + "' for " + target.GetDisplayName() + "?", true, "Yes", "No")
-                        If confirm
-                            OutfitScript.DeletePreset(target, CachedPresetNames[p])
-                            Debug.Notification("Deleted preset: " + CachedPresetNames[p])
-                            ForcePageReset()
-                        EndIf
-                    EndIf
-                    return
-                EndIf
-                p += 1
-            EndWhile
-        EndIf
-
-        If SurvivalScript && OID_FollowerExclude && CachedFollowers
-            Int j = 0
-            While j < CachedFollowers.Length && j < 20
-                If option == OID_FollowerExclude[j] && CachedFollowers[j]
-                    SurvivalScript.ToggleFollowerExcluded(CachedFollowers[j])
-                    Bool isExcluded = SurvivalScript.IsFollowerExcluded(CachedFollowers[j])
-                    SetToggleOptionValue(option, !isExcluded)
-
-                    If isExcluded
-                        Debug.Notification(CachedFollowers[j].GetDisplayName() + " excluded from survival")
-                    Else
-                        Debug.Notification(CachedFollowers[j].GetDisplayName() + " included in survival")
-                    EndIf
-                EndIf
-                j += 1
-            EndWhile
-        EndIf
-
-        ; --- Bio Blocks page: apply selected block to the crosshair target ---
-        If option == OID_Bio_Apply
-            If BioTargetActor && BioBlockIds && BioBlockIds.Length > 0 && BioBlockIdx < BioBlockIds.Length
-                If SeverActionsNativeExt2.Native_BioBlock_Apply(BioTargetActor, BioBlockIds[BioBlockIdx])
-                    Debug.Notification("Bio block applied to " + BioTargetActor.GetDisplayName())
-                Else
-                    Debug.Notification("Bio Blocks: already applied, or no target/block")
-                EndIf
-                ForcePageReset()
-            Else
-                Debug.Notification("Bio Blocks: aim at an NPC and pick a block first")
-            EndIf
-            return
-        EndIf
-
-        ; --- Bio Blocks page: faction-rule remove rows ---
-        If OID_Bio_Rule && BioRuleNames
-            Int br = 0
-            While br < OID_Bio_Rule.Length && br < BioRuleNames.Length
-                If option == OID_Bio_Rule[br]
-                    If SeverActionsNativeExt2.Native_BioBlock_RemoveFactionRule(br)
-                        Debug.Notification("Faction rule removed")
-                    EndIf
-                    ForcePageReset()
-                    return
-                EndIf
-                br += 1
-            EndWhile
-        EndIf
-    endif
-EndEvent
-
-Function ClearTravelSlotWithConfirm(Int slotIndex)
-    {Clear a travel slot with user confirmation}
-    Int slotState
-    String statusText
-    String confirmMsg
-    Bool doConfirm
-    
-    If !TravelScript
-        Return
-    EndIf
-    
-    ; Check if slot is active
-    slotState = TravelScript.GetSlotState(slotIndex)
-    If slotState == 0
-        ShowMessage("This slot is already empty.", false)
-        Return
-    EndIf
-    
-    statusText = TravelScript.GetSlotStatusText(slotIndex)
-    confirmMsg = "Clear slot " + slotIndex + "? " + statusText + " This will cancel travel and restore follower status if applicable."
-    doConfirm = ShowMessage(confirmMsg, true, "Yes", "No")
-    
-    If doConfirm
-        TravelScript.ClearSlotFromMCM(slotIndex, true)
-        ForcePageReset()
+    ElseIf asRowId != ""
+        Debug.Trace("[SeverActions_MCM] DoAction: no branch for the row '" + asRowId + "'")
     EndIf
 EndFunction
 
-Function ClearBountyWithConfirm(Faction akCrimeFaction, String holdName)
-    {Clear a specific hold's bounty with confirmation}
-    If !BountyScript
-        Quest myQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
-        If myQuest
-            BountyScript = myQuest as SeverActions_ArrestBounty
-        EndIf
+Function DoCourierTest()
+    {Send a sample letter by walking courier to test the walk-up / handoff loop; a random retainer is the named
+     sender.}
+    Actor letterSender = None
+    int retCount = SeverActionsNativeExt2.Venture_Count()
+    If retCount > 0
+        letterSender = SeverActionsNativeExt2.Venture_GetAssigneeAt(Utility.RandomInt(0, retCount - 1))
     EndIf
-    If !ArrestScript || !BountyScript || !akCrimeFaction
+    String subj = "A Word, When You Can"
+    String body = "I'll keep this short, since paper costs me what little I've got.\n\nThe work goes - not well, not poorly, just on. But there's a matter I'd rather put to you in person than trust to a courier's pocket. Come find me when your road bends back this way.\n\nDon't make me send another of these. They're dear."
+    ; The couriers provider's dispatchCourier: reason, subject and body joined by newlines. Without the
+    ; bundle (Modular) the player gets the unavailable notice.
+    If !SeverActions_ModuleBase.IsBound("couriers")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.courierSystemUnavailable"))
         Return
     EndIf
-
-    Int bounty = BountyScript.GetTrackedBounty(akCrimeFaction)
-    If bounty <= 0
-        ShowMessage("You have no bounty in " + holdName + ".", false)
-        Return
-    EndIf
-
-    String confirmMsg = "Clear your " + bounty + " gold bounty in " + holdName + "?"
-    Bool doConfirm = ShowMessage(confirmMsg, true, "Yes", "No")
-
-    If doConfirm
-        BountyScript.ClearTrackedBounty(akCrimeFaction)
-        ForcePageReset()
-        Debug.Notification("Bounty cleared in " + holdName)
+    int dispatched = SeverActions_ModuleBase.CallInt("couriers", "dispatchCourier", letterSender, None, "meet\n" + subj + "\n" + body, 0.0)
+    If dispatched <= 0
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.courierDispatchFailed"))
+    ElseIf letterSender != None
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("mcm.courierOnWayFrom", ("" + letterSender.GetDisplayName())))
+    Else
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.courierOnWayUnsigned"))
     EndIf
 EndFunction
 
-Function ClearAllBountiesWithConfirm()
-    {Clear all bounties in all holds with confirmation}
-    If !BountyScript
-        Quest myQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
-        If myQuest
-            BountyScript = myQuest as SeverActions_ArrestBounty
-        EndIf
-    EndIf
-    If !ArrestScript || !BountyScript
+Function DoCourierLLMTest()
+    {Force a real LLM-written letter from a random retainer; a courier brings it when the model returns.}
+    int rc = SeverActionsNativeExt2.Venture_Count()
+    If rc <= 0
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.noRetainersHire"))
         Return
     EndIf
-
-    ; Check if there are any bounties to clear
-    Int totalBounty = 0
-    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionWhiterun)
-    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionRift)
-    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionHaafingar)
-    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionEastmarch)
-    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionReach)
-    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionFalkreath)
-    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionPale)
-    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionHjaalmarch)
-    totalBounty += BountyScript.GetTrackedBounty(ArrestScript.CrimeFactionWinterhold)
-
-    If totalBounty <= 0
-        ShowMessage("You have no bounties in any hold.", false)
+    Actor r = SeverActionsNativeExt2.Venture_GetAssigneeAt(Utility.RandomInt(0, rc - 1))
+    If r == None
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.couldNotResolveRetainer"))
         Return
     EndIf
+    ; The letter listener is SeverActions_Courier's own, registered on every load.
+    SeverActionsNativeExt2.Venture_DebugRequestLetter(r)
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("mcm.penningLetter", ("" + r.GetDisplayName())))
+EndFunction
 
-    String confirmMsg = "Clear ALL bounties across all holds? Total: " + totalBounty + " gold."
-    Bool doConfirm = ShowMessage(confirmMsg, true, "Yes", "No")
-
-    If doConfirm
-        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionWhiterun)
-        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionRift)
-        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionHaafingar)
-        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionEastmarch)
-        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionReach)
-        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionFalkreath)
-        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionPale)
-        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionHjaalmarch)
-        BountyScript.ClearTrackedBounty(ArrestScript.CrimeFactionWinterhold)
-        ForcePageReset()
-        Debug.Notification("All bounties cleared!")
+Function DoSliderAction(String asRowId, Int aiEntry, Int aiOption, Float afValue, String asFormat)
+    {A slider that is not a settings row.}
+    ; the four relationship values: FollowerManager's Set<X> are one-line forwarders to these natives
+    If asRowId == "fmRapport"
+        SeverActionsNativeExt.Native_SetRapport(_selCompanion, afValue)
+        SetSliderOptionValue(aiOption, afValue, asFormat)
+    ElseIf asRowId == "fmTrust"
+        SeverActionsNativeExt.Native_SetTrust(_selCompanion, afValue)
+        SetSliderOptionValue(aiOption, afValue, asFormat)
+    ElseIf asRowId == "fmLoyalty"
+        SeverActionsNativeExt.Native_SetLoyalty(_selCompanion, afValue)
+        SetSliderOptionValue(aiOption, afValue, asFormat)
+    ElseIf asRowId == "fmMood"
+        SeverActionsNativeExt.Native_SetMood(_selCompanion, afValue)
+        SetSliderOptionValue(aiOption, afValue, asFormat)
+    ElseIf asRowId == "entWage"
+        EntWage = afValue as Int
+        SetSliderOptionValue(aiOption, afValue, asFormat)
+    Else
+        Debug.Trace("[SeverActions_MCM] DoSliderAction: no branch for the row '" + asRowId + "'")
     EndIf
 EndFunction
 
-; =============================================================================
-; KEYMAP HANDLING
-; =============================================================================
-
-int Function EffectiveConfigMenuKey()
-    {The authoritative config-menu key lives on the Hotkeys script (which
-     defaults to 9 and is what the native sink actually consumes). The MCM's
-     own ConfigMenuKey is only a display copy that starts at -1.}
-    If HotkeyScript && HotkeyScript.ConfigMenuKey > 0
-        return HotkeyScript.ConfigMenuKey
-    EndIf
-    return ConfigMenuKey
-EndFunction
-
-Event OnOptionKeyMapChange(int option, int keyCode, string conflictControl, string conflictName)
-    ; Escape key (keyCode 1) clears the hotkey
-    if keyCode == 1
-        keyCode = -1
-    endif
-
-    ; Handle conflict checking (only if setting a real key, not clearing)
-    if keyCode > 0 && conflictControl != ""
-        string msg = "This key is already mapped to:\n" + conflictControl
-        if conflictName != ""
-            msg += " (" + conflictName + ")"
-        endif
-        msg += "\n\nAre you sure you want to use this key?"
-
-        if !ShowMessage(msg, true, "Yes", "No")
-            return
-        endif
-    endif
-
-    ; The config-menu key is consumed natively and always wins in OnKeyDown —
-    ; a hotkey sharing its code would simply never fire. Refuse the bind so
-    ; the user picks a different key instead of getting a dead hotkey.
-    ; Compare against the AUTHORITATIVE key on the Hotkeys script: the MCM's
-    ; own ConfigMenuKey property defaults to -1 and is only populated once
-    ; the user rebinds it HERE, so for default-key users comparing our copy
-    ; would refuse nothing (the split-brain field finding).
-    if keyCode > 0 && option != OID_ConfigMenuKey && keyCode == EffectiveConfigMenuKey()
-        ShowMessage("That key opens the SeverActions config menu. Pick a different key, or rebind the config menu first.", false, "OK")
-        return
-    endif
-    if keyCode > 0 && option == OID_ConfigMenuKey
-        bool taken = keyCode == FollowToggleKey || keyCode == DismissKey || keyCode == StandUpKey || keyCode == UseFurnitureKey || keyCode == YieldKey || keyCode == UndressKey || keyCode == DressKey || keyCode == SetCompanionKey || keyCode == CompanionWaitKey || keyCode == AssignHomeKey || keyCode == SetupCampKey || keyCode == DropMarkerKey || keyCode == TieUntieKey || keyCode == WheelMenuKey || keyCode == ClearHomeKey
-        if taken
-            ShowMessage("A SeverActions hotkey already uses that key - it would stop working (the config menu always wins). Pick a different key or clear that hotkey first.", false, "OK")
-            return
-        endif
-    endif
-
-    if option == OID_FollowToggleKey
-        FollowToggleKey = keyCode
-        SetKeyMapOptionValue(OID_FollowToggleKey, keyCode)
-        ApplyHotkeySettings()
-
-    elseif option == OID_DismissKey
-        DismissKey = keyCode
-        SetKeyMapOptionValue(OID_DismissKey, keyCode)
-        ApplyHotkeySettings()
-
-    elseif option == OID_StandUpKey
-        StandUpKey = keyCode
-        SetKeyMapOptionValue(OID_StandUpKey, keyCode)
-        ApplyHotkeySettings()
-
-    elseif option == OID_UseFurnitureKey
-        UseFurnitureKey = keyCode
-        SetKeyMapOptionValue(OID_UseFurnitureKey, keyCode)
-        ApplyHotkeySettings()
-
-    elseif option == OID_YieldKey
-        YieldKey = keyCode
-        SetKeyMapOptionValue(OID_YieldKey, keyCode)
-        ApplyHotkeySettings()
-
-    elseif option == OID_UndressKey
-        UndressKey = keyCode
-        SetKeyMapOptionValue(OID_UndressKey, keyCode)
-        ApplyHotkeySettings()
-
-    elseif option == OID_DressKey
-        DressKey = keyCode
-        SetKeyMapOptionValue(OID_DressKey, keyCode)
-        ApplyHotkeySettings()
-
-    elseif option == OID_SetCompanionKey
-        SetCompanionKey = keyCode
-        SetKeyMapOptionValue(OID_SetCompanionKey, keyCode)
-        ApplyHotkeySettings()
-
-    elseif option == OID_CompanionWaitKey
-        CompanionWaitKey = keyCode
-        SetKeyMapOptionValue(OID_CompanionWaitKey, keyCode)
-        ApplyHotkeySettings()
-
-    elseif option == OID_AssignHomeKey
-        AssignHomeKey = keyCode
-        SetKeyMapOptionValue(OID_AssignHomeKey, keyCode)
-        ApplyHotkeySettings()
-    elseif option == OID_ClearHomeKey
-        ClearHomeKey = keyCode
-        SetKeyMapOptionValue(OID_ClearHomeKey, keyCode)
-        ApplyHotkeySettings()
-
-    elseif option == OID_SetupCampKey
-        SetupCampKey = keyCode
-        SetKeyMapOptionValue(OID_SetupCampKey, keyCode)
-        ApplyHotkeySettings()
-
-    elseif option == OID_DropMarkerKey
-        DropMarkerKey = keyCode
-        SetKeyMapOptionValue(OID_DropMarkerKey, keyCode)
-        ApplyHotkeySettings()
-    elseif option == OID_TieUntieKey
-        TieUntieKey = keyCode
-        SetKeyMapOptionValue(OID_TieUntieKey, keyCode)
-        ApplyHotkeySettings()
-
-    elseif option == OID_WheelMenuKey
-        WheelMenuKey = keyCode
-        SetKeyMapOptionValue(OID_WheelMenuKey, keyCode)
-        ApplyWheelMenuSettings()
-
-    elseif option == OID_ConfigMenuKey
-        ConfigMenuKey = keyCode
-        SetKeyMapOptionValue(OID_ConfigMenuKey, keyCode)
-        ApplyConfigMenuKeySettings()
-    endif
-EndEvent
-
-; =============================================================================
-; MENU HANDLING (dropdowns)
-; =============================================================================
-
-Event OnOptionMenuOpen(int option)
-    if option == OID_Ent_Job
-        SetMenuDialogStartIndex(EntJob)
-        SetMenuDialogDefaultIndex(0)
-        SetMenuDialogOptions(EntJobOptions)
-    elseif option == OID_Ent_Arrangement
-        SetMenuDialogStartIndex(EntArrangement)
-        SetMenuDialogDefaultIndex(0)
-        SetMenuDialogOptions(EntArrangementOptions)
-    elseif option == OID_TargetMode
-        SetMenuDialogStartIndex(TargetMode)
-        SetMenuDialogDefaultIndex(0)
-        SetMenuDialogOptions(TargetModeOptions)
-    elseif option == OID_BookReadMode
-        If LootScript
-            SetMenuDialogStartIndex(LootScript.BookReadMode)
-            SetMenuDialogDefaultIndex(0)
-            SetMenuDialogOptions(BookReadModeOptions)
-        EndIf
-    elseif option == OID_IntimacyGenderGate
-        ; Populate the dropdown the same way FrameworkMode does.
-        If FollowerManagerScript
-            SetMenuDialogStartIndex(FollowerManagerScript.IntimacyGenderGate)
-            SetMenuDialogDefaultIndex(0)
-            SetMenuDialogOptions(IntimacyGenderOptions)
-        EndIf
-    elseif option == OID_FM_FrameworkMode
-        If FollowerManagerScript
-            SetMenuDialogStartIndex(FollowerManagerScript.FrameworkMode)
-            SetMenuDialogDefaultIndex(0)
-            SetMenuDialogOptions(FrameworkModeOptions)
-        EndIf
-    elseif option == OID_Outfit_NPCSelect
-        ; Build NPC name list for the Outfits page dropdown
-        If CachedPresetActors && CachedPresetActors.Length > 0
-            string[] npcNames = new string[20]
-            Int n = 0
-            Int nCount = 0
-            While n < CachedPresetActors.Length && n < 20
-                If CachedPresetActors[n]
-                    npcNames[nCount] = CachedPresetActors[n].GetDisplayName()
-                    nCount += 1
-                EndIf
-                n += 1
-            EndWhile
-            SetMenuDialogStartIndex(SelectedOutfitNPCIdx)
-            SetMenuDialogDefaultIndex(0)
-            SetMenuDialogOptions(npcNames)
-        EndIf
-    elseif option == OID_FM_CompanionSelect
-        ; Build companion name list for the dropdown
-        If CachedManagedFollowers && CachedManagedFollowers.Length > 0
-            string[] names = new string[20]
-            Int j = 0
-            Int count = 0
-            While j < CachedManagedFollowers.Length && j < 20
-                If CachedManagedFollowers[j]
-                    names[count] = CachedManagedFollowers[j].GetDisplayName()
-                    count += 1
-                EndIf
-                j += 1
-            EndWhile
-            ; Trim to actual count
-            string[] trimmed = PapyrusUtil.StringArray(count)
-            j = 0
-            While j < count
-                trimmed[j] = names[j]
-                j += 1
-            EndWhile
-            SetMenuDialogStartIndex(SelectedCompanionIdx)
-            SetMenuDialogDefaultIndex(0)
-            SetMenuDialogOptions(trimmed)
-        EndIf
-    elseif option == OID_FM_DismissedSelect
-        ; Build dismissed NPC name list for the dropdown
-        If CachedDismissedFollowers && CachedDismissedFollowers.Length > 0
-            string[] dnames = new string[20]
-            Int j = 0
-            Int count = 0
-            While j < CachedDismissedFollowers.Length && j < 20
-                If CachedDismissedFollowers[j]
-                    dnames[count] = CachedDismissedFollowers[j].GetDisplayName()
-                    count += 1
-                EndIf
-                j += 1
-            EndWhile
-            string[] dtrimmed = PapyrusUtil.StringArray(count)
-            j = 0
-            While j < count
-                dtrimmed[j] = dnames[j]
-                j += 1
-            EndWhile
-            SetMenuDialogStartIndex(SelectedDismissedIdx)
-            SetMenuDialogDefaultIndex(0)
-            SetMenuDialogOptions(dtrimmed)
-        EndIf
-    elseif option == OID_Bio_Tab
-        If BioTabs && BioTabs.Length > 0
-            SetMenuDialogStartIndex(BioTabIdx)
-            SetMenuDialogDefaultIndex(0)
-            SetMenuDialogOptions(BioTabs)
-        EndIf
-    elseif option == OID_Bio_Block
-        If BioBlockTitles && BioBlockTitles.Length > 0
-            SetMenuDialogStartIndex(BioBlockIdx)
-            SetMenuDialogDefaultIndex(0)
-            SetMenuDialogOptions(BioBlockTitles)
-        EndIf
-    elseif option == OID_Bio_GrantFaction
-        If BioTargetActor
-            BioTargetFactions = SeverActionsNativeExt2.Native_BioBlock_TargetFactionNames(BioTargetActor)
-            If BioTargetFactions && BioTargetFactions.Length > 0
-                SetMenuDialogStartIndex(0)
-                SetMenuDialogDefaultIndex(0)
-                SetMenuDialogOptions(BioTargetFactions)
-            EndIf
-        EndIf
-    elseif option == OID_Bio_RemoveBlock
-        If BioAssignedTitles && BioAssignedTitles.Length > 0
-            SetMenuDialogStartIndex(0)
-            SetMenuDialogDefaultIndex(0)
-            SetMenuDialogOptions(BioAssignedTitles)
-        EndIf
-    else
-        ; Per-follower combat style menus
-        If FollowerManagerScript && CachedManagedFollowers && OID_FM_CombatStyle
-            Int j = 0
-            While j < CachedManagedFollowers.Length && j < 20
-                If option == OID_FM_CombatStyle[j] && CachedManagedFollowers[j]
-                    String currentStyle = FollowerManagerScript.GetCombatStyle(CachedManagedFollowers[j])
-                    Int startIdx = CombatStyleIndexFromString(currentStyle)
-                    SetMenuDialogStartIndex(startIdx)
-                    SetMenuDialogDefaultIndex(0)
-                    SetMenuDialogOptions(CombatStyleOptions)
-                EndIf
-                j += 1
-            EndWhile
-        EndIf
-    endif
-EndEvent
-
-Event OnOptionMenuAccept(int option, int index)
-    if option == OID_Ent_Job
-        EntJob = index
-        SetMenuOptionValue(OID_Ent_Job, EntJobOptions[index])
-    elseif option == OID_Ent_Arrangement
-        EntArrangement = index
-        SetMenuOptionValue(OID_Ent_Arrangement, EntArrangementOptions[index])
-    elseif option == OID_TargetMode
-        TargetMode = index
-        SetMenuOptionValue(OID_TargetMode, TargetModeOptions[TargetMode])
-        ApplyHotkeySettings()
-        ; Force page refresh to show/hide radius slider
+Function DoMenuAction(String asRowId, Int aiEntry, Int aiOption, Int aiIndex, String asPick)
+    {A menu that is not a settings row: a selector, or a one-shot pick that acts on its pick. asPick is the
+     chosen entry's text.}
+    If asRowId == "fmCompanionSelect"
+        SelectedCompanionIdx = aiIndex
         ForcePageReset()
-    elseif option == OID_BookReadMode
-        If LootScript
-            LootScript.BookReadMode = index
-            SetMenuOptionValue(OID_BookReadMode, BookReadModeOptions[index])
-        EndIf
-    elseif option == OID_IntimacyGenderGate
-        If FollowerManagerScript
-            FollowerManagerScript.IntimacyGenderGate = index
-            ; Same write-through rule as the toggle: file and property must
-            ; agree or the load replay reverts it.
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "intimacyGenderGate", "" + index)
-            ; Live-apply so the gate takes effect now, not on the next reload
-            ; (the decorator reads the native atomic). (PR #442 review)
-            SeverActionsNativeExt2.Native_IntimateHistory_SetGenderGate(index)
-            SetMenuOptionValue(OID_IntimacyGenderGate, IntimacyGenderOptions[index])
-        EndIf
-    elseif option == OID_FM_FrameworkMode
-        If FollowerManagerScript
-            FollowerManagerScript.FrameworkMode = index
-            ; Write through to the GLOBAL settings file with the same page/key
-            ; PrismaUI uses. Without this the file kept PrismaUI's older value
-            ; and the load-time replay ("global file always wins") reverted this
-            ; choice on every load - the Tracking-reverts report.
-            SeverActionsNativeExt2.Native_SettingsRecord("companions", "frameworkMode", "" + index)
-            SetMenuOptionValue(OID_FM_FrameworkMode, FrameworkModeOptions[index])
-        EndIf
-    elseif option == OID_Outfit_NPCSelect
-        SelectedOutfitNPCIdx = index
+
+    ElseIf asRowId == "fmDismissedSelect"
+        SelectedDismissedIdx = aiIndex
         ForcePageReset()
-    elseif option == OID_FM_CompanionSelect
-        SelectedCompanionIdx = index
+
+    ElseIf asRowId == "outfitNPCSelect"
+        SelectedOutfitNPCIdx = aiIndex
         ForcePageReset()
-    elseif option == OID_FM_DismissedSelect
-        SelectedDismissedIdx = index
-        ForcePageReset()
-    elseif option == OID_Bio_Tab
-        If BioTabs && index < BioTabs.Length
-            BioTabIdx = index
+
+    ElseIf asRowId == "fmCombatStyle"
+        If SeverActionsNativeExt2.Module_IsUsable("followers") && _selCompanion
+            ; Fire-and-forget, so a verb (FollowerManager.SetCombatStyle): nothing reads the row back and the drawn
+            ; text is the pick. Args as in DoAction's fmPerActorAutoSwitch.
+            SeverActionsNativeExt2.Verb_Send("followers", "setCombatStyle", "||" + asPick, _selCompanion)
+            SetMenuOptionValue(aiOption, asPick)
+        EndIf
+
+    ElseIf asRowId == "bioTab"
+        If BioTabs && aiIndex < BioTabs.Length
+            BioTabIdx = aiIndex
             BioBlockIdx = 0
-            SetMenuOptionValue(OID_Bio_Tab, BioTabs[index])
+            SetMenuOptionValue(aiOption, asPick)
             ForcePageReset()
         EndIf
-    elseif option == OID_Bio_Block
-        If BioBlockTitles && index < BioBlockTitles.Length
-            BioBlockIdx = index
-            SetMenuOptionValue(OID_Bio_Block, BioBlockTitles[index])
+
+    ElseIf asRowId == "bioBlock"
+        If BioBlockTitles && aiIndex < BioBlockTitles.Length
+            BioBlockIdx = aiIndex
+            SetMenuOptionValue(aiOption, asPick)
         EndIf
-    elseif option == OID_Bio_GrantFaction
-        If BioTargetActor && BioTargetFactions && index < BioTargetFactions.Length && BioBlockIds && BioBlockIdx < BioBlockIds.Length
-            If SeverActionsNativeExt2.Native_BioBlock_GrantTargetFaction(BioTargetActor, index, BioBlockIds[BioBlockIdx])
-                Debug.Notification("Block granted to " + BioTargetFactions[index])
+
+    ElseIf asRowId == "bioGrantFaction"
+        If BioTargetActor && BioTargetFactions && aiIndex < BioTargetFactions.Length && BioBlockIds && BioBlockIdx < BioBlockIds.Length
+            If SeverActionsNativeExt2.Native_BioBlock_GrantTargetFaction(BioTargetActor, aiIndex, BioBlockIds[BioBlockIdx])
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("mcm.blockGrantedTo", ("" + BioTargetFactions[aiIndex])))
             Else
-                Debug.Notification("Bio Blocks: could not grant to that faction")
+                Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.bioBlocksCouldNotGrant"))
             EndIf
             ForcePageReset()
         EndIf
-    elseif option == OID_Bio_RemoveBlock
-        If BioTargetActor && BioAssignedIds && index < BioAssignedIds.Length
-            SeverActionsNativeExt2.Native_BioBlock_Unapply(BioTargetActor, BioAssignedIds[index])
-            Debug.Notification("Block removed")
+
+    ElseIf asRowId == "bioRemoveBlock"
+        If BioTargetActor && BioAssignedIds && aiIndex < BioAssignedIds.Length
+            SeverActionsNativeExt2.Native_BioBlock_Unapply(BioTargetActor, BioAssignedIds[aiIndex])
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.blockRemoved"))
             ForcePageReset()
         EndIf
-    else
-        ; Per-follower combat style menus
-        If FollowerManagerScript && CachedManagedFollowers && OID_FM_CombatStyle
-            Int j = 0
-            While j < CachedManagedFollowers.Length && j < 20
-                If option == OID_FM_CombatStyle[j] && CachedManagedFollowers[j]
-                    FollowerManagerScript.SetCombatStyle(CachedManagedFollowers[j], CombatStyleOptions[index])
-                    SetMenuOptionValue(OID_FM_CombatStyle[j], CombatStyleOptions[index])
-                EndIf
-                j += 1
-            EndWhile
-        EndIf
-    endif
-EndEvent
 
-; =============================================================================
-; SLIDER HANDLING
-; =============================================================================
+    ElseIf asRowId == "entJob"
+        EntJob = aiIndex
+        SetMenuOptionValue(aiOption, asPick)
 
-Event OnOptionSliderOpen(int option)
-    if option == OID_Ent_Wage
-        SetSliderDialogStartValue(EntWage as Float)
-        SetSliderDialogDefaultValue(200.0)
-        SetSliderDialogRange(0.0, 5000.0)
-        SetSliderDialogInterval(50.0)
-    elseif option == OID_NearestNPCRadius
-        SetSliderDialogStartValue(NearestNPCRadius)
-        SetSliderDialogDefaultValue(500.0)
-        SetSliderDialogRange(100.0, 2000.0)
-        SetSliderDialogInterval(50.0)
-    elseif option == OID_TruceRadius
-        SetSliderDialogStartValue(CombatScript.TruceRadius)
-        SetSliderDialogDefaultValue(8000.0)
-        SetSliderDialogRange(2000.0, 16000.0)
-        SetSliderDialogInterval(500.0)
-    elseif option == OID_ChallengeParleySeconds
-        SetSliderDialogStartValue(CombatScript.ChallengeParleySeconds)
-        SetSliderDialogDefaultValue(120.0)
-        SetSliderDialogRange(30.0, 300.0)
-        SetSliderDialogInterval(10.0)
-    elseif option == OID_CombatCooldown
-        SetSliderDialogStartValue(CombatScript.CombatCooldownDuration)
-        SetSliderDialogDefaultValue(30.0)
-        SetSliderDialogRange(5.0, 120.0)
-        SetSliderDialogInterval(5.0)
-    elseif option == OID_DebuffSeverity
-        SetSliderDialogStartValue(SurvivalScript.DebuffSeverity)
-        SetSliderDialogDefaultValue(1.0)
-        SetSliderDialogRange(0.0, 1.0)
-        SetSliderDialogInterval(0.05)
-    elseif option == OID_ArrestBountyThreshold
-        SetSliderDialogStartValue(ArrestScript.ArrestBountyThreshold as Float)
-        SetSliderDialogDefaultValue(300.0)
-        SetSliderDialogRange(0.0, 2000.0)
-        SetSliderDialogInterval(50.0)
-    elseif option == OID_BribeMult
-        SetSliderDialogStartValue(ArrestScript.BribeMultiplier)
-        SetSliderDialogDefaultValue(1.5)
-        SetSliderDialogRange(1.0, 5.0)
-        SetSliderDialogInterval(0.25)
-    elseif option == OID_ResistBounty
-        SetSliderDialogStartValue(ArrestScript.ResistBountyIncrease as Float)
-        SetSliderDialogDefaultValue(500.0)
-        SetSliderDialogRange(0.0, 2000.0)
-        SetSliderDialogInterval(50.0)
-    elseif option == OID_DebtGrace
-        SetSliderDialogStartValue(FollowerManagerScript.DebtScript.OverdueGracePeriodHours)
-        SetSliderDialogDefaultValue(24.0)
-        SetSliderDialogRange(0.0, 168.0)
-        SetSliderDialogInterval(6.0)
-    elseif option == OID_DebtReport
-        SetSliderDialogStartValue(FollowerManagerScript.DebtScript.ReportThresholdHours)
-        SetSliderDialogDefaultValue(72.0)
-        SetSliderDialogRange(0.0, 336.0)
-        SetSliderDialogInterval(6.0)
-    elseif option == OID_FM_SchedWorkStart
-        SetSliderDialogStartValue(FollowerManagerScript.SCHEDULE_WORK_START)
-        SetSliderDialogDefaultValue(8.0)
-        SetSliderDialogRange(0.0, 24.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_FM_SchedWorkEnd
-        SetSliderDialogStartValue(FollowerManagerScript.SCHEDULE_WORK_END)
-        SetSliderDialogDefaultValue(17.0)
-        SetSliderDialogRange(0.0, 24.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_FM_SchedPlayStart
-        SetSliderDialogStartValue(FollowerManagerScript.SCHEDULE_PLAY_START)
-        SetSliderDialogDefaultValue(17.0)
-        SetSliderDialogRange(0.0, 24.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_FM_SchedPlayEnd
-        SetSliderDialogStartValue(FollowerManagerScript.SCHEDULE_PLAY_END)
-        SetSliderDialogDefaultValue(22.0)
-        SetSliderDialogRange(0.0, 24.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_FM_HomeSleepStart
-        SetSliderDialogStartValue(FollowerManagerScript.HomeSleepStart)
-        SetSliderDialogDefaultValue(22.0)
-        SetSliderDialogRange(0.0, 24.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_FM_HomeSleepEnd
-        SetSliderDialogStartValue(FollowerManagerScript.HomeSleepEnd)
-        SetSliderDialogDefaultValue(6.0)
-        SetSliderDialogRange(0.0, 24.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_FM_TeleportDist
-        SetSliderDialogStartValue(FollowerManagerScript.FollowerTeleportDistance)
-        SetSliderDialogDefaultValue(2000.0)
-        SetSliderDialogRange(0.0, 6000.0)
-        SetSliderDialogInterval(250.0)
-    elseif option == OID_FM_TeleportCooldown
-        SetSliderDialogStartValue(FollowerManagerScript.TeleportCooldownSeconds as Float)
-        SetSliderDialogDefaultValue(30.0)
-        SetSliderDialogRange(0.0, 300.0)
-        SetSliderDialogInterval(5.0)
-    elseif option == OID_Ent_OutputPct
-        SetSliderDialogStartValue(FollowerManagerScript.EnterpriseOutputPct as Float)
-        SetSliderDialogDefaultValue(100.0)
-        SetSliderDialogRange(0.0, 300.0)
-        SetSliderDialogInterval(10.0)
-    elseif option == OID_Ent_StoryCap
-        SetSliderDialogStartValue(FollowerManagerScript.EnterpriseStoryCap as Float)
-        SetSliderDialogDefaultValue(-1.0)
-        SetSliderDialogRange(-1.0, 12.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_ArrestCooldown
-        SetSliderDialogStartValue(ArrestScript.ArrestPlayerCooldown)
-        SetSliderDialogDefaultValue(60.0)
-        SetSliderDialogRange(0.0, 300.0)
-        SetSliderDialogInterval(5.0)
-    elseif option == OID_PersuasionTimeLimit
-        SetSliderDialogStartValue(ArrestScript.PersuasionTimeLimit)
-        SetSliderDialogDefaultValue(90.0)
-        SetSliderDialogRange(30.0, 300.0)
-        SetSliderDialogInterval(5.0)
-    elseif option == OID_SilenceChance
-        SetSliderDialogStartValue(SilenceChance as Float)
-        SetSliderDialogDefaultValue(50.0)
-        SetSliderDialogRange(0.0, 100.0)
-        SetSliderDialogInterval(5.0)
+    ElseIf asRowId == "entArrangement"
+        EntArrangement = aiIndex
+        SetMenuOptionValue(aiOption, asPick)
 
-    elseif option == OID_UIScale
-        Float startScale = 1.0
-        If FollowerManagerScript
-            startScale = FollowerManagerScript.UIScale
-        EndIf
-        SetSliderDialogStartValue(startScale)
-        SetSliderDialogDefaultValue(1.0)
-        SetSliderDialogRange(0.8, 2.0)
-        SetSliderDialogInterval(0.05)
-
-    elseif option == OID_SpellFailDifficulty
-        if SpellTeachScript
-            SetSliderDialogStartValue(SpellTeachScript.FailureDifficultyMult)
-            SetSliderDialogDefaultValue(1.0)
-            SetSliderDialogRange(0.0, 3.0)
-            SetSliderDialogInterval(0.1)
-        endif
-
-    ; Inventory limit sliders
-    elseif option == OID_InvLimit_Weapons
-        SetSliderDialogStartValue(InvLimit_Weapons as Float)
-        SetSliderDialogDefaultValue(10.0)
-        SetSliderDialogRange(0.0, 20.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_InvLimit_Armor
-        SetSliderDialogStartValue(InvLimit_Armor as Float)
-        SetSliderDialogDefaultValue(10.0)
-        SetSliderDialogRange(0.0, 20.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_InvLimit_Potions
-        SetSliderDialogStartValue(InvLimit_Potions as Float)
-        SetSliderDialogDefaultValue(10.0)
-        SetSliderDialogRange(0.0, 20.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_InvLimit_Ingredients
-        SetSliderDialogStartValue(InvLimit_Ingredients as Float)
-        SetSliderDialogDefaultValue(5.0)
-        SetSliderDialogRange(0.0, 20.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_InvLimit_Books
-        SetSliderDialogStartValue(InvLimit_Books as Float)
-        SetSliderDialogDefaultValue(10.0)
-        SetSliderDialogRange(0.0, 20.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_InvLimit_Scrolls
-        SetSliderDialogStartValue(InvLimit_Scrolls as Float)
-        SetSliderDialogDefaultValue(5.0)
-        SetSliderDialogRange(0.0, 20.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_InvLimit_Ammo
-        SetSliderDialogStartValue(InvLimit_Ammo as Float)
-        SetSliderDialogDefaultValue(5.0)
-        SetSliderDialogRange(0.0, 20.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_InvLimit_Keys
-        SetSliderDialogStartValue(InvLimit_Keys as Float)
-        SetSliderDialogDefaultValue(5.0)
-        SetSliderDialogRange(0.0, 20.0)
-        SetSliderDialogInterval(1.0)
-    elseif option == OID_InvLimit_Misc
-        SetSliderDialogStartValue(InvLimit_Misc as Float)
-        SetSliderDialogDefaultValue(5.0)
-        SetSliderDialogRange(0.0, 20.0)
-        SetSliderDialogInterval(1.0)
-
-    ; Survival sliders
-    elseif option == OID_HungerRate
-        If SurvivalScript
-            SetSliderDialogStartValue(SurvivalScript.HungerRate)
-            SetSliderDialogDefaultValue(1.0)
-            SetSliderDialogRange(0.25, 3.0)
-            SetSliderDialogInterval(0.25)
-        EndIf
-    elseif option == OID_AutoEatThreshold
-        If SurvivalScript
-            SetSliderDialogStartValue(SurvivalScript.AutoEatThreshold as Float)
-            SetSliderDialogDefaultValue(50.0)
-            SetSliderDialogRange(0.0, 100.0)
-            SetSliderDialogInterval(5.0)
-        EndIf
-    elseif option == OID_FatigueRate
-        If SurvivalScript
-            SetSliderDialogStartValue(SurvivalScript.FatigueRate)
-            SetSliderDialogDefaultValue(1.0)
-            SetSliderDialogRange(0.25, 3.0)
-            SetSliderDialogInterval(0.25)
-        EndIf
-    elseif option == OID_ColdRate
-        If SurvivalScript
-            SetSliderDialogStartValue(SurvivalScript.ColdRate)
-            SetSliderDialogDefaultValue(1.0)
-            SetSliderDialogRange(0.25, 3.0)
-            SetSliderDialogInterval(0.25)
-        EndIf
-
-    ; Follower Manager sliders
-    elseif option == OID_FM_MaxFollowers
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.MaxFollowers as Float)
-            SetSliderDialogDefaultValue(100.0)
-            SetSliderDialogRange(0.0, 200.0)  ; 0 = unlimited
-            SetSliderDialogInterval(1.0)
-        EndIf
-    elseif option == OID_FM_LeavingThreshold
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.LeavingThreshold)
-            SetSliderDialogDefaultValue(-60.0)
-            SetSliderDialogRange(-100.0, -10.0)
-            SetSliderDialogInterval(5.0)
-        EndIf
-    elseif option == OID_FM_RelCooldown
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.RelationshipCooldown)
-            SetSliderDialogDefaultValue(120.0)
-            SetSliderDialogRange(60.0, 300.0)
-            SetSliderDialogInterval(15.0)
-        EndIf
-    elseif option == OID_FM_AssessCooldownMin
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.AssessmentCooldownMinHours)
-            SetSliderDialogDefaultValue(4.0)
-            SetSliderDialogRange(1.0, 24.0)
-            SetSliderDialogInterval(1.0)
-        EndIf
-    elseif option == OID_FM_AssessCooldownMax
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.AssessmentCooldownMaxHours)
-            SetSliderDialogDefaultValue(10.0)
-            SetSliderDialogRange(1.0, 48.0)
-            SetSliderDialogInterval(1.0)
-        EndIf
-    elseif option == OID_FM_InterAssessCooldownMin
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.InterFollowerCooldownMinHours)
-            SetSliderDialogDefaultValue(6.0)
-            SetSliderDialogRange(2.0, 48.0)
-            SetSliderDialogInterval(1.0)
-        EndIf
-    elseif option == OID_FM_InterAssessCooldownMax
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.InterFollowerCooldownMaxHours)
-            SetSliderDialogDefaultValue(14.0)
-            SetSliderDialogRange(2.0, 72.0)
-            SetSliderDialogInterval(1.0)
-        EndIf
-    elseif option == OID_FM_OffScreenCooldownMin
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.OffScreenLifeCooldownMinHours)
-            SetSliderDialogDefaultValue(10.0)
-            SetSliderDialogRange(4.0, 48.0)
-            SetSliderDialogInterval(1.0)
-        EndIf
-    elseif option == OID_FM_OffScreenCooldownMax
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.OffScreenLifeCooldownMaxHours)
-            SetSliderDialogDefaultValue(72.0)
-            SetSliderDialogRange(6.0, 96.0)
-            SetSliderDialogInterval(1.0)
-        EndIf
-    elseif option == OID_FM_ConsequenceCooldown
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.ConsequenceCooldownHours)
-            SetSliderDialogDefaultValue(36.0)
-            SetSliderDialogRange(6.0, 72.0)
-            SetSliderDialogInterval(1.0)
-        EndIf
-    elseif option == OID_FM_AmbientBanterCooldownMin
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.AmbientBanterCooldownMinHours)
-            SetSliderDialogDefaultValue(3.0)
-            SetSliderDialogRange(1.0, 24.0)
-            SetSliderDialogInterval(1.0)
-        EndIf
-    elseif option == OID_FM_AmbientBanterCooldownMax
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.AmbientBanterCooldownMaxHours)
-            SetSliderDialogDefaultValue(7.0)
-            SetSliderDialogRange(2.0, 48.0)
-            SetSliderDialogInterval(1.0)
-        EndIf
-    elseif option == OID_FM_QuestAwarenessOutputCap
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.QuestAwarenessOutputCap as Float)
-            SetSliderDialogDefaultValue(5.0)
-            SetSliderDialogRange(1.0, 15.0)
-            SetSliderDialogInterval(1.0)
-        EndIf
-    elseif option == OID_FM_MaxBounty
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.MaxOffScreenBounty as Float)
-            SetSliderDialogDefaultValue(1000.0)
-            SetSliderDialogRange(100.0, 5000.0)
-            SetSliderDialogInterval(100.0)
-        EndIf
-    elseif option == OID_FM_MaxGoldChange
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.MaxOffScreenGoldChange as Float)
-            SetSliderDialogDefaultValue(500.0)
-            SetSliderDialogRange(50.0, 2000.0)
-            SetSliderDialogInterval(50.0)
-        EndIf
-    elseif option == OID_FM_DeathGracePeriod
-        If FollowerManagerScript
-            SetSliderDialogStartValue(FollowerManagerScript.DeathGracePeriodHours)
-            SetSliderDialogDefaultValue(4.0)
-            SetSliderDialogRange(0.0, 48.0)
-            SetSliderDialogInterval(1.0)
-        EndIf
-    elseif option == OID_FM_StabilityDelay
-        SetSliderDialogStartValue((SeverActionsNativeExt.SituationMonitor_GetStabilityThreshold() as Float) / 1000.0)
-        SetSliderDialogDefaultValue(5.0)
-        SetSliderDialogRange(3.0, 15.0)
-        SetSliderDialogInterval(1.0)
-
-    ; Per-follower relationship sliders
-    else
-        If FollowerManagerScript && CachedManagedFollowers
-            Int j = 0
-            While j < CachedManagedFollowers.Length && j < 20
-                If CachedManagedFollowers[j]
-                    If option == OID_FM_Rapport[j]
-                        SetSliderDialogStartValue(FollowerManagerScript.GetRapport(CachedManagedFollowers[j]))
-                        SetSliderDialogDefaultValue(0.0)
-                        SetSliderDialogRange(-100.0, 100.0)
-                        SetSliderDialogInterval(5.0)
-                    ElseIf option == OID_FM_Trust[j]
-                        SetSliderDialogStartValue(FollowerManagerScript.GetTrust(CachedManagedFollowers[j]))
-                        SetSliderDialogDefaultValue(25.0)
-                        SetSliderDialogRange(0.0, 100.0)
-                        SetSliderDialogInterval(5.0)
-                    ElseIf option == OID_FM_Loyalty[j]
-                        SetSliderDialogStartValue(FollowerManagerScript.GetLoyalty(CachedManagedFollowers[j]))
-                        SetSliderDialogDefaultValue(50.0)
-                        SetSliderDialogRange(0.0, 100.0)
-                        SetSliderDialogInterval(5.0)
-                    ElseIf option == OID_FM_Mood[j]
-                        SetSliderDialogStartValue(FollowerManagerScript.GetMood(CachedManagedFollowers[j]))
-                        SetSliderDialogDefaultValue(50.0)
-                        SetSliderDialogRange(-100.0, 100.0)
-                        SetSliderDialogInterval(5.0)
-                    EndIf
-                EndIf
-                j += 1
-            EndWhile
-        EndIf
-    endif
-EndEvent
-
-Event OnOptionSliderAccept(int option, float value)
-    if option == OID_Ent_Wage
-        EntWage = value as Int
-        SetSliderOptionValue(OID_Ent_Wage, value, "{0}g")
-    elseif option == OID_NearestNPCRadius
-        NearestNPCRadius = value
-        SetSliderOptionValue(OID_NearestNPCRadius, NearestNPCRadius, "{0} units")
-        ApplyHotkeySettings()
-    elseif option == OID_ArrestCooldown
-        ArrestScript.ArrestPlayerCooldown = value
-        SetSliderOptionValue(OID_ArrestCooldown, value, "{0} sec")
-        SeverActionsNativeExt2.Native_SettingsRecord("world", "arrestCooldown", "" + value)
-    elseif option == OID_TruceRadius
-        CombatScript.TruceRadius = value
-        CombatScript.PushTruceConfigToNative()
-        SetSliderOptionValue(OID_TruceRadius, value, "{0} units")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceRadius", "" + value)
-    elseif option == OID_ChallengeParleySeconds
-        CombatScript.ChallengeParleySeconds = value
-        CombatScript.PushTruceConfigToNative()
-        SetSliderOptionValue(OID_ChallengeParleySeconds, value, "{0} sec")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "campChallengeSeconds", "" + value)
-    elseif option == OID_CombatCooldown
-        CombatScript.CombatCooldownDuration = value
-        SetSliderOptionValue(OID_CombatCooldown, value, "{0} sec")
-    elseif option == OID_DebuffSeverity
-        SurvivalScript.DebuffSeverity = value
-        SetSliderOptionValue(OID_DebuffSeverity, value, "{2}x")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "debuffSeverity", "" + value)
-    elseif option == OID_ArrestBountyThreshold
-        ArrestScript.ArrestBountyThreshold = value as Int
-        SetSliderOptionValue(OID_ArrestBountyThreshold, value, "{0}g")
-    elseif option == OID_BribeMult
-        ArrestScript.BribeMultiplier = value
-        SetSliderOptionValue(OID_BribeMult, value, "{2}x")
-    elseif option == OID_ResistBounty
-        ArrestScript.ResistBountyIncrease = value as Int
-        SetSliderOptionValue(OID_ResistBounty, value, "{0}g")
-    elseif option == OID_DebtGrace
-        FollowerManagerScript.DebtScript.OverdueGracePeriodHours = value
-        SetSliderOptionValue(OID_DebtGrace, value, "{0} hrs")
-        SeverActionsNativeExt2.Native_SettingsRecord("world", "gracePeriod", "" + value)
-    elseif option == OID_DebtReport
-        FollowerManagerScript.DebtScript.ReportThresholdHours = value
-        SetSliderOptionValue(OID_DebtReport, value, "{0} hrs")
-        SeverActionsNativeExt2.Native_SettingsRecord("world", "reportThreshold", "" + value)
-    elseif option == OID_FM_SchedWorkStart
-        FollowerManagerScript.SCHEDULE_WORK_START = value
-        SetSliderOptionValue(OID_FM_SchedWorkStart, value, "{0}:00")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "scheduleWorkStart", "" + value)
-    elseif option == OID_FM_SchedWorkEnd
-        FollowerManagerScript.SCHEDULE_WORK_END = value
-        SetSliderOptionValue(OID_FM_SchedWorkEnd, value, "{0}:00")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "scheduleWorkEnd", "" + value)
-    elseif option == OID_FM_SchedPlayStart
-        FollowerManagerScript.SCHEDULE_PLAY_START = value
-        SetSliderOptionValue(OID_FM_SchedPlayStart, value, "{0}:00")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "schedulePlayStart", "" + value)
-    elseif option == OID_FM_SchedPlayEnd
-        FollowerManagerScript.SCHEDULE_PLAY_END = value
-        SetSliderOptionValue(OID_FM_SchedPlayEnd, value, "{0}:00")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "schedulePlayEnd", "" + value)
-    elseif option == OID_FM_HomeSleepStart
-        FollowerManagerScript.HomeSleepStart = value
-        SetSliderOptionValue(OID_FM_HomeSleepStart, value, "{0}:00")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "homeSleepStart", "" + value)
-    elseif option == OID_FM_HomeSleepEnd
-        FollowerManagerScript.HomeSleepEnd = value
-        SetSliderOptionValue(OID_FM_HomeSleepEnd, value, "{0}:00")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "homeSleepEnd", "" + value)
-    elseif option == OID_FM_TeleportDist
-        FollowerManagerScript.FollowerTeleportDistance = value
-        SetSliderOptionValue(OID_FM_TeleportDist, value, "{0}")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "followerTeleportDistance", "" + value)
-    elseif option == OID_FM_TeleportCooldown
-        FollowerManagerScript.TeleportCooldownSeconds = value as Int
-        SetSliderOptionValue(OID_FM_TeleportCooldown, value, "{0} sec")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "teleportCooldown", "" + value)
-    elseif option == OID_Ent_OutputPct
-        FollowerManagerScript.EnterpriseOutputPct = value as Int
-        SeverActionsNativeExt2.Venture_SetProductionMult(FollowerManagerScript.EnterpriseOutputPct)
-        SetSliderOptionValue(OID_Ent_OutputPct, value, "{0}%")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "enterpriseOutputPct", "" + value)
-    elseif option == OID_Ent_StoryCap
-        FollowerManagerScript.EnterpriseStoryCap = value as Int
-        SeverActionsNativeExt2.Venture_SetStoryCap(FollowerManagerScript.EnterpriseStoryCap)
-        SetSliderOptionValue(OID_Ent_StoryCap, value, "{0}")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "enterpriseStoryCap", "" + value)
-    elseif option == OID_PersuasionTimeLimit
-        ArrestScript.PersuasionTimeLimit = value
-        SetSliderOptionValue(OID_PersuasionTimeLimit, value, "{0} sec")
-        SeverActionsNativeExt2.Native_SettingsRecord("world", "persuasionTimeLimit", "" + value)
-    elseif option == OID_SilenceChance
-        SilenceChance = value as Int
-        StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", SilenceChance)
-        SetSliderOptionValue(OID_SilenceChance, value, "{0}%")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "silenceChance", "" + value)
-
-    elseif option == OID_UIScale
-        ; Write the property + StorageUtil mirror. The PrismaUI gatherer
-        ; reads the property on next page-data fetch, so the new scale
-        ; takes effect the next time the player opens Prisma.
-        If FollowerManagerScript
-            FollowerManagerScript.UIScale = value
-            StorageUtil.SetFloatValue(None, "SeverActions_UIScale", value)
-        EndIf
-        SetSliderOptionValue(OID_UIScale, value, "{2}x")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "uiScale", "" + value)
-
-    elseif option == OID_SpellFailDifficulty
-        if SpellTeachScript
-            SpellTeachScript.FailureDifficultyMult = value
-            StorageUtil.SetFloatValue(None, "SeverActions_SpellFailDifficulty", value)
-            SetSliderOptionValue(OID_SpellFailDifficulty, value, "{1}x")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "spellFailDifficulty", "" + value)
-        endif
-
-    ; Inventory limit sliders (dual-write: property + StorageUtil for prompt access)
-    elseif option == OID_InvLimit_Weapons
-        InvLimit_Weapons = value as Int
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Weapons", InvLimit_Weapons)
-        SetSliderOptionValue(OID_InvLimit_Weapons, value, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitWeapons", "" + value)
-    elseif option == OID_InvLimit_Armor
-        InvLimit_Armor = value as Int
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Armor", InvLimit_Armor)
-        SetSliderOptionValue(OID_InvLimit_Armor, value, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitArmor", "" + value)
-    elseif option == OID_InvLimit_Potions
-        InvLimit_Potions = value as Int
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Potions", InvLimit_Potions)
-        SetSliderOptionValue(OID_InvLimit_Potions, value, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitPotions", "" + value)
-    elseif option == OID_InvLimit_Ingredients
-        InvLimit_Ingredients = value as Int
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Ingredients", InvLimit_Ingredients)
-        SetSliderOptionValue(OID_InvLimit_Ingredients, value, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitIngredients", "" + value)
-    elseif option == OID_InvLimit_Books
-        InvLimit_Books = value as Int
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Books", InvLimit_Books)
-        SetSliderOptionValue(OID_InvLimit_Books, value, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitBooks", "" + value)
-    elseif option == OID_InvLimit_Scrolls
-        InvLimit_Scrolls = value as Int
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Scrolls", InvLimit_Scrolls)
-        SetSliderOptionValue(OID_InvLimit_Scrolls, value, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitScrolls", "" + value)
-    elseif option == OID_InvLimit_Ammo
-        InvLimit_Ammo = value as Int
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Ammo", InvLimit_Ammo)
-        SetSliderOptionValue(OID_InvLimit_Ammo, value, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitAmmo", "" + value)
-    elseif option == OID_InvLimit_Keys
-        InvLimit_Keys = value as Int
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Keys", InvLimit_Keys)
-        SetSliderOptionValue(OID_InvLimit_Keys, value, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitKeys", "" + value)
-    elseif option == OID_InvLimit_Misc
-        InvLimit_Misc = value as Int
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Misc", InvLimit_Misc)
-        SetSliderOptionValue(OID_InvLimit_Misc, value, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitMisc", "" + value)
-
-    ; Survival sliders
-    elseif option == OID_HungerRate
-        If SurvivalScript
-            SurvivalScript.HungerRate = value
-            SetSliderOptionValue(OID_HungerRate, value, "{1}x")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "hungerRate", "" + value)
-        EndIf
-    elseif option == OID_AutoEatThreshold
-        If SurvivalScript
-            SurvivalScript.AutoEatThreshold = value as Int
-            SetSliderOptionValue(OID_AutoEatThreshold, value, "{0}%")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "autoEatThreshold", "" + value)
-        EndIf
-    elseif option == OID_FatigueRate
-        If SurvivalScript
-            SurvivalScript.FatigueRate = value
-            SetSliderOptionValue(OID_FatigueRate, value, "{1}x")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "fatigueRate", "" + value)
-        EndIf
-    elseif option == OID_ColdRate
-        If SurvivalScript
-            SurvivalScript.ColdRate = value
-            SetSliderOptionValue(OID_ColdRate, value, "{1}x")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "coldRate", "" + value)
-        EndIf
-
-    ; Follower Manager sliders
-    elseif option == OID_FM_MaxFollowers
-        If FollowerManagerScript
-            FollowerManagerScript.MaxFollowers = value as Int
-            SetSliderOptionValue(OID_FM_MaxFollowers, value, "{0}")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "maxFollowers", "" + value)
-        EndIf
-    elseif option == OID_FM_LeavingThreshold
-        If FollowerManagerScript
-            FollowerManagerScript.LeavingThreshold = value
-            SetSliderOptionValue(OID_FM_LeavingThreshold, value, "{0}")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "leavingThreshold", "" + value)
-        EndIf
-    elseif option == OID_FM_RelCooldown
-        If FollowerManagerScript
-            FollowerManagerScript.RelationshipCooldown = value
-            SetSliderOptionValue(OID_FM_RelCooldown, value, "{0} sec")
-        EndIf
-    elseif option == OID_FM_AssessCooldownMin
-        If FollowerManagerScript
-            FollowerManagerScript.AssessmentCooldownMinHours = value
-            ; Clamp max if min exceeds it
-            If value > FollowerManagerScript.AssessmentCooldownMaxHours
-                FollowerManagerScript.AssessmentCooldownMaxHours = value
-                SetSliderOptionValue(OID_FM_AssessCooldownMax, value, "{1} hrs")
-            EndIf
-            SetSliderOptionValue(OID_FM_AssessCooldownMin, value, "{1} hrs")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "assessmentCooldownMin", "" + value)
-        EndIf
-    elseif option == OID_FM_AssessCooldownMax
-        If FollowerManagerScript
-            FollowerManagerScript.AssessmentCooldownMaxHours = value
-            ; Clamp min if max falls below it
-            If value < FollowerManagerScript.AssessmentCooldownMinHours
-                FollowerManagerScript.AssessmentCooldownMinHours = value
-                SetSliderOptionValue(OID_FM_AssessCooldownMin, value, "{1} hrs")
-                SeverActionsNativeExt2.Native_SettingsRecord("settings", "assessmentCooldownMin", "" + value)
-            EndIf
-            SetSliderOptionValue(OID_FM_AssessCooldownMax, value, "{1} hrs")
-        EndIf
-    elseif option == OID_FM_InterAssessCooldownMin
-        If FollowerManagerScript
-            FollowerManagerScript.InterFollowerCooldownMinHours = value
-            If value > FollowerManagerScript.InterFollowerCooldownMaxHours
-                FollowerManagerScript.InterFollowerCooldownMaxHours = value
-                SetSliderOptionValue(OID_FM_InterAssessCooldownMax, value, "{1} hrs")
-            EndIf
-            SetSliderOptionValue(OID_FM_InterAssessCooldownMin, value, "{1} hrs")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "interFollowerCooldownMin", "" + value)
-        EndIf
-    elseif option == OID_FM_InterAssessCooldownMax
-        If FollowerManagerScript
-            FollowerManagerScript.InterFollowerCooldownMaxHours = value
-            If value < FollowerManagerScript.InterFollowerCooldownMinHours
-                FollowerManagerScript.InterFollowerCooldownMinHours = value
-                SetSliderOptionValue(OID_FM_InterAssessCooldownMin, value, "{1} hrs")
-                SeverActionsNativeExt2.Native_SettingsRecord("settings", "interFollowerCooldownMin", "" + value)
-            EndIf
-            SetSliderOptionValue(OID_FM_InterAssessCooldownMax, value, "{1} hrs")
-        EndIf
-    elseif option == OID_FM_OffScreenCooldownMin
-        If FollowerManagerScript
-            FollowerManagerScript.OffScreenLifeCooldownMinHours = value
-            If value > FollowerManagerScript.OffScreenLifeCooldownMaxHours
-                FollowerManagerScript.OffScreenLifeCooldownMaxHours = value
-                SetSliderOptionValue(OID_FM_OffScreenCooldownMax, value, "{1} hrs")
-                SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "offScreenCooldownMax", "" + value)
-            EndIf
-            SetSliderOptionValue(OID_FM_OffScreenCooldownMin, value, "{1} hrs")
-            SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "offScreenCooldownMin", "" + value)
-        EndIf
-    elseif option == OID_FM_OffScreenCooldownMax
-        If FollowerManagerScript
-            FollowerManagerScript.OffScreenLifeCooldownMaxHours = value
-            If value < FollowerManagerScript.OffScreenLifeCooldownMinHours
-                FollowerManagerScript.OffScreenLifeCooldownMinHours = value
-                SetSliderOptionValue(OID_FM_OffScreenCooldownMin, value, "{1} hrs")
-                SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "offScreenCooldownMin", "" + value)
-            EndIf
-            SetSliderOptionValue(OID_FM_OffScreenCooldownMax, value, "{1} hrs")
-            SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "offScreenCooldownMax", "" + value)
-        EndIf
-    elseif option == OID_FM_ConsequenceCooldown
-        If FollowerManagerScript
-            FollowerManagerScript.ConsequenceCooldownHours = value
-            SetSliderOptionValue(OID_FM_ConsequenceCooldown, value, "{1} hrs")
-            SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "consequenceCooldown", "" + value)
-        EndIf
-    elseif option == OID_FM_AmbientBanterCooldownMin
-        If FollowerManagerScript
-            FollowerManagerScript.AmbientBanterCooldownMinHours = value
-            If value > FollowerManagerScript.AmbientBanterCooldownMaxHours
-                FollowerManagerScript.AmbientBanterCooldownMaxHours = value
-                SetSliderOptionValue(OID_FM_AmbientBanterCooldownMax, value, "{1} hrs")
-            EndIf
-            SetSliderOptionValue(OID_FM_AmbientBanterCooldownMin, value, "{1} hrs")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "ambientBanterCooldownMin", "" + value)
-        EndIf
-    elseif option == OID_FM_AmbientBanterCooldownMax
-        If FollowerManagerScript
-            FollowerManagerScript.AmbientBanterCooldownMaxHours = value
-            If value < FollowerManagerScript.AmbientBanterCooldownMinHours
-                FollowerManagerScript.AmbientBanterCooldownMinHours = value
-                SetSliderOptionValue(OID_FM_AmbientBanterCooldownMin, value, "{1} hrs")
-                SeverActionsNativeExt2.Native_SettingsRecord("settings", "ambientBanterCooldownMin", "" + value)
-            EndIf
-            SetSliderOptionValue(OID_FM_AmbientBanterCooldownMax, value, "{1} hrs")
-        EndIf
-    elseif option == OID_FM_QuestAwarenessOutputCap
-        If FollowerManagerScript
-            Int newCap = value as Int
-            If newCap < 1
-                newCap = 1
-            ElseIf newCap > 15
-                newCap = 15
-            EndIf
-            FollowerManagerScript.QuestAwarenessOutputCap = newCap
-            ; Push to C++ immediately so the next prompt render uses the new cap
-            ; without waiting for a game reload's boot sync.
-            SeverActionsNative.Native_QuestAwareness_SetOutputCap(newCap)
-            SetSliderOptionValue(OID_FM_QuestAwarenessOutputCap, newCap as Float, "{0}")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "questAwarenessOutputCap", "" + newCap as Float)
-        EndIf
-    elseif option == OID_FM_MaxBounty
-        If FollowerManagerScript
-            FollowerManagerScript.MaxOffScreenBounty = value as Int
-            SetSliderOptionValue(OID_FM_MaxBounty, value, "{0}")
-            SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "maxBounty", "" + value)
-        EndIf
-    elseif option == OID_FM_MaxGoldChange
-        If FollowerManagerScript
-            FollowerManagerScript.MaxOffScreenGoldChange = value as Int
-            SetSliderOptionValue(OID_FM_MaxGoldChange, value, "{0}")
-            SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "maxGoldChange", "" + value)
-        EndIf
-    elseif option == OID_FM_DeathGracePeriod
-        If FollowerManagerScript
-            FollowerManagerScript.DeathGracePeriodHours = value
-            SetSliderOptionValue(OID_FM_DeathGracePeriod, value, "{0} hrs")
-        EndIf
-    elseif option == OID_FM_StabilityDelay
-        FMStabilityDelay = value
-        SeverActionsNativeExt.SituationMonitor_SetStabilityThreshold((value * 1000.0) as Int)
-        SetSliderOptionValue(OID_FM_StabilityDelay, value, "{0} sec")
-
-    ; Per-follower relationship sliders
-    else
-        If FollowerManagerScript && CachedManagedFollowers
-            Int j = 0
-            While j < CachedManagedFollowers.Length && j < 20
-                If CachedManagedFollowers[j]
-                    If option == OID_FM_Rapport[j]
-                        FollowerManagerScript.SetRapport(CachedManagedFollowers[j], value)
-                        SetSliderOptionValue(OID_FM_Rapport[j], value, "{0}")
-                    ElseIf option == OID_FM_Trust[j]
-                        FollowerManagerScript.SetTrust(CachedManagedFollowers[j], value)
-                        SetSliderOptionValue(OID_FM_Trust[j], value, "{0}")
-                    ElseIf option == OID_FM_Loyalty[j]
-                        FollowerManagerScript.SetLoyalty(CachedManagedFollowers[j], value)
-                        SetSliderOptionValue(OID_FM_Loyalty[j], value, "{0}")
-                    ElseIf option == OID_FM_Mood[j]
-                        FollowerManagerScript.SetMood(CachedManagedFollowers[j], value)
-                        SetSliderOptionValue(OID_FM_Mood[j], value, "{0}")
-                    EndIf
-                EndIf
-                j += 1
-            EndWhile
-        EndIf
-    endif
-EndEvent
-
-; =============================================================================
-; OPTION HIGHLIGHTING (Tooltips)
-; =============================================================================
-
-Event OnOptionHighlight(int option)
-    if option == OID_DialogueAnimEnabled
-        SetInfoText("Enable or disable conversation animations on NPCs during SkyrimNet dialogue. When enabled, NPCs will use vanilla Skyrim talking gestures while conversing.")
-    elseif option == OID_SilenceChance
-        SetInfoText("Probability (0-100%) that silence is offered as an option when choosing the next speaker. 0% = NPCs always speak, 100% = silence always available. Default: 50%")
-    elseif option == OID_UIScale
-        SetInfoText("PrismaUI menu density. Use this if Prisma renders too large for your screen and you can't reach the in-app Settings slider. Takes effect the next time you open PrismaUI. Range 0.8-2.0, default 1.0.")
-    elseif option == OID_BookReadMode
-        SetInfoText("How NPCs read books aloud. Verbatim: reads word-for-word (takes longer). Summarize: gives a summary and shares their in-character thoughts. Default: Read Aloud.")
-    elseif option == OID_IntimacyEnabled
-        SetInfoText("Render the Intimacy & Consent section in NPC bios - how open an NPC is to advances, driven by relationship and their own personality. Nothing is tracked or recorded on this side; intimate-history tracking lives in the SeverActionsNSFW plugin (whose consent section takes over automatically when installed).")
-    elseif option == OID_IntimacyGenderGate
-        SetInfoText("Whose bios render the Intimacy & Consent section: Everyone, Women only, or Men only.")
-
-    elseif option == OID_SpellFailEnabled
-        SetInfoText("Enable the spell failure system. When enabled, learning spells above Novice tier has a chance to fail with school-specific consequences (explosions, hostile summons, etc).")
-    elseif option == OID_SpellFailDifficulty
-        SetInfoText("Multiplier for failure chance. 0.5 = half as likely to fail, 1.0 = normal, 2.0 = twice as likely. Set to 0 to disable failures without turning off the system.")
-
-    elseif option == OID_InvLimit_Weapons || option == OID_InvLimit_Armor || option == OID_InvLimit_Potions || option == OID_InvLimit_Ingredients || option == OID_InvLimit_Books || option == OID_InvLimit_Scrolls || option == OID_InvLimit_Ammo || option == OID_InvLimit_Keys || option == OID_InvLimit_Misc
-        SetInfoText("Max items shown to the AI for this category (0-20). Set to 0 to hide the category entirely. Higher values give the AI more context but use more tokens.")
-
-    elseif option == OID_TagCompanion
-        SetInfoText("Show the [COMPANION] tag in the speaker selector prompt. When enabled, the AI sees which NPCs are your followers and weighs them more heavily for conversation. Disable to make companions less chatty.")
-    elseif option == OID_TagEngaged
-        SetInfoText("Show the [ENGAGED] tag in the speaker selector prompt. Engaged NPCs have a lower threshold to speak up. Disable to remove the engagement bias from speaker selection.")
-    elseif option == OID_TagInScene
-        SetInfoText("Show the [IN SCENE] tag in the speaker selector prompt. NPCs in intimate scenes are strongly deprioritized from speaking. Disable to remove this tag from the AI's consideration.")
-
-    elseif option == OID_AllowConjuredGold
-        SetInfoText("Allow NPCs to give gold they don't actually have. Useful for rewards and quest payments. Disable for hardcore economy.")
-
-    elseif option == OID_DebtActiveCount
-        SetInfoText("Number of active debt records between you and NPCs.")
-    elseif option == OID_DebtPlayerOwes
-        SetInfoText("Total gold you owe to all NPCs combined.")
-    elseif option == OID_DebtOwedToPlayer
-        SetInfoText("Total gold all NPCs owe to you combined.")
-
-    elseif option == OID_ResetTravelSlots
-        SetInfoText("Emergency reset: Clears all travel slots and cancels any active NPC travel. Use if travel slots appear stuck or show incorrect status.")
-        
-    elseif option == OID_TravelSlot0 || option == OID_TravelSlot1 || option == OID_TravelSlot2 || option == OID_TravelSlot3 || option == OID_TravelSlot4
-        SetInfoText("Click to clear this travel slot. This will cancel travel for the NPC and restore their follower status if applicable.")
-        
-    elseif option == OID_FollowToggleKey
-        SetInfoText("Hotkey to toggle NPC following. Look at an NPC and press this key to make them follow you or stop following. Also resumes following if they were waiting.")
-        
-    elseif option == OID_DismissKey
-        SetInfoText("Hotkey to dismiss the targeted companion. Look at a companion and press this key to send them home.")
-
-    elseif option == OID_SetCompanionKey
-        SetInfoText("Hotkey to make the targeted NPC a companion. Registers them as a full companion with relationship tracking, survival needs, and outfit persistence.")
-
-    elseif option == OID_CompanionWaitKey
-        SetInfoText("Hotkey to tell an NPC to wait here. They'll sandbox around the area until you return. Press again on a waiting NPC to resume following. Works on any NPC, not just companions.")
-
-    elseif option == OID_AssignHomeKey
-        SetInfoText("Hotkey to assign the targeted NPC's home to your current location. The NPC will return here when dismissed. Works on any following NPC.")
-    elseif option == OID_ClearHomeKey
-        SetInfoText("Hotkey to CLEAR the targeted NPC's home. Point at any NPC stuck with a bad home and press it - releases SeverActions' home sandbox so the NPC (or NFF) takes back over. Works on any NPC, follower or not.")
-
-    elseif option == OID_SetupCampKey
-        SetInfoText("Hotkey to set up camp (requires Sever's Hearth). A solid ghost of the whole camp appears ahead of you - aim with your view, Q/E to rotate, Activate to confirm, Tab to cancel.")
-
-    elseif option == OID_TieUntieKey
-        SetInfoText("Aim at an NPC and press: if their hands are bound - by you OR by another NPC - you untie them and let them go. If they are free, you seize and bind them on the spot. Each press tells the AI exactly what happened, so it works even when dialogue alone did not trigger the action.")
-    elseif option == OID_DropMarkerKey
-        SetInfoText("Drop a named travel marker at your feet (auto-named; rename later). Use these to name areas inside a home - the kitchen, the study - so NPCs can be sent to them and homed NPCs can live between them.")
-
-    elseif option == OID_StandUpKey
-        SetInfoText("Hotkey to make an NPC stand up from furniture. Look at the NPC and press this key to make them get up from chairs, beds, workstations, etc.")
-
-    elseif option == OID_UseFurnitureKey
-        SetInfoText("Two-step hotkey to send an NPC to use furniture. Aim at an NPC and press once to select them, then aim at a chair / bed / workstation and press again to send them to use it. Selection resets after 30s.")
-
-    elseif option == OID_YieldKey
-        SetInfoText("Hotkey to make an NPC yield/surrender. Stops combat, removes them from hostile factions, and makes them friendly. Works on NPCs currently in combat.")
-        
-    elseif option == OID_UndressKey
-        SetInfoText("Hotkey to remove all armor/clothing from an NPC. Items are stored and can be re-equipped with the Dress hotkey.")
-        
-    elseif option == OID_DressKey
-        SetInfoText("Hotkey to re-equip all stored armor/clothing on an NPC. Only works if the NPC was previously undressed with the Undress hotkey.")
-        
-    elseif option == OID_TargetMode
-        SetInfoText("How to select which NPC the hotkey affects:\n- Crosshair: NPC you're looking at\n- Nearest NPC: Closest NPC to you\n- Last Talked To: Last NPC you had dialogue with")
-        
-    elseif option == OID_NearestNPCRadius
-        SetInfoText("Maximum distance (in game units) to search for the nearest NPC. Only used when Target Mode is set to 'Nearest NPC'. Default: 500 units.")
-
-    elseif option == OID_WheelMenuKey
-        SetInfoText("Hotkey to open the wheel menu with all actions. Requires UIExtensions mod. The wheel always targets the NPC under your crosshair. Great for VR users or those who prefer a single hotkey.")
-
-    elseif option == OID_ConfigMenuKey
-        SetInfoText("Hotkey to open the PrismaUI config menu. Requires PrismaUI mod. Default: Shift+8.")
-    elseif option == OID_ConfigMenuShift
-        SetInfoText("When enabled, you must hold Shift while pressing the config menu key. Frees up the key for other uses when Shift is not held.")
-
-    ; Bounty page tooltips
-    elseif option == OID_BountyWhiterun || option == OID_BountyRift || option == OID_BountyHaafingar || option == OID_BountyEastmarch || option == OID_BountyReach || option == OID_BountyFalkreath || option == OID_BountyPale || option == OID_BountyHjaalmarch || option == OID_BountyWinterhold
-        SetInfoText("Your tracked bounty in this hold. Click to clear. These bounties are managed by SeverActions and won't trigger vanilla guard arrest dialogue.")
-
-    elseif option == OID_ClearAllBounties
-        SetInfoText("Clear all tracked bounties in all holds at once. Use this to start fresh or if bounties are causing issues.")
-
-    elseif option == OID_ArrestCooldown
-        SetInfoText("Cooldown in seconds before guards can use the ArrestPlayer action again. Prevents guards from spamming arrest during persuasion. Set to 0 to disable. Default: 60 seconds.")
-
-    elseif option == OID_PersuasionTimeLimit
-        SetInfoText("Time in seconds the player has to convince the guard during the persuasion phase. After this time expires, the guard will demand a decision. Default: 90 seconds.")
-
-    ; Survival page tooltips
-    elseif option == OID_SurvivalEnabled
-        SetInfoText("Enable or disable the follower survival tracking system. When disabled, followers won't accumulate hunger, fatigue, or cold.")
-
-    elseif option == OID_HungerEnabled
-        SetInfoText("Track hunger for followers. Hunger increases over time and causes stamina/magicka penalties. Followers auto-eat from their inventory when hungry.")
-
-    elseif option == OID_HungerRate
-        SetInfoText("How fast hunger increases. 1.0x is normal speed. Higher values make followers get hungry faster. Default: 1.0x")
-
-    elseif option == OID_AutoEatThreshold
-        SetInfoText("Hunger level (0-100) at which followers automatically eat food from their inventory. Set to 0 to disable auto-eat. Default: 50%")
-
-    elseif option == OID_FatigueEnabled
-        SetInfoText("Track fatigue for followers. Fatigue increases over time and causes health/stamina penalties. Resets when the player sleeps.")
-
-    elseif option == OID_FatigueRate
-        SetInfoText("How fast fatigue increases. 1.0x is normal speed. Higher values make followers tire faster. Default: 1.0x")
-
-    elseif option == OID_ColdEnabled
-        SetInfoText("Track cold for followers based on weather and location. Cold weather and snowy areas increase cold faster. Causes stamina/movement penalties.")
-
-    elseif option == OID_ColdRate
-        SetInfoText("How fast cold increases in harsh conditions. 1.0x is normal speed. Higher values make followers get cold faster. Default: 1.0x")
-
-    elseif option == OID_SurvivalNotifications
-        SetInfoText("Show notifications when followers reach critical survival levels (very hungry, exhausted, freezing).")
-
-    elseif option == OID_SurvivalDebug
-        SetInfoText("Enable debug messages for survival system. Shows detailed tracking info in the console. Useful for troubleshooting.")
-
-    ; Follower Manager tooltips
-    elseif option == OID_FM_MaxFollowers
-        SetInfoText("Maximum number of companions allowed at once (0 = unlimited). Default: 100")
-    elseif option == OID_FM_AllowLeaving
-        SetInfoText("When enabled, companions with very low rapport may decide to leave on their own. Disable for companions that never leave regardless of treatment.")
-    elseif option == OID_FM_RoomRotation
-        SetInfoText("Homed NPCs drift between the named markers dropped in their home every 1-3 in-game hours (drop markers with the Drop Named Marker hotkey). Disable to keep home sandboxing anchored to one spot. Default: ON")
-    elseif option == OID_FM_KidnapEnabled
-        SetInfoText("Villain-playthrough content: lets you order a companion to abduct a named NPC and hold them bound and hooded at a destination. WARNING: holding an essential or quest-relevant NPC captive can break their later quest content. Default: OFF")
-    elseif option == OID_FM_RestrainEnabled
-        SetInfoText("Lets any NPC be ordered to restrain a named NPC in the same scene: they walk over, bind their hands, and hold them standing bound (no hood) until released or moved. An open, ordered act with no automatic crime consequences. Default: ON")
-    elseif option == OID_FM_LeavingThreshold
-        SetInfoText("Rapport level at which companions may decide to leave. Lower values (closer to -100) mean they tolerate more mistreatment. Default: -60")
-    elseif option == OID_FM_AutoSwitch
-        SetInfoText("When enabled, companions automatically change outfits based on their situation (town, adventure, home, sleep). Requires outfit presets assigned to situations.")
-    elseif option == OID_FM_StabilityDelay
-        SetInfoText("How long a situation must be stable before triggering an outfit change. Higher values prevent flickering at town gates. Default: 5 seconds.")
-    elseif option == OID_FM_PerActorAutoSwitch
-        SetInfoText("Toggle automatic outfit switching for this specific companion. When disabled, this companion will not change outfits based on situation even if the global setting is enabled.")
-    elseif option == OID_FM_FrameworkMode
-        SetInfoText("How new followers are managed.\nSeverActions: Full control - teammate status, follow packages, outfit lock, relationships, essential toggle.\nTracking: Observe only - outfit lock and relationships, but no teammate or AI management. Use when another mod handles recruitment.\nSPID keyword holders and NFF token holders auto-route to Tracking regardless.\nTakes effect on next recruit.")
-    elseif option == OID_FM_Notifications
-        SetInfoText("Show notifications when companions are recruited, dismissed, or when relationship milestones occur.")
-    elseif option == OID_FM_Debug
-        SetInfoText("Enable debug messages for companion framework. Shows relationship value changes in the console.")
-    elseif option == OID_FM_AutoAssessment
-        SetInfoText("When enabled, companions periodically reflect on recent events, memories, and diary entries. The system automatically adjusts rapport, trust, loyalty, and mood based on these reflections. Disable to manage relationship values manually or through actions only.")
-    elseif option == OID_FM_AssessCooldownMin
-        SetInfoText("Minimum game hours between relationship assessments per follower. Each follower gets a random cooldown between min and max after each assessment. Default: 4 hours.")
-    elseif option == OID_FM_AssessCooldownMax
-        SetInfoText("Maximum game hours between relationship assessments per follower. Each follower gets a random cooldown between min and max after each assessment. Default: 10 hours.")
-    elseif option == OID_FM_AutoInterAssessment
-        SetInfoText("When enabled, followers periodically evaluate how they feel about each other. Builds inter-party opinions based on shared events, memories, and interactions.")
-    elseif option == OID_FM_InterAssessCooldownMin
-        SetInfoText("Minimum game hours between inter-follower assessments per follower. Random cooldown between min and max. Default: 6 hours.")
-    elseif option == OID_FM_InterAssessCooldownMax
-        SetInfoText("Maximum game hours between inter-follower assessments per follower. Random cooldown between min and max. Default: 14 hours.")
-    elseif option == OID_FM_AutoOffScreenLife
-        SetInfoText("When enabled, dismissed followers with assigned homes will generate life events while you're away. They'll have things to talk about when you return, and local NPCs may gossip about their activities.")
-    elseif option == OID_FM_OffScreenCooldownMin
-        SetInfoText("Minimum game hours between off-screen life events per dismissed follower. Random cooldown between min and max. Default: 10 hours.")
-    elseif option == OID_FM_OffScreenCooldownMax
-        SetInfoText("Maximum game hours between off-screen life events per dismissed follower. Random cooldown between min and max. Default: 72 hours.")
-    elseif option == OID_FM_OffScreenConsequences
-        SetInfoText("When enabled, off-screen life events may have real consequences: followers can get arrested, earn or lose gold, or take on debt. Events are personality-driven - principled followers rarely commit crimes. Default: ON.")
-    elseif option == OID_FM_ConsequenceCooldown
-        SetInfoText("Game hours between consequential off-screen events per follower. Consequences are rarer than regular events. Default: 36 hours.")
-    elseif option == OID_FM_AutoAmbientBanter
-        SetInfoText("When enabled, nearby non-follower NPCs occasionally talk to each other so populated areas feel alive without requiring player input. Hostile cells (dungeons / bandit camps / under-attack settlements) are skipped automatically. Default: ON.")
-    elseif option == OID_FM_AmbientBanterCooldownMin
-        SetInfoText("Minimum game hours between ambient NPC banter cycles. The cooldown is global, not per-NPC. Default: 3 hours.")
-    elseif option == OID_FM_AmbientBanterCooldownMax
-        SetInfoText("Maximum game hours between ambient NPC banter cycles. Each cycle picks a random cooldown between min and max. Default: 7 hours.")
-    elseif option == OID_FM_QuestAwarenessOutputCap
-        SetInfoText("Maximum quest awareness entries followers see in dialogue context per render. Newest entries fill the budget first; completed quests with memories are skipped automatically. The per-follower storage cap (30) is unaffected - this only controls how many reach the LLM. Range: 1-15. Default: 5.")
-    elseif option == OID_FM_MaxBounty
-        SetInfoText("Maximum cumulative bounty a follower can accumulate from off-screen crime events. Prevents runaway bounties. Default: 1000 gold.")
-    elseif option == OID_FM_MaxGoldChange
-        SetInfoText("Maximum gold a follower can gain or lose per off-screen event. Keeps the economy grounded. Default: 500 gold.")
-    elseif option == OID_FM_DeathGracePeriod
-        SetInfoText("Hours after a follower's death before they are automatically removed from the roster. Set to 0 to never auto-remove (manual only via PrismaUI). Default: 4 hours.")
-    elseif option == OID_FM_RelCooldown
-        SetInfoText("Minimum real-time seconds between relationship changes per companion. Prevents the AI from adjusting rapport/trust/loyalty/mood too frequently during conversation. Default: 120 seconds (2 minutes).")
-    elseif option == OID_FM_CompanionSelect
-        SetInfoText("Select which companion to view and edit. Use the dropdown to switch between your recruited companions.")
-    elseif option == OID_Outfit_NPCSelect
-        SetInfoText("Select which NPC to view and manage. Shows non-follower NPCs with saved outfit presets.")
-    elseif option == OID_Outfit_Lock
-        SetInfoText("When enabled, this NPC's outfit will be locked in place and re-equipped automatically on cell transitions. Disable to allow normal outfit changes.")
-    elseif option == OID_Outfit_DeferBondage
-        SetInfoText("When enabled (default), SeverActions stops enforcing outfits on NPCs captured, enslaved, or tied up by Diary of Mine / Paradise Halls, so it won't fight their strip, restraints, or weapon swaps. Disable to let SeverActions re-equip locked outfits even on those NPCs. No effect if neither mod is installed.")
-    elseif option == OID_FM_ResetAll
-        SetInfoText("Emergency reset: dismisses all companions and clears all relationship data. Use if the system is stuck or broken.")
-
-    ; Per-follower tooltips (survival exclusions + relationship sliders)
-    else
-        If OID_FollowerExclude && CachedFollowers
-            Int j = 0
-            While j < CachedFollowers.Length && j < 20
-                If option == OID_FollowerExclude[j] && CachedFollowers[j]
-                    Bool isExcluded = SurvivalScript.IsFollowerExcluded(CachedFollowers[j])
-                    If isExcluded
-                        SetInfoText(CachedFollowers[j].GetDisplayName() + " is excluded from survival tracking. Toggle ON to track hunger, fatigue, and cold for this follower.")
-                    Else
-                        SetInfoText(CachedFollowers[j].GetDisplayName() + " is being tracked. Toggle OFF to exclude this follower from survival (useful for undead, automaton, or daedric followers).")
-                    EndIf
-                EndIf
-                j += 1
-            EndWhile
-        EndIf
-
-        ; Per-follower relationship slider tooltips
-        If FollowerManagerScript && CachedManagedFollowers
-            Int k = 0
-            While k < CachedManagedFollowers.Length && k < 20
-                If CachedManagedFollowers[k]
-                    If option == OID_FM_Rapport[k]
-                        SetInfoText("How much " + CachedManagedFollowers[k].GetDisplayName() + " likes the player. Range: -100 (hostile) to 100 (devoted). Affects willingness to help and dialogue tone. Useful for mid-playthrough adjustment.")
-                    ElseIf option == OID_FM_Trust[k]
-                        SetInfoText("How much " + CachedManagedFollowers[k].GetDisplayName() + " trusts the player's judgment. Range: 0 to 100. Affects willingness to follow dangerous orders. Low trust = more refusals.")
-                    ElseIf option == OID_FM_Loyalty[k]
-                        SetInfoText("How committed " + CachedManagedFollowers[k].GetDisplayName() + " is to staying. Range: 0 to 100. Very low loyalty combined with low rapport may cause them to leave.")
-                    ElseIf option == OID_FM_Mood[k]
-                        SetInfoText(CachedManagedFollowers[k].GetDisplayName() + "'s current temperament. Range: -100 (miserable) to 100 (ecstatic). Mood drifts toward baseline over time and is affected by events.")
-                    ElseIf option == OID_FM_CombatStyle[k]
-                        SetInfoText("How " + CachedManagedFollowers[k].GetDisplayName() + " approaches combat. Aggressive = charges in, Defensive = protects, Ranged = keeps distance, Healer = supports allies, Balanced = adapts.")
-                    EndIf
-                EndIf
-                k += 1
-            EndWhile
-        EndIf
-
-        ; Follower page preset delete tooltips
-        If OID_FM_DeletePreset && CachedPresetNames
-            Int p = 0
-            While p < CachedPresetNames.Length && p < 20
-                If option == OID_FM_DeletePreset[p]
-                    SetInfoText("Delete the saved outfit preset '" + CachedPresetNames[p] + "'. This cannot be undone.")
-                    return
-                EndIf
-                p += 1
-            EndWhile
-        EndIf
-
-        ; Outfits page preset delete tooltips
-        If OID_Outfit_DeletePreset && CachedOutfitPresetNames
-            Int p = 0
-            While p < CachedOutfitPresetNames.Length && p < 20
-                If option == OID_Outfit_DeletePreset[p]
-                    SetInfoText("Delete the saved outfit preset '" + CachedOutfitPresetNames[p] + "'. This cannot be undone.")
-                    return
-                EndIf
-                p += 1
-            EndWhile
-        EndIf
-    endif
-EndEvent
-
-; =============================================================================
-; DEFAULT VALUES
-; =============================================================================
-
-Event OnOptionDefault(int option)
-    if option == OID_DialogueAnimEnabled
-        DialogueAnimEnabled = true
-        SetToggleOptionValue(OID_DialogueAnimEnabled, true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "dialogueAnimEnabled", BoolToStr(true))
-        SeverActionsNative.SetDialogueAnimEnabled(true)
-    elseif option == OID_IntimacyEnabled
-        If FollowerManagerScript
-            FollowerManagerScript.IntimateHistoryEnabled = true
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "intimacyEnabled", "true")
-            SeverActionsNativeExt2.Native_IntimateHistory_SetEnabled(true)  ; live-apply (PR #442 review)
-            SetToggleOptionValue(OID_IntimacyEnabled, true)
-        EndIf
-    elseif option == OID_IntimacyGenderGate
-        If FollowerManagerScript
-            FollowerManagerScript.IntimacyGenderGate = 1
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "intimacyGenderGate", "1")
-            SeverActionsNativeExt2.Native_IntimateHistory_SetGenderGate(1)  ; live-apply (PR #442 review)
-            SetMenuOptionValue(OID_IntimacyGenderGate, IntimacyGenderOptions[1])
-        EndIf
-    elseif option == OID_SilenceChance
-        SilenceChance = 50
-        StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", 50)
-        SetSliderOptionValue(OID_SilenceChance, 50.0, "{0}%")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "silenceChance", "" + 50.0)
-    elseif option == OID_UIScale
-        If FollowerManagerScript
-            FollowerManagerScript.UIScale = 1.0
-            StorageUtil.SetFloatValue(None, "SeverActions_UIScale", 1.0)
-        EndIf
-        SetSliderOptionValue(OID_UIScale, 1.0, "{2}x")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "uiScale", "" + 1.0)
-    elseif option == OID_BookReadMode
-        If LootScript
-            LootScript.BookReadMode = 0
-            SetMenuOptionValue(OID_BookReadMode, BookReadModeOptions[0])
-        EndIf
-
-    elseif option == OID_SpellFailEnabled
-        if SpellTeachScript
-            SpellTeachScript.EnableFailureSystem = true
-            StorageUtil.SetIntValue(None, "SeverActions_SpellFailEnabled", 1)
-            SetToggleOptionValue(OID_SpellFailEnabled, true)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "spellFailEnabled", BoolToStr(true))
-        endif
-    elseif option == OID_SpellFailDifficulty
-        if SpellTeachScript
-            SpellTeachScript.FailureDifficultyMult = 1.0
-            StorageUtil.SetFloatValue(None, "SeverActions_SpellFailDifficulty", 1.0)
-            SetSliderOptionValue(OID_SpellFailDifficulty, 1.0, "{1}x")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "spellFailDifficulty", "" + 1.0)
-        endif
-
-    elseif option == OID_InvLimit_Weapons
-        InvLimit_Weapons = 10
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Weapons", 10)
-        SetSliderOptionValue(OID_InvLimit_Weapons, 10.0, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitWeapons", "" + 10.0)
-    elseif option == OID_InvLimit_Armor
-        InvLimit_Armor = 10
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Armor", 10)
-        SetSliderOptionValue(OID_InvLimit_Armor, 10.0, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitArmor", "" + 10.0)
-    elseif option == OID_InvLimit_Potions
-        InvLimit_Potions = 10
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Potions", 10)
-        SetSliderOptionValue(OID_InvLimit_Potions, 10.0, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitPotions", "" + 10.0)
-    elseif option == OID_InvLimit_Ingredients
-        InvLimit_Ingredients = 5
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Ingredients", 5)
-        SetSliderOptionValue(OID_InvLimit_Ingredients, 5.0, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitIngredients", "" + 5.0)
-    elseif option == OID_InvLimit_Books
-        InvLimit_Books = 10
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Books", 10)
-        SetSliderOptionValue(OID_InvLimit_Books, 10.0, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitBooks", "" + 10.0)
-    elseif option == OID_InvLimit_Scrolls
-        InvLimit_Scrolls = 5
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Scrolls", 5)
-        SetSliderOptionValue(OID_InvLimit_Scrolls, 5.0, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitScrolls", "" + 5.0)
-    elseif option == OID_InvLimit_Ammo
-        InvLimit_Ammo = 5
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Ammo", 5)
-        SetSliderOptionValue(OID_InvLimit_Ammo, 5.0, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitAmmo", "" + 5.0)
-    elseif option == OID_InvLimit_Keys
-        InvLimit_Keys = 5
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Keys", 5)
-        SetSliderOptionValue(OID_InvLimit_Keys, 5.0, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitKeys", "" + 5.0)
-    elseif option == OID_InvLimit_Misc
-        InvLimit_Misc = 5
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Misc", 5)
-        SetSliderOptionValue(OID_InvLimit_Misc, 5.0, "{0} items")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "invLimitMisc", "" + 5.0)
-
-    elseif option == OID_TagCompanion
-        TagCompanionEnabled = true
-        StorageUtil.SetIntValue(None, "SeverActions_TagCompanion", 1)
-        SetToggleOptionValue(OID_TagCompanion, true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "tagCompanion", BoolToStr(true))
-    elseif option == OID_TagEngaged
-        TagEngagedEnabled = true
-        StorageUtil.SetIntValue(None, "SeverActions_TagEngaged", 1)
-        SetToggleOptionValue(OID_TagEngaged, true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "tagEngaged", BoolToStr(true))
-    elseif option == OID_TagInScene
-        TagInSceneEnabled = true
-        StorageUtil.SetIntValue(None, "SeverActions_TagInScene", 1)
-        SetToggleOptionValue(OID_TagInScene, true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "tagInScene", BoolToStr(true))
-
-    elseif option == OID_AllowConjuredGold
-        AllowConjuredGold = true
-        SetToggleOptionValue(OID_AllowConjuredGold, AllowConjuredGold)
-        SeverActionsNativeExt2.Native_SettingsRecord("world", "allowConjuredGold", BoolToStr(AllowConjuredGold))
-        ApplyCurrencySettings()
-        
-    elseif option == OID_FollowToggleKey
-        FollowToggleKey = -1
-        SetKeyMapOptionValue(OID_FollowToggleKey, FollowToggleKey)
-        ApplyHotkeySettings()
-        
-    elseif option == OID_DismissKey
-        DismissKey = -1
-        SetKeyMapOptionValue(OID_DismissKey, DismissKey)
-        ApplyHotkeySettings()
-
-    elseif option == OID_SetCompanionKey
-        SetCompanionKey = -1
-        SetKeyMapOptionValue(OID_SetCompanionKey, SetCompanionKey)
-        ApplyHotkeySettings()
-        
-    elseif option == OID_StandUpKey
-        StandUpKey = -1
-        SetKeyMapOptionValue(OID_StandUpKey, StandUpKey)
-        ApplyHotkeySettings()
-
-    elseif option == OID_UseFurnitureKey
-        UseFurnitureKey = -1
-        SetKeyMapOptionValue(OID_UseFurnitureKey, UseFurnitureKey)
-        ApplyHotkeySettings()
-
-    elseif option == OID_YieldKey
-        YieldKey = -1
-        SetKeyMapOptionValue(OID_YieldKey, YieldKey)
-        ApplyHotkeySettings()
-        
-    elseif option == OID_UndressKey
-        UndressKey = -1
-        SetKeyMapOptionValue(OID_UndressKey, UndressKey)
-        ApplyHotkeySettings()
-        
-    elseif option == OID_DressKey
-        DressKey = -1
-        SetKeyMapOptionValue(OID_DressKey, DressKey)
-        ApplyHotkeySettings()
-        
-    elseif option == OID_TargetMode
-        TargetMode = 0
-        SetMenuOptionValue(OID_TargetMode, TargetModeOptions[0])
-        ApplyHotkeySettings()
-        ForcePageReset()
-        
-    elseif option == OID_NearestNPCRadius
-        NearestNPCRadius = 500.0
-        SetSliderOptionValue(OID_NearestNPCRadius, 500.0, "{0} units")
-        ApplyHotkeySettings()
-
-    elseif option == OID_CompanionWaitKey
-        CompanionWaitKey = -1
-        SetKeyMapOptionValue(OID_CompanionWaitKey, CompanionWaitKey)
-        ApplyHotkeySettings()
-
-    elseif option == OID_AssignHomeKey
-        AssignHomeKey = -1
-        SetKeyMapOptionValue(OID_AssignHomeKey, AssignHomeKey)
-        ApplyHotkeySettings()
-    elseif option == OID_ClearHomeKey
-        ClearHomeKey = -1
-        SetKeyMapOptionValue(OID_ClearHomeKey, ClearHomeKey)
-        ApplyHotkeySettings()
-
-    elseif option == OID_SetupCampKey
-        SetupCampKey = -1
-        SetKeyMapOptionValue(OID_SetupCampKey, SetupCampKey)
-        ApplyHotkeySettings()
-
-    elseif option == OID_DropMarkerKey
-        DropMarkerKey = -1
-        SetKeyMapOptionValue(OID_DropMarkerKey, DropMarkerKey)
-        ApplyHotkeySettings()
-    elseif option == OID_TieUntieKey
-        TieUntieKey = -1
-        SetKeyMapOptionValue(OID_TieUntieKey, TieUntieKey)
-        ApplyHotkeySettings()
-
-    elseif option == OID_WheelMenuKey
-        WheelMenuKey = -1
-        SetKeyMapOptionValue(OID_WheelMenuKey, WheelMenuKey)
-        ApplyWheelMenuSettings()
-
-    elseif option == OID_ConfigMenuKey
-        ConfigMenuKey = 9
-        SetKeyMapOptionValue(OID_ConfigMenuKey, ConfigMenuKey)
-        ApplyConfigMenuKeySettings()
-    elseif option == OID_ConfigMenuShift
-        ConfigMenuRequireShift = true
-        SetToggleOptionValue(OID_ConfigMenuShift, ConfigMenuRequireShift)
-        ApplyConfigMenuKeySettings()
-
-    elseif option == OID_ArrestCooldown
-        If ArrestScript
-            ArrestScript.ArrestPlayerCooldown = 60.0
-            SetSliderOptionValue(OID_ArrestCooldown, 60.0, "{0} sec")
-            SeverActionsNativeExt2.Native_SettingsRecord("world", "arrestCooldown", "" + 60.0)
-        EndIf
-    elseif option == OID_TruceEnabled
-        CombatScript.TruceEnabled = false
-        SetToggleOptionValue(OID_TruceEnabled, false)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceEnabled", "false")
-    elseif option == OID_TruceRadius
-        CombatScript.TruceRadius = 8000.0
-        SetSliderOptionValue(OID_TruceRadius, 8000.0, "{0} units")
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceRadius", "" + 8000.0)
-    elseif option == OID_TruceLeaders
-        CombatScript.TruceLeaders = true
-        SetToggleOptionValue(OID_TruceLeaders, true)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceLeaders", "true")
-    elseif option == OID_TruceQuestNPCs
-        CombatScript.TruceQuestNPCs = true
-        SetToggleOptionValue(OID_TruceQuestNPCs, true)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceQuestNPCs", "true")
-    elseif option == OID_TruceDungeons
-        CombatScript.TruceDungeons = false
-        SetToggleOptionValue(OID_TruceDungeons, false)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceDungeons", "false")
-    elseif option == OID_TruceNecro
-        CombatScript.TruceNecromancers = true
-        SetToggleOptionValue(OID_TruceNecro, true)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceNecromancers", "true")
-    elseif option == OID_TruceForsworn
-        CombatScript.TruceForsworn = true
-        SetToggleOptionValue(OID_TruceForsworn, true)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceForsworn", "true")
-    elseif option == OID_TruceVampires
-        CombatScript.TruceVampires = true
-        SetToggleOptionValue(OID_TruceVampires, true)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "truceVampires", "true")
-    elseif option == OID_CampTakeover
-        CombatScript.CampTakeoverEnabled = true
-        SetToggleOptionValue(OID_CampTakeover, true)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "campTakeoverEnabled", "true")
-    elseif option == OID_CampChallenge
-        CombatScript.CampChallengeEnabled = true
-        SetToggleOptionValue(OID_CampChallenge, true)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "campChallengeEnabled", "true")
-    elseif option == OID_CampChallengeCard
-        CombatScript.CampChallengeCardEnabled = false
-        SetToggleOptionValue(OID_CampChallengeCard, false)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "campChallengeCard", "false")
-    elseif option == OID_ChallengeParleySeconds
-        CombatScript.ChallengeParleySeconds = 120.0
-        SetSliderOptionValue(OID_ChallengeParleySeconds, 120.0, "{0} sec")
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "campChallengeSeconds", "" + 120.0)
-    elseif option == OID_CampFreezeRespawn
-        CombatScript.CampFreezeRespawn = true
-        SetToggleOptionValue(OID_CampFreezeRespawn, true)
-        CombatScript.PushTruceConfigToNative()
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "campFreezeRespawn", "true")
-    elseif option == OID_YieldPersistence
-        CombatScript.YieldPersistenceEnabled = true
-        SetToggleOptionValue(OID_YieldPersistence, true)
-    elseif option == OID_CombatCooldown
-        CombatScript.CombatCooldownDuration = 30.0
-        SetSliderOptionValue(OID_CombatCooldown, 30.0, "{0} sec")
-    elseif option == OID_DebuffSeverity
-        SurvivalScript.DebuffSeverity = 1.0
-        SetSliderOptionValue(OID_DebuffSeverity, 1.0, "{2}x")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "debuffSeverity", "" + 1.0)
-    elseif option == OID_SurvNotifHunger
-        SurvivalScript.ShowHungerNotifications = true
-        SetToggleOptionValue(OID_SurvNotifHunger, true)
-    elseif option == OID_SurvNotifFatigue
-        SurvivalScript.ShowFatigueNotifications = true
-        SetToggleOptionValue(OID_SurvNotifFatigue, true)
-    elseif option == OID_SurvNotifCold
-        SurvivalScript.ShowColdNotifications = true
-        SetToggleOptionValue(OID_SurvNotifCold, true)
-    elseif option == OID_ArrestBountyThreshold
-        ArrestScript.ArrestBountyThreshold = 300
-        SetSliderOptionValue(OID_ArrestBountyThreshold, 300.0, "{0}g")
-    elseif option == OID_BribeMult
-        ArrestScript.BribeMultiplier = 1.5
-        SetSliderOptionValue(OID_BribeMult, 1.5, "{2}x")
-    elseif option == OID_ResistBounty
-        ArrestScript.ResistBountyIncrease = 500
-        SetSliderOptionValue(OID_ResistBounty, 500.0, "{0}g")
-    elseif option == OID_DebtOverdue
-        FollowerManagerScript.DebtScript.EnableOverdueReminders = true
-        SetToggleOptionValue(OID_DebtOverdue, true)
-        SeverActionsNativeExt2.Native_SettingsRecord("world", "overdueReminders", "true")
-    elseif option == OID_DebtGrace
-        FollowerManagerScript.DebtScript.OverdueGracePeriodHours = 24.0
-        SetSliderOptionValue(OID_DebtGrace, 24.0, "{0} hrs")
-        SeverActionsNativeExt2.Native_SettingsRecord("world", "gracePeriod", "" + 24.0)
-    elseif option == OID_DebtReport
-        FollowerManagerScript.DebtScript.ReportThresholdHours = 72.0
-        SetSliderOptionValue(OID_DebtReport, 72.0, "{0} hrs")
-        SeverActionsNativeExt2.Native_SettingsRecord("world", "reportThreshold", "" + 72.0)
-    elseif option == OID_TravelMapMarkers
-        TravelScript.TravelMapMarkersEnabled = true
-        SetToggleOptionValue(OID_TravelMapMarkers, true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "travelMapMarkersEnabled", "true")
-    elseif option == OID_FollowersCanTravel
-        SeverActionsNativeExt2.Native_SetFollowersCanTravel(false)
-        SetToggleOptionValue(OID_FollowersCanTravel, false)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "followersCanTravel", "false")
-    elseif option == OID_Outfit_UseAnimations
-        OutfitScript.UseAnimations = true
-        SetToggleOptionValue(OID_Outfit_UseAnimations, true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "useAnimations", "true")
-    elseif option == OID_FM_AutoQuestAwareness
-        FollowerManagerScript.AutoQuestAwareness = true
-        SetToggleOptionValue(OID_FM_AutoQuestAwareness, true)
-        SeverActionsNativeExt.Native_QuestAwareness_SetEnabled(true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "questAwarenessEnabled", "true")
-    elseif option == OID_FM_AutoNPCReputation
-        FollowerManagerScript.AutoNPCReputation = true
-        SetToggleOptionValue(OID_FM_AutoNPCReputation, true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "npcReputationEnabled", "true")
-    elseif option == OID_FM_AutoFollowerBanter
-        FollowerManagerScript.AutoFollowerBanter = true
-        SetToggleOptionValue(OID_FM_AutoFollowerBanter, true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "followerBanterEnabled", "true")
-    elseif option == OID_FM_AutoAmbientActions
-        FollowerManagerScript.AutoAmbientActions = false
-        SetToggleOptionValue(OID_FM_AutoAmbientActions, false)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "ambientActionsEnabled", "false")
-    elseif option == OID_FM_HomeSleepEnabled
-        FollowerManagerScript.HomeSleepEnabled = true
-        SetToggleOptionValue(OID_FM_HomeSleepEnabled, true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "homeSleepEnabled", "true")
-    elseif option == OID_FM_CellCatchup
-        FollowerManagerScript.CellCatchupEnabled = true
-        SetToggleOptionValue(OID_FM_CellCatchup, true)
-    elseif option == OID_FM_SchedWorkStart
-        FollowerManagerScript.SCHEDULE_WORK_START = 8.0
-        SetSliderOptionValue(OID_FM_SchedWorkStart, 8.0, "{0}:00")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "scheduleWorkStart", "" + 8.0)
-    elseif option == OID_FM_SchedWorkEnd
-        FollowerManagerScript.SCHEDULE_WORK_END = 17.0
-        SetSliderOptionValue(OID_FM_SchedWorkEnd, 17.0, "{0}:00")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "scheduleWorkEnd", "" + 17.0)
-    elseif option == OID_FM_SchedPlayStart
-        FollowerManagerScript.SCHEDULE_PLAY_START = 17.0
-        SetSliderOptionValue(OID_FM_SchedPlayStart, 17.0, "{0}:00")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "schedulePlayStart", "" + 17.0)
-    elseif option == OID_FM_SchedPlayEnd
-        FollowerManagerScript.SCHEDULE_PLAY_END = 22.0
-        SetSliderOptionValue(OID_FM_SchedPlayEnd, 22.0, "{0}:00")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "schedulePlayEnd", "" + 22.0)
-    elseif option == OID_FM_HomeSleepStart
-        FollowerManagerScript.HomeSleepStart = 22.0
-        SetSliderOptionValue(OID_FM_HomeSleepStart, 22.0, "{0}:00")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "homeSleepStart", "" + 22.0)
-    elseif option == OID_FM_HomeSleepEnd
-        FollowerManagerScript.HomeSleepEnd = 6.0
-        SetSliderOptionValue(OID_FM_HomeSleepEnd, 6.0, "{0}:00")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "homeSleepEnd", "" + 6.0)
-    elseif option == OID_FM_TeleportDist
-        FollowerManagerScript.FollowerTeleportDistance = 2000.0
-        SetSliderOptionValue(OID_FM_TeleportDist, 2000.0, "{0}")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "followerTeleportDistance", "" + 2000.0)
-    elseif option == OID_FM_TeleportCooldown
-        FollowerManagerScript.TeleportCooldownSeconds = 30
-        SetSliderOptionValue(OID_FM_TeleportCooldown, 30.0, "{0} sec")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "teleportCooldown", "" + 30.0)
-    elseif option == OID_Ent_Loans
-        FollowerManagerScript.EnterpriseLoansEnabled = true
-        SetToggleOptionValue(OID_Ent_Loans, true)
-        SeverActionsNativeExt2.Venture_SetLoansEnabled(true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "enterpriseLoansEnabled", "true")
-    elseif option == OID_Ent_Raises
-        FollowerManagerScript.EnterpriseRaisesEnabled = true
-        SetToggleOptionValue(OID_Ent_Raises, true)
-        SeverActionsNativeExt2.Venture_SetRaisesEnabled(true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "enterpriseRaisesEnabled", "true")
-    elseif option == OID_Ent_Temper
-        FollowerManagerScript.EnterpriseTemperEnabled = true
-        SetToggleOptionValue(OID_Ent_Temper, true)
-        SeverActionsNativeExt2.Venture_SetTemperEnabled(true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "enterpriseTemperEnabled", "true")
-    elseif option == OID_Ent_Ambushes
-        FollowerManagerScript.EnterpriseAmbushesEnabled = true
-        SetToggleOptionValue(OID_Ent_Ambushes, true)
-        SeverActionsNativeExt2.Venture_SetAmbushesEnabled(true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "enterpriseAmbushesEnabled", "true")
-    elseif option == OID_Ent_RenownCap
-        FollowerManagerScript.EnterpriseRenownCapEnabled = true
-        SetToggleOptionValue(OID_Ent_RenownCap, true)
-        SeverActionsNativeExt2.Venture_SetRenownCapEnabled(true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "enterpriseRenownCapEnabled", "true")
-    elseif option == OID_Ent_OutputPct
-        FollowerManagerScript.EnterpriseOutputPct = 100
-        SeverActionsNativeExt2.Venture_SetProductionMult(FollowerManagerScript.EnterpriseOutputPct)
-        SetSliderOptionValue(OID_Ent_OutputPct, 100.0, "{0}%")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "enterpriseOutputPct", "" + 100.0)
-    elseif option == OID_Ent_StoryCap
-        FollowerManagerScript.EnterpriseStoryCap = -1
-        SeverActionsNativeExt2.Venture_SetStoryCap(FollowerManagerScript.EnterpriseStoryCap)
-        SetSliderOptionValue(OID_Ent_StoryCap, -1.0, "{0}")
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "enterpriseStoryCap", "" + -1.0)
-    elseif option == OID_LLMCallsEnabled
-        SeverActionsNativeExt2.Native_SetLLMCallsEnabled(true)
-        SetToggleOptionValue(OID_LLMCallsEnabled, true)
-        SeverActionsNativeExt2.Native_SettingsRecord("settings", "llmCallsEnabled", "true")
-
-    elseif option == OID_PersuasionTimeLimit
-        If ArrestScript
-            ArrestScript.PersuasionTimeLimit = 90.0
-            SetSliderOptionValue(OID_PersuasionTimeLimit, 90.0, "{0} sec")
-            SeverActionsNativeExt2.Native_SettingsRecord("world", "persuasionTimeLimit", "" + 90.0)
-        EndIf
-
-    ; Survival defaults
-    elseif option == OID_SurvivalEnabled
-        If SurvivalScript
-            SurvivalScript.Enabled = true
-            SetToggleOptionValue(OID_SurvivalEnabled, true)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "survivalEnabled", BoolToStr(true))
-            SurvivalScript.StartTracking()
-        EndIf
-    elseif option == OID_HungerEnabled
-        If SurvivalScript
-            SurvivalScript.HungerEnabled = true
-            SetToggleOptionValue(OID_HungerEnabled, true)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "hungerEnabled", BoolToStr(true))
-        EndIf
-    elseif option == OID_HungerRate
-        If SurvivalScript
-            SurvivalScript.HungerRate = 1.0
-            SetSliderOptionValue(OID_HungerRate, 1.0, "{1}x")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "hungerRate", "" + 1.0)
-        EndIf
-    elseif option == OID_AutoEatThreshold
-        If SurvivalScript
-            SurvivalScript.AutoEatThreshold = 50
-            SetSliderOptionValue(OID_AutoEatThreshold, 50.0, "{0}%")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "autoEatThreshold", "" + 50.0)
-        EndIf
-    elseif option == OID_FatigueEnabled
-        If SurvivalScript
-            SurvivalScript.FatigueEnabled = true
-            SetToggleOptionValue(OID_FatigueEnabled, true)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "fatigueEnabled", BoolToStr(true))
-        EndIf
-    elseif option == OID_FatigueRate
-        If SurvivalScript
-            SurvivalScript.FatigueRate = 1.0
-            SetSliderOptionValue(OID_FatigueRate, 1.0, "{1}x")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "fatigueRate", "" + 1.0)
-        EndIf
-    elseif option == OID_ColdEnabled
-        If SurvivalScript
-            SurvivalScript.ColdEnabled = true
-            SetToggleOptionValue(OID_ColdEnabled, true)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "coldEnabled", BoolToStr(true))
-        EndIf
-    elseif option == OID_ColdRate
-        If SurvivalScript
-            SurvivalScript.ColdRate = 1.0
-            SetSliderOptionValue(OID_ColdRate, 1.0, "{1}x")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "coldRate", "" + 1.0)
-        EndIf
-    elseif option == OID_SurvivalNotifications
-        If SurvivalScript
-            SurvivalScript.ShowNotifications = true
-            SetToggleOptionValue(OID_SurvivalNotifications, true)
-        EndIf
-    elseif option == OID_SurvivalDebug
-        If SurvivalScript
-            SurvivalScript.DebugMode = false
-            SetToggleOptionValue(OID_SurvivalDebug, false)
-        EndIf
-
-    ; Follower Manager defaults
-    elseif option == OID_FM_MaxFollowers
-        If FollowerManagerScript
-            FollowerManagerScript.MaxFollowers = 100
-            SetSliderOptionValue(OID_FM_MaxFollowers, 100.0, "{0}")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "maxFollowers", "" + 100.0)
-        EndIf
-    elseif option == OID_FM_AllowLeaving
-        If FollowerManagerScript
-            FollowerManagerScript.AllowAutonomousLeaving = true
-            SetToggleOptionValue(OID_FM_AllowLeaving, true)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "allowAutonomousLeaving", BoolToStr(true))
-        EndIf
-    elseif option == OID_FM_RoomRotation
-        If FollowerManagerScript
-            FollowerManagerScript.RoomRotationEnabled = true
-            SetToggleOptionValue(OID_FM_RoomRotation, true)
-        EndIf
-    elseif option == OID_FM_KidnapEnabled
-        If FollowerManagerScript
-            FollowerManagerScript.EnableKidnapActions = false
-            SetToggleOptionValue(OID_FM_KidnapEnabled, false)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "kidnapEnabled", BoolToStr(false))
-            SeverActionsNativeExt.Native_Kidnap_SetEnabled(false)
-        EndIf
-    elseif option == OID_FM_RestrainEnabled
-        If FollowerManagerScript
-            FollowerManagerScript.EnableRestrainAction = true
-            SetToggleOptionValue(OID_FM_RestrainEnabled, true)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "restrainEnabled", BoolToStr(true))
-            SeverActionsNativeExt.Native_Restrain_SetEnabled(true)
-        EndIf
-    elseif option == OID_FM_LeavingThreshold
-        If FollowerManagerScript
-            FollowerManagerScript.LeavingThreshold = -60.0
-            SetSliderOptionValue(OID_FM_LeavingThreshold, -60.0, "{0}")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "leavingThreshold", "" + -60.0)
-        EndIf
-    elseif option == OID_FM_RelCooldown
-        If FollowerManagerScript
-            FollowerManagerScript.RelationshipCooldown = 120.0
-            SetSliderOptionValue(OID_FM_RelCooldown, 120.0, "{0} sec")
-        EndIf
-    elseif option == OID_FM_AutoSwitch
-        SeverActionsNativeExt.SituationMonitor_SetEnabled(true)
-        StorageUtil.SetIntValue(None, "SeverOutfit_GlobalAutoSwitch", 1)
-        SetToggleOptionValue(OID_FM_AutoSwitch, true)
-    elseif option == OID_FM_StabilityDelay
-        FMStabilityDelay = 5.0
-        SeverActionsNativeExt.SituationMonitor_SetStabilityThreshold(5000)
-        SetSliderOptionValue(OID_FM_StabilityDelay, 5.0, "{0} sec")
-    elseif option == OID_FM_PerActorAutoSwitch
-        If CachedManagedFollowers && SelectedCompanionIdx < CachedManagedFollowers.Length
-            Actor follower = CachedManagedFollowers[SelectedCompanionIdx]
-            If follower
-                SeverActionsNative.Native_Outfit_SetAutoSwitchEnabled(follower, true)
-                StorageUtil.SetIntValue(follower, "SeverOutfit_AutoSwitch", 1)
-                SetToggleOptionValue(OID_FM_PerActorAutoSwitch, true)
-            EndIf
-        EndIf
-    elseif option == OID_Outfit_Lock
-        If OutfitScript && CachedPresetActors
-            If SelectedOutfitNPCIdx < CachedPresetActors.Length
-                OutfitScript.SetNonFollowerOutfitLock(CachedPresetActors[SelectedOutfitNPCIdx], false)
-                SetToggleOptionValue(OID_Outfit_Lock, false)
-                If FollowerManagerScript
-                    FollowerManagerScript.ClearOutfitSlot(CachedPresetActors[SelectedOutfitNPCIdx])
-                EndIf
-            EndIf
-        EndIf
-    elseif option == OID_Outfit_DeferBondage
-        StorageUtil.SetIntValue(None, "SeverOutfit_DeferBondage", 1)
-        SeverActionsNativeExt.Native_Outfit_SetDeferBondage(true)
-        SetToggleOptionValue(OID_Outfit_DeferBondage, true)
-    elseif option == OID_FM_FrameworkMode
-        If FollowerManagerScript
-            FollowerManagerScript.FrameworkMode = 0
-            ; Reset must write through as well - without this the global file
-            ; keeps the old value and the load-time replay undoes the reset,
-            ; which is the reported bug arriving through the other control.
-            SeverActionsNativeExt2.Native_SettingsRecord("companions", "frameworkMode", "0")
-            SetMenuOptionValue(OID_FM_FrameworkMode, FrameworkModeOptions[0])
-        EndIf
-    elseif option == OID_FM_Notifications
-        If FollowerManagerScript
-            FollowerManagerScript.ShowNotifications = true
-            SetToggleOptionValue(OID_FM_Notifications, true)
-        EndIf
-    elseif option == OID_FM_Debug
-        If FollowerManagerScript
-            FollowerManagerScript.DebugMode = false
-            SetToggleOptionValue(OID_FM_Debug, false)
-        EndIf
-    elseif option == OID_FM_AutoAssessment
-        If FollowerManagerScript
-            FollowerManagerScript.AutoRelAssessment = true
-            SetToggleOptionValue(OID_FM_AutoAssessment, true)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "trackRelationships", BoolToStr(true))
-        EndIf
-    elseif option == OID_FM_AssessCooldownMin
-        If FollowerManagerScript
-            FollowerManagerScript.AssessmentCooldownMinHours = 4.0
-            SetSliderOptionValue(OID_FM_AssessCooldownMin, 4.0, "{1} hrs")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "assessmentCooldownMin", "" + 4.0)
-        EndIf
-    elseif option == OID_FM_AssessCooldownMax
-        If FollowerManagerScript
-            FollowerManagerScript.AssessmentCooldownMaxHours = 10.0
-            SetSliderOptionValue(OID_FM_AssessCooldownMax, 10.0, "{1} hrs")
-        EndIf
-    elseif option == OID_FM_AutoInterAssessment
-        If FollowerManagerScript
-            FollowerManagerScript.AutoInterFollowerAssessment = true
-            SetToggleOptionValue(OID_FM_AutoInterAssessment, true)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "interFollowerAssessment", BoolToStr(true))
-        EndIf
-    elseif option == OID_FM_InterAssessCooldownMin
-        If FollowerManagerScript
-            FollowerManagerScript.InterFollowerCooldownMinHours = 6.0
-            SetSliderOptionValue(OID_FM_InterAssessCooldownMin, 6.0, "{1} hrs")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "interFollowerCooldownMin", "" + 6.0)
-        EndIf
-    elseif option == OID_FM_InterAssessCooldownMax
-        If FollowerManagerScript
-            FollowerManagerScript.InterFollowerCooldownMaxHours = 14.0
-            SetSliderOptionValue(OID_FM_InterAssessCooldownMax, 14.0, "{1} hrs")
-        EndIf
-    elseif option == OID_FM_AutoAmbientBanter
-        If FollowerManagerScript
-            FollowerManagerScript.AutoAmbientBanter = true
-            SetToggleOptionValue(OID_FM_AutoAmbientBanter, true)
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "ambientBanterEnabled", BoolToStr(true))
-        EndIf
-    elseif option == OID_FM_AmbientBanterCooldownMin
-        If FollowerManagerScript
-            FollowerManagerScript.AmbientBanterCooldownMinHours = 3.0
-            SetSliderOptionValue(OID_FM_AmbientBanterCooldownMin, 3.0, "{1} hrs")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "ambientBanterCooldownMin", "" + 3.0)
-        EndIf
-    elseif option == OID_FM_AmbientBanterCooldownMax
-        If FollowerManagerScript
-            FollowerManagerScript.AmbientBanterCooldownMaxHours = 7.0
-            SetSliderOptionValue(OID_FM_AmbientBanterCooldownMax, 7.0, "{1} hrs")
-        EndIf
-    elseif option == OID_FM_QuestAwarenessOutputCap
-        If FollowerManagerScript
-            FollowerManagerScript.QuestAwarenessOutputCap = 5
-            SeverActionsNative.Native_QuestAwareness_SetOutputCap(5)
-            SetSliderOptionValue(OID_FM_QuestAwarenessOutputCap, 5.0, "{0}")
-            SeverActionsNativeExt2.Native_SettingsRecord("settings", "questAwarenessOutputCap", "" + 5.0)
-        EndIf
-    elseif option == OID_FM_AutoOffScreenLife
-        If FollowerManagerScript
-            FollowerManagerScript.AutoOffScreenLife = true
-            SetToggleOptionValue(OID_FM_AutoOffScreenLife, true)
-            SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "autoOffScreenLife", BoolToStr(true))
-        EndIf
-    elseif option == OID_FM_OffScreenCooldownMin
-        If FollowerManagerScript
-            FollowerManagerScript.OffScreenLifeCooldownMinHours = 10.0
-            SetSliderOptionValue(OID_FM_OffScreenCooldownMin, 10.0, "{1} hrs")
-            SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "offScreenCooldownMin", "" + 10.0)
-        EndIf
-    elseif option == OID_FM_OffScreenCooldownMax
-        If FollowerManagerScript
-            FollowerManagerScript.OffScreenLifeCooldownMaxHours = 72.0
-            SetSliderOptionValue(OID_FM_OffScreenCooldownMax, 72.0, "{1} hrs")
-            SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "offScreenCooldownMax", "" + 72.0)
-        EndIf
-    elseif option == OID_FM_OffScreenConsequences
-        If FollowerManagerScript
-            FollowerManagerScript.OffScreenConsequences = true
-            SetToggleOptionValue(OID_FM_OffScreenConsequences, true)
-            SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "consequencesEnabled", BoolToStr(true))
-        EndIf
-    elseif option == OID_FM_ConsequenceCooldown
-        If FollowerManagerScript
-            FollowerManagerScript.ConsequenceCooldownHours = 36.0
-            SetSliderOptionValue(OID_FM_ConsequenceCooldown, 36.0, "{1} hrs")
-            SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "consequenceCooldown", "" + 36.0)
-        EndIf
-    elseif option == OID_FM_MaxBounty
-        If FollowerManagerScript
-            FollowerManagerScript.MaxOffScreenBounty = 1000
-            SetSliderOptionValue(OID_FM_MaxBounty, 1000.0, "{0}")
-            SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "maxBounty", "" + 1000.0)
-        EndIf
-    elseif option == OID_FM_MaxGoldChange
-        If FollowerManagerScript
-            FollowerManagerScript.MaxOffScreenGoldChange = 500
-            SetSliderOptionValue(OID_FM_MaxGoldChange, 500.0, "{0}")
-            SeverActionsNativeExt2.Native_SettingsRecord("offscreen", "maxGoldChange", "" + 500.0)
-        EndIf
-    elseif option == OID_FM_DeathGracePeriod
-        If FollowerManagerScript
-            FollowerManagerScript.DeathGracePeriodHours = 4.0
-            SetSliderOptionValue(OID_FM_DeathGracePeriod, 4.0, "{0} hrs")
-        EndIf
-
-    ; Per-follower relationship defaults
-    else
-        If FollowerManagerScript && CachedManagedFollowers
-            Int j = 0
-            While j < CachedManagedFollowers.Length && j < 20
-                If CachedManagedFollowers[j]
-                    If option == OID_FM_Rapport[j]
-                        FollowerManagerScript.SetRapport(CachedManagedFollowers[j], 0.0)
-                        SetSliderOptionValue(OID_FM_Rapport[j], 0.0, "{0}")
-                    ElseIf option == OID_FM_Trust[j]
-                        FollowerManagerScript.SetTrust(CachedManagedFollowers[j], 25.0)
-                        SetSliderOptionValue(OID_FM_Trust[j], 25.0, "{0}")
-                    ElseIf option == OID_FM_Loyalty[j]
-                        FollowerManagerScript.SetLoyalty(CachedManagedFollowers[j], 50.0)
-                        SetSliderOptionValue(OID_FM_Loyalty[j], 50.0, "{0}")
-                    ElseIf option == OID_FM_Mood[j]
-                        FollowerManagerScript.SetMood(CachedManagedFollowers[j], 50.0)
-                        SetSliderOptionValue(OID_FM_Mood[j], 50.0, "{0}")
-                    ElseIf option == OID_FM_CombatStyle[j]
-                        FollowerManagerScript.SetCombatStyle(CachedManagedFollowers[j], "balanced")
-                        SetMenuOptionValue(OID_FM_CombatStyle[j], "balanced")
-                    EndIf
-                EndIf
-                j += 1
-            EndWhile
-        EndIf
-    endif
-EndEvent
-
-; =============================================================================
-; APPLY SETTINGS TO SCRIPTS
-; =============================================================================
-
-Function ApplyCurrencySettings()
-    if CurrencyScript
-        CurrencyScript.AllowConjuredGold = AllowConjuredGold
-        Debug.Trace("[SeverActions_MCM] Applied currency settings - Conjured Gold: " + AllowConjuredGold)
-    else
-        Debug.Trace("[SeverActions_MCM] WARNING: CurrencyScript not set!")
-    endif
+    Else
+        Debug.Trace("[SeverActions_MCM] DoMenuAction: no branch for the row '" + asRowId + "'")
+    EndIf
 EndFunction
 
-Function ApplyHotkeySettings()
-    if HotkeyScript
-        ; Update individual keys (handles re-registration)
-        HotkeyScript.UpdateFollowToggleKey(FollowToggleKey)
-        HotkeyScript.UpdateDismissKey(DismissKey)
-        HotkeyScript.UpdateStandUpKey(StandUpKey)
-        HotkeyScript.UpdateUseFurnitureKey(UseFurnitureKey)
-        HotkeyScript.UpdateYieldKey(YieldKey)
-        HotkeyScript.UpdateUndressKey(UndressKey)
-        HotkeyScript.UpdateDressKey(DressKey)
-        HotkeyScript.UpdateSetCompanionKey(SetCompanionKey)
-        HotkeyScript.UpdateCompanionWaitKey(CompanionWaitKey)
-        HotkeyScript.UpdateAssignHomeKey(AssignHomeKey)
-        HotkeyScript.UpdateClearHomeKey(ClearHomeKey)
-        HotkeyScript.UpdateSetupCampKey(SetupCampKey)
-        HotkeyScript.UpdateDropMarkerKey(DropMarkerKey)
-        HotkeyScript.UpdateTieUntieKey(TieUntieKey)
-        HotkeyScript.UpdateConfigMenuKey(ConfigMenuKey)
-
-        ; Update other settings directly
-        HotkeyScript.TargetMode = TargetMode
-        HotkeyScript.NearestNPCRadius = NearestNPCRadius
-        
-        Debug.Trace("[SeverActions_MCM] Applied hotkey settings")
-        Debug.Trace("[SeverActions_MCM]   FollowToggleKey: " + FollowToggleKey)
-        Debug.Trace("[SeverActions_MCM]   DismissKey: " + DismissKey)
-        Debug.Trace("[SeverActions_MCM]   StandUpKey: " + StandUpKey)
-        Debug.Trace("[SeverActions_MCM]   YieldKey: " + YieldKey)
-        Debug.Trace("[SeverActions_MCM]   UndressKey: " + UndressKey)
-        Debug.Trace("[SeverActions_MCM]   DressKey: " + DressKey)
-        Debug.Trace("[SeverActions_MCM]   SetCompanionKey: " + SetCompanionKey)
-        Debug.Trace("[SeverActions_MCM]   CompanionWaitKey: " + CompanionWaitKey)
-        Debug.Trace("[SeverActions_MCM]   AssignHomeKey: " + AssignHomeKey)
-        Debug.Trace("[SeverActions_MCM]   TargetMode: " + TargetMode)
-        Debug.Trace("[SeverActions_MCM]   NearestNPCRadius: " + NearestNPCRadius)
-    else
-        Debug.Trace("[SeverActions_MCM] WARNING: HotkeyScript not set!")
-    endif
-EndFunction
-
-Function ApplyWheelMenuSettings()
-    if WheelMenuScript
-        WheelMenuScript.UpdateWheelMenuKey(WheelMenuKey)
-        Debug.Trace("[SeverActions_MCM] Applied wheel menu settings")
-        Debug.Trace("[SeverActions_MCM]   WheelMenuKey: " + WheelMenuKey)
-    else
-        Debug.Trace("[SeverActions_MCM] WARNING: WheelMenuScript not set!")
-    endif
-EndFunction
-
-Function ApplyConfigMenuKeySettings()
-    if HotkeyScript
-        ; Shift flag FIRST — UpdateConfigMenuKey pushes both values to the
-        ; native input sink, so it must see the fresh shift requirement.
-        HotkeyScript.ConfigMenuRequireShift = ConfigMenuRequireShift
-        HotkeyScript.UpdateConfigMenuKey(ConfigMenuKey)
-        Debug.Trace("[SeverActions_MCM] Applied config menu key: " + ConfigMenuKey + " shift=" + ConfigMenuRequireShift)
-    else
-        Debug.Trace("[SeverActions_MCM] WARNING: HotkeyScript not set!")
-    endif
-EndFunction
-
-; Called on game load to sync settings
-Function SyncAllSettings()
-    ; Force MCM to rebuild pages (fixes version/page issues)
-    OnConfigInit()
-
-    ApplyCurrencySettings()
-    ApplyHotkeySettings()
-    ApplyWheelMenuSettings()
-
-    ; Sync native DLL settings
-    SeverActionsNative.SetDialogueAnimEnabled(DialogueAnimEnabled)
-    Debug.Trace("[SeverActions_MCM] Dialogue Animations: " + DialogueAnimEnabled)
-
-    ; Re-push the situation-stability threshold -- the native SituationMonitor
-    ; value is RAM-only and resets to its C++ default on every game restart;
-    ; without this the MCM showed the saved value while the monitor ran on the
-    ; default. (FMStabilityDelay is the cosaved source of truth, in seconds.)
-    SeverActionsNativeExt.SituationMonitor_SetStabilityThreshold((FMStabilityDelay * 1000.0) as Int)
-    Debug.Trace("[SeverActions_MCM] Situation Stability: " + FMStabilityDelay + " sec")
-
-    ; Sync prompt-accessible settings via StorageUtil
-    StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", SilenceChance)
-    Debug.Trace("[SeverActions_MCM] Silence Chance: " + SilenceChance + "%")
-
-    ; Sync spell teaching settings
-    if !SpellTeachScript
-        Quest myQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
-        if myQuest
-            SpellTeachScript = myQuest as SeverActions_SpellTeach
-        endif
-    endif
-    if SpellTeachScript
-        StorageUtil.SetIntValue(None, "SeverActions_SpellFailEnabled", SpellTeachScript.EnableFailureSystem as Int)
-        StorageUtil.SetFloatValue(None, "SeverActions_SpellFailDifficulty", SpellTeachScript.FailureDifficultyMult)
-        Debug.Trace("[SeverActions_MCM] Spell Fail Enabled: " + SpellTeachScript.EnableFailureSystem)
-        Debug.Trace("[SeverActions_MCM] Spell Fail Difficulty: " + SpellTeachScript.FailureDifficultyMult + "x")
-    endif
-
-    ; Sync speaker tag settings
-    StorageUtil.SetIntValue(None, "SeverActions_TagCompanion", TagCompanionEnabled as Int)
-    StorageUtil.SetIntValue(None, "SeverActions_TagEngaged", TagEngagedEnabled as Int)
-    StorageUtil.SetIntValue(None, "SeverActions_TagInScene", TagInSceneEnabled as Int)
-    Debug.Trace("[SeverActions_MCM] Speaker Tags - Companion: " + TagCompanionEnabled + ", Engaged: " + TagEngagedEnabled + ", InScene: " + TagInSceneEnabled)
-
-    Debug.Trace("[SeverActions_MCM] All settings synced and menu rebuilt")
+Function DoDefaultAction(String asRowId, Int aiEntry, Int aiOption)
+    {The Reset key on a row that is not a settings row.}
+    If asRowId == "fmRapport"
+        SeverActionsNativeExt.Native_SetRapport(_selCompanion, 0.0)
+        SetSliderOptionValue(aiOption, 0.0, "{0}")
+    ElseIf asRowId == "fmTrust"
+        SeverActionsNativeExt.Native_SetTrust(_selCompanion, 25.0)
+        SetSliderOptionValue(aiOption, 25.0, "{0}")
+    ElseIf asRowId == "fmLoyalty"
+        SeverActionsNativeExt.Native_SetLoyalty(_selCompanion, 50.0)
+        SetSliderOptionValue(aiOption, 50.0, "{0}")
+    ElseIf asRowId == "fmMood"
+        SeverActionsNativeExt.Native_SetMood(_selCompanion, 50.0)
+        SetSliderOptionValue(aiOption, 50.0, "{0}")
+    ElseIf asRowId == "fmCombatStyle"
+        If _selCompanion
+            SeverActionsNativeExt2.Verb_Send("followers", "setCombatStyle", "||balanced", _selCompanion)
+        EndIf
+        SetMenuOptionValue(aiOption, "$SA_balanced")
+    ElseIf asRowId == "fmPerActorAutoSwitch"
+        If _selCompanion
+            SeverActionsNativeExt2.Verb_Send("outfit", "setActorAutoSwitch", "||true", _selCompanion)
+            SetToggleOptionValue(aiOption, true)
+        EndIf
+    ElseIf asRowId == "outfitLock"
+        If SeverActionsNativeExt2.Module_IsUsable("outfit") && _selPresetActor
+            SeverActions_ModuleBase.CallBool("outfit", "setNonFollowerLock", _selPresetActor, None, "", 0.0)
+            SetToggleOptionValue(aiOption, false)
+            SeverActions_ModuleBase.CallBool("outfit", "clearOutfitSlot", _selPresetActor)
+        EndIf
+    ElseIf asRowId == "entWage"
+        EntWage = 200
+        SetSliderOptionValue(aiOption, 200.0, "{0}g")
+    EndIf
 EndFunction
 
 ; =============================================================================
 ; HELPERS
 ; =============================================================================
+
+String Function GetBountyDisplayText(Faction akCrimeFaction)
+    {A hold's bounty as display text. SeverActions_ArrestBounty.GetTrackedBounty is this native behind a None
+     guard, and the native answers 0 for None.}
+    If !SeverActionsNativeExt2.Module_IsUsable("arrest")
+        Return "N/A"
+    EndIf
+    Int bounty = SeverActionsNativeExt.Native_Bounty_Get(akCrimeFaction)
+    If bounty > 0
+        Return bounty + " gold"
+    EndIf
+    Return "None"
+EndFunction
+
+Function CancelJourneyWithConfirm(Int aiIndex)
+    {Cancel one of the orchestrator's journeys after confirmation.}
+    If !SeverActionsNativeExt2.Module_IsUsable("travel")
+        Return
+    EndIf
+    ; Resolve the actor before the dialog: the journey list is a map walk whose indices shift if a journey ends
+    ; meanwhile. (SeverActions_Travel.GetJourneyActor is this list's aiIndex-th entry.)
+    Actor a = None
+    Actor[] js = SeverActionsNativeExt2.Travel_GetOrderedJourneyActors()
+    If js && aiIndex >= 0 && aiIndex < js.Length
+        a = js[aiIndex]
+    EndIf
+    String line = ComputedLabel("travelJourneyLine", "travelJourneys", aiIndex)   ; the row's own text
+    If !a || line == ""
+        Return
+    EndIf
+    String confirmMsg = "Cancel this journey? " + line + ". This will end the travel and restore follower status if the trip dismissed them."
+    If ShowMessage(confirmMsg, true, "$SA_Yes", "$SA_No")
+        ShowMessage("Cancelling travel for " + a.GetDisplayName(), false)
+        ; SeverActions_Travel.CancelTravel(a, true), synchronously, so the reset below draws the list without it
+        ; (1.0 = restore follower status)
+        SeverActions_ModuleBase.CallBool("travel", "cancelJourney", a, None, "", 1.0)
+        ForcePageReset()
+    EndIf
+EndFunction
+
+Function ClearTravelSlotWithConfirm(Int slotIndex)
+    {Safe-exit stub; see CancelJourneyWithConfirm.}
+    ; M-I-STUB 3.9.14-beta25 (P8-01): the five travel slots retired (CancelJourneyWithConfirm), plan P8
+EndFunction
+
+Function ClearBountyWithConfirm(Faction akCrimeFaction, String holdName)
+    {Clear one hold's bounty after confirmation. ArrestBounty's Get/ClearTrackedBounty are these natives behind a
+     None guard.}
+    If !SeverActionsNativeExt2.Module_IsUsable("arrest") || !akCrimeFaction
+        Return
+    EndIf
+
+    Int bounty = SeverActionsNativeExt.Native_Bounty_Get(akCrimeFaction)
+    If bounty <= 0
+        ShowMessage("$SA_YouHaveNoBountyIn{" + holdName + "}", false)
+        Return
+    EndIf
+
+    String confirmMsg = "Clear your " + bounty + " gold bounty in " + holdName + "?"
+    If ShowMessage(confirmMsg, true, "$SA_Yes", "$SA_No")
+        SeverActionsNativeExt.Native_Bounty_Clear(akCrimeFaction)
+        ForcePageReset()
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("mcm.bountyClearedIn", ("" + holdName)))
+    EndIf
+EndFunction
+
+Function ClearAllBountiesWithConfirm()
+    {Clear the nine holds' bounties after confirmation. Not Native_Bounty_GetTotal / ClearAll: those cover every
+     faction in the store.}
+    If !SeverActionsNativeExt2.Module_IsUsable("arrest")
+        Return
+    EndIf
+
+    Int totalBounty = 0
+    Int h = 0
+    While h < 9
+        totalBounty += SeverActionsNativeExt.Native_Bounty_Get(HoldFactionAt(h))
+        h += 1
+    EndWhile
+
+    If totalBounty <= 0
+        ShowMessage("$SA_You_have_no_bounties_in_any_hold", false)
+        Return
+    EndIf
+
+    String confirmMsg = "Clear ALL bounties across all holds? Total: " + totalBounty + " gold."
+    If ShowMessage(confirmMsg, true, "$SA_Yes", "$SA_No")
+        h = 0
+        While h < 9
+            Faction hold = HoldFactionAt(h)
+            If hold
+                SeverActionsNativeExt.Native_Bounty_Clear(hold)   ; ClearTrackedBounty's None guard
+            EndIf
+            h += 1
+        EndWhile
+        ForcePageReset()
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.allBountiesCleared"))
+    EndIf
+EndFunction
+
+String[] Function VisiblePresetNames(Actor akActor)
+    {The user-visible preset names in store order (SeverActions_Outfit.GetPresetNames' filter): '_' entries
+     ("_default") are the situation system's auto-saved baselines.}
+    String[] out = PapyrusUtil.StringArray(0)
+    If !akActor
+        Return out
+    EndIf
+    Int count = SeverActionsNative.Native_Outfit_GetPresetCount(akActor)
+    Int i = 0
+    While i < count
+        String name = SeverActionsNative.Native_Outfit_GetPresetNameAt(akActor, i)
+        If name != "" && StringUtil.GetNthChar(name, 0) != "_"
+            out = PapyrusUtil.PushString(out, name)
+        EndIf
+        i += 1
+    EndWhile
+    Return out
+EndFunction
+
+Int Function PresetItemCount(Actor akActor, String asPreset)
+    {How many items a saved preset holds, 0 when not found (SeverActions_Outfit.GetPresetItemCount's body).}
+    If !akActor || asPreset == ""
+        Return 0
+    EndIf
+    Form[] items = SeverActionsNative.Native_Outfit_GetPresetItems(akActor, asPreset)
+    If items
+        Return items.Length
+    EndIf
+    Return 0
+EndFunction
+
+String Function CompanionCombatStyle(Actor akActor)
+    {A companion's combat style as FollowerManager.GetCombatStyle answers it: "no combat style" for None, no
+     style, or the legacy "balanced" value old saves still hold.}
+    If !akActor
+        Return "no combat style"
+    EndIf
+    String s = SeverActionsNative.Native_GetCombatStyle(akActor)
+    If s == "" || s == "balanced"
+        Return "no combat style"
+    EndIf
+    Return s
+EndFunction
+
+Int Function JourneyCount()
+    {How many player-ordered journeys are live, on the road or waiting (SeverActions_TravelCore.DoJourneyCount).}
+    Actor[] js = SeverActionsNativeExt2.Travel_GetOrderedJourneyActors()
+    If !js
+        Return 0
+    EndIf
+    Return js.Length
+EndFunction
+
+Int Function EffectiveConfigMenuKey()
+    {The config-menu key in force: the Authority row (synced with the settings file at session start, fed by
+     every rebind). ConfigMenuKey is a display copy.}
+    Int inForce = SeverActionsNativeExt2.Settings_GetInt("ConfigMenuKey")
+    If inForce > 0
+        return inForce
+    EndIf
+    return ConfigMenuKey
+EndFunction
+
+Int Function RowKeyCode(String asRow)
+    {The code a keymap row draws: the Authority's, which the DLL's input sink matches (rule 17).}
+    Return SeverActionsNativeExt2.Hotkey_GetCode(SeverActions_ModuleBase.VerbField(asRow, ROW_ID))
+EndFunction
+
+; --- VR controller chords -----------------------------------------------------
+
+Int Function VRChordCodeAt(Int index)
+    if index == 1
+        return 1        ; B / Y
+    elseif index == 2
+        return 7        ; A / X
+    elseif index == 3
+        return 2        ; Grip
+    elseif index == 4
+        return 32       ; Stick click
+    elseif index == 5
+        return 33       ; Trigger
+    elseif index == 6
+        return 35       ; Touchpad
+    endif
+    return 0            ; None
+EndFunction
+
+Int Function VRChordIndexOf(Int code)
+    if code == 1
+        return 1
+    elseif code == 7
+        return 2
+    elseif code == 2
+        return 3
+    elseif code == 32
+        return 4
+    elseif code == 33
+        return 5
+    elseif code == 35
+        return 6
+    endif
+    return 0
+EndFunction
+
+String Function VRChordName(Int code)
+    return MenuEntryAt("vrChordButton", VRChordIndexOf(code))
+EndFunction
+
+String Function VRHandName(Int hand)
+    if hand < 0 || hand > 2
+        hand = 0
+    endif
+    return MenuEntryAt("vrHand", hand)
+EndFunction
+
+Function SetVRChord(String settingKey, Int code, Int oid)
+    {Write one chord half through the settings handler (global file and live rebind), then warn when the two
+     chords collide: the wheel refuses to bind over the config menu's chord.}
+    SeverActionsNativeExt2.Native_SettingsApply("settings", settingKey, code as String)
+    if settingKey == "vrMenuHand" || settingKey == "vrWheelHand"
+        SetMenuOptionValue(oid, VRHandName(code))
+    else
+        SetMenuOptionValue(oid, VRChordName(code))
+    endif
+    Int menuBtn = SeverActionsNativeExt2.Native_GetVRChord("menuButton")
+    Int menuMod = SeverActionsNativeExt2.Native_GetVRChord("menuModifier")
+    Int menuHand = SeverActionsNativeExt2.Native_GetVRChord("menuHand")
+    Int wheelBtn = SeverActionsNativeExt2.Native_GetVRChord("wheelButton")
+    Int wheelMod = SeverActionsNativeExt2.Native_GetVRChord("wheelModifier")
+    Int wheelHand = SeverActionsNativeExt2.Native_GetVRChord("wheelHand")
+    if settingKey == "vrMenuButton"
+        menuBtn = code
+    elseif settingKey == "vrMenuModifier"
+        menuMod = code
+    elseif settingKey == "vrMenuHand"
+        menuHand = code
+    elseif settingKey == "vrWheelButton"
+        wheelBtn = code
+    elseif settingKey == "vrWheelModifier"
+        wheelMod = code
+    elseif settingKey == "vrWheelHand"
+        wheelHand = code
+    endif
+    Bool handsOverlap = (menuHand == 0 || wheelHand == 0 || menuHand == wheelHand)
+    if menuBtn > 0 && menuBtn == wheelBtn && menuMod == wheelMod && handsOverlap
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("mcm.quickWheelChordMatches"))
+    endif
+EndFunction
+
+String Function BoolToStr(Bool b)
+    {A bool as the "true"/"false" text the settings surfaces expect.}
+    If b
+        Return "true"
+    EndIf
+    Return "false"
+EndFunction
 
 Int Function CombatStyleIndexFromString(String style)
     {Convert combat style string to dropdown index}
@@ -4733,6 +2801,46 @@ Int Function CombatStyleIndexFromString(String style)
         Return 3
     ElseIf style == "healer"
         Return 4
+    ElseIf style == "coward"
+        Return 5
     EndIf
     Return 0
+EndFunction
+
+
+; -----------------------------------------------------------------------------
+; Safe-exit stubs (M-I, check 20): removed functions a saved frame can still call by name (F7). Never remove
+; one; the registry is fomod/safe_exit_stubs.json.
+; -----------------------------------------------------------------------------
+
+Event OnGameReload()
+    parent.OnGameReload()
+    RunLoadDuties()
+EndEvent
+
+Function RunLoadDuties()
+    ; M-I-STUB 3.9.14-beta25 (P4-04): the courier-letter registration runs from Travel.RegisterEvents (the
+    ; travelcore provider's stage 1); the page rebuild SyncAllSettings carried is OnConfigOpen's.
+EndFunction
+
+Function PullCurrencySettings()
+    ; M-I-STUB 3.9.14-beta25 (P4-04): the Economy page draws AllowConjuredGold from the Authority row; no load
+    ; sync pulls it any more (SyncAllSettings, its only caller, is a stub).
+EndFunction
+
+Function PullNativeMenuKeys()
+    ; M-I-STUB 3.9.14-beta25 (P4-04): the DLL syncs both menu keys with the settings file at session start and the
+    ; Authority rows hold the keys in force; the Hotkeys page draws its copies from the rows.
+EndFunction
+
+Function SyncAllSettings()
+    ; M-I-STUB 3.9.14-beta25 (P4-04, C8/R8): nothing calls this any more. The Settings Authority's per-save replay
+    ; pushes dialogueAnimEnabled and outfitStabilityDelay (and furnitureAutoStandDistance since P2-08) natively,
+    ; Init's M-X service writes the silence-chance and speaker-tag StorageUtil mirrors, the DLL syncs the menu keys
+    ; and matches the hotkeys, and the display copies this used to pull are read from the Authority when drawn.
+EndFunction
+
+Function ApplyCurrencySettings()
+    {Safe-exit stub: the currency settings replay through the Settings Authority.}
+    ; M-I-STUB 3.9.14-beta25 (P3-08): the currency settings replay through the Settings Authority (P2-08, c98e4cb3)
 EndFunction

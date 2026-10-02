@@ -1,38 +1,20 @@
 Scriptname SeverActions_WheelMenu extends Quest
-{Wheel menu interface for SeverActions - requires UIExtensions mod}
-
-; =============================================================================
-; PROPERTIES - Set in CK
-; =============================================================================
-
-SeverActions_Follow Property FollowScript Auto
-{Reference to the follow system script}
-
-SeverActions_Furniture Property FurnitureScript Auto
-{Reference to the furniture system script}
-
-SeverActions_Combat Property CombatScript Auto
-{Reference to the combat system script}
-
-SeverActions_Outfit Property OutfitScript Auto
-{Reference to the outfit system script}
-
-SeverActions_FollowerManager Property FollowerManagerScript Auto
-{Reference to the follower manager script}
-
-; =============================================================================
-; WHEEL HOTKEY SETTING - Configured via MCM
-; =============================================================================
+{Legacy shim of the quick wheel. The DLL's QuickWheelBridge is the only wheel (D8): it takes the
+ key, draws the radial and routes a pick through HotkeySink (strArg wheel:<id>). This script keeps
+ the key's legacy host property and the safe-exit stubs an older build's frames need; it registers
+ nothing and names no module type.}
 
 int Property WheelMenuKey = -1 Auto Hidden
-{Key code for opening wheel menu. -1 = unset/disabled}
+{Legacy host of the WheelMenuKey settings row (the DLL owns the key). -1 = unset.}
 
 bool Property IsRegistered = false Auto Hidden
 
-; =============================================================================
-; OPTION INDICES (matches wheel positions)
-; =============================================================================
+; The code an older build registered for the UIExtensions wheel (-1 none, 0 a save from before
+; the ownership fix). Unused; kept for that build's frames. Key registrations are form-keyed and
+; Hotkeys shares quest 0D62, so never UnregisterForAllKeys here.
+int RegisteredWheelKey = 0
 
+; Option indices by wheel position.
 int Property OPT_TOGGLE_FOLLOW = 0 AutoReadOnly
 int Property OPT_DISMISS = 1 AutoReadOnly
 int Property OPT_STAND_UP = 2 AutoReadOnly
@@ -42,416 +24,28 @@ int Property OPT_DRESS = 5 AutoReadOnly
 int Property OPT_WAIT = 6 AutoReadOnly
 int Property OPT_SET_COMPANION = 7 AutoReadOnly
 
-; =============================================================================
-; INITIALIZATION
-; =============================================================================
-
 Event OnInit()
     Debug.Trace("[SeverActions_WheelMenu] Initialized")
     RegisterWheelKey()
 EndEvent
 
-; No OnPlayerLoadGame handler here — Quest scripts never receive that event
-; (it's Actor/alias-only). SeverActions_Init's InitializeWheelMenuSystem()
-; calls RegisterWheelKey() on every load instead.
-
-; =============================================================================
-; KEY REGISTRATION
-; =============================================================================
+; No load handler: the DLL syncs the wheel key at session start (KernelSession).
 
 Function RegisterWheelKey()
-    UnregisterForAllKeys()
-    IsRegistered = false
-
-    if WheelMenuKey > 0
-        RegisterForKey(WheelMenuKey)
-        IsRegistered = true
-        Debug.Trace("[SeverActions_WheelMenu] Registered wheel menu key: " + WheelMenuKey)
-    else
-        Debug.Trace("[SeverActions_WheelMenu] Wheel menu key not set")
-    endif
+    ; M-I-STUB 3.9.14-beta25 (P4-04): the DLL owns the wheel key (P4-03) and syncs it with the settings file at
+    ; session start (KernelSession -> QuickWheelBridge::SyncKeyFromSave); nothing is registered here.
 EndFunction
-
-Function UpdateWheelMenuKey(int newKey)
-    ; Unregister old key if it was valid
-    if WheelMenuKey > 0 && WheelMenuKey != newKey
-        UnregisterForKey(WheelMenuKey)
-    endif
-
-    WheelMenuKey = newKey
-
-    ; Register new key (only if valid)
-    if newKey > 0
-        RegisterForKey(newKey)
-        IsRegistered = true
-        Debug.Trace("[SeverActions_WheelMenu] Updated wheel menu key to: " + newKey)
-    else
-        IsRegistered = false
-        Debug.Trace("[SeverActions_WheelMenu] Wheel menu key cleared")
-    endif
-EndFunction
-
-; =============================================================================
-; KEY EVENT HANDLING
-; =============================================================================
-
-Event OnKeyDown(int keyCode)
-    ; Ignore if in menu or invalid key
-    if Utility.IsInMenuMode() || keyCode <= 0
-        return
-    endif
-
-    ; Check if UIExtensions is installed
-    if !IsUIExtensionsInstalled()
-        Debug.Notification("SeverActions: UIExtensions mod required for wheel menu!")
-        return
-    endif
-
-    Actor player = Game.GetPlayer()
-
-    ; Ignore if player is in dialogue, dead, or incapacitated.
-    ; (IsInDialogueWithPlayer() on the player is always false -- the Dialogue
-    ; Menu check is the real vanilla-dialogue guard.)
-    if UI.IsMenuOpen("Dialogue Menu") || player.IsDead() || player.GetSitState() == 3
-        return
-    endif
-
-    if keyCode == WheelMenuKey && WheelMenuKey > 0
-        OpenWheelMenu()
-    endif
-EndEvent
-
-; =============================================================================
-; UIEXTENSIONS CHECK
-; =============================================================================
 
 bool Function IsUIExtensionsInstalled()
-    return Game.GetModByName("UIExtensions.esp") != 255
+    ; M-I-STUB 3.9.14-beta25 (P4-03): the UIExtensions wheel is gone (D8); nothing asks any more.
+    return false
 EndFunction
-
-; =============================================================================
-; WHEEL MENU
-; =============================================================================
 
 Function OpenWheelMenu()
-    ; Get target first so we can show context-aware options
-    Actor target = GetCrosshairTarget()
-
-    ; Initialize the wheel menu
-    UIExtensions.InitMenu("UIWheelMenu")
-
-    ; Set up options with icons
-    ; Option 0 - Toggle Follow (context-aware: companion vs casual follower).
-    ; Companions toggle CompanionFollow<->CompanionWait; casual NPCs toggle
-    ; StartFollowing<->StopFollowing. "Held" = waiting or sandboxing (incl. camp).
-    if target && FollowScript
-        bool tfCompanion = FollowerManagerScript && FollowerManagerScript.IsRegisteredFollower(target)
-        bool tfHeld = (target.GetAV("WaitingForPlayer") > 0) || FollowScript.IsSandboxing(target)
-        if tfCompanion
-            if tfHeld
-                UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_TOGGLE_FOLLOW, "Resume Follow")
-            else
-                UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_TOGGLE_FOLLOW, "Wait Here")
-            endif
-        elseif FollowScript.HasFollowPackage(target)
-            UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_TOGGLE_FOLLOW, "Stop Follow")
-        else
-            UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_TOGGLE_FOLLOW, "Start Follow")
-        endif
-    else
-        UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_TOGGLE_FOLLOW, "Toggle Follow")
-    endif
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_TOGGLE_FOLLOW, "Follow")
-
-    ; Option 1 - Dismiss Companion
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_DISMISS, "Dismiss")
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_DISMISS, "Dismiss")
-
-    ; Option 2 - Stand Up
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_STAND_UP, "Stand Up")
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_STAND_UP, "Furniture")
-
-    ; Option 3 - Yield/Surrender
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_YIELD, "Yield")
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_YIELD, "Surrender")
-
-    ; Option 4 - Undress
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_UNDRESS, "Undress")
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_UNDRESS, "Undress")
-
-    ; Option 5 - Dress
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_DRESS, "Dress")
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_DRESS, "Dress")
-
-    ; Option 6 - Wait Here (context-aware label)
-    if target && (target.GetAV("WaitingForPlayer") > 0 || (FollowScript && FollowScript.IsSandboxing(target)))
-        UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_WAIT, "Resume Follow")
-    else
-        UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_WAIT, "Wait Here")
-    endif
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_WAIT, "Wait")
-
-    ; Option 7 - Set Companion
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionText", OPT_SET_COMPANION, "Set Companion")
-    UIExtensions.SetMenuPropertyIndexString("UIWheelMenu", "optionLabelText", OPT_SET_COMPANION, "Companion")
-
-    ; Enable all options
-    int i = 0
-    while i < 8
-        UIExtensions.SetMenuPropertyIndexBool("UIWheelMenu", "optionEnabled", i, true)
-        i += 1
-    endwhile
-
-    ; Open menu and get selection
-    int selection = UIExtensions.OpenMenu("UIWheelMenu")
-
-    ; Handle selection
-    HandleWheelSelection(selection, target)
+    ; M-I-STUB 3.9.14-beta25 (P4-03): the UIExtensions wheel is gone (D8) - the DLL's QuickWheelBridge draws the only
+    ; wheel. A frame resumed in the old body finds no HandleWheelSelection (fomod/removed_functions.json): the VM
+    ; logs it and answers a default, so the frame still runs to its end.
 EndFunction
-
-Function HandleWheelSelection(int selection, Actor target)
-    ; 255 = cancelled (clicked outside or escape)
-    if selection == 255
-        return
-    endif
-
-    ; All actions need a target
-    if !target
-        Debug.Notification("No valid target - look at an NPC")
-        return
-    endif
-
-    if target == Game.GetPlayer()
-        Debug.Notification("Cannot target yourself")
-        return
-    endif
-
-    if selection == OPT_TOGGLE_FOLLOW
-        HandleFollowToggle(target)
-    elseif selection == OPT_DISMISS
-        HandleDismiss(target)
-    elseif selection == OPT_STAND_UP
-        HandleStandUp(target)
-    elseif selection == OPT_YIELD
-        HandleYield(target)
-    elseif selection == OPT_UNDRESS
-        HandleUndress(target)
-    elseif selection == OPT_DRESS
-        HandleDress(target)
-    elseif selection == OPT_WAIT
-        HandleWait(target)
-    elseif selection == OPT_SET_COMPANION
-        HandleSetCompanion(target)
-    endif
-EndFunction
-
-; =============================================================================
-; ACTION HANDLERS (same logic as hotkeys, but consolidated here)
-; =============================================================================
-
-Function HandleFollowToggle(Actor target)
-    if !FollowScript
-        Debug.Notification("SeverActions: Follow script not configured!")
-        return
-    endif
-    ; Resolve the follower manager so companions route correctly (a missing ref
-    ; would misclassify a companion as a casual NPC).
-    if !FollowerManagerScript
-        FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
-    endif
-
-    ; Context-aware toggle:
-    ;   Companion     -> CompanionFollow (resume) <-> CompanionWait
-    ;   Casual NPC    -> StartFollowing            <-> StopFollowing
-    ; The "resume"/"start" paths reliably break the actor out of the camp /
-    ; waiting / travel sandbox: CompanionFollow + StartFollowing now CancelTravel
-    ; and fire the SeversHearth camp-release event before applying follow.
-    ; "Held" = waiting or sandboxing (which includes the camp sandbox).
-    bool isCompanion = FollowerManagerScript && FollowerManagerScript.IsRegisteredFollower(target)
-    bool isHeld = (target.GetAV("WaitingForPlayer") > 0) || FollowScript.IsSandboxing(target)
-
-    if isCompanion
-        if isHeld
-            FollowerManagerScript.CompanionFollow(target)   ; resume — breaks out of camp/wait
-        else
-            FollowerManagerScript.CompanionWait(target)      ; following -> wait here
-        endif
-    else
-        if FollowScript.HasFollowPackage(target)
-            FollowScript.StopFollowing(target)               ; actively following -> stop
-        elseif SeverActions_Follow.StartFollowing_IsEligible(target)
-            FollowScript.StartFollowing(target)              ; idle / held -> start (breaks out)
-        endif
-    endif
-EndFunction
-
-Function HandleDismiss(Actor target)
-    if !FollowerManagerScript
-        FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
-    endif
-
-    if !FollowerManagerScript
-        Debug.Notification("SeverActions: Follower Manager not configured!")
-        return
-    endif
-
-    ; Check if the target is a registered companion
-    if !SeverActionsNativeExt.Native_GetIsFollower(target)
-        Debug.Notification(target.GetDisplayName() + " is not your companion")
-        return
-    endif
-
-    FollowerManagerScript.DismissCompanion(target)
-EndFunction
-
-Function HandleStandUp(Actor target)
-    if !FurnitureScript
-        Debug.Notification("SeverActions: Furniture script not configured!")
-        return
-    endif
-
-    ; Check if they're using furniture
-    if SeverActions_Furniture.StopUsingFurniture_IsEligible(target)
-        FurnitureScript.StopUsingFurniture_Execute(target)
-    else
-        Debug.Notification(target.GetDisplayName() + " is not using furniture")
-    endif
-EndFunction
-
-Function HandleYield(Actor target)
-    if !CombatScript
-        Debug.Notification("SeverActions: Combat script not configured!")
-        return
-    endif
-
-    ; Check if yield can be performed (must be in combat)
-    if CombatScript.Yield_IsEligible(target)
-        CombatScript.Yield_Execute(target)
-        Debug.Notification(target.GetDisplayName() + " has surrendered")
-    else
-        Debug.Notification(target.GetDisplayName() + " is not in combat")
-    endif
-EndFunction
-
-Function HandleUndress(Actor target)
-    if !OutfitScript
-        Debug.Notification("SeverActions: Outfit script not configured!")
-        return
-    endif
-
-    ; Check if undress can be performed
-    if OutfitScript.Undress_IsEligible(target)
-        OutfitScript.Undress_Execute(target)
-        Debug.Notification(target.GetDisplayName() + " - undressed")
-    else
-        Debug.Notification(target.GetDisplayName() + " cannot be undressed")
-    endif
-EndFunction
-
-Function HandleDress(Actor target)
-    if !OutfitScript
-        Debug.Notification("SeverActions: Outfit script not configured!")
-        return
-    endif
-
-    ; Check if dress can be performed (has stored clothing)
-    if OutfitScript.Dress_IsEligible(target)
-        OutfitScript.Dress_Execute(target)
-        Debug.Notification(target.GetDisplayName() + " - dressed")
-    else
-        Debug.Notification(target.GetDisplayName() + " has no stored clothing")
-    endif
-EndFunction
-
-Function HandleWait(Actor target)
-    if !FollowerManagerScript
-        FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
-    endif
-
-    if !FollowerManagerScript
-        Debug.Notification("SeverActions: Follower Manager not configured!")
-        return
-    endif
-
-    ; Custom AI followers (Inigo, Lucien, Kaidan, Daegon-keyworded, etc.) — their
-    ; own mods manage AI packages, so we MUST NOT apply SA's sandbox/follow on
-    ; top. Without this short-circuit they fall into isCasual or !IsRegisteredFollower
-    ; below, which calls FollowScript.Sandbox / StopSandbox directly — that bypasses
-    ; the track-only branch in CompanionWait/CompanionFollow and either traps
-    ; them in SA's sandbox (so they stand in place) or strips it on resume and
-    ; lets SkyrimNet's FollowPlayer package fill the void. Route them through
-    ; the FollowerManager helpers, which call CompanionStopFollowing + StopSandbox
-    ; for cleanup and toggle the vanilla WaitingForPlayer AV that the custom
-    ; mod's own package respects via standard DialogueFollower hooks.
-    if FollowerManagerScript.IsTrackOnlyFollower(target)
-        if target.GetAV("WaitingForPlayer") > 0
-            FollowerManagerScript.CompanionFollow(target)
-        else
-            FollowerManagerScript.CompanionWait(target)
-        endif
-        return
-    endif
-
-    ; Toggle: if waiting/sandboxing, resume; if not, sandbox
-    Bool isCasual = FollowScript && FollowScript.HasFollowPackage(target) && !FollowerManagerScript.IsRegisteredFollower(target)
-    Bool isSandboxing = FollowScript && FollowScript.IsSandboxing(target)
-
-    if isSandboxing
-        ; Currently sandboxing — resume following
-        if isCasual || !FollowerManagerScript.IsRegisteredFollower(target)
-            FollowScript.StopSandbox(target)
-        else
-            FollowerManagerScript.CompanionFollow(target)
-        endif
-    elseif target.GetAV("WaitingForPlayer") > 0
-        ; Waiting (companion path) — resume
-        FollowerManagerScript.CompanionFollow(target)
-    else
-        ; Not waiting — sandbox them
-        if isCasual
-            FollowScript.Sandbox(target)
-        elseif FollowerManagerScript.IsRegisteredFollower(target)
-            FollowerManagerScript.CompanionWait(target)
-        else
-            Debug.Notification(target.GetDisplayName() + " is not following you")
-        endif
-    endif
-EndFunction
-
-Function HandleSetCompanion(Actor target)
-    if !FollowerManagerScript
-        FollowerManagerScript = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
-    endif
-
-    if !FollowerManagerScript
-        Debug.Notification("SeverActions: Follower Manager not configured!")
-        return
-    endif
-
-    FollowerManagerScript.RegisterFollower(target)
-EndFunction
-
-; =============================================================================
-; TARGET ACQUISITION
-; =============================================================================
-
-Actor Function GetCrosshairTarget()
-    ; Get whatever the player is looking at
-    ObjectReference crosshairRef = Game.GetCurrentCrosshairRef()
-
-    if crosshairRef
-        Actor target = crosshairRef as Actor
-        if target && !target.IsDead()
-            return target
-        endif
-    endif
-
-    return None
-EndFunction
-
-; =============================================================================
-; SINGLETON ACCESS
-; =============================================================================
 
 SeverActions_WheelMenu Function GetInstance() Global
     return Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_WheelMenu

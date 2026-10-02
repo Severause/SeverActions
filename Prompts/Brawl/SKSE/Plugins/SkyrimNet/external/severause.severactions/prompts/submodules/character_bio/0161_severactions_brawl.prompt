@@ -1,0 +1,11 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# A fist-fight this actor is in, has been challenged to or just finished. sever_brawl_state builds the
+   text ("" when uninvolved); the Brawl and Combat YAMLs match its BRAWL ACTIVE / ANSWER REQUIRED markers. #}
+{% if actorUUID and actorUUID != 0 %}
+{% set brawl_block = sever_brawl_state(actorUUID) %}
+{% if brawl_block != "" %}
+## Brawl
+{{ brawl_block }}
+{% endif %}{# brawl_block #}
+{% endif %}{# actorUUID #}
+{% endif %}{# render_mode #}

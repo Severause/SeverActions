@@ -1,0 +1,111 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# A cross-cell dispatch before judgment: DispatchPhase 1-2 travel and approach, 3-4 the home search, 5 the way back.
+   For the dispatched guard, and for the prisoner once arrested (phase 5 of an arrest dispatch). Yields to 0276.
+   Action rules render only where an action can be chosen (_actionsOffered: NPC dialogue and the drill-down). #}
+{% set _actionsOffered = render_mode == "action" or (render_mode == "full" and default(responseTarget.type, "none") != "none") %}
+{% if player and player.UUID and actorUUID != player.UUID %}
+{% set dispatchPhase = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchPhase") %}
+{% set _inPersuasionMode = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "InPersuasionMode") %}
+{% set _confrontingGuard = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "ConfrontingGuard") %}
+{% set _suppressForPersuasion = false %}
+{% if _inPersuasionMode and _confrontingGuard and _confrontingGuard.uuid and _confrontingGuard.uuid == actorUUID %}
+{% set _suppressForPersuasion = true %}
+{% endif %}
+{% if dispatchPhase >= 1 and dispatchPhase <= 5 and not _suppressForPersuasion %}
+{% set dispatchTarget = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchTarget") %}
+{% set dispatchGuard = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchGuard") %}
+{% set dispatchSender = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchSender") %}
+{% set isDispatchGuard = false %}
+{% if dispatchGuard and dispatchGuard.uuid %}
+{% set isDispatchGuard = (dispatchGuard.uuid == actorUUID) %}
+{% endif %}
+{% set isDispatchTarget = false %}
+{% if dispatchTarget and dispatchTarget.uuid %}
+{% set isDispatchTarget = (dispatchTarget.uuid == actorUUID) %}
+{% endif %}
+{% set isHomeInvestigation = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchIsHomeInvestigation") %}
+{% set senderName = "" %}
+{% if dispatchSender and dispatchSender.uuid and dispatchSender.uuid != 0 %}
+{% set senderData = decnpc(dispatchSender.uuid) %}
+{% set senderName = senderData.name %}
+{% endif %}
+{% if isDispatchGuard %}
+{% if actorUUID and actorUUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set subj = actor.subjectivePronoun %}
+{% set poss = actor.possessiveAdjective %}
+{% if isHomeInvestigation %}
+{% set evidenceSummary = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchEvidenceSummary") %}
+{% set evidenceQuality = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchEvidenceQualityScore") %}
+{% set containersSearched = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchContainersSearched") %}
+{% set hasEvidence = evidenceSummary and evidenceSummary != "" and evidenceSummary != "nothing of note" %}
+{% if dispatchPhase <= 2 %}
+## On Duty: A Home Search
+{{ actor.name }} is on {{ poss }} way to search a suspect's home, and getting there is all {{ subj }} has on {{ poss }} mind.
+{% elif dispatchPhase <= 4 %}
+## On Duty: Searching a Home
+{{ actor.name }} is methodically searching a suspect's home for evidence{% if containersSearched and containersSearched > 0 %} and has gone through {{ containersSearched }} {% if containersSearched == 1 %}container{% else %}containers{% endif %} so far{% endif %}.
+{% if hasEvidence %}
+{{ subj | capitalize }} has found {{ evidenceSummary }}.
+{% endif %}
+{% else %}
+## On Duty: Reporting Back
+{{ actor.name }} has finished searching a home and is heading back to report {{ poss }} findings.
+{% if hasEvidence %}
+{{ subj | capitalize }} {% if containersSearched and containersSearched > 0 %}searched {{ containersSearched }} {% if containersSearched == 1 %}container{% else %}containers{% endif %} and {% endif %}found {{ evidenceSummary }}.
+{% else %}
+{{ subj | capitalize }} found nothing of note.
+{% endif %}
+{% endif %}
+{% if hasEvidence and dispatchPhase >= 3 %}
+{% if evidenceQuality >= 7 %}
+The evidence is damning: an overwhelming case.
+{% elif evidenceQuality >= 4 %}
+The evidence is moderately convincing: a reasonable case.
+{% elif evidenceQuality >= 1 %}
+The evidence is weak, circumstantial at best.
+{% else %}
+The evidence is inconclusive.
+{% endif %}
+{% endif %}
+- {{ actor.name }} is on official business and will not be sidetracked{% if _actionsOffered %}: no action category until the errand is done{% endif %}.
+- If someone speaks to {{ actor.name }}, {{ subj }} answers briefly and makes clear {{ subj }} is on duty and busy.
+{% else %}
+{% set targetName = "" %}
+{% if dispatchTarget and dispatchTarget.uuid and dispatchTarget.uuid != 0 %}
+{% set targetData = decnpc(dispatchTarget.uuid) %}
+{% set targetName = targetData.name %}
+{% endif %}
+{% if dispatchPhase <= 2 %}
+## On Duty: Making an Arrest
+{{ actor.name }} has been sent to arrest {{ targetName }} and has {{ poss }} mind on reaching them.
+- {{ actor.name }} is on official business and will not be sidetracked{% if _actionsOffered %}: no action category until the arrest is made{% endif %}.
+- If someone speaks to {{ actor.name }}, {{ subj }} answers briefly and makes clear {{ subj }} is on urgent guard business and cannot stop.
+{% elif dispatchPhase == 5 %}
+## On Duty: Escorting a Prisoner
+{{ actor.name }} has {{ targetName }} in restraints and is marching them {% if senderName != "" %}to {{ senderName }} for judgment{% else %}to jail{% endif %}.
+{% if _actionsOffered %}
+- The route is already set: no action category while the march lasts, not the **Journeys** category or any other; a travel action would break the escort.
+{% endif %}
+- {{ actor.name }} keeps {{ poss }} eyes on the prisoner. If someone speaks to {{ actor.name }}, {{ subj }} answers briefly and makes clear {{ subj }} is taking a prisoner in and cannot stop; {{ subj }} may warn bystanders to stand clear or remark on the prisoner or the road.
+{% endif %}
+{% endif %}
+{% endif %}
+{% elif isDispatchTarget and not isHomeInvestigation and dispatchPhase == 5 %}
+{% if actorUUID and actorUUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set subj = actor.subjectivePronoun %}
+{% set poss = actor.possessiveAdjective %}
+{% set guardName = "" %}
+{% if dispatchGuard and dispatchGuard.uuid and dispatchGuard.uuid != 0 %}
+{% set escortGuardData = decnpc(dispatchGuard.uuid) %}
+{% set guardName = escortGuardData.name %}
+{% endif %}
+## Under Arrest
+{{ actor.name }} has been arrested by {{ guardName }} and is being marched in restraints {% if senderName != "" %}to face {{ senderName }}{% else %}to jail{% endif %}. {{ subj | capitalize }} cannot run, fight or break free.
+- {{ actor.name }} can only speak: fear, anger, defiance, resignation, pleas for mercy or threats, as fits {{ poss }} nature.{% if _actionsOffered %} No action category of any kind.{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

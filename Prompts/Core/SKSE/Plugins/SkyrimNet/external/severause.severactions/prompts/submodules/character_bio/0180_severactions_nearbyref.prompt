@@ -1,0 +1,60 @@
+{% if render_mode == "full" %}
+{# Objects near the speaker, for their own speaking profile. 0181 is the drill-down's copy, which adds
+   container contents; keep the two loops in sync. Skipped while the speaker is in a SexLab/OStim scene. #}
+{% if actorUUID and actorUUID != 0 %}
+{% if sever_in_scene(actorUUID) == "" %}
+{% if actorUUID and isValidActor(actorUUID) %}
+{% set nearby_refs = get_nearby_references_for_entity(actorUUID, 1000) %}
+{% else %}
+{% set nearby_refs = get_nearby_references(1000) %}
+{% endif %}
+{% set excluded_subtypes = ["clutter", "misc"] %}
+{# The player's exclusions: the nearbyExcluded setting ("type:subtype" tags, comma-separated), mirrored into
+   StorageUtil by Init. The sentinel commas make the substring test match whole tags only. #}
+{% set user_excluded_raw = papyrus_util("GetStringValue", "", "SeverActions_NearbyExcluded", "") %}
+{% set user_excluded = "," + user_excluded_raw + "," %}
+{# Furniture with no free place for this speaker: ",<refid>," per piece, "~<refid>," for the speaker's own (the seat
+   they hold or are walking to). A snapshot SkyrimNet may cache for 55 s, so the action still checks each seat. #}
+{% set furniture_taken = sever_furniture_taken(actorUUID) %}
+{% set max_items = 20 %}
+{% set items = [] %}
+{% set seen_refids = [] %}
+{% set item_names = [] %}
+{% for ref in nearby_refs %}
+{% set ref_tag = "," + ref.type + ":" + ref.subtype + "," %}
+{% if ref.name != "" and not (ref.subtype in excluded_subtypes) and not contains(user_excluded, ref_tag) %}
+{% set refid_str = to_string(ref.formID) %}
+{% if not (ref.type == "furniture" and (ref.position.meters == 0.0 or contains(furniture_taken, "," + refid_str + ","))) %}
+{% set refid_count = count(seen_refids, refid_str) %}
+{% if refid_count < 3 or ref.type == "item" %}
+{# Same-name loose items stack into one line with a count; furniture and containers keep a line each,
+   because which chair or chest it is matters. #}
+{% if ref.type == "item" and (ref.name in item_names) %}
+{% set item_names = append(item_names, ref.name) %}
+{% set seen_refids = append(seen_refids, refid_str) %}
+{% elif length(items) < max_items %}
+{% set items = append(items, ref) %}
+{% set seen_refids = append(seen_refids, refid_str) %}
+{% if ref.type == "item" %}
+{% set item_names = append(item_names, ref.name) %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if length(items) > 0 %}
+## Nearby Objects
+{% set grouped_items = group_by(items, "type") %}
+{% for type_name, type_items in grouped_items %}
+### {{ type_name | capitalize }}
+{% for ref in type_items %}
+{% set stack = 1 %}
+{% if ref.type == "item" %}{% set stack = count(item_names, ref.name) %}{% endif %}
+- {{ ref.name }}{% if stack > 1 %} x{{ stack }}{% endif %} ({{ ref.position.meters }}m){% if ref.type == "container" and ref.locked %} [locked]{% endif %}{% if ref.type == "furniture" and contains(furniture_taken, "~" + to_string(ref.formID) + ",") %} [in use by you]{% endif %}
+{% endfor %}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

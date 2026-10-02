@@ -1,0 +1,6 @@
+customCategory: sa_arousal_slo
+name: ArousalSLO
+description: "Category: the speaker's own arousal, nudged up or down by something that just happened to them: a flirtation that lands, a kiss, a humiliation, a cold shock. At most once for such a moment, not on every flirtatious or heated line, and never to start anything physical."
+enabled: true
+# No eligibility rules: the arousal actions are exempt from the is_kidnap_victim sweep, and SkyrimNet
+# hides this category whenever ModifyArousalSLO itself is ineligible.

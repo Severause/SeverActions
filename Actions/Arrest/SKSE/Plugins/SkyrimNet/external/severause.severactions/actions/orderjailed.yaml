@@ -1,0 +1,66 @@
+customCategory: arrest
+name: OrderJailed
+description: "Only during a judgment, with a prisoner brought before the speaker in restraints: the verdict goes against them and the guard takes them to the cells. If {{ player.name }} ordered the arrest, the escorting guard speaks this verdict on {{ player.name }}'s word. Decide once the prisoner has been heard; while still listening, just talk (with no verdict at all, the prisoner goes to jail after a minute or two). Mercy: OrderRelease."
+questEditorId: SeverActions
+scriptName: SeverActions_ArrestJudgment
+executionFunctionName: OrderJailed_Execute
+parameterMapping:
+  - type: speaker
+    name: akSender
+    description: the authority passing sentence on the prisoner
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "busy_reason"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "judgment"
+    logicalOperator: "AND"
+    required: true
+  # Replaced an 11-condition OR ladder (9 GuardFactionX + JobJarlFaction
+  # + JobHousecarlFaction) with the single native is_guard_or_authority
+  # decorator. Same semantics — see SkyrimNetBridge.h for the cached
+  # faction-pointer set, plus mod-added holds via HoldResolver.
+  - conditions:
+      - decoratorName: "is_guard_or_authority"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

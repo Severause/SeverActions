@@ -1,0 +1,22 @@
+customCategory: sa_ambush
+name: AmbushStandoff
+description: "Category: only for a member of the armed group holding the player in an ambush standoff: once the player has answered the demand, end it by attacking or by backing off and leaving. Before they answer, no action."
+enabled: true
+
+eligibilityRules:
+  - conditions:
+      # A member of a live ambush standoff; "" for everyone else.
+      - decoratorName: "is_ambush_thug"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot act (see the is_kidnap_victim bullet in CLAUDE.md).
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

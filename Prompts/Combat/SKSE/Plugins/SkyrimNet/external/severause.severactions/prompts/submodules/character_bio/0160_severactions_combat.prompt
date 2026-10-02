@@ -1,0 +1,79 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "dialogue_target" %}
+{# This actor's fight, truce or surrender, from SeverActions_Combat's SeverCombat_* StorageUtil keys. #}
+{% if actorUUID and actorUUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% if actor and actor.UUID %}
+{% set ceasefire_time = papyrus_util("GetFloatValue", actor.UUID, "SeverCombat_CeasefireTime", 0) %}
+{% set yield_time = papyrus_util("GetFloatValue", actor.UUID, "SeverCombat_YieldTime", 0) %}
+{% set yielded_to = papyrus_util("GetFormValue", actor.UUID, "SeverCombat_YieldedTo") %}
+{% set received_yield_from = papyrus_util("GetFormValue", actor.UUID, "SeverCombat_ReceivedYieldFrom") %}
+{% set yield_broken_flag = papyrus_util("GetIntValue", actor.UUID, "SeverCombat_YieldBroken", 0) %}
+{% set yield_broken_time = papyrus_util("GetFloatValue", actor.UUID, "SeverCombat_YieldBrokenTime", 0) %}
+{# A broken surrender counts for one game day (the stamp is game hours x 3631, like the truce stamps). #}
+{% set yield_broken = (yield_broken_flag == 1) and (yield_broken_time > 0) and ((gameTimeNumeric / 3600) - (yield_broken_time / 3631) < 24) %}
+{% set was_normally_hostile_flag = papyrus_util("GetIntValue", actor.UUID, "SeverCombat_WasNormallyHostile", 0) %}
+{% set was_normally_hostile = (was_normally_hostile_flag == 1) %}
+{% set in_combat = actor.isInCombat %}
+{# yieldPromptEnabled's prompt mirror (default on): off hides every surrender line, not the ceasefire or combat ones. #}
+{% set yield_prompt_enabled = (papyrus_util("GetIntValue", 0, "SeverActions_YieldPromptEnabled", 1) == 1) %}
+
+{# Ages in game hours. SeverActions_Combat stamps days * 24 * 3631 (the scripts'
+   SECONDS_PER_GAME_HOUR); gameTimeNumeric is days * 86400. Each side is divided by
+   its own hour, and a truce stays "recent" for one game hour. #}
+{% set now_hours = gameTimeNumeric / 3600 %}
+{% set ceasefire_age = now_hours - (ceasefire_time / 3631) %}
+{% set yield_age = now_hours - (yield_time / 3631) %}
+
+{% set recent_ceasefire = (ceasefire_time > 0) and (ceasefire_age < 1) %}
+{% set recent_yield_given = yield_prompt_enabled and (yield_time > 0) and (yielded_to) and (yield_age < 1) %}
+{% set recent_yield_received = yield_prompt_enabled and (yield_time > 0) and (received_yield_from) and (yield_age < 1) %}
+
+{# After the first hour and for three game days, non-hostile actors only: a guard who
+   fought someone must not drift back into hostile lines. Normally hostile actors get
+   nothing here; their faction decides whether they fight again. #}
+{% set post_truce_ceasefire = (ceasefire_time > 0) and not recent_ceasefire and ceasefire_age < 72 and not was_normally_hostile %}
+{% set post_truce_yield = yield_prompt_enabled and (yield_time > 0) and not recent_yield_given and not recent_yield_received and yield_age < 72 and not was_normally_hostile %}
+
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" %}
+{# Yield broken state - attacked after surrendering. Tone splits by whether
+   this NPC is the kind that's normally hostile. #}
+{% if yield_broken and in_combat and yield_prompt_enabled %}
+## Betrayed Surrender
+{% if was_normally_hostile %}
+You surrendered but were attacked anyway. Your surrender was not respected. You are furious and fighting back with renewed aggression — show no mercy to someone who would strike a defenseless opponent.
+{% else %}
+You surrendered but were attacked anyway. The betrayal stings, but you are not by nature a vicious fighter. Defend yourself, voice your sense of wronged honor, but you do not seek retribution beyond what survival demands.
+{% endif %}
+{% endif %}
+{% if not yield_broken and (recent_ceasefire or recent_yield_given or recent_yield_received) %}
+## Recent Truce
+{% if recent_yield_given %}
+You just surrendered. You are shaken, humiliated, or simply relieved to be alive, and you will not turn hostile again: you valued your life enough to yield. Show deference or wariness toward the one you yielded to.
+{% elif recent_yield_received %}
+Someone just surrendered to you. You have the upper hand: be magnanimous, threatening, or dismissive, but the fight is OVER. You will not attack someone who has yielded unless they provoke you again.
+{% elif recent_ceasefire %}
+You just stopped fighting. The tension is still high, but you are holding back: be cold, wary, or resentful if you like, but say nothing that sounds like a threat or an insult that could start it again.
+{% endif %}
+{% endif %}
+{% if not yield_broken and (post_truce_ceasefire or post_truce_yield) %}
+## Resolved Conflict
+You were in a fight recently that ended in a truce, and you are not the kind of person who carries that into fresh violence. It is behind you: do not bring it up unprompted, and do not start it again.
+{% endif %}
+{# Who they are fighting is base 0200's COMBAT STATUS (the engine's combat targets); this adds only the delivery. #}
+{% if in_combat and not recent_ceasefire %}
+## Active Combat
+You are in a fight right now. Keep your lines short and reactive, focused on surviving or winning.
+{% endif %}
+{# The listener's profile: only what an onlooker can see. #}
+{% elif render_mode == "dialogue_target" %}
+{% if in_combat and not recent_ceasefire %}
+## Active Combat
+- {{ actor.name }} is in the middle of a fight.
+{% elif recent_ceasefire or recent_yield_given or recent_yield_received %}
+## Recent Truce
+- {{ actor.name }} stopped fighting a short while ago, and the tension has not left them.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

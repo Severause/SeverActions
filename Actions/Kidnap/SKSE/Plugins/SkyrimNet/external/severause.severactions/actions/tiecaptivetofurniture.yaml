@@ -1,0 +1,83 @@
+customCategory: sa_captives
+name: TieCaptiveToFurniture
+description: "Use when the speaker is leading a bound captive and, in this line, is told or decides to leave them tied here to a post, chair, bed, altar or workbench, so the speaker is free to walk away. The captive stays a captive, standing chained beside it. To take them along again, RestrainNPC; to free them, ReleaseCaptive."
+questEditorId: SeverActions
+scriptName: SeverActions_Kidnap
+executionFunctionName: TieCaptiveToFurniture
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: the one doing the tying
+  - type: dynamic
+    name: targetName
+    description: "the captive's name, approximate is fine; leave empty when only one captive is held"
+    optional: true
+    default: ""
+  - type: dynamic
+    name: furniture
+    description: "the RefID of the furniture, copied exactly from Nearby Objects; never a name or a guess"
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      # Opt-in feature toggle. Custom decorator - STRING compare, never == true.
+      - decoratorName: "sever_kidnap_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+      # OR the restrain opt-in: restraint is default-ON while kidnap is
+      # default-OFF, and a restrained captive must be manageable under
+      # default settings.
+      - decoratorName: "sever_restrain_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "OR"
+    required: true
+  # Deliberately NO is_sever_follower gate (same as restrainnpc):
+  # whoever holds the captive can tie them down - a follower, a guard, the
+  # captor themselves.
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives (the self-release hole).
+      # String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Must actually HAVE the prisoner in hand. Without this the action was
+      # offered to every NPC in every conversation and refused in Papyrus - the
+      # same LLM-spam class has_captive_in_hand was added to fix on RestrainNPC
+      # (review 2026-09-08). A captor leading a bound captive is exactly the
+      # state the tie consumes, so the narrow test is the right one here.
+      - decoratorName: "has_captive_in_hand"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Both sibling walk-up actions carry this: the arrest path marks its
+      # parties busy, and two FSMs walking the same actor fight over packages.
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true

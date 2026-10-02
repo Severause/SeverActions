@@ -1,0 +1,51 @@
+customCategory: items
+name: ReadBook
+description: "Use when the speaker is asked to read a book, note or letter aloud and agrees, or chooses to read one aloud now, from their own pack or {{ player.name }}'s. Reading carries on over the next lines until StopReading. Not for mentioning, recommending or discussing a book. Its real text appears only after this fires: open the book and find the page; never recite, quote or invent its contents."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: ReadBook_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor cracking open the book
+  - type: dynamic
+    name: bookName
+    description: "the exact title of a book or note the speaker or the player carries"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Not while already reading aloud: SeverActions_ReadingBook is 1 or 2 during a read (SeverActions_Loot).
+      - decoratorName: "papyrus_util"
+        arguments: ["GetIntValue", "currentActor", "SeverActions_ReadingBook", 0]
+        comparisonOperator: "=="
+        expectedValue: 0
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

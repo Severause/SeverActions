@@ -1,34 +1,28 @@
 Scriptname SeverActions_Arousal extends Quest
-{OSLAroused integration - provides arousal state decorator for NPCs}
+{OSL Aroused: the ModifyArousal action (no action YAML calls SetArousal_Execute). The
+ get_arousal_state decorator is native (SkyrimNetBridge.h).}
 
-; =============================================================================
-; DECORATOR: get_arousal_state
-; Returns JSON with arousal info for an NPC
-; Called from prompts as: {{ get_arousal_state(npc.UUID) }}
-; =============================================================================
+; No longer registered as a decorator; kept for old frames and third-party callers. Its JSON
+; shape differs from the native decorator's, and nothing in this tree calls it.
 
 String Function GetArousalState(Actor akActor) Global
     if !akActor || akActor.IsDead()
         return "{\"available\":false}"
     endif
     
-    ; Check if OSLAroused is loaded
     if Game.GetModByName("OSLAroused.esp") == 255
         return "{\"available\":false,\"reason\":\"OSLAroused not installed\"}"
     endif
     
-    ; Get arousal values
     float arousal = OSLArousedNative.GetArousal(akActor)
     float baseline = OSLArousedNative.GetArousalBaseline(akActor)
     float libido = OSLArousedNative.GetLibido(akActor)
     bool isNaked = OSLArousedNative.IsActorNaked(akActor)
     bool inScene = OSLArousedNative.IsInScene(akActor)
     
-    ; Determine arousal description
     String arousalDesc = GetArousalDescription(arousal)
     String libidoDesc = GetLibidoDescription(libido)
     
-    ; Build JSON
     String json = "{"
     json += "\"available\":true,"
     json += "\"arousal\":" + (arousal as Int) + ","
@@ -43,7 +37,6 @@ String Function GetArousalState(Actor akActor) Global
     return json
 EndFunction
 
-; Get human-readable arousal description
 String Function GetArousalDescription(float arousal) Global
     if arousal < 10
         return "not aroused"
@@ -60,7 +53,6 @@ String Function GetArousalDescription(float arousal) Global
     endif
 EndFunction
 
-; Get human-readable libido description
 String Function GetLibidoDescription(float libido) Global
     if libido < 20
         return "low libido"
@@ -83,9 +75,7 @@ String Function BoolToString(bool value) Global
     endif
 EndFunction
 
-; =============================================================================
-; ACTION: ModifyArousal - Change an NPC's arousal
-; =============================================================================
+; Action: ModifyArousal.
 
 Bool Function ModifyArousal_IsEligible(Actor akActor, float amount)
     if !akActor || akActor.IsDead()
@@ -103,20 +93,9 @@ Function ModifyArousal_Execute(Actor akActor, float amount)
     endif
     
     OSLArousedNative.ModifyArousal(akActor, amount)
-    
-    float newArousal = OSLArousedNative.GetArousal(akActor)
-    String desc = GetArousalDescription(newArousal)
-    
-    if amount > 0
-        SkyrimNetApi.RegisterEvent("arousal_increased", akActor.GetDisplayName() + " is now " + desc, akActor, None)
-    else
-        SkyrimNetApi.RegisterEvent("arousal_decreased", akActor.GetDisplayName() + " is now " + desc, akActor, None)
-    endif
 EndFunction
 
-; =============================================================================
-; ACTION: SetArousal - Set an NPC's arousal to specific value
-; =============================================================================
+; SetArousal (value 0-100).
 
 Bool Function SetArousal_IsEligible(Actor akActor, float value)
     if !akActor || akActor.IsDead()
@@ -137,7 +116,4 @@ Function SetArousal_Execute(Actor akActor, float value)
     endif
     
     OSLArousedNative.SetArousal(akActor, value)
-    
-    String desc = GetArousalDescription(value)
-    SkyrimNetApi.RegisterEvent("arousal_set", akActor.GetDisplayName() + " is now " + desc, akActor, None)
 EndFunction

@@ -1,0 +1,14 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "dialogue_target" %}
+{# The player's enterprises at a glance, on the player's own bio: the player's own lines and thoughts see it, and so does a retainer or steward the player is talking to (dialogue_target, where npc is that speaker). enterprises_summary is "" for anyone but the player and with no retainers. #}
+{% if player and player.UUID and actorUUID == player.UUID %}
+{% set entSummary = enterprises_summary(actorUUID) %}
+{% if entSummary != "" %}
+{% set entListener = "" %}
+{% if render_mode == "dialogue_target" %}{% set entListener = retainer_status(npc.UUID) %}{% endif %}
+{% if render_mode != "dialogue_target" or (entListener != "" and entListener != "hostile") %}
+## {{ player.name }}'s Enterprises
+{{ entSummary }}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

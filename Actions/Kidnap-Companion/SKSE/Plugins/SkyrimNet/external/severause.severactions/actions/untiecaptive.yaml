@@ -1,0 +1,63 @@
+customCategory: sa_captives
+name: UntieCaptive
+description: "Use when {{ player.name }} wants a held captive kept but treated more gently (hood off, hands untied, still watched) and it happens now. The captive may move about where they are held but is not free, and escapes far more easily if left unguarded. Only for a captive the speaker's side holds, never the speaker themself. To let them go for good, ReleaseCaptive."
+questEditorId: SeverActions
+scriptName: SeverActions_Kidnap
+executionFunctionName: UntieCaptive
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: the companion loosening the bonds
+  - type: dynamic
+    name: targetName
+    description: "the captive's name, approximate is fine; leave empty when only one captive is held"
+    optional: true
+    default: ""
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      # Opt-in feature toggle. Custom decorator — STRING compare, never == true.
+      - decoratorName: "sever_kidnap_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+      # OR the restrain opt-in: restraint is default-ON while kidnap is
+      # default-OFF, and a restrained captive must be manageable under
+      # default settings.
+      - decoratorName: "sever_restrain_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "OR"
+    required: true
+  - conditions:
+      - decoratorName: "is_sever_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives (the self-release hole).
+      # String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

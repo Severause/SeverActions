@@ -1,0 +1,65 @@
+[ system ]
+You are writing a brief quest awareness note for a companion character in Skyrim: what this character saw and felt at a recent quest moment. Let their personality and feelings color it.
+
+Nobody in the world said or read the "New Objective" below. Use it only to work out what just happened, as this character saw it.
+
+{% set npcUUID = formid_to_uuid(npcFormId) %}
+{% if npcUUID and npcUUID != 0 %}
+{% set npc = decnpc(npcUUID) %}
+
+Character: {{ npc.name }} ({{ npc.race }}{% if npc.class != "" and npc.class != "unknown" %}, {{ npc.class }}{% endif %})
+
+{# Identity and personality only: a "thoughts" profile would add inventories, gold, familiarity and the other bio sections. #}
+{% set who = render_character_profile("bio_summary", npcUUID) %}
+{% set personality = render_character_profile("bio_personality", npcUUID) %}
+{% if who != "" %}
+Who they are: {{ who }}
+{% endif %}
+{% if personality != "" %}
+Personality: {{ personality }}
+{% endif %}
+
+{# SkyrimNet's dialogue events: "dialogue" and "dialogue_npc" (vanilla topics) carry speaker; "dialogue_player", "dialogue_player_text" and "dialogue_player_stt" carry player_name. #}
+{% set events = get_recent_events(20) %}
+{% set dialogueLines = [] %}
+{% for ev in events %}
+{% if existsIn(ev.data, "dialogue") %}
+{% if (ev.type == "dialogue" or ev.type == "dialogue_npc") and existsIn(ev.data, "speaker") %}
+{% set dialogueLines = append(dialogueLines, ev) %}
+{% elif (ev.type == "dialogue_player" or ev.type == "dialogue_player_text" or ev.type == "dialogue_player_stt") and existsIn(ev.data, "player_name") %}
+{% set dialogueLines = append(dialogueLines, ev) %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if length(dialogueLines) > 0 %}
+Recent dialogue that was spoken (for context on what just happened):
+{% for ev in dialogueLines %}
+{% if existsIn(ev.data, "speaker") %}
+[{{ ev.data.speaker }}]: {{ ev.data.dialogue }}
+{% elif existsIn(ev.data, "player_name") %}
+[{{ ev.data.player_name }}]: {{ ev.data.dialogue }}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% set player_blurb = sever_player_blurb(npc.UUID) %}
+{% if player_blurb != "" %}
+How {{ npc.name }} currently feels about {{ player.name }}:
+{{ player_blurb }}
+{% endif %}
+
+{% endif %}
+
+Quest: {{ questName }}
+New Objective (the task that now lies ahead, in the journal's words): {{ newObjective }}
+
+{% if default(previousSummary, "") != "" %}
+What this character already knows about this quest:
+{{ previousSummary }}
+Do NOT repeat what is already known. Write ONLY about this new moment.
+{% endif %}
+
+[ user ]
+Write one or two short sentences, 50 words at most, in the third person, past tense and on a single line, about the moment that just moved this quest along: what was said, found or decided that set the new task, and how this character felt about it. The task itself still lies ahead, so never describe it as done. Do not quote or paraphrase the objective text.
+
+Output ONLY the narrative text. No labels, no quotation marks, no explanation.

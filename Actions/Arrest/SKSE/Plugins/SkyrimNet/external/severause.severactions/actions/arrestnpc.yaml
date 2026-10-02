@@ -1,0 +1,71 @@
+customCategory: arrest
+name: ArrestNPC
+description: "Use when the speaker, a guard, takes an NPC who is here into custody in this line (caught in a crime, wanted, or on the order of someone with authority) and marches them in cuffs to this hold's jail. Not for warnings, threats of arrest, suspicions, or someone only mentioned. Someone elsewhere is DispatchGuardToArrest; {{ player.name }} is ArrestPlayer. Binding someone to keep at the speaker's side is Captives."
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: ArrestNPC_Internal
+parameterMapping:
+  - type: speaker
+    name: akGuard
+    description: the guard making the collar
+  - type: dynamic
+    name: suspect
+    description: "exact name of the NPC to arrest, who must be nearby (as listed in Nearby Actors)"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  # is_guard, not is_guard_or_authority: this is the physical collar, and a
+  # jarl or housecarl who could see it went and made the arrest in person
+  # (DizzyDedman, 2026-09-12). They get OrderArrest instead, which hands
+  # the job to the nearest guard.
+  - conditions:
+      - decoratorName: "is_guard"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Not a guard in the middle of an SA arrest or dispatch. sever_is_dispatched
+      # reads the arrest store by FormID (the dispatch faction named by EditorID
+      # never resolves on VR). Custom decorator, so a STRING compare: "" = free.
+      - decoratorName: "sever_is_dispatched"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

@@ -1,55 +1,37 @@
 Scriptname SeverActions_SpellCastAlias extends ReferenceAlias
-{Per-slot cast controller. Filled with the caster, holds the pair's TargetAlias
-and SlotPackage, and runs a polling state machine that detects cast start,
-cast end, stuck-charge animations, heal-to-full repetition, and magicka debit.}
+{Per-slot cast controller: filled with the caster, holds the slot's TargetAlias and
+SlotPackage, and polls the cast (start, release, stuck charge, heal-to-full repeat,
+magicka debit). An alias owns its form handle, so its update timer is its own.}
 
-; =============================================================================
-; ESP-FILLED PROPERTIES
-; =============================================================================
+; ESP-filled properties
 
 ReferenceAlias Property TargetAlias Auto
-{The paired target alias for this slot — filled with the spell's target.}
+{This slot's target alias, filled with the spell's target.}
 
 Package Property SlotPackage Auto
-{The usemagic package attached to this alias. Handed to Native_InjectSpellIntoPackage.}
+{This slot's UseMagic package; the dispatcher rebinds it from the live ESP every cast.}
 
-; =============================================================================
-; RUNTIME STATE (per-cast)
-; =============================================================================
+; Per-cast state
 
 Spell spellToCast
 Int spellCost
 Bool useMagicka
 Bool dualCasting
 Bool healToFull
-Bool targetIsMarker         ; aim marker we placed — must be Disable+Delete'd on cleanup
+Bool targetIsMarker         ; an aim marker we placed: Disable+Delete on cleanup
 Int castPhase               ; 0=waiting for anim start, 1=cast in flight, 2=done
 Int pollsWaitingForStart    ; watchdog: abort if cast never starts
 Int pollsInFlight           ; watchdog: force-release if charging too long
-Bool forceFired             ; whether we've already used the ForceFireSpell fallback
+Bool forceFired             ; unused: no force-fire fallback is wired
 
 Float Property PollInterval = 0.5 AutoReadOnly
-Int Property MaxPollsWaitingForStart = 10 AutoReadOnly   ; 5s cap on package fire
-Int Property PollsBeforeForceFire = 2 AutoReadOnly       ; if state=0 after 2 polls (~1s), force the cast
-Int Property MaxPollsInFlight = 30 AutoReadOnly          ; 15s cap on charge+release
+Int Property MaxPollsWaitingForStart = 10 AutoReadOnly   ; 5 s for the package to start the cast
+Int Property PollsBeforeForceFire = 2 AutoReadOnly       ; unused (see forceFired)
+Int Property MaxPollsInFlight = 30 AutoReadOnly          ; 15 s for charge and release
 
-; =============================================================================
-; ENTRY POINT (dispatcher calls this after ForceRefTo)
-; =============================================================================
-
-; Initialize per-cast tracking state and arm the polling watchdog. The
-; dispatcher (_DispatchOneCast) has already done the heavy lifting:
-;   - resolved live SlotPackage
-;   - injected the spell into the package
-;   - filled the target alias
-;   - filled the caster alias (which triggered engine package eval)
-;
-; By the time we get here the engine should already be evaluating the
-; cast package with the correct spell and target in place. We do NOT call
-; EvaluatePackage here — bosn's reference plugin doesn't either; the alias
-; fill in the dispatcher is what triggers re-eval. (The dispatcher itself
-; already force-called EvaluatePackage right after the fill, since ForceRefTo
-; alone is unreliable — see SeverActions_SpellCast.psc.)
+; Entry point: arms the polling watchdog for a cast SeverActions_SpellCast._DispatchOneCast
+; has set up (package bound, spell injected, both aliases filled, EvaluatePackage forced).
+; Returns false, after cleanup, when the caster, spell or target is missing.
 Bool Function StartCastTracking(Spell akSpell, ObjectReference akTarget, Bool bDualCasting, Bool bUseMagicka, Bool bHealToFull, Bool bMarkerIsTarget)
     Actor caster = GetActorRef()
     SeverActionsNative.Native_OutfitSlot_Log("[SpellCastAlias] StartCastTracking caster=" + caster + " spell=" + akSpell + " target=" + akTarget)
@@ -59,7 +41,6 @@ Bool Function StartCastTracking(Spell akSpell, ObjectReference akTarget, Bool bD
         return false
     EndIf
 
-    ; Save runtime state for OnCastComplete / heal-to-full
     spellToCast = akSpell
     dualCasting = bDualCasting
     useMagicka = bUseMagicka
@@ -70,21 +51,13 @@ Bool Function StartCastTracking(Spell akSpell, ObjectReference akTarget, Bool bD
         spellCost = SeverActionsNativeExt.Native_GetEffectiveMagickaCost(caster, akSpell, dualCasting)
     EndIf
 
-    ; Tell SkyrimNet to release this actor's AI for the duration of the cast.
-    ; Without this, an active SkyrimNet PlayerFollowPackage outranks our
-    ; injected SpellCastPackage in package-priority eval and the cast watchdog
-    ; spins for 5s without the engine ever firing the package — symptom: cast
-    ; "sometimes doesn't work" when the follower is actively being driven by
-    ; SkyrimNet (idle/sandbox-driven follows happen to free the actor and
-    ; cast works; SkyrimNet-driven follows don't). Cleared in CleanupCast.
+    ; Hold SkyrimNet off the actor's AI for the cast: an active SkyrimNet follow package
+    ; outranks the injected cast package and the cast never starts. Cleared in CleanupCast.
     SeverActionsNative.Native_SkyrimNet_SetActorBusy(caster, "SeverActions spell cast")
 
-    ; One-shot diagnostic dump — what the engine sees right after our
-    ; alias fills. Polling will dump again each tick so we get a timeline.
+    ; Log the cast setup; OnUpdate logs it again every poll, for a timeline.
     SeverActionsNativeExt.Native_DiagnoseCastSetup(caster, spellToCast)
 
-    ; Arm the polling state machine (handles cast-start detection, stuck-
-    ; charge watchdog, completion).
     castPhase = 0
     pollsWaitingForStart = 0
     pollsInFlight = 0
@@ -93,9 +66,7 @@ Bool Function StartCastTracking(Spell akSpell, ObjectReference akTarget, Bool bD
     return true
 EndFunction
 
-; =============================================================================
-; POLLING STATE MACHINE
-; =============================================================================
+; Polling state machine
 
 Event OnUpdate()
     Actor caster = GetActorRef()
@@ -106,9 +77,6 @@ Event OnUpdate()
 
     Bool stillCasting = SeverActionsNativeExt.Native_IsCasterStillCasting(caster)
 
-    ; Periodic diagnostic dump while polling — shows whether the engine is
-    ; actually progressing the cast or just spinning. Each tick gives us a
-    ; new snapshot of caster states / equipped slots / current package.
     SeverActionsNativeExt.Native_DiagnoseCastSetup(caster, spellToCast)
 
     If castPhase == 0
@@ -144,16 +112,14 @@ Event OnUpdate()
     EndIf
 EndEvent
 
-; =============================================================================
-; CAST COMPLETION
-; =============================================================================
+; Cast completion
 
 Function OnCastComplete(Actor caster)
     If useMagicka && spellCost > 0
         caster.DamageActorValue("Magicka", spellCost)
     EndIf
 
-    ; Decide whether to loop another cast (heal-to-full) or cleanup.
+    ; Heal-to-full: recast while the target is hurt and the caster can pay.
     Bool continueHealing = false
     Actor targetActor = None
     ObjectReference savedTargetRef = None
@@ -164,12 +130,10 @@ Function OnCastComplete(Actor caster)
 
     If healToFull && targetActor && SeverActionsNativeExt.Native_IsHealingSpell(spellToCast)
         Float currentHP = targetActor.GetActorValue("Health")
-        ; Use GetActorValueMax (SKSE) so Fortify Health and other +Max-HP buffs
-        ; are respected. GetBaseActorValue would return only the unbuffed base
-        ; (e.g. 100 for an actor at 120/150) and the loop would stop early —
-        ; under-healing exactly the buffed targets that need repeat heals.
+        ; GetActorValueMax (SKSE) counts Fortify Health; the base value would stop the
+        ; loop early on exactly the buffed targets.
         Float maxHP = targetActor.GetActorValueMax("Health")
-        ; Heal-to-full threshold: close enough to full that one more cast would be wasted.
+        ; Within 1 HP of full counts as full.
         If currentHP < maxHP - 1.0
             Float magickaLeft = caster.GetActorValue("Magicka")
             If !useMagicka || spellCost <= magickaLeft
@@ -178,7 +142,7 @@ Function OnCastComplete(Actor caster)
         EndIf
     EndIf
 
-    ; Snapshot the state we need for the re-dispatch, then cleanup the slot.
+    ; CleanupCast clears the per-cast state: copy what the recast needs first.
     Spell savedSpell = spellToCast
     Bool savedDualCast = dualCasting
     Bool savedUseMagicka = useMagicka
@@ -188,24 +152,18 @@ Function OnCastComplete(Actor caster)
     CleanupCast()
 
     If continueHealing && savedCaster && savedSpell && savedTargetRef
-        ; Brief gap so the engine fully releases the previous cast's animation
-        ; state before the next package evaluation starts.
+        ; Let the engine release the previous cast's animation state first.
         Utility.Wait(0.4)
         SeverActions_SpellCast.GetInstance().RecastSameSlot(savedCaster, savedSpell, savedTargetRef, savedDualCast, savedUseMagicka, savedHealToFull)
     EndIf
 EndFunction
 
-; =============================================================================
-; CLEANUP
-; =============================================================================
+; Cleanup
 
 Function CleanupCast()
     Actor caster = GetActorRef()
 
-    ; Release SkyrimNet's hold on the actor's AI — pairs with the SetActorBusy
-    ; call in StartCastTracking. Safe to call even if the cast aborted before
-    ; the busy flag was set (the SkyrimNet API treats clear-when-not-busy as
-    ; a no-op).
+    ; Pairs with SetActorBusy in StartCastTracking; a no-op when it was never set.
     If caster
         SeverActionsNative.Native_SkyrimNet_ClearActorBusy(caster)
     EndIf
@@ -214,19 +172,10 @@ Function CleanupCast()
         SeverActionsNativeExt.Native_ForceReleaseCast(caster)
     EndIf
 
-    ; Pull the runtime-cloned SpellItem off the actor.
-    ; Native_CloneSpellForCast called actor->AddSpell(clone) during cast
-    ; setup so HasSpell() and the UseMagic procedure's spell-equip lookup
-    ; would resolve the clone. Without this RemoveSpell, every cast leaves
-    ; another runtime SpellItem (FF-prefixed) on the actor — three casts
-    ; of Firebolt = three "Firebolt" entries in their spell list, visible
-    ; in PrismaUI's Spells page. The clone has no other reason to exist
-    ; outside this single cast lifecycle.
-    ; ONLY remove when the dispatcher actually cast from a clone. When
-    ; Native_CloneSpellForCast failed, _DispatchOneCast fell back to the
-    ; ORIGINAL spell -- RemoveSpell here would permanently delete the NPC's
-    ; real spell. The dispatcher records the choice in SeverSpellCast_WasCloned
-    ; at clone time; read + unset it here so it lives exactly one cast.
+    ; Remove the runtime clone Native_CloneSpellForCast added to the actor (else every
+    ; cast leaves another copy in their spell list), but ONLY when the dispatcher cast
+    ; from a clone: on its fallback spellToCast is the NPC's real spell. The dispatcher
+    ; sets SeverSpellCast_WasCloned per cast; unset it here.
     If caster && spellToCast
         If StorageUtil.GetIntValue(caster, "SeverSpellCast_WasCloned", 0) == 1
             caster.RemoveSpell(spellToCast)
@@ -234,7 +183,6 @@ Function CleanupCast()
         StorageUtil.UnsetIntValue(caster, "SeverSpellCast_WasCloned")
     EndIf
 
-    ; Disable + delete the aim marker if we placed one
     If targetIsMarker && TargetAlias
         ObjectReference markerRef = TargetAlias.GetRef()
         If markerRef
@@ -247,17 +195,15 @@ Function CleanupCast()
         TargetAlias.Clear()
     EndIf
 
-    ; Null the per-cast state so a belt-and-suspenders CleanupCast call
-    ; before StartCastTracking has re-seeded it (e.g. its precondition-fail
-    ; path) can't act on the PREVIOUS cast's spell/marker.
+    ; So a CleanupCast before the next StartCastTracking seeds these (its precondition
+    ; path) cannot act on the previous cast's spell or marker.
     spellToCast = None
     targetIsMarker = false
 
     UnregisterForUpdate()
 
     If caster
-        ; Removing the caster from the alias pulls the package override off them.
-        ; A package re-eval returns them to their normal AI (idle/sandbox/etc).
+        ; Clearing the alias drops its package; the re-eval returns them to their own AI.
         Clear()
         caster.EvaluatePackage()
     Else
@@ -266,8 +212,7 @@ Function CleanupCast()
 EndFunction
 
 Event OnPackageEnd(Package akOldPackage)
-    ; If the package reports end naturally, short-circuit the watchdog and
-    ; run completion immediately instead of waiting for the anim graph to clear.
+    ; The package ended on its own: complete now instead of at the next poll.
     If akOldPackage == SlotPackage && castPhase == 1
         Actor caster = GetActorRef()
         If caster

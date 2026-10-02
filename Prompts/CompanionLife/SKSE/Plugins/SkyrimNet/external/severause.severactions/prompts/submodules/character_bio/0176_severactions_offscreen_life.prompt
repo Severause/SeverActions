@@ -1,0 +1,37 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" %}
+{# What an NPC has been doing away from the player: a dismissed follower, or a homed NPC who never followed. #}
+{% if actorUUID and actorUUID != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% if actor and actor.UUID %}
+{% set is_fol = is_follower(actorUUID) or is_sever_follower(actorUUID) != "" %}
+{% set was_follower = sever_was_follower(actor.UUID) != "" %}
+{% set home_loc = default(sever_home(actor.UUID), "") %}
+{# Homed NPCs who never followed get off-screen life too (CheckOffScreenLifeEvents
+   walks every tracked actor with a home), so they qualify alongside former
+   followers. sever_was_follower alone would hide their stories. #}
+{% if not is_fol and (was_follower or home_loc != "") %}
+{% set event_history = sever_life_event_history(actor.UUID) %}
+{% set life_summary = sever_life_summary(actor.UUID) %}
+{% if event_history != "" or life_summary != "" %}
+
+## What You've Been Up To
+{% if not was_follower %}
+Lately you've been living in {{ home_loc }}.
+{% elif home_loc != "" %}
+Since you and {{ player.name }} parted ways, you've been living in {{ home_loc }}.
+{% else %}
+Since you and {{ player.name }} parted ways, you've been on your own.
+{% endif %}
+{% if event_history != "" %}
+Your recent days:
+{{ event_history }}
+{% elif life_summary != "" %}
+Recently: {{ life_summary }}
+{% endif %}
+
+These are your own memories; you lived them. Bring one up when the talk turns that way, with {{ player.name }} or anyone else, but never recite the list. The ones marked significant or notable stayed with you most.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

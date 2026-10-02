@@ -1,0 +1,307 @@
+[ system ]
+You are an internal life simulation system for a dismissed companion in Skyrim. You generate believable daily events for an NPC living at their assigned home while the player is away adventuring. Output ONLY a JSON object. No explanation, no commentary.
+
+{# User-configured world setting / tone / genre / content rating from SkyrimNet's #}
+{# 0010_setting prompt — pulls in any conversion-mod or playstyle preferences the #}
+{# user has set so off-screen events stay consistent with the rest of the world. #}
+{{ render_template("submodules//system_head//0010_setting") }}
+
+{% set npcUUID = formid_to_uuid(npcFormId) %}
+{% if npcUUID and npcUUID != 0 %}
+{% set npc = decnpc(npcUUID) %}
+
+Character: {{ npc.name }} ({{ npc.race }}{% if npc.gender %}, {{ npc.gender }}{% endif %}{% if npc.class != "" and npc.class != "unknown" %}, {{ npc.class }}{% endif %})
+
+{# Third-person identity only: the transform profile adds the companion's own inventory and gold and the live follower sections, which do not fit a life lived away from the player. #}
+{% set bioSummary = render_character_profile("bio_summary", npcUUID) %}
+{% set bioBackground = render_character_profile("bio_background", npcUUID) %}
+{% set bioPersonality = render_character_profile("bio_personality", npcUUID) %}
+{% set bioOccupation = render_character_profile("bio_occupation", npcUUID) %}
+{% set bioSkills = render_character_profile("bio_skills", npcUUID) %}
+{% set bioAspirations = render_character_profile("bio_aspirations", npcUUID) %}
+{% set bioRelationships = render_character_profile("bio_relationships", npcUUID) %}
+{% if bioSummary != "" %}{{ bioSummary }}{% endif %}
+{% if bioBackground != "" %}Background: {{ bioBackground }}{% endif %}
+{% if bioPersonality != "" %}Personality: {{ bioPersonality }}{% endif %}
+{% if bioOccupation != "" %}Occupation: {{ bioOccupation }}{% endif %}
+{% if bioSkills != "" %}Skills: {{ bioSkills }}{% endif %}
+{% if bioAspirations != "" %}Goals: {{ bioAspirations }}{% endif %}
+{% if bioRelationships != "" %}Relationships: {{ bioRelationships }}{% endif %}
+
+Home Location: {{ homeLocation }}
+{% set purse = default(npcGold, 0) %}
+Coin purse: {{ purse }} gold carried right now.
+{% if exists("inJail") and existsIn(inJail, "daysHeld") %}
+⚠ {{ npc.name }} IS IN A CELL RIGHT NOW — held in {% if inJail.jail != "" %}{{ inJail.jail }}{% elif inJail.hold != "" %}the {{ inJail.hold }} jail{% else %}a hold's jail{% endif %}{% if inJail.daysHeld > 0 %}, {{ inJail.daysHeld }} {% if inJail.daysHeld == 1 %}day{% else %}days{% endif %} so far{% endif %}. Treat it as CANON: the home, daily rhythm and work described here are where they would be if free, not where they are.
+{% endif %}
+
+{% set work_loc = sever_work_location(npc.UUID) %}
+{% set play_loc = sever_play_location(npc.UUID) %}
+{% if work_loc != "" or play_loc != "" %}
+Daily rhythm (use these as anchor settings — don't invent new ones when these fit):
+{% if work_loc != "" %}
+- Daytime (mid-morning through late afternoon): {{ work_loc }} — where they work, train, or tend to what matters to them.
+{% endif %}
+{% if play_loc != "" %}
+- Evenings: {{ play_loc }} — where they unwind, drink, socialize, pass the time.
+{% endif %}
+- Nights and early mornings: {{ homeLocation }} or nearby.
+
+{% endif %}
+{% set vJob    = default(ventureJob, "") %}
+{% set vLoc    = default(ventureLocation, "") %}
+{% set vArr    = default(ventureArrangement, "") %}
+{% set vStatus = default(ventureStatus, "") %}
+{% if vJob != "" %}
+Their work: {{ npc.name }} runs a standing venture for {{ player.name }}: {{ vJob }}{% if vLoc != "" %}, operating out of {{ vLoc }}{% endif %} (arrangement: {{ vArr }}; status: {{ vStatus }}).
+{% if length(default(recentWorkStories, [])) > 0 %}
+Their own recent work-journal entries, which are what their working weeks have actually been (treat them as canon):
+{% for s in recentWorkStories %}
+- {{ s }}
+{% endfor %}
+{% endif %}
+Keep the event consistent with their work (this overrides the general activity categories below):
+- This is their job. Do not invent a different day job, job-hunting or a second trade — and never contradict the work-journal entries above (no "quiet week at home" if the journal says the mine flooded).
+- Good everyday territory: their off-hours — evenings, a rest day, the walk home, life around the job (a customer or co-worker crossing their path again, gear upkeep, the week's worries following them to the tavern).
+- Bigger developments are welcome, but let them grow out of the trade rather than ignore it. The venture is where their life happens now: a client who turned dangerous, a rival muscling onto their pitch, a supplier who cheated them, a guard sniffing around the operation, an accident at the works, a co-worker or regular becoming a friend, rival, or romance, a guild taking notice of their skill.
+- Travel is fine when the work sends them: a delivery to a buyer in a neighboring hold, a supply run, escorting the operation's goods. Frame it as venture business — did it, now back — never a stint for some other employer.
+- Money: never tally the venture's own take or losses (its coin and goods settle through the weekly work ledger — inventing them here double-counts). Personal-pocket consequences are fine: a card game, a personal debt, a tavern fine, a private purchase.
+- The work itself is narrated by its own weekly journal. This event should complement that journal — feed it new threads, don't retell or re-settle the week's business.
+{% if length(default(ventureClaimedThisWeek, [])) > 0 %}
+- ⚠ Already happened to them this week, through the work (their weekly work journal has told these):
+{% for c in ventureClaimedThisWeek %}
+  • {{ c }}
+{% endfor %}
+  Do not invent a second one of these: one week, one such misfortune, and the work already claimed it. You may refer to it as something that happened (the aftermath, how they are carrying it, who they told), but the event you write is about something else.
+{% endif %}
+{% if vStatus == "Jailed" %}
+- ⚠ THEY ARE CURRENTLY JAILED for their dealings. The event MUST reflect confinement in the hold's jail — no market trips, no tavern evenings, no work.
+{% endif %}
+
+{% endif %}
+Relationship with {{ player.name }}:
+{% set rapport = to_number(sever_rapport(npc.UUID)) %}
+{% set trust   = to_number(sever_trust(npc.UUID)) %}
+{% set loyalty = to_number(sever_loyalty(npc.UUID)) %}
+{% set mood    = to_number(sever_mood(npc.UUID)) %}
+- Rapport: {{ rapport }} (-100 to 100, emotional warmth toward {{ player.name }})
+- Trust: {{ trust }} (0 to 100, faith in {{ player.name }}'s judgment)
+- Loyalty: {{ loyalty }} (0 to 100, commitment to {{ player.name }})
+- Mood: {{ mood }} (-100 to 100, current temperament)
+
+{% set combat_style = sever_combat_style(npc.UUID) %}
+Combat approach: {{ combat_style }}
+
+{# npc.race is the race's display name; the vanilla Dawnguard hounds and several Creation Club pets have none, hence "". #}
+{% set isAnimal = npc.race in ["Dog", "Wolf", "Fox", "Husky", "Deathhound", "Nix Hound", ""] %}
+
+Recent memories:
+{% set memories = get_relevant_memories(npcUUID, 5) %}
+{% if memories and length(memories) > 0 %}
+{% for m in memories %}
+- {{ m.memory.content }}
+{% endfor %}
+{% else %}
+No significant recent memories.
+{% endif %}
+
+Last diary entry:
+{% set diary = get_latest_diary_entry(npc.UUID) %}
+{% if diary and diary.content %}
+{{ diary.content }}
+{% else %}
+No diary entries yet.
+{% endif %}
+
+{% if length(default(socialGraph, [])) > 0 %}
+Social connections (NPCs {{ npc.name }} has interacted with):
+{% for actor in socialGraph %}
+- {{ actor.name }}: {{ actor.sharedEventCount }} shared events
+{% endfor %}
+{% endif %}
+{% if length(default(prisoners, [])) > 0 %}
+HELD IN A CELL RIGHT NOW — treat as CANON; none of them is about town:
+{% for p in prisoners %}
+- {{ p.name }}, held in {% if p.jail != "" %}{{ p.jail }}{% if p.hold != "" %} ({{ p.hold }}){% endif %}{% elif p.hold != "" %}the {{ p.hold }} jail{% else %}a hold's jail{% endif %}{% if p.daysHeld > 0 %}, {{ p.daysHeld }} {% if p.daysHeld == 1 %}day{% else %}days{% endif %} so far{% endif %}{% if p.weeksLeft > 0 %}, about {{ p.weeksLeft }} {% if p.weeksLeft == 1 %}week{% else %}weeks{% endif %} still to serve{% endif %}
+{% endfor %}
+If the event or the townRumor touches any of them (a neighbor, a drinking companion, a rival, someone in the social connections above), it must reflect the cell: their empty place, a visit to the jail, word passed through a guard, their affairs in someone else's hands. Never write them working, trading, drinking or walking about.
+{% endif %}
+
+{% if length(default(nearbyFollowers, [])) > 0 %}
+Other dismissed companions living nearby:
+{% for name in nearbyFollowers %}
+- {{ name }}
+{% endfor %}
+{% if length(default(jailedNearby, [])) > 0 %}
+In a cell right now, not at home: {% for name in jailedNearby %}{{ name }}{% if not loop.is_last %}, {% endif %}{% endfor %}. A shared event with them can only be a visit to the jail.
+{% endif %}
+{% endif %}
+
+{% if length(default(activeFollowers, [])) > 0 %}
+⛔ ABSOLUTE EXCLUSION LIST — NPCs currently traveling WITH {{ player.name }} (NOT at home, NOT in this scene):
+{% for name in activeFollowers %}
+- {{ name }}
+{% endfor %}
+
+These NPCs are standing next to {{ player.name }} right now — the player can see them while reading your event.
+⛔ HARD RULE: no name from this list may appear in the summary, the involved array, or the townRumor — not directly, not obliquely ("the housecarl who follows the Dragonborn"), not indirectly ("a letter from X", "thinking of X", "missing X"). Before responding, reread your summary and townRumor; if a ⛔ name appears, rewrite without it.
+
+Acceptable partners for a shared event: {{ npc.name }} alone (the default — most events are solo), a vanilla local of {{ homeLocation }}{% if length(default(nearbyFollowers, [])) > 0 %}, or one of the dismissed companions listed above{% endif %}.
+
+Example (Aela on the ⛔ list, Lydia the subject):
+  ❌ summary: "Lydia spent the afternoon sparring with Aela behind the Skyforge."
+  ✅ summary: "Lydia spent the afternoon at the practice dummies behind Jorrvaskr, working her shield-arm against Vignar's old drills."
+  ✅ townRumor: "The watchmen turned away a Khajiit caravan at the gates again — third time this season, Hulda says."
+  ✅ rumorLocation: "the Bannered Mare hearth"
+{% endif %}
+
+{% endif %}
+[ end system ]
+
+[ user ]
+{% if npcUUID and npcUUID != 0 %}
+Generate a single believable daily life event for {{ npc.name }} living in {{ homeLocation }} while {{ player.name }} is away. Keep the summary under 750 characters.
+{% if exists("inJail") and existsIn(inJail, "daysHeld") %}
+THIS EVENT HAPPENS IN THE CELLS, and they are still there when it ends. Show the confinement: the cell, the food, the cold, the other prisoners, the guards, a visitor or a letter, the waiting, how they came to be there. It overrides every place, travel and away-from-home instruction in this prompt (the daily rhythm, travel for their work, the exploration and away-work activities, the location guidance). No escape and no release: those are decided elsewhere. A shared event with a nearby companion can only be their visit to the jail.
+{% endif %}
+
+{% set recentEvts = default(recentEvents, []) %}
+{% if length(recentEvts) > 0 %}
+Recent events for {{ npc.name }}, oldest first. Do not repeat or closely mirror any of them; change the activity, the setting (if the last few were at or near {{ homeLocation }}, take this one elsewhere in the hold), the company, the tone and the sentence structure:
+{% for e in recentEvts %}
+- {{ e }}
+{% endfor %}
+If the recent events are all small home-bound errands (market, water's edge, the local inn), that is exactly the rut to break: pick a different category and a different place this time.
+{% elif exists("previousEvent") and previousEvent != "" %}
+Previous event (do not repeat or closely mirror it; change the activity, setting, tone and sentence structure):
+{{ previousEvent }}
+{% endif %}
+
+Rules:
+- The event reflects the character's personality, skills, race, combat style and background.
+- Everyday life, mundane to interesting — not epic adventures or quests.
+- Open the summary differently from the recent events: different first words, and a different action, setting, time of day or company.
+- The summary: 1-3 sentences, a factual third-person account, not dialogue.
+- "type": "routine" (barely worth mentioning), "notable" (worth bringing up in conversation) or "significant" (rare: it affected them emotionally).
+- "diary": true only when the event moved them enough to write about it; most days it is false.
+
+{% if includeTownRumor %}
+{% if length(default(recentRumors, [])) > 0 %}
+Rumors already going around {{ holdName }} (do not repeat or closely mirror them):
+{% for r in recentRumors %}
+- {{ r }}
+{% endfor %}
+Pick a different topic, setting and cast, from a different category in the list below (if they are all about the docks, write about the market, the keep or the inn).
+{% endif %}
+
+Also write one "townRumor" and one "rumorLocation" at the top level of the JSON, not inside the event object. The townRumor is a separate piece of news from somewhere in {{ holdName }} hold — a fresh piece of gossip, a sighting, a tavern story — that has nothing to do with {{ npc.name }} or what they did today. The rumorLocation is the specific townsfolk venue where it would plausibly be overheard.
+
+Critical rules for the townRumor:
+  • Never about {{ npc.name }}: not their name, their actions or their epithets
+  • Not a reaction to the events above: it is separate news from the same hold
+  • Don't open with "In <hold>, …"; the place goes in rumorLocation
+  • 1-2 sentences max, under 200 characters
+  • The hold this rumor is set in is: {{ holdName }} ({{ homeLocation }} is the follower's specific home; the rumor must be plausibly overheard somewhere in that wider hold)
+  • Sometimes the rumor can seed a future event for someone else — leave threads dangling
+
+For the rumorLocation field:
+  • Pick a specific venue, inn, market, shop, road, shrine, dock, smithy, or street corner inside {{ holdName }} where townsfolk would actually hear this rumor
+  • Match the venue to the rumor's content — a fishing rumor at the docks, a guard story at the barracks, a romance scandal at the tavern, a religious omen at the temple
+  • Be specific: "the smelter" not just "Markarth"; "Plankside dock" not just "Riften"; "outside the Bards' College" not just "Solitude"
+  • Don't keep picking the same flagship inn or marketplace
+  • Use establishments, but also gardens, road stretches, jarl's courts, mine entrances, abandoned houses, fishery, smithy, granary, temple, watchtower, etc.
+
+Rumor topics (rotate across them):
+  • Domestic: marriages, births, deaths, family feuds, household scandals, in-law disputes
+  • Political: jarl's edicts, hold-level appointments, Stormcloak/Imperial whispers, faction grumbles
+  • Criminal: thefts, smuggling, fraud, missing persons, found bodies, bounty postings, vigilante work
+  • Magical: omens, sightings, hedge-witch claims, weather anomalies, College gossip, ancient stories revived
+  • Mercantile: trade disputes, caravan arrivals, supply shortages, new shop openings, prices rising
+  • Religious: shrine miracles, priest disputes, holy day preparations, blasphemy accusations
+  • Animal & nature: escaped livestock, predator attacks, fishing yields, harvest reports, storm damage
+  • Personal: drunken brawls, romantic intrigue overheard, gambling debts, mysterious strangers, public confessions
+  • Historical/mystery: dwarven ruins activity, old-war stories surfacing, suspicious archaeologists, ghosts
+{% else %}
+No townRumor this time: leave townRumor and rumorLocation out of the JSON.
+{% endif %}
+
+Activity categories (rotate between these — don't repeat the same category as the previous event):
+- WORK/TRADE: helping merchants, repairing gear, bartering for supplies, chopping wood, smithing, brewing potions, cooking meals for the inn
+- SOCIAL: sharing stories with travelers, arguing with a neighbor, drinking at the tavern, attending a local gathering, flirting, making a new friend, visiting an old acquaintance
+- TRAINING/COMBAT: practicing drills, sparring with guards, maintaining weapons, studying spell tomes, target practice, shadow-boxing or wrestling
+- EXPLORATION: foraging herbs outside town, walking the outskirts, investigating strange noises, fishing by the water, climbing nearby ruins, scouting the roads
+- REST/REFLECTION: sleeping in late, sitting by the fire lost in thought, visiting a shrine to pray, writing in a journal, staring at the night sky, tending a garden
+- EMOTIONAL/PERSONAL: having nightmares about past battles, composing a letter they never send, reminiscing about travels with {{ player.name }}, visiting a spot that reminds them of someone, struggling with loneliness or boredom, celebrating a small personal victory
+
+Bigger life developments (rare: at most about one event in six, and only when it fits the character):
+Most events are small daily life. But every so often give {{ npc.name }} something with real stakes — proof they have a life of their own beyond the player. Tell it in the past tense as something that already happened and resolved, so they're back now and the player can still find them.
+If a "Their work" section appears above, prefer developments that grow out of that trade — its customers, rivals, risks, and roads — so the drama and the day job stay one life (the weekly work journal will pick these threads up):
+- AWAY-WORK: took paid work that sent them out of town for a while — a Thieves Guild / Companions / mercenary job in another hold, guarding a caravan to a neighboring hold, a stint at a mine or mill, crewing a fishing boat, escorting a merchant. For someone with a "Their work" section above, make it venture business instead — a delivery run to a distant buyer, a buying trip for stock or supplies, hauling the operation's goods to a neighboring market — never a job for some other employer.
+- TROUBLE WITH THE LAW: got into a brawl and spent a night in the {{ holdName }} jail, talked their way out of a fine, ran afoul of a guard, quietly paid off a bounty.
+- RELATIONSHIP BEAT: made or lost a friend, a rivalry flared, a brief romance ran its course, reconnected with family, fell out with a neighbor over something real.
+- WINDFALL OR SETBACK: came into a chunk of coin, got robbed on the road, won (or lost) big at cards, lost a prized possession, was cheated in a deal and is sore about it.
+- FACTION / WORLD PULL: brushed up against the Guild, the Companions, a local cult, Stormcloak/Imperial recruiters, or some daedric oddity — a flirtation with a bigger thread, NOT a full quest or heroics.
+Keep these believable for this particular character (a timid cook doesn't run Guild jobs; a roguish type might). When a development has a real outcome, attach the matching consequence below (away-work or cards → gold_change; a brawl arrest → arrest/bounty; a robbery → negative gold_change). Never strand them somewhere — the framing is always "did this, now back."
+
+Personality and mood shape how they do things:
+- Unhappy characters: brood, drink alone, pick fights, isolate themselves, snap at strangers, neglect their appearance
+- Happy characters: help neighbors, train enthusiastically, socialize freely, whistle while working, treat themselves to something nice
+- High rapport with {{ player.name }}: miss {{ player.name }}, do things that remind them of past adventures, keep {{ player.name }}'s favorite drink stocked, tell stories about their travels together
+- Low rapport: focus entirely on their own life, avoid mentioning {{ player.name }}, may resent being left behind, build new independent routines
+
+Location: range across {{ holdName }} hold, not just the doorstep of {{ homeLocation }}.
+- {{ homeLocation }} and the daily-rhythm spots above are the base, but {{ npc.name }} has legs and a life of their own. Roughly half the time, set the event somewhere else in {{ holdName }} hold: a different town or village, an outlying farm or mill, a mine, a stretch of road or a bridge, a shrine, a fishery or dock, a wilderness camp, a neighboring settlement's market or inn.
+- Don't over-rely on the headline tavern or the one landmark right behind the house — that's the exact rut that makes every event feel the same. Back streets, side roads, outlying farms, and the quiet corners of the wider hold are all fair game.
+- Name real, specific places in {{ holdName }} hold where you can; otherwise a plausible unnamed spot (a roadside camp, a hillside shrine, a hunters' lean-to, a fishing jetty) is fine. Match the place to what the character would actually do there.
+
+{% if isAnimal %}
+Animal companion behavior:
+- This is an animal companion, NOT a humanoid. Events must reflect animal behavior only.
+- Appropriate events: sleeping in a warm spot, chasing small animals, begging for scraps at the inn, guarding the home, playing with children, barking at strangers, exploring the surroundings, finding bones, getting petted by locals, digging holes, howling at the moons
+- NEVER generate human activities (trading, speaking, crafting, drinking, gambling, scheming)
+- NEVER generate consequences (no bounty, no debt, no arrest, no gold, no items). Set consequence to null always.
+- Keep events short and endearing.
+{% else %}
+Let their skills steer the activity: fighters train, spar, patrol and arm-wrestle locals; scholars and mages research, visit court wizards and experiment with reagents; rogues case marks, eavesdrop, play cards for coin and trade in rumors.
+{% endif %}
+{% if length(default(nearbyFollowers, [])) > 0 %}
+- One of the dismissed companions listed above may share the event if it makes natural sense. Add their name to the "involved" array. Keep shared events to ~20% of the time.{% if not isAnimal %} Shared activities: training together, eating at the inn, having a disagreement, confiding about {{ player.name }}, competing at something, helping each other with a task, getting on each other's nerves.{% endif %}
+- A shared event with another companion can only be with someone on that list, never with anyone travelling with {{ player.name }}; if none of them fits, keep the event solo or with a local.
+{% endif %}
+{% if consequencesEnabled and not isAnimal %}
+
+Consequences (use sparingly):
+An event MAY optionally include a "consequence" object with real game effects. Rules:
+- About 85% of events have no consequence — just daily-life flavor
+- About 10% may have an economy consequence (earned or lost gold through trade, work, gambling, fines)
+- About 5% may have a crime consequence (only if it fits the character's personality and background)
+- Consequence types:
+  * Economy: {"action":"gold_change","amount":150,"reason":"sold herbs at market"} — positive = earned, negative = spent/lost/fined
+  * Arrest: {"action":"arrest","crime":"theft","bounty":200} — committed a crime, arrested and bounty assigned
+  * Bounty: {"action":"bounty","crime":"trespassing","bounty":100} — wanted but not yet caught
+  * Debt: {"action":"debt","amount":300,"reason":"borrowed from merchant for supplies"} — owes money
+  * Item acquired: {"action":"item_acquired","item":"iron sword","category":"weapon","count":1} — found, crafted, or received an item WITHOUT paying for it
+    - Categories: "weapon", "armor", "potion", "food", "ingredient", "misc"
+    - Use real Skyrim item names: "iron sword", "leather armor", "potion of healing", "sweet roll", "lavender", "iron ingot"
+    - count is 1-5 (keep it realistic — no stockpiling)
+  * Purchase: {"action":"purchase","amount":180,"item":"fine clothes","category":"armor","count":1,"reason":"treated themselves after a good week"} — BOUGHT something: the gold actually leaves their purse AND the item lands in their pack. Use this instead of item_acquired whenever coin changed hands. amount = what they paid; keep it plausible against the purse above and the item's worth.
+- Keep amounts realistic and small: gold 10-500, bounties 50-500, items 1-5
+- The purse matters: {{ npc.name }} is carrying {{ purse }} gold. Never let them spend or lose meaningfully more than that. And when the purse is heavy (several hundred gold or more), an economy consequence should usually be them spending it, not earning yet more — they have coin and a life to spend it on. Spend it in character: a purchase they would actually want (better clothes, a piece of jewelry, a good blade, fine food and drink, a gift for a friend), a night of cards that went badly, standing rounds for the whole tavern, a pickpocket or a road robbery, a donation at the shrine, sinking coin into some scheme or "investment" that may never pay off. A near-empty purse means economy consequences lean toward earning instead.
+- Consequences should fit {{ homeLocation }}: Riften = shadier deals, theft, skooma; Whiterun = trade disputes, bar fights; Markarth = Forsworn trouble, mining disputes; Solitude = political schemes, legitimate trade
+- Do not generate consequences for every event. They should feel like rare, meaningful developments.
+{% endif %}
+
+Respond with ONLY this JSON. No explanation. Compact format. Keep each summary under 750 characters{% if includeTownRumor %} and the townRumor under 200 characters{% endif %}.
+{% if consequencesEnabled and includeTownRumor %}
+{% raw %}{"events":[{"summary":"Event description here.","type":"routine","consequence":null}],"involved":[],"diary":false,"townRumor":"Separate news, no leading location prefix.","rumorLocation":"Specific venue inside the hold"}{% endraw %}
+{% elif consequencesEnabled %}
+{% raw %}{"events":[{"summary":"Event description here.","type":"routine","consequence":null}],"involved":[],"diary":false}{% endraw %}
+{% elif includeTownRumor %}
+{% raw %}{"events":[{"summary":"Event description here.","type":"routine"}],"involved":[],"diary":false,"townRumor":"Separate news, no leading location prefix.","rumorLocation":"Specific venue inside the hold"}{% endraw %}
+{% else %}
+{% raw %}{"events":[{"summary":"Event description here.","type":"routine"}],"involved":[],"diary":false}{% endraw %}
+{% endif %}
+{% else %}
+{% raw %}{"events":[],"involved":[],"diary":false}{% endraw %}
+{% endif %}
+[ end user ]

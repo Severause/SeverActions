@@ -1,0 +1,65 @@
+customCategory: sa_companionship
+name: ResumeFollowing
+description: "Use when {{ player.name }} calls back someone who is waiting for them, a companion or someone tagging along who was told to wait ('come on', 'follow me'), and they pick up and follow again in this line. Not for someone already walking with {{ player.name }}, who needs no action, and not for rejoining after being sent home (SetCompanion)."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: CompanionFollow
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the companion picking up the road again
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  # OWNERSHIP GATE — same shape as waitforplayerhere.yaml (review finding on PR
+  # #466). Without one, the LLM could hand ANY NPC to StartFollowing, which
+  # seats them in the follow pool and stamps ActivelyFollowing — the Irileth
+  # class the Wait gate closes, reachable through the neighbouring verb.
+  #   is_follower        — a player teammate (IsPlayerTeammate, at any
+  #                        distance); NFF/EFF/DLC waits resume through their
+  #                        own framework inside CompanionFollow.
+  #   sever_follow_state — any SA-owned state, != "". Deliberately NOT
+  #                        == "waiting": a companion parked by CompanionWait (the
+  #                        wheel) carries no sandbox flag, so the narrower test
+  #                        would refuse to resume them. The description already
+  #                        steers the model to waiting companions; the gate only
+  #                        has to keep strangers out.
+  - conditions:
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "sever_follow_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "OR"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

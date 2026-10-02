@@ -1,0 +1,15 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" or render_mode == "dialogue_target" %}
+{# An NPC held in an SA jail cell, read from the native jail roster (sever_jail_name); ships with the DLL that registers it. #}
+{% set jail_name = sever_jail_name(actorUUID) %}
+{% if jail_name != "" %}
+{% set jailed = decnpc(actorUUID) %}
+## Imprisoned
+{% if render_mode == "dialogue_target" or render_mode == "action" %}
+- {{ jailed.name }} is locked up in {{ jail_name }}, in prison clothes.
+{% else %}
+You are locked up in {{ jail_name }}, in rough prison clothes.
+Why you were arrested, and whether it was just, is part of your own story. How you carry it - accepting it, seething at it, plotting escape, or simply enduring - follows from who you are.
+You can move only within your cell. Guards watch the prisoners, and time passes slowly here.
+{% endif %}
+{% endif %}
+{% endif %}

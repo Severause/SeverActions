@@ -1,0 +1,47 @@
+customCategory: economy
+name: GiveGold
+description: "Use when the speaker hands coin to someone now: a gift, tip, reward, refund, or payment for a service or goods already received. Coin goes from the speaker to them. Not for promising to pay later or a sum still being discussed. Buying an item in the same exchange is BuyItem; paying back a recorded debt is RepayDebt; receiving coin is CollectPayment."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: GiveGold_Execute
+parameterMapping:
+  - type: speaker
+    name: akGiver
+    description: the actor parting with coin
+  - type: dynamic
+    name: recipient
+    description: "who receives the coin: exact name as listed in Nearby Actors, or the player's name"
+  - type: dynamic
+    name: amount
+    description: "gold handed over, a whole number"
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

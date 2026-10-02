@@ -2,10 +2,19 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
 
-    <moduleName>SeverActions - SkyrimNet Action Pack v3.9</moduleName>
+    <moduleName>SeverActions - SkyrimNet Action Pack v4.0</moduleName>
 
     <requiredInstallFiles>
         <folder source="00 Core" destination="" priority="0"/>
+        <!-- Magelight UI, the in-game interface host, ships as CORE: without
+             it SeverActions has no interface beyond the MCM. Staged into
+             "98 Magelight UI/00 Core" by build_fomod_zip.ps1 from Magelight's
+             own build stage (runtime files only: host DLL + Ultralight runtime
+             + GPU backend + VR keyboard page + Papyrus tier + licences). ONE
+             folder entry: stripping that prefix lays SKSE/, Interface/,
+             Scripts/ at the Data root. A separately installed Magelight must
+             be this version or newer (VERSION.txt beside the runtime). -->
+        <folder source="98 Magelight UI/00 Core" destination="" priority="1"/>
     </requiredInstallFiles>
 
     <installSteps order="Explicit">
@@ -20,23 +29,22 @@
                         <plugin name="Basic Actions">
                             <description>Core follower, item, reading, property, and magic actions:
 • Start/Stop Following
-• Wait Here
-• Relax / Stop Relaxing
 • Pick Up Item (items, flora, ingredients)
 • Use Item
-• Give Item
+• Give Item / Take Item
 • Bring Item
-• Loot Container
-• Loot Corpse
+• Search Container / Loot Container
+• Search Corpse / Loot Corpse
 • Read Book / Stop Reading
 • Transfer Ownership (property/building co-ownership)
 • Cast Spell (animated NPC cast, heals-to-full on restoration)
 • Learn Spell / Teach Spell
+• Teach Shout (an NPC who knows a Shout teaches you one Word of Power per lesson)
 
 Recommended for most users.</description>
-                            <files>
-                                <folder source="Actions/Basic" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_basic">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Recommended"/>
                             </typeDescriptor>
@@ -44,15 +52,14 @@ Recommended for most users.</description>
 
                         <plugin name="Travel Actions">
                             <description>NPC travel and navigation:
-• Travel to Place (named locations)
-• Travel to Location (coordinates)
-• Change Travel Speed
-• Cancel Travel
+• Travel to Place (named locations, a direction such as outside or upstairs, or a nearby feature such as the bar or the forge)
+• Change Travel Speed (during a trip)
+• Cancel Travel (call off a trip just decided)
 
 Allows NPCs to travel to cities, inns, and other locations.</description>
-                            <files>
-                                <folder source="Actions/Travel" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_travel">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Recommended"/>
                             </typeDescriptor>
@@ -63,11 +70,12 @@ Allows NPCs to travel to cities, inns, and other locations.</description>
 • Attack Target
 • Cease Fighting
 • Yield
+• Let Them Pass / Run Them Off - An outlaw who stopped you at their camp lets you through, or turns the whole camp on you (needs Peaceful Until Provoked, off by default)
 
 Allows NPCs to engage or disengage from combat.</description>
-                            <files>
-                                <folder source="Actions/Combat" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_combat">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Recommended"/>
                             </typeDescriptor>
@@ -82,10 +90,10 @@ Allows NPCs to engage or disengage from combat.</description>
 
 Non-lethal: NPCs are routed through DGIntimidateFaction so brawl damage triggers bleedout instead of death. Weapons and spells are stripped for the duration and restored when the fight ends.
 
-Works against the player AND between any two NPCs (tavern brawls). Includes a non-pausing PrismaUI overlay for the player-target challenge popup.</description>
-                            <files>
-                                <folder source="Actions/Brawl" destination="" priority="1"/>
-                            </files>
+Works against the player AND between any two NPCs (tavern brawls). Includes a non-pausing Magelight overlay for the player-target challenge popup.</description>
+                            <conditionFlags>
+                                <flag name="sa_leg_brawl">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Recommended"/>
                             </typeDescriptor>
@@ -99,11 +107,13 @@ Works against the player AND between any two NPCs (tavern brawls). Includes a no
 • Apply Outfit Preset - Strip and re-equip a saved preset
 • Get Dressed - Re-equip previously removed clothing
 • Undress - Remove all worn armor and clothing
+• Set Situation Outfit - Name a saved preset the NPC switches to by themselves in a situation (town, adventure, home, sleep, combat, rain, snow)
+• Clear Situation Outfit - Drop one of those rules
 
 Outfits persist across cell transitions via ReferenceAlias-based locking.</description>
-                            <files>
-                                <folder source="Actions/Outfit" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_outfit">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Recommended"/>
                             </typeDescriptor>
@@ -112,12 +122,11 @@ Outfits persist across cell transitions via ReferenceAlias-based locking.</descr
                         <plugin name="Furniture Actions">
                             <description>Furniture interaction:
 • Sit or Lay Down
-• Stop Using Furniture
 
 Allows NPCs to use chairs, beds, and other furniture.</description>
-                            <files>
-                                <folder source="Actions/Furniture" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_furniture">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Recommended"/>
                             </typeDescriptor>
@@ -127,18 +136,19 @@ Allows NPCs to use chairs, beds, and other furniture.</description>
                             <description>Economic interactions and debt system:
 • Give Gold - NPC gives gold as gift, tip, or reward
 • Collect Payment - NPC receives gold owed to them (automatically reduces open debts)
-• Extort Gold - NPC forcibly takes gold through intimidation
+• Buy Item / Sell Item - NPC buys or sells a chosen item at an agreed price; gold and item change hands in one step
 • Create Debt - Establish a one-time debt with optional due dates and credit limits
 • Create Recurring Debt - Set up recurring charges (rent, protection money, subscriptions)
+• Repay Debt - NPC pays back money they owe
+• Reduce Debt - Creditor takes part of a debt off for work, a favor or goodwill
 • Forgive Debt - Creditor forgives what is owed
 • Add to Debt - Add charges to existing debts (e.g. "another round on my tab")
 
 Full debt tracking with credit limits, due dates, recurring charges, auto-growth from item gifts, and automatic guard reporting when debts go severely overdue.
 Includes the debt-context prompt so NPCs are aware of debts they're involved in.</description>
-                            <files>
-                                <folder source="Actions/Economy" destination="" priority="1"/>
-                                <folder source="Prompts/Economy-Core" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_economy">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -146,15 +156,17 @@ Includes the debt-context prompt so NPCs are aware of debts they're involved in.
 
                         <plugin name="Enterprises Actions">
                             <description>Enterprises — put NPCs to work running off-screen ventures for you:
-• Hire Retainer - an NPC agrees to run a mine, shop, alchemy bench, farm, fencing operation, mercenary contract, or courtesan route
-• Collect From Retainer - take the gold and goods they've produced
-• Pay Arrears - settle back-wages you owe them (restores loyalty)
-• Dismiss Retainer - end their service
+• Retainers - an NPC agrees to run a venture for you (a mine, shop, farm, forge, fencing operation, guard post, mercenary contract and more); collect what they produce, settle back-wages, raises, loans and grievances, or dismiss them
+• Hold stewards - appoint a retainer to collect a whole hold's takings for you, collect from them, or relieve them
+• Hold taxes - a jarl eases or raises the tax on your businesses
+• The Final Audit - pay the Imperial Treasury's assessed back-taxes, or refuse and face its detail
+• Outlaw camps - a chief swears their camp to you, or a camp with no chief comes over one member at a time; rally the war band and send it home; release the camp, or see its chief renounce the oath (needs Peaceful Until Provoked in Settings → Outlaws, off by default)
+• Ambushes - an armed group that corners you (thugs hired by a retainer you wronged, or searchers come for a captive) attacks or backs off depending on your answer
 
 Retainers produce gold and goods every in-game week, draw a weekly wage (or split a cut), gain loyalty when paid and desert when stiffed. Fences move stolen goods and can be arrested + jailed. The retainer simulation and the awareness decorators are native (SeverActions DLL); the "In the Player's Service" bio comes with Core Awareness Prompts.</description>
-                            <files>
-                                <folder source="Actions/Enterprises" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_enterprises">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -168,10 +180,9 @@ Retainers produce gold and goods every in-game week, draw a weekly wage (or spli
 • Commission Item / Collect Commission (deferred orders — smith forges it over a few days, player returns to collect)
 
 Allows NPCs to craft items at workbenches, alchemy labs, and cooking pots, and to take deferred commissions for later pickup. Includes the workshop-commission prompt so smiths are aware of orders they're holding.</description>
-                            <files>
-                                <folder source="Actions/Crafting" destination="" priority="1"/>
-                                <folder source="Prompts/Crafting" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_crafting">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -181,17 +192,21 @@ Allows NPCs to craft items at workbenches, alchemy labs, and cooking pots, and t
                             <description>Guard arrest, dispatch, and crime system:
 • Arrest Player - Guards confront player about bounty
 • Arrest NPC - Guards arrest and escort NPCs to jail
+• Order Arrest - A jarl or housecarl has the nearest guard make an arrest
 • Dispatch Guard to Arrest - Send guards to arrest distant NPCs across cells
 • Dispatch Guard to Home - Investigate an NPC's home for evidence
 • Add Bounty to Player - Track crimes in holds
 • Accept/Reject Persuasion - Handle persuasion attempts
+• Appeal During Escort - A prisoner on the way to jail stops the guard to plead (once per arrest)
+• Accept/Reject Escort Plea - The guard lets the prisoner go or marches on
 • Free From Jail - Release imprisoned NPCs
+• Pay NPC Bounty to Guard - Pay off another person's bounty in the hold
 • Order Jailed / Order Release - Judgment phase after prisoner delivery
 
 Full cross-cell dispatch with off-screen escort, combat suppression, and judgment.</description>
-                            <files>
-                                <folder source="Actions/Arrest" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_arrest">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -201,21 +216,19 @@ Full cross-cell dispatch with off-screen escort, combat suppression, and judgmen
                             <description>Companion recruitment and management:
 • Set Companion - Make an NPC your companion (first time or re-recruit)
 • Dismiss Follower - Part ways with a companion
-• Companion Wait - Tell a companion to wait at current location
-• Companion Follow - Resume following after waiting
+• Wait For Player Here - Tell a companion to wait at the current location
+• Resume Following - Call a waiting companion to follow again
 • Assign Home - Set where a follower lives when dismissed
-• Set Combat Style - Change follower tactics (aggressive, defensive, ranged, healer, balanced)
-• Adjust Relationship - AI-driven rapport/trust/loyalty/mood changes from conversation
 • Follower Leaves - Companion decides to leave on their own (very rare, severe mistreatment)
 
 Makes recruited NPCs proper Skyrim followers (teammate status, faction membership).
-Integrates with Nether's Follower Framework (NFF) or Extensible Follower Framework (EFF) when installed.
-Falls back to vanilla follower mechanics when neither framework is present.
-Adds a relationship system with rapport, trust, loyalty, and mood that evolves over time.
-Install with Follower Prompts for full companion awareness.</description>
-                            <files>
-                                <folder source="Actions/Follower" destination="" priority="1"/>
-                            </files>
+Integrates with Nether's Follower Framework (NFF) when installed.
+Falls back to vanilla follower mechanics when NFF is not installed.
+Adds a relationship system with rapport, trust, loyalty, and mood that changes with what happens between you.
+Install with Follower Companion Prompts for full companion awareness.</description>
+                            <conditionFlags>
+                                <flag name="sa_leg_follower">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Recommended"/>
                             </typeDescriptor>
@@ -224,17 +237,21 @@ Install with Follower Prompts for full companion awareness.</description>
                         <plugin name="Kidnap and Captive Actions">
                             <description>Abduction and captivity (dark roleplay content) — split out from Follower Actions so you can opt in separately:
 • Kidnap NPC - Abduct an NPC and march them to a holding spot
-• Restrain NPC - Bind an NPC's hands and hold them standing (no hood or kneel)
+• Restrain NPC - Bind an NPC's hands and keep them at your heel (no hood or kneel)
+• Tie Captive to Furniture - Chain a bound captive to a chair, post or altar so they stay put
 • Move Captive - Relocate a held captive
 • Interrogate Captive - Question a captive
 • Demand Ransom - Extort a ransom for a captive
 • Release Captive - Let a captive go free
 • Untie Captive - Free a restrained NPC
 
-Uses the same follower/kidnap systems already in the Core module — no extra dependency. Leave unticked if you don't want abduction options offered to the AI.</description>
-                            <files>
-                                <folder source="Actions/Kidnap" destination="" priority="1"/>
-                            </files>
+Uses the kidnap and restraint systems already in the Core module. Kidnap NPC, Move Captive, Interrogate Captive, Demand Ransom and Untie Captive are only offered to a companion SeverActions has recruited, so those need a follower (recruited with Follower Actions, or a vanilla or NFF follower SeverActions is tracking); Restrain NPC, Tie Captive to Furniture and Release Captive can be used by any NPC.
+Kidnap NPC and Demand Ransom also need Enable Kidnap Actions (off by default) and Restrain NPC needs Enable Restrain Action (on by default); Move, Interrogate, Untie and Tie Captive to Furniture work with either toggle, and Release Captive is always available. Both toggles are in the Followers settings (MCM or the Magelight Settings page).
+
+Leave unticked if you don't want abduction options offered to the AI.</description>
+                            <conditionFlags>
+                                <flag name="sa_leg_kidnap">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -264,10 +281,9 @@ Uses the same follower/kidnap systems already in the Core module — no extra de
 • Enterprises Awareness - retainers know they work for you (job, pay, mood); you can ask how your businesses are doing
 
 Recommended — these character_bio submodules are referenced by most SeverActions actions and prompts.</description>
-                            <files>
-                                <folder source="Prompts/Core" destination="" priority="1"/>
-                                <folder source="Prompts/Enterprises" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_p_core">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Recommended"/>
                             </typeDescriptor>
@@ -282,12 +298,12 @@ Recommended — these character_bio submodules are referenced by most SeverActio
 • Main Quest &amp; DLC fame — Dragonborn recognition, Dawnguard, and Solstheim quest fame spread through the population
 • Role-based filtering — innkeepers hear gossip, guards know official business, guild members know internally, criminals share underworld whispers
 • Shared guild awareness — fellow guild members treat you differently than strangers, with your rank woven into the relationship
-• Intimate history (adult) — if SexLab or OStim is installed, an NPC's private history with the player colours familiarity and reputation (encounter counts and whether it was consensual; nothing explicit is stored). Enabled by default; turn it off or set a gender filter under MCM → Followers or the PrismaUI panel. Does nothing without an adult framework.
+• Intimate history (adult) — if SexLab or OStim is installed, an NPC's private history with the player colours familiarity and reputation (encounter counts and whether it was consensual; nothing explicit is stored). Enabled by default; turn it off or set a gender filter under MCM → Followers or the Magelight settings panel. Does nothing without an adult framework.
 
 Recommended for immersive NPC interactions. Without this, NPCs have no concept of whether they've met you before.</description>
-                            <files>
-                                <folder source="Prompts/Familiarity" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_p_familiarity">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Recommended"/>
                             </typeDescriptor>
@@ -298,9 +314,9 @@ Recommended for immersive NPC interactions. Without this, NPCs have no concept o
 • Combat Awareness - NPCs understand combat situations
 
 Helps NPCs respond appropriately during fights.</description>
-                            <files>
-                                <folder source="Prompts/Combat" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_p_combat">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Recommended"/>
                             </typeDescriptor>
@@ -313,9 +329,9 @@ Helps NPCs respond appropriately during fights.</description>
 • Recent Brawl Memory - Both fighters reference the outcome briefly after the fight ends
 
 Composed entirely in C++ via the sever_brawl_state decorator — fires only for actors actually involved in a brawl right now. Install alongside Brawl Actions for the full fist-fight flow.</description>
-                            <files>
-                                <folder source="Prompts/Brawl" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_p_brawl">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Recommended"/>
                             </typeDescriptor>
@@ -326,9 +342,9 @@ Composed entirely in C++ via the sever_brawl_state decorator — fires only for 
 • Hunger Status - NPCs aware of hunger levels
 • Cold Status - NPCs aware of cold/warmth
 • Tiredness Status - NPCs aware of fatigue levels</description>
-                            <files>
-                                <folder source="Prompts/Survival" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_p_survival">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -344,9 +360,9 @@ Composed entirely in C++ via the sever_brawl_state decorator — fires only for 
 
 Works with Arrest Actions for full crime system.
 Debt complaints integrate with Economy Actions — guards can confront players about unpaid debts.</description>
-                            <files>
-                                <folder source="Prompts/Arrest" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_p_arrest">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -359,9 +375,9 @@ Debt complaints integrate with Economy Actions — guards can confront players a
 
 Companions can refuse orders based on low trust, express opinions, and remember past recruitment history.
 Install with Follower Actions for the full companion system.</description>
-                            <files>
-                                <folder source="Prompts/Follower" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_p_follower">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Recommended"/>
                             </typeDescriptor>
@@ -375,10 +391,10 @@ Install with Follower Actions for the full companion system.</description>
 • In-scene party members surface in a separate sub-list so the LLM knows not to address them
 • Honors the dashboard's "tag engaged" toggle so it stays off when you turn engagement tagging off globally
 
-Recommended if you travel with multiple followers. Install with Follower Prompts for full companion awareness.</description>
-                            <files>
-                                <folder source="Prompts/GroupMeeting" destination="" priority="1"/>
-                            </files>
+Recommended if you travel with multiple followers. Install with Follower Companion Prompts for full companion awareness.</description>
+                            <conditionFlags>
+                                <flag name="sa_leg_p_groupmeeting">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Recommended"/>
                             </typeDescriptor>
@@ -396,9 +412,9 @@ Recommended if you travel with multiple followers. Install with Follower Prompts
 
 Use this if you want merchants to always be ready to trade no matter where you encounter them.
 (Debt context is bundled with Economy Actions itself, so it is included regardless of this choice.)</description>
-                            <files>
-                                <folder source="Prompts/Economy-Anywhere" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_p_merchant_anywhere">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -410,9 +426,9 @@ Use this if you want merchants to always be ready to trade no matter where you e
 
 More immersive - merchants won't try to sell you things while walking down the road.
 (Debt context is bundled with Economy Actions itself, so it is included regardless of this choice.)</description>
-                            <files>
-                                <folder source="Prompts/Economy-LocationOnly" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_p_merchant_location">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -438,15 +454,15 @@ Without this patch, AI Overhaul gives most civilian NPCs flee packages that trig
 • Recruited civilian followers to flee instead of fighting
 • NPCs targeted by AttackTarget to run instead of fighting back
 
-The patch adds conditions to all 7 AIO flee packages:
+The patch adds conditions to AIO's 5 flee packages (AIOFleeFromDanger, AIOFleeToEditLoc, AIOFleeFromDangerCombat, AIOFleeFromCreatures, AIOFleeSpouse):
 • SeverActions followers are fully exempt (never flee)
 • NPCs in forced combat (AttackTarget) are exempt while fighting
 • All other NPCs keep their normal flee behavior
 
 Requires: AI Overhaul SSE (any version)</description>
-                            <files>
-                                <folder source="Patches/AI Overhaul" destination="" priority="2"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_patch_aio">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -467,9 +483,9 @@ Brawls against Daegon: this patch does NOT cleanly fix brawls. Daegon's outfit e
 
 Replaces: k101DaegonQuestAliasScript.pex + k101PlayerAliasLoaderScript.pex from Daegon Kaekiri.
 Requires: Daegon Kaekiri by Kukielle (Nexus 112097). Install AFTER it (higher MO2 priority).</description>
-                            <files>
-                                <folder source="Patches/Daegon Kaekiri" destination="" priority="2"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_patch_daegon">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -493,9 +509,9 @@ Requires: Daegon Kaekiri by Kukielle (Nexus 112097). Install AFTER it (higher MO
 • Modify Arousal - Adjust NPC arousal levels
 
 Requires OSL Aroused mod.</description>
-                            <files>
-                                <folder source="Actions/Adult-OSLAroused" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_adult_osl_action">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -506,9 +522,9 @@ Requires OSL Aroused mod.</description>
 • Modify Arousal (SLO) - Adjust NPC arousal levels
 
 Requires SexLab Aroused mod.</description>
-                            <files>
-                                <folder source="Actions/Adult-SLOAroused" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_adult_slo_action">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -525,9 +541,9 @@ Requires SexLab Aroused mod.</description>
 • NPCs aware of their arousal state
 
 Requires OSL Aroused mod.</description>
-                            <files>
-                                <folder source="Prompts/Adult-OSLAroused" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_adult_osl_prompt">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -538,9 +554,9 @@ Requires OSL Aroused mod.</description>
 • NPCs aware of their arousal state
 
 Requires SexLab Aroused mod.</description>
-                            <files>
-                                <folder source="Prompts/Adult-SLOAroused" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_adult_slo_prompt">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -557,9 +573,9 @@ Requires SexLab Aroused mod.</description>
 • NPCs aware of pregnancy/fertility status
 
 Requires Fertility Mode mod.</description>
-                            <files>
-                                <folder source="Prompts/Adult-Fertility" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_adult_fertility_prompt">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -570,9 +586,9 @@ Requires Fertility Mode mod.</description>
 • Abort Pregnancy event trigger
 
 Requires Fertility Mode mod.</description>
-                            <files>
-                                <folder source="Triggers/Adult" destination="" priority="1"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_adult_abort_trigger">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Optional"/>
                             </typeDescriptor>
@@ -593,30 +609,24 @@ Requires Fertility Mode mod.</description>
 
                         <plugin name="Sever's Hearth (Camp System)">
                             <description>AI-first campfire system that integrates with SeverActions:
-• Pitch a camp anywhere with "let's camp here"
-• Followers route to the active camp via the new TravelToCamp pathway
-• Camp time + distance, occupancy, and threat-nearby warnings shown on the Survival page
+• Pitch a camp anywhere with "let's camp here" - the first camp becomes the company's BASE, a persistent camp that stands while you are away; later camps are the night's bivouac
+• Followers head back to the camp or the base with the Go To Camp / Go To Base actions
+• Upgrade the base in two tiers (encampment, then command camp), paid in firewood, leather and iron
+• Camp and base time, distance and occupancy, plus threat-nearby warnings, shown on the Survival page
 • Survival needs (hunger / fatigue / cold) restore while sandboxing at the fire
-• ModEvent buttons on the Survival page for Break Camp / Travel to Camp
+• Buttons on the Survival page to send followers to the camp or base, upgrade, reposition, promote a camp to base, and break camp or base
 
 Self-contained (no Campfire dependency). Adds:
 • SeversHearth.esp (ESL-flagged, FormID 0x800-0xFFF)
 • SeversHearthNative.dll + .toml (SKSE plugin)
 • SeversHearth_Camp Papyrus script + SeversHearth.seq
-• Camp action YAMLs: EstablishCamp, BreakCamp, GoToCamp
+• Camp action YAMLs: EstablishCamp, BreakCamp, GoToCamp, GoToBase, PromoteCampToBase, UpgradeBase, BreakBase (plus the Camping category)
+• Camp context prompt so followers know about the camp
 
 Recommended if you want camping integrated into the SeverActions experience.</description>
-                            <files>
-                                <!-- FOMOD <folder source=X destination=Y> strips X and lays
-                                     content at Y. One entry per Hearth subdir so each prefix
-                                     gets stripped to Skyrim's Data root — a single entry on
-                                     "99 Sever's Hearth" would leave 00 Core/Actions/Prompts/
-                                     literally in the mod, hiding the ESP from MO2's plugin list
-                                     and putting every other file in the wrong place. -->
-                                <folder source="99 Sever's Hearth/00 Core" destination="" priority="5"/>
-                                <folder source="99 Sever's Hearth/Actions/Camp" destination="" priority="5"/>
-                                <folder source="99 Sever's Hearth/Prompts/Camp" destination="" priority="5"/>
-                            </files>
+                            <conditionFlags>
+                                <flag name="sa_leg_hearth">On</flag>
+                            </conditionFlags>
                             <typeDescriptor>
                                 <type name="Recommended"/>
                             </typeDescriptor>
@@ -629,5 +639,440 @@ Recommended if you want camping integrated into the SeverActions experience.</de
         </installStep>
 
     </installSteps>
+
+    <conditionalFileInstalls>
+        <patterns>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                </dependencies>
+                <files>
+                    <folder source="10 Modules/followers" destination="" priority="0"/>
+                    <folder source="10 Modules/companions" destination="" priority="0"/>
+                    <folder source="10 Modules/social" destination="" priority="0"/>
+                    <folder source="10 Modules/arrest" destination="" priority="0"/>
+                    <folder source="10 Modules/combat" destination="" priority="0"/>
+                    <folder source="10 Modules/travel" destination="" priority="0"/>
+                    <folder source="10 Modules/items" destination="" priority="0"/>
+                    <folder source="10 Modules/outfit" destination="" priority="0"/>
+                    <folder source="10 Modules/survival" destination="" priority="0"/>
+                    <folder source="10 Modules/economy" destination="" priority="0"/>
+                    <folder source="10 Modules/enterprises" destination="" priority="0"/>
+                    <folder source="10 Modules/arousal_osl" destination="" priority="0"/>
+                    <folder source="10 Modules/arousal_slo" destination="" priority="0"/>
+                    <folder source="10 Modules/fertility" destination="" priority="0"/>
+                    <folder source="10 Modules/travelcore" destination="" priority="0"/>
+                    <folder source="10 Modules/couriers" destination="" priority="0"/>
+                    <folder source="10 Modules/furniturelib" destination="" priority="0"/>
+                    <folder source="10 Modules/fwlib" destination="" priority="0"/>
+                    <folder source="10 Modules/leashlib" destination="" priority="0"/>
+                    <folder source="10 Modules/walklib" destination="" priority="0"/>
+                    <folder source="10 Modules/skymsglib" destination="" priority="0"/>
+                    <folder source="10 Modules/_kopt_mcm" destination="" priority="0"/>
+                    <folder source="10 Modules/_LegacyShims" destination="" priority="0"/>
+                    <folder source="20 Markers/Legacy" destination="" priority="0"/>
+                    <folder source="Prompts/Arrest-Trespass" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_basic" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Actions/FollowWait-Casual" destination="" priority="1"/>
+                    <folder source="Actions/Items" destination="" priority="1"/>
+                    <folder source="Actions/Magic" destination="" priority="1"/>
+                    <folder source="Actions/Property" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_travel" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Actions/Travel" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_combat" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Actions/Combat" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_brawl" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Actions/Brawl" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_outfit" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Actions/Outfit" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_furniture" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Actions/Furniture" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_economy" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Actions/Economy" destination="" priority="1"/>
+                    <folder source="Prompts/Economy-Core" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_enterprises" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Actions/Enterprises" destination="" priority="1"/>
+                    <folder source="Actions/Enterprises-Camps" destination="" priority="1"/>
+                    <folder source="Actions/Ambush" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_crafting" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Actions/Crafting" destination="" priority="1"/>
+                    <folder source="Prompts/Crafting" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_arrest" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Actions/Arrest" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_follower" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Actions/Followers" destination="" priority="1"/>
+                    <folder source="Actions/FollowWait" destination="" priority="1"/>
+                    <folder source="Actions/Homes" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_kidnap" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Actions/Kidnap" destination="" priority="1"/>
+                    <folder source="Actions/Kidnap-Companion" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_p_core" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Prompts/CompanionLife-Gossip" destination="" priority="1"/>
+                    <folder source="Prompts/Combat-Truce" destination="" priority="1"/>
+                    <folder source="Prompts/Items" destination="" priority="1"/>
+                    <folder source="Prompts/Magic" destination="" priority="1"/>
+                    <folder source="Prompts/Enterprises" destination="" priority="1"/>
+                    <folder source="Prompts/Couriers" destination="" priority="1"/>
+                    <folder source="Prompts/Core" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_p_familiarity" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Prompts/Familiarity" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_p_combat" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Prompts/Combat" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_p_brawl" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Prompts/Brawl" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_p_survival" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Prompts/Survival" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_p_arrest" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Prompts/Arrest" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_p_follower" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Prompts/Followers" destination="" priority="1"/>
+                    <folder source="Prompts/CompanionMind" destination="" priority="1"/>
+                    <folder source="Prompts/CompanionLife" destination="" priority="1"/>
+                    <folder source="Prompts/Ambient" destination="" priority="1"/>
+                    <folder source="Prompts/Kidnap" destination="" priority="1"/>
+                    <folder source="Prompts/Outfit" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_p_groupmeeting" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Prompts/GroupMeeting" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_p_merchant_anywhere" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Prompts/Economy-Anywhere" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_p_merchant_location" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Prompts/Economy-LocationOnly" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_patch_aio" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Patches/AI Overhaul" destination="" priority="2"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_patch_daegon" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Patches/Daegon Kaekiri" destination="" priority="2"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_adult_osl_action" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Actions/Adult-OSLAroused" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_adult_slo_action" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Actions/Adult-SLOAroused" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_adult_osl_prompt" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Prompts/Adult-OSLAroused" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_adult_slo_prompt" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Prompts/Adult-SLOAroused" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_adult_fertility_prompt" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Prompts/Adult-Fertility" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_adult_abort_trigger" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="Triggers/Adult" destination="" priority="1"/>
+                </files>
+            </pattern>
+            <pattern>
+                <dependencies operator="And">
+                    <dependencies operator="Or">
+                        <flagDependency flag="sa_installMode" value="Legacy"/>
+                        <flagDependency flag="sa_installMode" value=""/>
+                    </dependencies>
+                    <flagDependency flag="sa_leg_hearth" value="On"/>
+                </dependencies>
+                <files>
+                    <folder source="99 Sever's Hearth/00 Core" destination="" priority="5"/>
+                    <folder source="99 Sever's Hearth/Actions/Camp" destination="" priority="5"/>
+                    <folder source="99 Sever's Hearth/Prompts/Camp" destination="" priority="5"/>
+                </files>
+            </pattern>
+        </patterns>
+    </conditionalFileInstalls>
 
 </config>

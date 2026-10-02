@@ -1,0 +1,46 @@
+customCategory: economy
+name: CollectPayment
+description: "Use when money owed to the speaker is paid now: a tab settled, a fee for a job or service, or coin {{ player.name }} has just offered or agreed to hand over (their words alone move nothing, so this collects it). Coin goes from the payer to the speaker. Not for naming a price or demanding payment before they agree, not after BuyItem or SellItem (the trade already took the coin), and not for coin someone already handed over with their own action. Never when the speaker pays (GiveGold, RepayDebt, BuyItem) or sells an item (SellItem). A bounty is Arrest."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: CollectPayment_Execute
+parameterMapping:
+  - type: speaker
+    name: akCollector
+    description: the actor receiving payment — the merchant at the counter, the innkeeper at the bar, the worker collecting their fee
+  - type: dynamic
+    name: payer
+    description: "who pays the speaker: exact name as listed in Nearby Actors, or the player's name"
+  - type: dynamic
+    name: amount
+    description: "gold being paid, a whole number"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

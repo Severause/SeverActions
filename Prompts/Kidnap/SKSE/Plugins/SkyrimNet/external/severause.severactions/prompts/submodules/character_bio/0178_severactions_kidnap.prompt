@@ -1,0 +1,16 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" or render_mode == "dialogue_target" %}
+{# Either side of an active kidnap, restraint or lead (kidnap_context): the captive, the captor or whoever leads
+   them; "" for everyone else. The listener's view says only what anyone can see (is_kidnap_victim). #}
+{% if render_mode == "dialogue_target" %}
+{% if is_kidnap_victim(actorUUID) != "" %}
+## Captivity
+- {{ decnpc(actorUUID).name }} is being held captive.
+{% endif %}
+{% else %}
+{% set kidnap_ctx = kidnap_context(actorUUID) %}
+{% if kidnap_ctx != "" %}
+## Captivity
+{{ kidnap_ctx }}
+{% endif %}
+{% endif %}
+{% endif %}

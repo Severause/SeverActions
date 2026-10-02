@@ -1,38 +1,21 @@
 Scriptname SeverActions_Crafting extends Quest
-{Crafting entry points + native-orchestrator bridge.
+{Crafting entry points and the Papyrus half of the native CraftingOrchestrator
+(walk -> animate -> return -> hand off). The entry points resolve item and
+workstation natively and call Craft_Begin; OnCraftPhaseChange does each phase's
+work that has no clean native path (package overrides, aliases, idles, SkyrimNet
+events). One craft runs at a time because the aliases are quest singletons; the
+orchestrator queues the rest. Also hosts deferred commissions ('CMSN').}
 
-Item lookup is delegated to the native RecipeDB / AlchemyDB. Workstation
-finding is also native. The full orchestration (walk → animate → return →
-hand off) lives in C++ as SeverActionsNative::CraftingOrchestrator;
-this script is now just:
-
-  1. The SkyrimNet-facing entry points (CraftItem_Internal, CookMeal_Internal,
-     BrewPotion_Internal) — each does item+workstation detection, then calls
-     SeverActionsNativeExt.Craft_Begin and exits.
-  2. A ModEvent listener (OnCraftPhaseChange) that the C++ orchestrator
-     fires once per phase transition. This handles the work that has no
-     clean CommonLib native path: ActorUtil.AddPackageOverride,
-     ReferenceAlias.ForceRefTo/Clear, EvaluatePackage, PlayIdle, SetLookAt,
-     SkyrimNetApi.RegisterPersistentEvent / DirectNarration / UnregisterPackage,
-     Debug.Notification.
-
-Concurrency: the orchestrator enforces a single-active-session rule (queued
-otherwise). The aliases below remain quest-scoped singletons; per-instance
-aliases via CK record changes would lift the constraint but are out of scope.}
-
-; =============================================================================
-; PROPERTIES - Set in Creation Kit
-; =============================================================================
+; PROPERTIES (ESP-filled)
 
 Package Property CraftAtForgePackage Auto
-{AI package that drives the NPC to use the workstation. Reused for forge /
-cooking pot / oven / alchemy lab. Name is historical.}
+{Workstation-use package for every station type (forge, pot, oven, lab).}
 
 ReferenceAlias Property CrafterAlias Auto
 {Alias bound to the NPC for the workstation package.}
 
 ReferenceAlias Property ForgeAlias Auto
-{Alias bound to the workstation. Name is historical; holds any workstation.}
+{Alias bound to the workstation (any type).}
 
 ReferenceAlias Property CrafterApproachAlias Auto
 {Alias bound to the NPC for the recipient-approach package.}
@@ -43,53 +26,73 @@ ReferenceAlias Property RecipientAlias Auto
 Idle Property IdleGive Auto
 {Give-item animation.}
 
-; =============================================================================
 ; CONFIGURATION
-; =============================================================================
 
 float Property SEARCH_RADIUS = 4000.0 Auto
-{Radius to search for workstations (game units; ~57 m). Bumped from 2000 — a
- cooking pot across a large inn, or a forge a courtyard away, sat just outside
- the old radius and the action failed with "I can't find one". Paired with the
- native FindNearbyWorkstation switch from single-cell to TES (loaded-grid) search
- so exterior stations across a cell boundary are found too.}
+{Workstation search radius (game units, ~57 m). The native search covers the
+ loaded grid, so a station across a cell border is found too.}
 
 int Property CRAFT_PACKAGE_PRIORITY = 100 Auto
-{Priority for the workstation package override. Must outrank dialogue (50–80).}
+{Unused: an Auto value is saved per game, so the priority lives in CRAFT_OVERRIDE_PRIORITY.}
 
-; CRAFT_TIME, INTERACTION_DISTANCE, and the arrival timeouts now live as
-; constants inside CraftingOrchestrator.h (kCraftTimeSeconds = 5,
-; kWorkstationInteractionDistance = 150, kWorkstationArrivalTimeoutSec = 15,
-; kRecipientArrivalTimeoutSec = 20). Centralized there so a tuning change
-; only touches one place.
+int Property CRAFT_OVERRIDE_PRIORITY = 101 AutoReadOnly
+{Priority for the workstation package override. Outranks dialogue (50-80) and the
+ priority-100 wait and safe-interior sandboxes, so a waiting follower still walks
+ to the station; the guard duty and captive holds (105+) still win.}
 
-; =============================================================================
+; Craft time, interaction distance and arrival timeouts are constants in
+; CraftingOrchestrator.h.
+
 ; INITIALIZATION
-; =============================================================================
 
 Event OnInit()
     RegisterForModEvent("SACraft_PhaseChange", "OnCraftPhaseChange")
     Debug.Trace("SeverActions_Crafting: Initialized; registered for SACraft_PhaseChange")
 EndEvent
 
-; OnPlayerLoadGame does NOT fire on Quest scripts (it's an Actor-only event).
-; OnInit only fires the very first time the script attaches — existing saves
-; where SeverActions_Crafting was already attached before this update never
-; re-run OnInit, so the ModEvent registration would be missed entirely.
-; Defense: the three entry-point functions below all call EnsureRegistered()
-; first. RegisterForModEvent is idempotent, so this is cheap on every call
-; and guaranteed-correct on every code path.
+Function Maintenance()
+    {Load-time entry (Mod_Economy stage 1): the registrations and the commission tick
+     chain. The first wake is short so the chain acknowledges inside Init's ~90 s K4
+     window; the steady interval is two minutes (CommissionStore::Tick is game-time based).}
+    EnsureRegistered()
+    ChronoArm(20.0)
+EndFunction
+
+Function ChronoArm(Float afSeconds)
+    {Arm this script's one-shot chronometer tick (Chronometer block in
+     SeverActionsNativeExt2.psc). Event and callback names stay unique per script;
+     re-arm replaces the pending tick; ticks do not survive save/load (Maintenance
+     re-arms; Mod_Economy.OnChronoDead re-arms a dead chain).}
+    RegisterForModEvent("SeverActions_Tick_Crafting", "OnChronoTick_Crafting")
+    SeverActionsNativeExt2.Chrono_Request("SeverActions_Tick_Crafting", afSeconds)
+EndFunction
+
+Bool _commissionTickInFlight = False
+Float _commissionTickInFlightSince = 0.0
+
+Event OnChronoTick_Crafting(String eventName, String strArg, Float numArg, Form sender)
+    ; Re-arm first (the acknowledgement), then a guarded drain - see OnChronoTick_Debt.
+    ChronoArm(120.0)
+    Float now = Utility.GetCurrentRealTime()
+    If _commissionTickInFlight && (now - _commissionTickInFlightSince) < 120.0
+        Return
+    EndIf
+    _commissionTickInFlight = True
+    _commissionTickInFlightSince = now
+    TickCommissions()
+    _commissionTickInFlight = False
+EndEvent
+
+; Called by Maintenance and by the five entry points (for a frame that runs before
+; Maintenance); RegisterForModEvent is idempotent.
 
 Function EnsureRegistered()
     RegisterForModEvent("SACraft_PhaseChange", "OnCraftPhaseChange")
-    ; Commission deposit/balance PrismaUI confirm callback. Idempotent; bound
-    ; here so the handler is live no matter which entry point fires first.
+    ; Commission deposit/balance confirm callback.
     RegisterForModEvent("SeverActions_CommissionPromptChoice", "OnCommissionPromptChoice")
 EndFunction
 
-; =============================================================================
-; WORKSTATION FINDERS (thin native wrappers)
-; =============================================================================
+; WORKSTATION FINDERS (native wrappers)
 
 ObjectReference Function FindNearbyForge(Actor akActor)
     return SeverActionsNative.FindNearbyForge(akActor, SEARCH_RADIUS)
@@ -107,18 +110,12 @@ ObjectReference Function FindNearbyAlchemyLab(Actor akActor)
     return SeverActionsNative.FindNearbyAlchemyLab(akActor, SEARCH_RADIUS)
 EndFunction
 
-; =============================================================================
-; SKYRIMNET ENTRY POINTS — called from action YAMLs
-; Each one does item + workstation detection, then hands off to the C++
-; orchestrator via Craft_Begin. Papyrus returns immediately; the C++ side
-; drives the phases and fires SACraft_PhaseChange events that this script
-; listens for below.
-; =============================================================================
+; SKYRIMNET ENTRY POINTS (action YAMLs): resolve item + workstation, then Craft_Begin
+; and return; the orchestrator drives the phases through SACraft_PhaseChange.
 
 Function CraftItem_Internal(Actor akActor, string itemName, Actor akRecipient, int itemCount = 1)
-    {Generic crafting entry point. Auto-detects item type and routes to the
-    matching workstation: smithing → forge, cooking → cooking pot,
-    potion/poison → alchemy lab.}
+    {Generic craft: routes by item type (smithing → forge, cooking → cooking pot,
+    potion/poison → alchemy lab).}
 
     EnsureRegistered()
 
@@ -219,19 +216,10 @@ Function BrewPotion_Internal(Actor akActor, string potionName, Actor akRecipient
 EndFunction
 
 Function DispatchToOrchestrator(Actor akActor, Form itemForm, ObjectReference workstation, string workstationType, string actionVerb, Actor akRecipient, int itemCount, string originalName)
-    {Shared tail for the three entry points. Handles the cases the
-    orchestrator won't see — null item / null workstation — and dispatches
-    successful starts. Failure paths fire RegisterEvent for the LLM and a
-    player Debug.Notification.
-
-    RegisterEvent, NOT DirectNarration (field report): a DirectNarration
-    forces the NPC to RESPOND, and the response re-enters action selection —
-    so the NPC spoke about the failed craft, tried the craft again, hit the
-    same failure, and looped (speak -> craft -> narrate -> speak...). A
-    regular event lands the outcome in context without demanding a reply;
-    the NPC mentions it naturally in the next exchange instead of being
-    goaded into another attempt. Same conversion on the TermComplete
-    hand-off below.}
+    {Shared tail of the three entry points: reports a traveler, a missing item or
+    a missing workstation, else starts the craft. Failures use RegisterEvent, NOT
+    DirectNarration: a forced response re-enters action selection and the NPC
+    retries the same failed craft in a loop.}
 
     Actor recipient = akRecipient
     if !recipient
@@ -239,10 +227,8 @@ Function DispatchToOrchestrator(Actor akActor, Form itemForm, ObjectReference wo
     endif
     bool recipientIsPlayer = (recipient == Game.GetPlayer())
 
-    ; Mid-journey: never park a traveler at a workstation. The CraftAtForge
-    ; override beats the travel alias package - same ping-pong as the
-    ; furniture case (travel start also cancels in-flight crafting; this is
-    ; the reverse gate for a craft fired while the journey runs).
+    ; Never park a traveler at a workstation: the craft override beats the travel
+    ; alias package. (Travel start cancels an in-flight craft; this is the reverse.)
     if SeverActionsNativeExt2.Travel_IsTravelingByActor(akActor)
         SkyrimNetApi.RegisterEvent("craft_failed", akActor.GetDisplayName() + " is traveling and cannot stop to work right now.", akActor, recipient)
         return
@@ -250,7 +236,7 @@ Function DispatchToOrchestrator(Actor akActor, Form itemForm, ObjectReference wo
 
     if !itemForm
         if recipientIsPlayer
-            Debug.Notification("Cannot craft: " + originalName)
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("crafting.cannotCraft", ("" + originalName)))
         endif
         SkyrimNetApi.RegisterEvent("craft_failed", akActor.GetDisplayName() + " doesn't know how to make " + originalName + ".", akActor, recipient)
         return
@@ -258,7 +244,7 @@ Function DispatchToOrchestrator(Actor akActor, Form itemForm, ObjectReference wo
 
     if !workstation
         if recipientIsPlayer
-            Debug.Notification("No " + workstationType + " nearby!")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("crafting.noWorkstationNearby", ("" + workstationType)))
         endif
         SkyrimNetApi.RegisterEvent("craft_failed", akActor.GetDisplayName() + " can't find a " + workstationType + " nearby.", akActor, recipient)
         return
@@ -267,10 +253,9 @@ Function DispatchToOrchestrator(Actor akActor, Form itemForm, ObjectReference wo
     int handle = SeverActionsNativeExt.Craft_Begin(akActor, itemForm, workstation, akRecipient, itemCount, workstationType, actionVerb)
 
     if handle == 0
-        ; Rejection from the orchestrator. Only happens on null arg failure
-        ; (we already null-checked above, so this is defensive).
+        ; Begin rejects only null arguments, checked above; defensive.
         if recipientIsPlayer
-            Debug.Notification(akActor.GetDisplayName() + " can't start the task right now.")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("crafting.cantStartTask", ("" + akActor.GetDisplayName())))
         endif
         SkyrimNetApi.RegisterEvent("craft_failed", akActor.GetDisplayName() + " is unable to begin " + actionVerb + " " + itemForm.GetName() + " right now.", akActor, recipient)
         return
@@ -279,27 +264,16 @@ Function DispatchToOrchestrator(Actor akActor, Form itemForm, ObjectReference wo
     Debug.Trace("SeverActions_Crafting: dispatched handle=" + handle + " for " + itemForm.GetName() + " on " + akActor.GetDisplayName())
 EndFunction
 
-; =============================================================================
-; DEFERRED COMMISSIONS — CommissionItem / CollectCommission entry points
-; =============================================================================
-; The instant-craft path above (CraftItem_Internal → CraftingOrchestrator) is
-; untouched. This is the *deferred* path: the smith agrees to make something
-; and have it ready in a few days. State lives in the native CommissionStore
-; (cosave record 'CMSN'); see the SeverActionsNativeExt.psc 'CMSN' block.
-;
-; Economy: priceTotal = the smith's LLM-quoted total (quotedTotal param), with
-; item gold value × count as the fallback when nothing was quoted; take a
-; 50% deposit at order time; the balance is due at pickup via a Yes/No confirm.
-; If the player can't/won't pay the balance, the smith keeps holding the item
-; (the commission stays Ready). No DebtStore involvement.
-;
-; No workstation is required — the smith works off-screen on their own time.
+; DEFERRED COMMISSIONS (CommissionItem / CollectCommission)
+; The smith works off-screen, no workstation. State lives in the native
+; CommissionStore ('CMSN' block in SeverActionsNativeExt.psc). Price = the smith's
+; quoted total, else item value × count; 50% deposit at order, the balance at
+; pickup through a confirm. Unpaid, the smith keeps the item (it stays Ready).
 
 Form Function ResolveCraftableForm(string itemName)
-    {Resolve a craftable item name to its output Form using the same DB
-    priority as CraftItem_Internal (smithing → cooking → potion → poison).
-    Guarantees "if CraftItem could make it, CommissionItem can too." None if
-    no recipe matches.}
+    {Output Form for an item name, in CraftItem_Internal's DB order (smithing →
+    cooking → potion → poison), so anything craftable can be commissioned. None
+    if no recipe matches.}
     Form itemForm = None
     bool recipeDBLoaded = SeverActionsNative.IsRecipeDBLoaded()
     bool alchemyDBLoaded = SeverActionsNative.IsAlchemyDBLoaded()
@@ -320,8 +294,7 @@ Form Function ResolveCraftableForm(string itemName)
 EndFunction
 
 string Function DescribeEta(Float etaDays)
-    {Human phrasing for the smith's narration. Mirrors the buckets the native
-    ParseEtaDays produces.}
+    {Narration phrasing for an ETA in game days.}
     if etaDays <= 0.75
         return "later today"
     elseif etaDays <= 1.5
@@ -335,27 +308,37 @@ string Function DescribeEta(Float etaDays)
     endif
 EndFunction
 
-; =============================================================================
-; COMMISSION CONFIRM — pending state + shared helpers
-; -----------------------------------------------------------------------------
-; The deposit (order) and balance (pickup) confirms run through a non-pausing
-; PrismaUI overlay (PrismaUICommissionPromptBridge), falling back to a modal
-; SkyMessage when PrismaUI isn't available. Because the overlay is async, the
-; order context is stashed here between OpenPrompt and the
-; SeverActions_CommissionPromptChoice callback. The bridge enforces ONE prompt
-; in flight at a time, so a single slot is safe.
-; =============================================================================
+; COMMISSION CONFIRM: pending state + shared helpers
+; The deposit and balance confirms use the non-pausing overlay
+; (MagelightCommissionPromptBridge), else a modal SkyMessage. The overlay is async,
+; so the order waits in m_comm* until SeverActions_CommissionPromptChoice. One slot:
+; while an overlay is open (_CommConfirmBusy) no new order or pickup touches it.
 
 String  m_commMode             ; "deposit" | "balance" | "" (idle)
 Actor   m_commSmith
 Form    m_commItem
 Int     m_commCount
-Int     m_commPrice            ; full price (value × count)
+Int     m_commPrice            ; full order price
 Int     m_commDeposit          ; deposit (taken at order; shown at pickup)
-Int     m_commBalance          ; balance due (taken now in balance mode)
+Int     m_commBalance          ; balance due (taken in balance mode)
 Float   m_commEtaDays
 Int     m_commId               ; balance mode: the Ready commission id
 String  m_commItemName         ; cached display name for narration
+
+Bool Function _CommConfirmBusy(Actor akActor, String asMode, Form akItem)
+    {True while an overlay holds the pending slot, so the caller must not write it: a
+     repeat of the pending order is left to that overlay, anything else is refused in
+     character.}
+    if !SeverActionsNativeExt.Magelight_IsCommissionPromptOpen()
+        return false
+    endif
+    if m_commSmith == akActor && m_commMode == asMode && m_commItem == akItem
+        Debug.Trace("[SeverActions_Crafting] " + asMode + " confirm already open for this order - leaving it to the overlay")
+        return true
+    endif
+    SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " waits: " + Game.GetPlayer().GetDisplayName() + " is still deciding about another order.", akActor, Game.GetPlayer())
+    return true
+EndFunction
 
 String Function _CommLabel(String asName, Int aiCount)
     if aiCount > 1
@@ -377,8 +360,8 @@ Function _ClearCommPending()
     m_commItemName = ""
 EndFunction
 
-; Take the stashed deposit, record the order, narrate. Shared by the PrismaUI
-; accept and the SkyMessage fallback (deposit mode).
+; Deposit mode: take the deposit, record the order, narrate (overlay accept or
+; SkyMessage fallback).
 Function _PlaceCommission()
     Actor akActor = m_commSmith
     Form itemForm = m_commItem
@@ -395,12 +378,11 @@ Function _PlaceCommission()
     string itemName = m_commItemName
     string itemLabel = _CommLabel(itemName, itemCount)
 
-    ; Re-check affordability at confirm time — gold may have changed while the
-    ; non-pausing overlay was open.
+    ; Re-check: gold may have changed while the non-pausing overlay was open.
     Form goldForm = Game.GetForm(0xF)
     if player.GetGoldAmount() < deposit
-        Debug.Notification("You can't afford the " + deposit + " gold deposit.")
-        SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " won't start the work without the " + deposit + " gold deposit, which the player can't cover.", akActor, player)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("crafting.cantAffordDeposit", ("" + deposit)))
+        SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " won't start the work without the " + deposit + " gold deposit, which " + player.GetDisplayName() + " can't cover.", akActor, player)
         _ClearCommPending()
         return
     endif
@@ -419,13 +401,12 @@ Function _PlaceCommission()
     string etaPhrase = DescribeEta(etaDays)
     SeverActionsNativeExt.Native_Ledger_RecordEvent(deposit, true, "commission", akActor, "", "deposit: " + itemLabel, 0)
     Debug.Notification("Commissioned " + itemLabel + " - " + deposit + " gold deposit paid, " + balanceDue + " gold due on pickup.")
-    SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " agreed to craft " + itemLabel + " for the player, ready " + etaPhrase + ". Took a " + deposit + " gold deposit; " + balanceDue + " gold is due when the player collects it.", akActor, player)
+    SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " agreed to craft " + itemLabel + " for " + player.GetDisplayName() + ", ready " + etaPhrase + ". Took a " + deposit + " gold deposit; " + balanceDue + " gold is due when " + player.GetDisplayName() + " collects it.", akActor, player)
     _ClearCommPending()
 EndFunction
 
-; Take the stashed balance (if any), hand over the item, clear the record.
-; Shared by the PrismaUI accept, the SkyMessage fallback, and the fully-paid
-; fast path (balance mode).
+; Balance mode: take the balance (if any), hand over the item, clear the record
+; (overlay accept, SkyMessage fallback, or the fully-paid path).
 Function _CollectBalanceAndHandover()
     Actor akActor = m_commSmith
     Form itemForm = m_commItem
@@ -440,8 +421,7 @@ Function _CollectBalanceAndHandover()
     string itemName = m_commItemName
     string itemLabel = _CommLabel(itemName, itemCount)
 
-    ; The commission must still exist (the player could have collected it via a
-    ; second smith conversation while this overlay was open).
+    ; It may have been collected in another conversation while the overlay was open.
     if !SeverActionsNativeExt.Native_Commission_Exists(id)
         _ClearCommPending()
         return
@@ -449,8 +429,8 @@ Function _CollectBalanceAndHandover()
 
     if balanceDue > 0
         if player.GetGoldAmount() < balanceDue
-            Debug.Notification("You can't afford the " + balanceDue + " gold balance.")
-            SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " holds onto " + itemLabel + " - the player can't cover the " + balanceDue + " gold balance.", akActor, player)
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("crafting.cantAffordBalance", ("" + balanceDue)))
+            SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " holds onto " + itemLabel + " - " + player.GetDisplayName() + " can't cover the " + balanceDue + " gold balance.", akActor, player)
             _ClearCommPending()
             return
         endif
@@ -459,32 +439,29 @@ Function _CollectBalanceAndHandover()
         SeverActionsNativeExt.Native_Ledger_RecordEvent(balanceDue, true, "commission", akActor, "", "balance: " + itemLabel, 0)
     endif
 
-    ; abSilent = FALSE so the player actually SEES the finished piece arrive
-    ; ("Ebony Dagger Added") — the commission item is conjured straight into the
-    ; player's inventory here (the smith never physically holds it; the forge is
-    ; virtual), so without the vanilla add message the handover felt invisible
-    ; next to the payment popup.
+    ; Not silent: the item is created straight into the player's inventory (the
+    ; smith never holds it), so the vanilla add message is the visible handover.
     player.AddItem(itemForm, itemCount, false)
-    ; Log to the completed-commission history (World → Ledger) BEFORE removing,
-    ; while the row's data is still present for the native to snapshot.
+    ; Record the history row BEFORE Remove: the native snapshots the live row.
     SeverActionsNativeExt.Native_Commission_RecordCompleted(id)
     SeverActionsNativeExt.Native_Commission_Remove(id)
-    Debug.Notification("Collected " + itemLabel + " from " + akActor.GetDisplayName() + ".")
-    SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " handed over the finished " + itemLabel + " to the player.", akActor, player)
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("crafting.collected", ("" + itemLabel), ("" + akActor.GetDisplayName())))
+    SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " handed over the finished " + itemLabel + " to " + player.GetDisplayName() + ".", akActor, player)
     _ClearCommPending()
 EndFunction
 
-; ModEvent from PrismaUICommissionPromptBridge — fires on button click, the
-; auto-deny timer, or an Escape-driven silent close. The mode + order context
-; live in m_comm* (single in-flight). strArg = "accept"/"deny"; sender = smith.
+; From MagelightCommissionPromptBridge on a click, the auto-deny timer or Escape.
+; strArg = "accept" | "deny"; sender = the smith; the order is in m_comm*.
 Event OnCommissionPromptChoice(String asEventName, String asChoice, Float afAmount, Form akSender)
     Actor smith = akSender as Actor
     if !smith
         return
     endif
-    ; Guard a stale callback for a different in-flight smith.
-    if m_commSmith && smith != m_commSmith
-        Debug.Trace("[SeverActions_Crafting] OnCommissionPromptChoice: sender mismatch - ignoring")
+    ; Only an answer to the pending order: its smith and the amount the overlay showed.
+    Int shown = afAmount as Int
+    if !m_commSmith || smith != m_commSmith \
+        || (m_commMode == "deposit" && shown != m_commDeposit) || (m_commMode == "balance" && shown != m_commBalance)
+        Debug.Trace("[SeverActions_Crafting] OnCommissionPromptChoice: not the pending order (sender or amount) - ignoring")
         return
     endif
 
@@ -500,23 +477,19 @@ Event OnCommissionPromptChoice(String asEventName, String asChoice, Float afAmou
         ; Declined / cancelled / timed out — narrate so the smith reacts.
         Actor player = Game.GetPlayer()
         if m_commMode == "deposit"
-            SkyrimNetApi.DirectNarration("The player decided not to commission " + _CommLabel(m_commItemName, m_commCount) + " from " + smith.GetDisplayName() + " after all.", smith, player)
+            SkyrimNetApi.DirectNarration(player.GetDisplayName() + " decided not to commission " + _CommLabel(m_commItemName, m_commCount) + " from " + smith.GetDisplayName() + " after all.", smith, player)
         elseif m_commMode == "balance"
-            SkyrimNetApi.DirectNarration("The player decided not to collect " + _CommLabel(m_commItemName, m_commCount) + " from " + smith.GetDisplayName() + " just yet.", smith, player)
+            SkyrimNetApi.DirectNarration(player.GetDisplayName() + " decided not to collect " + _CommLabel(m_commItemName, m_commCount) + " from " + smith.GetDisplayName() + " just yet.", smith, player)
         endif
         _ClearCommPending()
     endif
 EndEvent
 
 Function CommissionItem_Internal(Actor akActor, string itemName, string etaText, int itemCount = 1, int quotedTotal = 0)
-    {Deferred-craft entry point (CommissionItem action). The smith agrees to
-    forge `itemName` and have it ready later. A 50% deposit is confirmed via a
-    PrismaUI overlay (or SkyMessage fallback) before any gold is taken; the
-    balance is due at pickup. `etaText` is the smith's own prose estimate ("a
-    couple days") — the native NL parser converts it to game days. `quotedTotal`
-    is the smith's own in-character price for the whole order (the LLM decides);
-    it drives the charge directly so the popup matches the spoken quote. Falls
-    back to the item's market value × count only when nothing was quoted.}
+    {Deferred-craft entry point (CommissionItem action). `etaText` is the smith's
+    prose estimate, parsed natively to game days; `quotedTotal` is the smith's
+    spoken price for the whole order (else item value × count), so the confirm
+    matches the quote. The 50% deposit is confirmed before any gold is taken.}
 
     if !akActor
         return
@@ -525,34 +498,27 @@ Function CommissionItem_Internal(Actor akActor, string itemName, string etaText,
     if itemCount < 1
         itemCount = 1
     elseif itemCount > 100
-        ; Upper-clamp the LLM-supplied count. Without this, a hallucinated or
-        ; prompt-injected large count overflows `unitValue * itemCount` (a 32-bit
-        ; Papyrus multiply) to a NEGATIVE priceTotal, which the native floors to
-        ; 0 — so the player pays a 1-gold deposit and collects a free giant stack.
-        ; 100 is well clear of any legitimate craft order.
+        ; Clamp the LLM count: a huge one overflows the 32-bit
+        ; `unitValue * itemCount` to a negative price, i.e. a nearly free order.
         itemCount = 100
     endif
 
     Actor player = Game.GetPlayer()
 
-    ; Item must be something the smith could actually craft.
     Form itemForm = ResolveCraftableForm(itemName)
     if !itemForm
-        Debug.Notification("Cannot commission: " + itemName)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("crafting.cannotCommission", ("" + itemName)))
         SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " doesn't know how to make " + itemName + ".", akActor, player)
         return
     endif
 
-    ; Global cap guard — the native enforces it too, but this gives a clean
-    ; in-character decline instead of a silent 0 return.
+    ; CommissionStore caps at 10 too (kMaxCommissions); this gives an in-character
+    ; decline instead of a silent 0.
     if SeverActionsNativeExt.Native_Commission_GetCount() >= 10
         SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " has too many orders backed up to take another commission right now.", akActor, player)
         return
     endif
 
-    ; Price: the smith's own quoted total (LLM-decided) drives the charge so the
-    ; popup matches the spoken quote. The item's market value × count is only a
-    ; fallback when no figure was quoted. Either way the deposit is 50% up front.
     int priceTotal = quotedTotal
     if priceTotal <= 0
         int unitValue = itemForm.GetGoldValue()
@@ -561,8 +527,7 @@ Function CommissionItem_Internal(Actor akActor, string itemName, string etaText,
         endif
         priceTotal = unitValue * itemCount
     endif
-    ; Clamp to a sane range — guards a hallucinated/garbage quote from charging
-    ; an absurd sum or overflowing the deposit math.
+    ; Clamp a garbage quote.
     if priceTotal > 100000
         priceTotal = 100000
     elseif priceTotal < 1
@@ -574,19 +539,20 @@ Function CommissionItem_Internal(Actor akActor, string itemName, string etaText,
     endif
     int balanceDue = priceTotal - deposit
 
-    ; Deposit required — smith declines if the player can't cover it (checked
-    ; up front so we never raise the confirm for an order they can't place).
+    ; Checked before the confirm, so it never opens for an order they can't place.
     int playerGold = player.GetGoldAmount()
     if playerGold < deposit
-        Debug.Notification("You can't afford the " + deposit + " gold deposit.")
-        SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " won't start the work without a " + deposit + " gold deposit, which the player can't cover right now.", akActor, player)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("crafting.cantAffordDeposit", ("" + deposit)))
+        SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " won't start the work without a " + deposit + " gold deposit, which " + player.GetDisplayName() + " can't cover right now.", akActor, player)
         return
     endif
 
-    ; ETA from the smith's own words. Native NL parse → relative game days.
     Float etaDays = SeverActionsNativeExt.Native_Commission_ParseEtaDays(etaText)
 
-    ; Stash the order so the async confirm (or fallback) can place it.
+    if _CommConfirmBusy(akActor, "deposit", itemForm)
+        return
+    endif
+    ; Stash the order for the async confirm (or fallback).
     m_commMode     = "deposit"
     m_commSmith    = akActor
     m_commItem     = itemForm
@@ -598,30 +564,35 @@ Function CommissionItem_Internal(Actor akActor, string itemName, string etaText,
     m_commId       = 0
     m_commItemName = itemForm.GetName()
 
-    ; Prefer the non-pausing PrismaUI deposit confirm; the choice returns via
-    ; OnCommissionPromptChoice. Fall back to a modal SkyMessage when PrismaUI
-    ; isn't available or another prompt is already open.
-    if SeverActionsNativeExt.PrismaUI_IsCommissionPromptAvailable() && !SeverActionsNativeExt.PrismaUI_IsCommissionPromptOpen()
-        if SeverActionsNativeExt.PrismaUI_OpenCommissionPrompt(akActor, deposit, akActor.GetDisplayName(), m_commItemName, priceTotal, deposit, balanceDue, "deposit", 30000)
+    ; Overlay confirm (the answer arrives in OnCommissionPromptChoice), else a
+    ; modal SkyMessage.
+    if SeverActionsNativeExt.Magelight_IsCommissionPromptAvailable() && !SeverActionsNativeExt.Magelight_IsCommissionPromptOpen()
+        if SeverActionsNativeExt.Magelight_OpenCommissionPrompt(akActor, deposit, akActor.GetDisplayName(), m_commItemName, priceTotal, deposit, balanceDue, "deposit", 30000)
             return
         endif
     endif
 
     String itemLabel = _CommLabel(m_commItemName, itemCount)
-    String choice = SkyMessage.Show(akActor.GetDisplayName() + " will forge " + itemLabel + " for " + priceTotal + " gold. Pay the " + deposit + " gold deposit now? (" + balanceDue + " due on pickup)", "Pay " + deposit + " deposit", "Cancel", getIndex = true)
+    String choice = ""
+    If SeverActionsNativeExt2.Native_IsSkyMessageInstalled()
+        choice = SeverActions_SkyMessageLib.Show(akActor.GetDisplayName() + " will forge " + itemLabel + " for " + priceTotal + " gold. Pay the " + deposit + " gold deposit now? (" + balanceDue + " due on pickup)", "Pay " + deposit + " deposit", "Cancel", getIndex = true)
+    EndIf
     if choice == "0"
         _PlaceCommission()
+    elseif SeverActionsNativeExt2.Native_IsSkyMessageInstalled()
+        SkyrimNetApi.DirectNarration(player.GetDisplayName() + " decided not to commission " + itemLabel + " from " + akActor.GetDisplayName() + " after all.", akActor, player)
+        _ClearCommPending()
     else
-        SkyrimNetApi.DirectNarration("The player decided not to commission " + itemLabel + " from " + akActor.GetDisplayName() + " after all.", akActor, player)
+        ; No confirm could be shown: never spend gold unasked, and do not claim a refusal.
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("crafting.commissionConfirmUnavailable", ("" + akActor.GetDisplayName())))
         _ClearCommPending()
     endif
 EndFunction
 
 Function CollectCommission_Internal(Actor akActor)
-    {Pickup entry point (CollectCommission action; gated by the
-    has_ready_commission decorator). Finds the smith's finished order, takes
-    the balance via a Yes/No confirm, hands over the item, and clears the
-    record. If the player declines or can't pay, the smith keeps holding it.}
+    {Pickup entry point (CollectCommission action, gated by has_ready_commission).
+    Takes the balance through a confirm and hands over the item; if the player
+    declines or can't pay, the smith keeps it.}
 
     if !akActor
         return
@@ -633,9 +604,9 @@ Function CollectCommission_Internal(Actor akActor)
     if id == 0
         ; Nothing ready — distinguish "still working" from "no order at all".
         if SeverActionsNativeExt.Native_Commission_CountForCrafter(akActor) > 0
-            SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " isn't finished with the player's commission yet.", akActor, player)
+            SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " isn't finished with " + player.GetDisplayName() + "'s commission yet.", akActor, player)
         else
-            SkyrimNetApi.DirectNarration("The player has nothing to collect from " + akActor.GetDisplayName() + ".", akActor, player)
+            SkyrimNetApi.DirectNarration(player.GetDisplayName() + " has nothing to collect from " + akActor.GetDisplayName() + ".", akActor, player)
         endif
         return
     endif
@@ -649,18 +620,18 @@ Function CollectCommission_Internal(Actor akActor)
     endif
     string itemLabel = _CommLabel(itemName, itemCount)
 
-    ; Item form vanished (mod uninstalled between order and pickup) — clear the
-    ; dangling record so the smith stops claiming it's ready. Checked BEFORE the
-    ; balance is taken so the player is never charged for a piece that can't be
-    ; handed over. The deposit is kept (it paid for labor already done).
+    ; Item form gone (its mod was removed): drop the record before any balance is
+    ; taken. The deposit is kept.
     if !itemForm
         SeverActionsNativeExt.Native_Commission_Remove(id)
         SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " can't seem to find the finished piece.", akActor, player)
         return
     endif
 
-    ; Stash the balance-mode context so the async confirm (or fallback) can
-    ; take payment and hand over.
+    if _CommConfirmBusy(akActor, "balance", itemForm)
+        return
+    endif
+    ; Stash for the async confirm (or fallback).
     m_commMode     = "balance"
     m_commSmith    = akActor
     m_commItem     = itemForm
@@ -672,38 +643,40 @@ Function CollectCommission_Internal(Actor akActor)
     m_commId       = id
     m_commItemName = itemName
 
-    ; Fully-paid orders (balanceDue <= 0) need no confirm — hand over now.
+    ; Fully paid: no confirm.
     if balanceDue <= 0
         _CollectBalanceAndHandover()
         return
     endif
 
-    ; Prefer the non-pausing PrismaUI balance confirm; choice returns via
-    ; OnCommissionPromptChoice. Fall back to a modal SkyMessage otherwise.
-    if SeverActionsNativeExt.PrismaUI_IsCommissionPromptAvailable() && !SeverActionsNativeExt.PrismaUI_IsCommissionPromptOpen()
-        if SeverActionsNativeExt.PrismaUI_OpenCommissionPrompt(akActor, balanceDue, akActor.GetDisplayName(), itemName, m_commPrice, m_commDeposit, balanceDue, "balance", 30000)
+    ; Overlay confirm, else a modal SkyMessage (as in CommissionItem_Internal).
+    if SeverActionsNativeExt.Magelight_IsCommissionPromptAvailable() && !SeverActionsNativeExt.Magelight_IsCommissionPromptOpen()
+        if SeverActionsNativeExt.Magelight_OpenCommissionPrompt(akActor, balanceDue, akActor.GetDisplayName(), itemName, m_commPrice, m_commDeposit, balanceDue, "balance", 30000)
             return
         endif
     endif
 
-    String choice = SkyMessage.Show(akActor.GetDisplayName() + "'s work is done - your " + itemName + " is ready. Pay the remaining " + balanceDue + " gold?", "Pay " + balanceDue + " gold", "Not now", getIndex = true)
+    String choice = ""
+    If SeverActionsNativeExt2.Native_IsSkyMessageInstalled()
+        choice = SeverActions_SkyMessageLib.Show(akActor.GetDisplayName() + "'s work is done - your " + itemName + " is ready. Pay the remaining " + balanceDue + " gold?", "Pay " + balanceDue + " gold", "Not now", getIndex = true)
+    EndIf
     if choice == "0"
         _CollectBalanceAndHandover()
-    else
+    elseif SeverActionsNativeExt2.Native_IsSkyMessageInstalled()
         ; Declined — smith keeps holding it (commission stays Ready).
-        SkyrimNetApi.DirectNarration("The player decided not to collect " + itemLabel + " from " + akActor.GetDisplayName() + " just yet.", akActor, player)
+        SkyrimNetApi.DirectNarration(player.GetDisplayName() + " decided not to collect " + itemLabel + " from " + akActor.GetDisplayName() + " just yet.", akActor, player)
+        _ClearCommPending()
+    else
+        ; No confirm could be shown: the smith keeps it, and no refusal is claimed.
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("crafting.pickupConfirmUnavailable", ("" + akActor.GetDisplayName())))
         _ClearCommPending()
     endif
 EndFunction
 
 Function TickCommissions()
-    {Drain the native CommissionStore tick queue. Mirrors SeverActions_Debt's
-    TickDebts — the maturation walk (Ordered → Ready) lives in
-    CommissionStore::Tick (C++); Papyrus only registers the SkyrimNet events
-    because PublicAPI exposes no native event-register surface.
-
-    Kinds:  0 = Regular, 1 = ShortLived, 2 = Persistent.
-    commission_ready events are ShortLived (kind 1).}
+    {Drain CommissionStore's pending events. The Ordered → Ready walk is native;
+    Papyrus only registers the SkyrimNet events (no native API for that).
+    Kind: 0 Regular, 1 ShortLived (commission_ready), 2 Persistent.}
     Int pending = SeverActionsNativeExt.Native_Commission_Tick()
     If pending <= 0
         Return
@@ -733,16 +706,9 @@ Function TickCommissions()
     SeverActionsNativeExt.Native_Commission_ClearPendingEvents()
 EndFunction
 
-; =============================================================================
-; MODEVENT LISTENER — driven by SeverActionsNative::CraftingOrchestrator
-; =============================================================================
-; Event args:
-;   strArg = phase label (see switch below)
-;   numArg = craft handle (Int cast to Float)
-;   sender = the crafting actor
-;
-; The handler queries the orchestrator for whatever refs it needs by handle
-; and performs the work that has no clean CommonLib native path.
+; PHASE LISTENER: SACraft_PhaseChange from CraftingOrchestrator.
+; strArg = phase label, numArg = craft handle, sender = the crafter; refs are
+; queried by handle.
 
 Event OnCraftPhaseChange(string eventName, string strArg, float numArg, Form sender)
     int handle = numArg as Int
@@ -755,22 +721,22 @@ Event OnCraftPhaseChange(string eventName, string strArg, float numArg, Form sen
     Debug.Trace("SeverActions_Crafting: PhaseChange handle=" + handle + " phase='" + strArg + "' actor=" + akActor.GetDisplayName())
 
     if strArg == "Phase1Apply"
-        ; Bind workstation + crafter aliases, apply package override, fire
-        ; "begins" persistent event, unregister TalkToPlayer.
         ObjectReference ws = SeverActionsNativeExt.Craft_GetWorkstation(handle)
         Actor recipient = SeverActionsNativeExt.Craft_GetRecipient(handle)
         string wsType = SeverActionsNativeExt.Craft_GetWorkstationType(handle)
         if ws
             ForgeAlias.ForceRefTo(ws)
             CrafterAlias.ForceRefTo(akActor)
-            ActorUtil.AddPackageOverride(akActor, CraftAtForgePackage, CRAFT_PACKAGE_PRIORITY, 1)
+            ; The schedule quests (priority 101) outrank the crafter aliases: a crafter the schedule holds comes off
+            ; it, and the reconcile keeps her off while she holds either alias.
+            SeverActions_ModuleBase.CallBool("followers", "leaveSchedule", akActor)
+            ActorUtil.AddPackageOverride(akActor, CraftAtForgePackage, CRAFT_OVERRIDE_PRIORITY, 1)
             akActor.EvaluatePackage()
             SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " begins working at the " + wsType + ".", akActor, recipient)
             SkyrimNetApi.UnregisterPackage(akActor, "TalkToPlayer")
         endif
 
     elseif strArg == "Phase2Cleanup"
-        ; Remove package override + clear workstation aliases. Fire "finishes".
         Actor recipient = SeverActionsNativeExt.Craft_GetRecipient(handle)
         string wsType = SeverActionsNativeExt.Craft_GetWorkstationType(handle)
         ActorUtil.RemovePackageOverride(akActor, CraftAtForgePackage)
@@ -781,16 +747,17 @@ Event OnCraftPhaseChange(string eventName, string strArg, float numArg, Form sen
         SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " finishes at the " + wsType + ".", akActor, recipient)
 
     elseif strArg == "Phase3Approach"
-        ; Bind recipient + approach aliases. EvaluatePackage to start the walk.
         Actor recipient = SeverActionsNativeExt.Craft_GetRecipient(handle)
         if recipient
             RecipientAlias.ForceRefTo(recipient)
             CrafterApproachAlias.ForceRefTo(akActor)
+            ; Again: the schedule (priority 101) outranks the crafter aliases, and a tick since the forge can have
+            ; re-seated her.
+            SeverActions_ModuleBase.CallBool("followers", "leaveSchedule", akActor)
             akActor.EvaluatePackage()
         endif
 
     elseif strArg == "Phase4HandOff:anim"
-        ; Arrived at recipient. Clear approach aliases, face, play give-idle.
         Actor recipient = SeverActionsNativeExt.Craft_GetRecipient(handle)
         CrafterApproachAlias.Clear()
         RecipientAlias.Clear()
@@ -806,26 +773,28 @@ Event OnCraftPhaseChange(string eventName, string strArg, float numArg, Form sen
         endif
 
     elseif strArg == "Phase4HandOff:noanim"
-        ; Soft-fail timeout. Just clear aliases; engine still teleports the
-        ; item transfer in C++ Terminate.
+        ; Recipient arrival timed out; the item still transfers in native Terminate.
         CrafterApproachAlias.Clear()
         RecipientAlias.Clear()
         akActor.EvaluatePackage()
 
     elseif strArg == "TermComplete"
-        ; Item already transferred by C++. Narrate + notify player.
+        ; The item was already transferred natively.
         Actor recipient = SeverActionsNativeExt.Craft_GetRecipient(handle)
         bool recipientIsPlayer = (recipient == Game.GetPlayer())
-        ; RegisterEvent, not DirectNarration - the forced response to the
-        ; hand-off is what re-triggered the craft loop (see DispatchToOrchestrator).
-        string narration = recipient.GetDisplayName() + " has received an item from " + akActor.GetDisplayName() + "."
+        string recipientName = "Someone"
+        if recipient
+            recipientName = recipient.GetDisplayName()
+        endif
+        ; RegisterEvent, not DirectNarration (see DispatchToOrchestrator).
+        string narration = recipientName + " has received an item from " + akActor.GetDisplayName() + "."
         SkyrimNetApi.RegisterEvent("craft_complete", narration, akActor, recipient)
         if recipientIsPlayer
-            Debug.Notification("Received item from " + akActor.GetDisplayName())
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("crafting.receivedItemFrom", ("" + akActor.GetDisplayName())))
         endif
 
     elseif strArg == "TermAbortNoArrival"
-        ; Couldn't reach the workstation. Defensive cleanup + narrate failure.
+        ; Couldn't reach the workstation.
         Actor recipient = SeverActionsNativeExt.Craft_GetRecipient(handle)
         bool recipientIsPlayer = (recipient == Game.GetPlayer())
         string wsType = SeverActionsNativeExt.Craft_GetWorkstationType(handle)
@@ -836,39 +805,46 @@ Event OnCraftPhaseChange(string eventName, string strArg, float numArg, Form sen
         RecipientAlias.Clear()
         akActor.EvaluatePackage()
         string msg = akActor.GetDisplayName() + " was unable to reach the " + wsType + " and abandoned the task."
-        ; Persistent event only - the DirectNarration that used to double up
-        ; here forced a response and fed the craft retry loop.
+        ; No DirectNarration (see DispatchToOrchestrator).
         SkyrimNetApi.RegisterPersistentEvent(msg, akActor, recipient)
         if recipientIsPlayer
-            Debug.Notification(akActor.GetDisplayName() + " couldn't reach the " + wsType + ".")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("crafting.couldntReach", ("" + akActor.GetDisplayName()), ("" + wsType)))
         endif
 
     elseif strArg == "TermCancelled"
-        ; Cancelled mid-flight. Full alias + override cleanup.
+        ; Also sent for a QUEUED craft that never started, while another actor's craft
+        ; holds the aliases: clear only what this actor holds.
         Actor recipient = SeverActionsNativeExt.Craft_GetRecipient(handle)
         ActorUtil.RemovePackageOverride(akActor, CraftAtForgePackage)
-        ForgeAlias.Clear()
-        CrafterAlias.Clear()
-        CrafterApproachAlias.Clear()
-        RecipientAlias.Clear()
+        bool held = false
+        if CrafterAlias.GetReference() == akActor
+            ForgeAlias.Clear()
+            CrafterAlias.Clear()
+            held = true
+        endif
+        if CrafterApproachAlias.GetReference() == akActor
+            CrafterApproachAlias.Clear()
+            RecipientAlias.Clear()
+            held = true
+        endif
         akActor.EvaluatePackage()
-        SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " stopped what they were doing.", akActor, recipient)
+        if held
+            SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " stopped what they were doing.", akActor, recipient)
+        endif
 
     elseif strArg == "TermAbortNoWS"
-        ; Defensive — DispatchToOrchestrator already filters this case.
+        ; Defensive: no native path enters this state (Begin rejects a null workstation).
         string wsType = SeverActionsNativeExt.Craft_GetWorkstationType(handle)
         Actor recipient = SeverActionsNativeExt.Craft_GetRecipient(handle)
         bool recipientIsPlayer = (recipient == Game.GetPlayer())
         if recipientIsPlayer
-            Debug.Notification("No " + wsType + " nearby!")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("crafting.noWorkstationNearby", ("" + wsType)))
         endif
 
     endif
 EndEvent
 
-; =============================================================================
 ; UTILITY
-; =============================================================================
 
 string Function GetDatabaseStats()
     string result = ""

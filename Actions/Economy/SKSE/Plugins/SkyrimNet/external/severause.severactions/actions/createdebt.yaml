@@ -1,0 +1,64 @@
+customCategory: economy
+name: CreateDebt
+description: "Use when both sides agree in this exchange that one owes the other a set sum to pay later: goods or coin fronted on credit, a loan, a room or service put on the slate. Records the tab; no coin moves now. Not for a price quoted for a purchase still to come, an offer still being weighed, or payment made on the spot (BuyItem, SellItem, CollectPayment). Adding to a tab that already exists is AddToDebt; rent, wages or dues that repeat are CreateRecurringDebt."
+questEditorId: SeverActions
+scriptName: SeverActions_Debt
+executionFunctionName: CreateDebt_Execute
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: the actor opening the tab (typically the one fronting the goods or gold)
+  - type: dynamic
+    name: creditor
+    description: "who is owed the money: exact name as listed in Nearby Actors, or the player's name"
+  - type: dynamic
+    name: debtor
+    description: "who owes it, named the same way; not the same person as the creditor"
+  - type: dynamic
+    name: amount
+    description: "the sum owed in gold, a whole number above 0"
+  - type: dynamic
+    name: reason
+    description: "what the tab is for, a few words ('room at the inn', 'borrowed gold')"
+    optional: true
+    default: "unspecified"
+  - type: dynamic
+    name: dueDays
+    description: "days until it is due; 0 = no deadline"
+    optional: true
+    default: 0
+  - type: dynamic
+    name: creditLimit
+    description: "the most the tab may grow to in gold; 0 = no limit"
+    optional: true
+    default: 0
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

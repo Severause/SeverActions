@@ -1,33 +1,10 @@
 Scriptname SeverActions_Arrest extends Quest
 
 {
-    Guard Arrest System for SeverActions
-
-    Allows guards to:
-    - Add bounty to player for crimes
-    - Arrest NPCs (same-cell) and escort them to jail
-    - Dispatch guards cross-cell to arrest or investigate homes
-    - Confront the player with persuasion options
-
-    Self-contained travel logic - does not depend on SeverActions_Travel.
-
-    Required CK Setup:
-    - Factions: SeverActions_WaitingArrest, SeverActions_Arrested, SeverActions_Jailed,
-                SeverActions_DispatchFaction
-    - Keywords: SeverActions_FollowTargetKW, SeverActions_SandboxAnchorKW
-    - Aliases on SeverActions quest:
-        ArrestTarget, ArrestingGuard, JailDestination (same-cell arrest)
-        DispatchGuardAlias, DispatchTargetAlias (cross-cell dispatch)
-        DispatchPrisonerAlias, DispatchTravelDestination (dispatch support)
-    - Packages:
-        SeverActions_DispatchJog (Travel, Location=DispatchTargetAlias, Jog)
-        SeverActions_DispatchWalk (Travel, Location=DispatchTargetAlias, Walk)
-        SeverActions_GuardApproachTarget (Travel, Location=Alias ArrestTarget)
-        SeverActions_GuardEscortPackage (Travel, Location=Alias JailDestination)
-        SeverActions_FollowGuard_Prisoner (Follow, Target=LinkedRef w/ FollowTargetKW)
-        SeverActions_PrisonerSandBox (Sandbox, Location=LinkedRef w/ SandboxAnchorKW)
-        SeverActions_GuardFollowPlayer (Follow, Target=LinkedRef w/ FollowTargetKW)
-    - Fill all properties in CK
+    Guard arrest system: same-cell NPC arrest and escort to jail, cross-cell guard dispatch (arrest or
+    home investigation), and the jail roster. Bounties, judgment and the player confrontation live in
+    SeverActions_ArrestBounty / _ArrestJudgment / _ArrestPlayer.
+    Cancels a travel errand on anyone it arrests so the two systems do not fight over the actor's packages.
 }
 
 ; =============================================================================
@@ -60,7 +37,7 @@ Faction Property CrimeFactionPale Auto
 Faction Property CrimeFactionHjaalmarch Auto
 Faction Property CrimeFactionWinterhold Auto
 
-; Guard factions now owned by native GuardFinder — see Native/src/GuardFinder.h.
+; Guard factions are resolved natively (Native/src/GuardFinder.h).
 
 ; =============================================================================
 ; PROPERTIES - Keywords & Packages (Create in CK)
@@ -73,48 +50,44 @@ Keyword Property SeverActions_SandboxAnchorKW Auto
 {Keyword for sandbox packages — prisoner sandboxes near jail marker, guard sandboxes at home.}
 
 Package Property SeverActions_DispatchTravel Auto
-{Travel package for cross-cell dispatch - guard/prisoner travels to DispatchTravelDestination alias.
-Setup in CK: Type=Travel, Location=DispatchTravelDestination alias, Speed=Jog}
+{Jog-speed travel to the DispatchTravelDestination alias: the dispatch guard's walk to each
+container in a home search.}
 
 Package Property SeverActions_GuardApproachTarget Auto
-{Travel package for guard to walk to ArrestTarget alias (approach phase).
- Used by same-cell ArrestNPC_Internal. Dispatch uses DispatchJog/DispatchWalk instead.}
+{Travel to the ArrestTarget alias: the guard's approach in a same-cell arrest, or
+ FreeNPC_Internal's walk to the prisoner.}
 
 Package Property SeverActions_GuardEscortPackage Auto
 {Travel package for guard to walk to JailDestination alias (escort to jail phase)}
 
 Package Property SeverActions_FollowGuard_Prisoner Auto
-{Follow package for prisoner - follows their linked ref (the guard).
-Setup: Type=Follow, Follow Target=Linked Ref with SeverActions_FollowTargetKW}
+{Follow the FollowTargetKW linked ref: the prisoner trails their guard.}
 
 Package Property SeverActions_PrisonerSandBox Auto
-{Sandbox package for prisoners in jail - sandboxes near their linked ref (jail marker).
-Setup: Type=Sandbox, Location=Linked Ref with SeverActions_SandboxAnchorKW}
+{Sandbox near the SandboxAnchorKW linked ref: a jailed prisoner at their jail marker, and the
+ dispatch guard's FallbackSandboxSearch at a home.}
 
 Package Property SeverActions_DispatchJog Auto
-{Jog-speed travel to DispatchTargetAlias. Used for outbound dispatch (urgency).
-CK: Travel package, Location=DispatchTargetAlias, Speed=Jog}
+{Jog-speed travel to DispatchTargetAlias: the dispatch guard's outbound leg.}
 
 Package Property SeverActions_DispatchWalk Auto
-{Walk-speed travel to DispatchTargetAlias. Used for return journey (escorting).
-CK: Travel package, Location=DispatchTargetAlias, Speed=Walk}
+{Walk-speed travel to DispatchTargetAlias: the return leg with the prisoner or evidence.}
 
 ; =============================================================================
 ; PROPERTIES - Items & Outfits (Vanilla or Create in CK)
 ; =============================================================================
 
 Armor Property SeverActions_PrisonerCuffs Auto
-{Bound hands armor item. Can use vanilla or create custom.}
+{Bound-hands armor worn by prisoners.}
 
 Armor Property SeverActions_PrisonerRags Auto
-{Prison clothing. Can use vanilla ClothesJailor or create custom.}
+{Prison clothing.}
 
 Outfit Property SeverActions_PrisonerOutfit Auto
-{Outfit containing prison clothes. Setting this on the NPC makes it persist through cell reloads.
-Create an Outfit in CK containing the prison rags.}
+{Outfit holding the prison rags; set as the NPC's outfit so it survives cell reloads.}
 
 MiscObject Property Gold001 Auto
-{Gold coin - set to Gold001 (0x0000000F) in CK, or leave empty for auto-lookup}
+{Gold001 (Skyrim.esm 0x0000000F); Maintenance looks it up when unfilled.}
 
 ; =============================================================================
 ; PROPERTIES - Idle Animation (Vanilla)
@@ -127,10 +100,9 @@ Idle Property IdleGive Auto
 {Vanilla idle for give/hand-over gesture - used when freeing prisoners}
 
 ; =============================================================================
-; PROPERTIES - Jail Markers (Interior cell XMarkers - must set in CK)
-; The faction's crimeData.factionJailMarker is an EXTERIOR marker (where player
-; teleports when choosing jail), not the actual cell interior. These must be
-; placed manually inside each jail cell.
+; PROPERTIES - Jail Markers
+; XMarkers inside each jail cell: the crime faction's factionJailMarker is the
+; exterior spot the player lands on, not the cell.
 ; =============================================================================
 
 ObjectReference Property JailMarker_Whiterun Auto
@@ -165,78 +137,56 @@ ObjectReference Property JailMarker_Winterhold Auto
 ; =============================================================================
 
 Faction Property SeverActions_DispatchFaction Auto
-{Faction added to guard at dispatch start, removed at Complete/Cancel.
- Checked by YAML eligibility rules to prevent SkyrimNet re-tasking a dispatched guard.}
+{The on-task mark: rank 0 on the guard of a same-cell arrest or a dispatch from start to end
+ (_BeginGuardTask / _LeaveTaskFaction), read by the stale sweeps. The action gate is
+ sever_is_dispatched, which reads the native arrest claim: this faction's span plus the judgment
+ hold and the escort after it.}
 
 ; =============================================================================
 ; PROPERTIES - Reference Aliases (Create in Quest)
 ; =============================================================================
 
 ReferenceAlias Property ArrestTarget Auto
-{Reference alias for the NPC being approached/arrested by same-cell arrest.
- Guard approach package (GuardApproachTarget) targets this.
- NOT used by cross-cell dispatch — dispatch uses DispatchTargetAlias instead.}
+{The actor the guard approaches (GuardApproachTarget targets it): the suspect in a same-cell
+ arrest, the prisoner in FreeNPC_Internal.}
 
 ReferenceAlias Property JailDestination Auto
-{Reference alias for the jail marker. Guard escort package targets this.}
+{The jail marker; GuardEscortPackage targets it.}
 
 ReferenceAlias Property ArrestingGuard Auto
-{Reference alias for the guard performing same-cell arrest.
- NOT used by cross-cell dispatch — dispatch uses DispatchGuardAlias instead.}
+{The arresting guard of a same-cell arrest.}
 
 ReferenceAlias Property DispatchGuardAlias Auto
-{Dedicated alias for the dispatch guard. Keeps guard in high-process during
- cross-cell travel. Separated from ArrestingGuard to prevent clobbering
- if same-cell arrest runs while dispatch is active.}
+{The dispatch guard, held in high process during cross-cell travel. Separate from
+ ArrestingGuard, which a same-cell arrest refills.}
 
 ReferenceAlias Property DispatchTargetAlias Auto
-{Dedicated alias for the dispatch target/destination. Holds the target NPC
- (arrest dispatch) or home marker (home investigation). DispatchJog and
- DispatchWalk packages target this alias. Separated from ArrestTarget to
- prevent clobbering during Phase 5 return (no more repurposing).}
+{The dispatch destination, targeted by DispatchJog/DispatchWalk: the target NPC or home
+ marker outbound, the return marker in phase 5.}
 
 ReferenceAlias Property DispatchPrisonerAlias Auto
-{Reference alias for the prisoner during dispatch Phase 5.
-Keeps the prisoner in high-process while unloaded so their AI packages
-(travel/follow) continue to execute off-screen. Filled at arrest time,
-cleared at dispatch completion. Create in CK as an empty reference alias.}
+{The dispatch prisoner during the phase-5 return, held in high process so their follow
+package keeps running off-screen. Cleared when the dispatch completes.}
 
 ReferenceAlias Property DispatchTravelDestination Auto
-{Reference alias for the DispatchTravel package destination.
-The DispatchTravel package targets this alias instead of a linked ref,
-so the engine natively tracks the destination across cells.
-Used by guard for evidence approach (Phase 3/4).
-Create in CK as an empty reference alias and set DispatchTravel package
-location to this alias.}
+{SeverActions_DispatchTravel's destination (the container in a home search). An alias rather
+than a linked ref so the engine tracks the destination across cells.}
 
 ; =============================================================================
 ; PROPERTIES - Cross-Script References
 ; =============================================================================
 
-SeverActions_Travel Property TravelSystem Auto
-{Optional hook: used only to cancel a target's active travel errand before
-arrest (CancelTravel). Not used for dispatch movement — dispatch is self-contained.
-Set in CK: point to the SeverActions quest running SeverActions_Travel.}
-
 SeverActions_ArrestBounty Property BountyScript Auto
-{Reference to the tracked-bounty subsystem (Wave 5b extraction). Holds the
- 9 bounty CRUD functions plus the AddBountyToPlayer action entry point.
- Filled at runtime in Maintenance() via `quest as SeverActions_ArrestBounty`
- if CK didn't fill it. Same quest as the rest of the SeverActions sub-scripts.}
+{The tracked-bounty subsystem (bounty CRUD, AddBountyToPlayer). Resolved by cast in
+ Maintenance when unfilled.}
 
 SeverActions_ArrestJudgment Property JudgmentScript Auto
-{Reference to the Phase-6 judgment subsystem (Wave 5b extraction). Holds the
- OrderRelease/OrderJailed action entry points, EndJudgment cleanup, and the
- per-tick CheckJudgmentProgress router target. Filled at runtime in
- Maintenance() if CK didn't fill it.}
+{The phase-6 judgment subsystem (OrderRelease/OrderJailed, EndJudgment,
+ CheckJudgmentProgress). Resolved in Maintenance when unfilled.}
 
 SeverActions_ArrestPlayer Property PlayerScript Auto
-{Reference to the player-confrontation + persuasion FSM (Wave 5b extraction).
- Holds ArrestPlayer_Internal / AcceptPersuasion_Internal / RejectPersuasion_Internal
- action entry points, the full HandlePayFine/Submit/Resist/Bribe/Persuade
- menu router, the per-tick persuasion timer, and post-resist combat cleanup.
- Drives its own OnUpdate independently of arrest.psc's update loop. Filled at
- runtime in Maintenance() if CK didn't fill it.}
+{The player confrontation + persuasion FSM, on its own chronometer tick. Resolved in
+ Maintenance when unfilled.}
 
 ; =============================================================================
 ; PROPERTIES - Settings
@@ -280,22 +230,16 @@ Float Property PersuasionFollowDistance = 300.0 Auto
 {Max distance guard will follow player during persuasion before giving up}
 
 Float Property ApproachPostFreezeGracePeriod = 5.0 Auto
-{Wave 6 polish: Real-time seconds the guard gets to walk in naturally AFTER the
- prisoner-freeze threshold triggers, before the script falls back to a teleport
- snap. If the guard reaches ApproachDistance within this window the arrest
- fires on the natural walk-in (no teleport, smooth visual). If the engine
- stalls (path stutter, package distance setting, slope), the snap kicks in as
- a guarantee. Set to 0.0 to keep the old "snap immediately on freeze" behavior.}
+{Real-time seconds the guard gets to walk in after the prisoner freezes (ApproachFreezeDistance)
+ before being teleported in; 0 = teleport at once.}
 
 Float Property EscortPleaTimeLimit = 60.0 Auto
-{Wave 6.1: Real-time seconds an NPC prisoner has to make their case during a
- mid-escort plea before the guard runs out of patience and silently resumes
- the escort to jail. Mirrors PersuasionTimeLimit for the player FSM.}
+{Real-time seconds an NPC prisoner's mid-escort plea runs before the guard silently resumes
+ the escort (the NPC twin of PersuasionTimeLimit).}
 
 Float Property EscortPleaFollowDistance = 300.0 Auto
-{Wave 6.1: Distance threshold for escort plea — if the prisoner walks more
- than this far from the guard during the plea, escort resumes (treated as
- escape attempt; no extra penalty, just the silent resume narration).}
+{A prisoner who strays farther than this from the guard during a plea ends it: the escort
+ resumes, with no extra penalty.}
 
 Int Property ResistBountyIncrease = 500 Auto
 {Additional bounty added when player resists arrest}
@@ -304,105 +248,78 @@ Float Property ArrestPlayerCooldown = 60.0 Auto
 {Cooldown in seconds before ArrestPlayer can be used again after a confrontation starts}
 
 Float Property ApproachTimeout = 30.0 Auto
-{Real-time seconds the guard has to reach the prisoner before we force-teleport
- and proceed with the arrest. Without this, an NPC running their own AI package
- can keep distance oscillating around ApproachDistance forever.}
+{Real-time seconds the dispatch phase-2 approach gets before the guard is teleported in. Read only by
+ CheckDispatchPhase2_Approach; the same-cell approach timeout is the native kApproach watchdog's.}
 
 Float Property EscortTimeout = 600.0 Auto
-{Kept declared so existing MCM saves don't lose their VMAD binding; the value
- is not read. Escort timeout is owned by the kEscort ArrestSessionStore
- watchdog (6 game-hours, defined in ArrestSessionStore.h TimeoutForState).}
+{Not read; kept declared for its VMAD fill. The escort timeout is the kEscort session
+ watchdog's (6 game hours, ArrestSessionStore.h TimeoutForState).}
 
 Float Property ApproachFreezeDistance = 350.0 Auto
-{Once the guard is within this distance, freeze the prisoner's movement
- (SetDontMove) so the closing distance can actually drop below ApproachDistance.
- Released when the arrest performs.}
+{Within this distance the guard's target is frozen (SetDontMove) so the gap can close below
+ ApproachDistance; released when the arrest performs.}
 
 Package Property SeverActions_GuardFollowPlayer Auto
-{Follow package for guard during persuasion - follows linked ref (player).
-Setup: Type=Follow, Follow Target=Linked Ref with SeverActions_FollowTargetKW}
+{Follow the FollowTargetKW linked ref: the guard trails the player during persuasion.}
 
 ; =============================================================================
-; PROPERTIES - Tunables (Wave 5)
-; Named replacements for the magic numbers that were sprinkled throughout the
-; FSM. Each was previously hardcoded at multiple sites; centralizing them
-; here means a single edit reaches every callsite, and an MCM slider could
-; eventually expose them to the user. Defaults match the prior hardcoded
-; values, so behavior is preserved unchanged.
+; PROPERTIES - Tunables
 ; =============================================================================
 
 Float Property NarrationProximityRange = 300.0 Auto
-{Range within which the player will trigger a deferred narration sender's
- stored line. Used by OnUpdate's deferred-narration loop and several Phase 5
- return-arrival proximity checks.}
+{Radius at which the player triggers a deferred-narration sender's stored line (the
+ narration_witness arrival watch).}
 
 Float Property GuardArrivalThreshold = 200.0 Auto
-{Distance below which a Phase 5 return is considered "guard arrived at sender"
- for narration / re-application purposes. Smaller than ArrivalDistance because
- the return marker is a person/NPC, not a stationary jail marker.}
+{Not read by any code.}
 
 Float Property JailMarkerVerifyDistance = 500.0 Auto
-{Tolerance for "did the prisoner actually land at the jail marker?" check
- in OnArrivedAtJail and VerifyJailedNPCs. Above this distance we trigger the
- retry path or detect the prisoner has wandered out of jail.}
+{How far from the jail marker a prisoner may stand before OnArrivedAtJail retries the placement
+ or VerifyJailedNPCs treats them as out of jail.}
 
 Float Property DispatchSpamCooldown = 15.0 Auto
-{Real-time seconds between consecutive dispatch issues. Prevents the LLM
- from spam-issuing dispatches in rapid succession.}
+{Not read: the two dispatch entry points hard-code the 15 s anti-spam window.}
 
 Float Property OffScreenMinimumTravelTime = 120.0 Auto
-{Minimum real-time seconds an off-screen dispatch must "appear to travel"
- before we let it complete via time-skip / snapshot arrival. Prevents
- instant cross-map arrests that feel jarring.}
+{Not read: CheckDispatchOffScreen hard-codes its 120 s minimum.}
 
 Float Property GuardJogSpeed = 300.0 Auto
-{Approximate units-per-second a jogging guard covers. Used by off-screen ETA
- calculations in CheckDispatchPhase1_Travel and CheckDispatchPhase5_Return.}
+{Units per real second a jogging guard covers (CheckDispatchOffScreen's travel-time estimate).}
 
 Float Property GuardJogPerGameHour = 20000.0 Auto
-{Approximate units a jogging guard covers per in-game hour. Used by the
- cross-cell time-skip teleport calculation when both actors are off-screen.}
+{Units per game hour a jogging guard covers (CheckDispatchProgress's time-skip teleport).}
 
 ; =============================================================================
 ; STATE TRACKING
 ; =============================================================================
 
-; Active arrest tracking (supports one arrest at a time for simplicity)
+; The same-cell arrest FSM: one arrest at a time.
 Actor CurrentGuard
 Actor CurrentPrisoner
 ObjectReference CurrentJailMarker
 String CurrentJailName
 Int ArrestState ; 0=none, 1=approaching, 2=arresting, 3=escorting, 4=escort plea (NPC pleading mid-march), 5=arrived (transient, OnArrivedAtJail in progress)
 
-; Wave 6.1: Escort-plea state. Set when an NPC prisoner triggers
-; AppealDuringEscort_Internal during ArrestState 3. Cleared when state
-; transitions back to 3 (resume) or arrest ends. EscortPleaAttempted is the
-; per-arrest single-attempt gate (mirrors PersuadeAttempted on PlayerScript).
+; Escort plea (ArrestState 4): its start time, and the one-plea-per-arrest gate
+; (the NPC twin of ArrestPlayer's PersuadeAttempted).
 Float EscortPleaStartTime
 Bool EscortPleaAttempted
 
-; Jailed NPC tracking — kept as a Papyrus array ONLY for one-shot migration of
-; pre-PR-B saves. New writes go straight to the native JailedNPCStore cosave
-; singleton ('JAIL' record). On the first OnGameLoaded after update, any
-; pre-existing entries here get migrated to native and this array is emptied.
+; Legacy jailed-NPC list: MigrateJailedNPCsToNative moves it into the native
+; JailedNPCStore ('JAIL') once and empties it. Nothing else adds to it.
 Actor[] JailedNPCs
 
-; Player arrest state tracking
-; Wave 5b: ConfrontingGuard / ConfrontingFaction / ConfrontingBounty /
-; PersuadeAttempted / PaymentFailed / InPersuasionMode / PersuasionStartTime
-; moved to SeverActions_ArrestPlayer.psc.
-; Wave 5b: LastArrestTime + ResistArrestFaction moved to SeverActions_ArrestPlayer.psc.
-Float LastDispatchSpamTime      ; Real time when last dispatch was issued (15s anti-spam guard)
+Float LastDispatchSpamTime      ; Real time of the last dispatch (15 s anti-spam window)
 
-; Wave 1 timeout / freeze tracking
-Float ApproachStartTime         ; Real time when current same-cell approach phase started (legacy — approach timeout is now the native kApproach watchdog; value only written/zeroed/persisted, never read for elapsed-time math)
-Float EscortStartTime           ; Written by StartEscortPhase/PersistArrestState and persisted into the 'AARS' cosave; RecoverActiveArrest resets it to now on load. Escort timeout is owned by the kEscort ArrestSessionStore watchdog — nothing reads this for elapsed-time math.
+; Timers and movement freezes
+Float ApproachStartTime         ; Real time the same-cell approach began; persisted only (the kApproach watchdog owns the timeout)
+Float EscortStartTime           ; Real time the escort began; persisted in 'AARS' only (the kEscort watchdog owns the timeout)
 Float DispatchPhase2StartTime   ; Real time when dispatch transitioned to Phase 2 (post-travel approach)
 Bool PrisonerMovementFrozen     ; Track whether SetDontMove is currently held on CurrentPrisoner
 Float PrisonerFrozenAt          ; Real time when SetDontMove fired (drives the post-freeze grace period before fallback teleport snap)
 Bool DispatchTargetMovementFrozen ; Track whether SetDontMove is currently held on DispatchTarget during Phase 2
 
-; Cross-cell dispatch state (self-contained system - does NOT use TravelSystem)
+; Cross-cell dispatch state (self-contained - dispatch movement never goes through the travel module)
 ; Dispatch phases:
 ;   0 = inactive
 ;   1 = traveling directly to target Actor or home (AI handles cross-cell pathfinding)
@@ -417,13 +334,13 @@ Actor DispatchGuard                     ; The guard doing the arresting (separat
 ObjectReference DispatchReturnMarker    ; Final destination marker (jail marker, Jarl, or sender)
 Float DispatchOffScreenStartTime        ; Real time when guard left player's loaded area
 Float DispatchGameTimeStart             ; Game time when dispatch began (for timeout)
+Float DispatchReturnTimeStart           ; Game time when the return leg (phase 5) began
 Float DispatchInitialDistance           ; Distance (units) between guard and target at dispatch start (for time-skip calc when cross-cell)
 Bool DispatchGuardOffScreen             ; True if guard is currently off-screen
 String DispatchTargetLocation           ; Cached location name for the target
 
-; Wave 5b: Phase-6 judgment state (JudgmentStartTime + JudgmentTimeLimit) moved
-; to SeverActions_ArrestJudgment.psc. Lifecycle is driven through
-; JudgmentScript.StartJudgment / ResetState / CheckJudgmentProgress.
+; Phase-6 judgment state lives in SeverActions_ArrestJudgment (StartJudgment / ResetState /
+; CheckJudgmentProgress).
 
 ; Home investigation state (DispatchGuardToHome)
 Bool DispatchIsHomeInvestigation        ; True if this is a home investigation (not an arrest dispatch)
@@ -445,7 +362,7 @@ Bool DispatchReturnNarrated = false       ; True once the "guard returning with 
 Float DispatchStuckGraceUntil = 0.0      ; Real time until which stuck detection is suppressed (grace period after cell transitions)
 ObjectReference DispatchUnlockedDoor = None ; Door unlocked for home investigation (re-locked on cleanup)
 
-; Container search state (Phase 3 rewrite — sequential container search)
+; Home search (phase 3): containers are searched one after another
 Int DispatchContainerCount = 0             ; Number of containers to search
 Int DispatchCurrentContainer = 0           ; Index of container currently being searched
 ObjectReference DispatchCurrentContainerRef = None  ; Current container ref the guard is walking to / searching
@@ -486,12 +403,9 @@ Event OnInit()
 EndEvent
 
 Function ResetSessionCooldowns()
-    {Reset real-time cooldowns. Utility.GetCurrentRealTime() resets to 0 on
-     fresh game launch, but the saved values persist across sessions and would
-     otherwise produce phantom cooldowns (e.g. "5 minutes remaining" right after
-     loading a save). Called only from OnInit and OnPlayerLoadGame so that
-     Maintenance() — invoked mid-session by payment handlers — can't bypass them.}
-    ; Wave 5b: LastArrestTime moved to PlayerScript along with the player FSM.
+    {Zero the real-time cooldowns: GetCurrentRealTime restarts at 0 each launch, so saved values
+     would read as phantom cooldowns. Called only from OnInit and OnGameLoaded, never from
+     Maintenance, which ArrestPlayer's payment handlers call mid-session.}
     If PlayerScript
         PlayerScript.ResetCooldowns()
     EndIf
@@ -499,7 +413,8 @@ Function ResetSessionCooldowns()
 EndFunction
 
 Function Maintenance()
-    {Auto-lookup forms if not set in CK, register for game load events}
+    {Idempotent setup, run on every load and mid-session by ArrestPlayer's payment handlers:
+     form lookups, ModEvent registrations, the sub-scripts, hold registration, the bounty migration.}
     if Gold001 == None
         Gold001 = Game.GetFormFromFile(0x0000000F, "Skyrim.esm") as MiscObject
         if Gold001 == None
@@ -509,81 +424,54 @@ Function Maintenance()
         endif
     endif
 
-    ; Guard factions are resolved natively by GuardFinder at kDataLoaded
-    ; (see Native/src/GuardFinder.h). No Papyrus property fills required.
+    ; No cooldown reset here: see ResetSessionCooldowns.
 
-    ; Cooldowns are reset only at OnInit + OnPlayerLoadGame via ResetSessionCooldowns(),
-    ; not here — Maintenance() is also called mid-session by payment handlers to
-    ; refresh Gold001, and we don't want those calls to wipe the dispatch-spam window.
-
-    ; No RegisterForModEvent("OnPlayerLoadGame") here — no such ModEvent is
-    ; ever sent, and Quest scripts never receive the engine event either.
-    ; Load recovery runs via SeverActions_Init → OnGameLoaded().
-
-    ; Register for player cell change to verify prisoners after fast travel
+    ; Re-verify prisoners after fast travel or waiting (OnTrackedStatsEvent).
     RegisterForTrackedStatsEvent()
 
-    ; Register for native SandboxManager cell-change cleanup. Arrest's DispatchGuard
-    ; is the only actor registered with SandboxManager (via RegisterSandboxUser in
-    ; FallbackSandboxSearch). Follow.psc also listens for this event but gates on
-    ; its own IsSandboxing flag and returns early for non-follower actors, so
-    ; dual-listener doesn't conflict.
+    ; SandboxManager's cell-change cleanup (see OnNativeSandboxCleanup).
     RegisterForModEvent("SeverActionsNative_SandboxCleanup", "OnNativeSandboxCleanup")
 
-    ; Wave 2 (C.2): listen for OrphanCleanup events. The native scanner fires
-    ; this for any actor holding our arrest LinkedRef keywords; we filter by
-    ; live FSM slot / native session here (NOT faction tags — that was the
-    ; pre-Wave 8 trap) so legitimately-arrested or in-judgment actors are skipped
-    ; while genuinely orphaned ones get their packages and LinkedRefs cleared.
+    ; The native OrphanCleanup scanner's arrest events (off by default; see OnOrphanCleanup).
     RegisterForModEvent("SeverActions_OrphanCleanup", "OnOrphanCleanup")
+    ; The arrest module's verb event (M-V): arrest, bounty, surrender and the eight kidnap
+    ; verbs (OnVerb_Arrest forwards those to SeverActions_Kidnap).
+    RegisterForModEvent("SeverActions_Verb_Arrest", "OnVerb_Arrest")
+    ; ... and its hotkey event (M-K): the TieUntie key.
+    RegisterForModEvent("SeverActions_Hotkey_Arrest", "OnHotkey_Arrest")
+    ; The UI's two bounty buttons (the tracked-bounty rows are this module's state).
+    RegisterForModEvent("SeverActions_MagelightClearBounty", "OnPrismaClearBounty")
+    RegisterForModEvent("SeverActions_MagelightClearAllBounties", "OnPrismaClearAllBounties")
     RegisterForModEvent("SeverActions_TrespassNoticed", "OnTrespassNoticed")
     RegisterForModEvent("SeverActions_TrespassWake", "OnTrespassWake")
     RegisterForModEvent("SeverActions_TrespassWakeEnd", "OnTrespassWakeEnd")
 
-    ; Wave 4: listen for ArrestSessionStore watchdog timeouts. The native side
-    ; tracks every active arrest in a cosave-backed singleton and fires this
-    ; event when a session has exceeded its per-state in-game-hour threshold.
-    ; Our handler force-finalizes approach/escort timeouts (push the arrest
-    ; through) and cancels the rest, so no stuck package or LinkedRef survives
-    ; past the budget.
+    ; The ArrestSessionStore watchdog's per-state timeouts (see OnArrestSessionTimeout).
     RegisterForModEvent("SeverActions_ArrestSessionTimeout", "OnArrestSessionTimeout")
 
-    ; PR-C: listen for ArrivalMonitor one-shot arrivals. The native side fires
-    ; this when an actor we registered crosses its destination threshold. strArg
-    ; is the callbackTag we passed at register time; OnArrival routes on it.
+    ; ArrivalMonitor's one-shot arrivals, routed by callback tag (see OnArrival).
     RegisterForModEvent("SeverActionsNative_OnArrival", "OnArrival")
 
-    ; Phase 2.3a: native EscortPackageReapplier fires this when the engine
-    ; signals a cell-transition or combat-end on the active guard/prisoner.
-    ; Replaces the 1Hz AddPackageOverride re-apply in CheckEscortProgress.
+    ; The escort rope's framework events: shared with the kidnap side (canonical callbacks,
+    ; M-E), so they fire for every rope and answer only for our own prisoners.
+    RegisterForModEvent("LeashFramework_OnUnleash", "OnLeashFrameworkUnleash")
+    RegisterForModEvent("LeashFramework_OnActorPulled", "OnLeashFrameworkPulled")
+    RegisterForModEvent("LeashFramework_OnActorRagdollPulled", "OnLeashFrameworkRagdollPulled")
+
+    ; EscortPackageReapplier: re-assert the escort packages after a cell transition or combat end.
     RegisterForModEvent("SeverActions_EscortReapplyPackages", "OnEscortReapplyPackages")
 
-    ; PrismaUI arrests page: jail-roster "Release" button. Contract is
-    ; sender-first (numArg always 0; decimal-FormID fallback in strArg) —
-    ; see the OnPrismaReleasePrisoner doc block for the canonical payload.
-    ; Routes through FreePrisonerDirect → ReleaseFromJailCore so the full
-    ; teardown path (factions, packages, outfit restore, Native_Jailed_Remove)
-    ; runs identically to FreeNPC_Internal.
-    RegisterForModEvent("SeverActions_PrismaReleasePrisoner", "OnPrismaReleasePrisoner")
+    ; Magelight arrests page: the jail roster's Release button and the Cancel-arrest button
+    ; (payload and routing in each handler's doc).
+    RegisterForModEvent("SeverActions_MagelightReleasePrisoner", "OnPrismaReleasePrisoner")
+    RegisterForModEvent("SeverActions_MagelightCancelArrest", "OnPrismaCancelArrest")
 
-    ; PrismaUI arrests page: per-session "Cancel arrest" button (on the
-    ; PrimaryArrestCard + compact rows). C++ encodes the prisoner as
-    ; "<name>|" in strArg. We route to the matching cancel path based on
-    ; which singleton slot the prisoner currently occupies — CancelCurrentArrest
-    ; for same-cell, CancelDispatch for cross-cell. Both close the native
-    ; session as part of their teardown, so no double-End() needed here.
-    RegisterForModEvent("SeverActions_PrismaCancelArrest", "OnPrismaCancelArrest")
-
-    ; Enterprises: a fence retainer's accrued bounty triggered an arrest (native
-    ; VentureMonitor). The fence rides as `sender`, the crime faction FormID in
-    ; numArg. If they're loaded in the player's cell we send a guard to arrest
-    ; them; otherwise they're teleported straight to their hold's jail.
+    ; Enterprises: a fence retainer's arrest, and their release after the term or bail.
     RegisterForModEvent("SeverActions_FenceArrest", "OnFenceArrest")
-    ; Enterprises: a jailed fence served their term or was bailed out — free them.
     RegisterForModEvent("SeverActions_FenceRelease", "OnFenceRelease")
 
-    ; Wave 5b: resolve the bounty sub-script reference if CK didn't fill it,
-    ; then run its own Maintenance to set up its ArrestScript back-pointer.
+    ; Resolve each sub-script when unfilled and run its Maintenance (which sets its
+    ; ArrestScript back-pointer).
     If !BountyScript
         Quest sevQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
         If sevQuest
@@ -596,7 +484,6 @@ Function Maintenance()
         Debug.Trace("[SeverActions_Arrest] WARNING: BountyScript not resolved - bounty subsystem unavailable")
     EndIf
 
-    ; Wave 5b: same wiring for the Phase-6 judgment subsystem.
     If !JudgmentScript
         Quest sevQuest2 = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
         If sevQuest2
@@ -609,7 +496,6 @@ Function Maintenance()
         Debug.Trace("[SeverActions_Arrest] WARNING: JudgmentScript not resolved - judgment subsystem unavailable")
     EndIf
 
-    ; Wave 5b: player-confrontation + persuasion subsystem.
     If !PlayerScript
         Quest sevQuest3 = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
         If sevQuest3
@@ -622,11 +508,9 @@ Function Maintenance()
         Debug.Trace("[SeverActions_Arrest] WARNING: PlayerScript not resolved - player-arrest subsystem unavailable")
     EndIf
 
-    ; Register every hold's metadata with the native HoldResolver. Idempotent —
-    ; re-registering on every Maintenance() overwrites prior entries instead of
-    ; growing the table, so subsequent calls are safe. Crime faction is the
-    ; lookup key (vanilla guards are members of their hold's crime faction).
-    SeverActionsNativeExt.Hold_Clear()
+    ; The native HoldResolver seeds these nine holds by FormID at kDataLoaded (P2-10);
+    ; this re-registers them as a belt (Hold_Register overwrites by crime faction).
+    ; Never clear the table first: that only opens a window where lookups find nothing.
     If CrimeFactionWhiterun
         SeverActionsNativeExt.Hold_Register(CrimeFactionWhiterun, JailMarker_Whiterun, "Whiterun",   "SeverActions_Bounty_Whiterun",   "Dragonsreach Dungeon")
     EndIf
@@ -656,49 +540,37 @@ Function Maintenance()
     EndIf
     Debug.Trace("[SeverActions_Arrest] HoldResolver registered " + SeverActionsNativeExt.Hold_Count() + " holds")
 
-    ; BountyStore migration — drains the legacy "SeverActions_Bounty_<Hold>"
-    ; StorageUtil keys on the player into the native BountyStore. MUST run
-    ; AFTER Hold_Register above, because the drain resolves each hold's
-    ; legacy key via Hold_GetBountyKeyForCrime() which is empty until the
-    ; register chain has populated HoldResolver. Calling it earlier silently
-    ; no-ops the drain and still commits the sentinel — permanent data loss.
-    ; Idempotent: BountyScript's own sentinel makes re-runs cheap no-ops.
+    ; Drain the legacy "SeverActions_Bounty_<Hold>" StorageUtil keys into the native BountyStore
+    ; (its bounty keys come from the kernel's HoldResolver seed, not the belt above). BountyScript's
+    ; sentinel makes re-runs no-ops.
     If BountyScript
         BountyScript.MigrateLegacyStorage()
     EndIf
 EndFunction
 
 Function OnGameLoaded()
-    {Load-time recovery: verify prisoners, recover active arrest/dispatch,
-     and restore the deferred narration sender if one was pending.
-     Called by SeverActions_Init on every load — Quest scripts NEVER receive
-     OnPlayerLoadGame (Actor/alias-only event), so recovery must be driven
-     here; otherwise session cooldowns keep stale real-time values across
-     relaunches (blocking arrests) and the jailed-NPC migration/verification
-     never runs.}
-    ; Chronometer: pending ticks do not survive save/load (the old engine
-    ; registration did). One idempotent wake re-primes the dispatch/escort
-    ; FSM if anything was mid-flight at the save; a clean FSM no-ops it.
+    {Load recovery, run on every load and new game by the arrest provider's stage 1 (a Quest
+     script never gets OnPlayerLoadGame).}
+    ; Chronometer ticks do not survive a load: one wake re-primes a mid-flight FSM (a clean
+    ; FSM no-ops it).
     ChronoArm(UpdateInterval)
     Debug.Trace("[SeverActions_Arrest] Game loaded - verifying prisoner positions and dispatch state")
-    ; PR-A: native HoldResolver table is in-memory only (no cosave), so the
-    ; lookup is empty after every save+load. Re-run Maintenance() to rebuild
-    ; it via Hold_Register. Without this every GetCrimeFactionForGuard returns
-    ; None and every arrest action bails with "Could not determine guard's
-    ; crime faction". Maintenance is idempotent — RegisterForModEvent dedups,
-    ; back-refs already filled, Hold_Clear runs at the top of the re-register
-    ; block, so calling it on every load is safe.
     Maintenance()
     ResetSessionCooldowns()
     MigrateJailedNPCsToNative()
     VerifyJailedNPCs()
     RecoverActiveArrest()
     RecoverActiveDispatch()
+    ; Sweep a crashed arrest's residue off the four slot actors. The helper refuses a live
+    ; slot (a failed recovery leaves ArrestState / DispatchPhase set, for the FSM tick or the
+    ; next arrest's CancelCurrentArrest), so this reaches only slots whose state is back at 0.
+    ClearStaleArrestState(CurrentGuard, "load")
+    ClearStaleArrestState(CurrentPrisoner, "load")
+    ClearStaleArrestState(DispatchGuard, "load")
+    ClearStaleArrestState(DispatchTarget, "load")
 
-    ; Recover deferred narration sender. T1-D.3 routes through the 'ARPE'
-    ; cosave record now (was: SeverActions_DeferredSender on quest form).
-    ; PR-C: native ArrivalMonitor map is in-memory, doesn't survive save/load,
-    ; so re-register the player watcher here if a sender was pending.
+    ; The deferred narration sender is cosaved ('ARPE'); ArrivalMonitor's watches are not, so
+    ; re-arm the player watch.
     Actor deferred = SeverActionsNativeExt.Native_Arrest_GetDeferredSender()
     If deferred != None
         DeferredNarrationSender = deferred
@@ -706,46 +578,90 @@ Function OnGameLoaded()
             Debug.Trace("[SeverActions_Arrest] Recovered deferred narration sender: " + DeferredNarrationSender.GetDisplayName())
             SeverActionsNativeExt.Arrival_Register(Game.GetPlayer(), DeferredNarrationSender, NarrationProximityRange, "narration_witness")
         Else
-            ; Sender invalid or dead — clean up
             ClearDeferredNarration()
         EndIf
     EndIf
+
+    HealOrphanedCaptivitySandboxes()
+EndFunction
+
+Function HealOrphanedCaptivitySandboxes()
+    {Strip the captivity holds (PrisonerSandBox, the kidnap guard sandbox, the SandboxAnchorKW link)
+     from anyone in the player's cell with no live claim on them.
+     Must run after MigrateJailedNPCsToNative / VerifyJailedNPCs, which repair the jail record the
+     Native_Jailed_IsJailed probe reads; before them it would strip a real prisoner's hold. Every
+     probe is a kernel native, so no other module's recovery need run first.
+     SeverKidnap_OnGuard is deliberately not probed: it is only set on the kidnapper of a live
+     entry, which FindVictimOf already covers, so a flag without an entry is the orphan to strip.}
+    Package guardPkgHeal = Game.GetFormFromFile(0x00165679, "SeverActions.esp") as Package   ; SeverActions_KidnapGuardSandbox
+    Actor playerHeal = Game.GetPlayer()
+    Actor[] cellActors = SeverActionsNativeExt.Native_ScanPlayerCellForLiveActors()
+    Int healN = 0
+    String healNames = ""
+    Int i = 0
+    While i < cellActors.Length
+        Actor a = cellActors[i]
+        If a && !a.IsDead() && a != playerHeal
+            Bool legit = SeverActionsNativeExt.Native_Kidnap_GetPhase(a) != 0
+            If !legit
+                legit = SeverActionsNativeExt.Native_Kidnap_FindVictimOf(a) != None
+            EndIf
+            If !legit
+                legit = SeverActionsNativeExt.Native_Jailed_IsJailed(a)
+            EndIf
+            If !legit
+                legit = SeverActionsNative.Native_ArrestSession_HasSession(a)
+            EndIf
+            If !legit
+                If SeverActions_PrisonerSandBox
+                    ActorUtil.RemovePackageOverride(a, SeverActions_PrisonerSandBox)
+                EndIf
+                If guardPkgHeal
+                    ActorUtil.RemovePackageOverride(a, guardPkgHeal)
+                EndIf
+                If SeverActions_SandboxAnchorKW
+                    SeverActionsNative.LinkedRef_Clear(a, SeverActions_SandboxAnchorKW)
+                EndIf
+                a.EvaluatePackage()
+                healN += 1
+                If healNames != ""
+                    healNames += ", "
+                EndIf
+                healNames += a.GetDisplayName()
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+    ; The names are the evidence: a live captive or prisoner in this list means a probe failed.
+    Debug.Trace("[SeverActions_Arrest] Load recovery: captivity-sandbox sweep checked " + cellActors.Length + " cell actors (" + healN + " without live captivity claims - overrides stripped defensively: " + healNames + ")")
 EndFunction
 
 Event OnTrackedStatsEvent(String asStat, Int aiValue)
-    {Use tracked stats as proxy for game activity - verify on location discovery or fast travel count changes}
+    {Re-verify prisoner positions when a location is discovered or a day passes (a proxy for
+     fast travel and waiting).}
     If asStat == "Locations Discovered" || asStat == "Days Passed"
-        ; Verify prisoner positions after fast travel/time passage
         VerifyJailedNPCs()
     EndIf
 EndEvent
 
 Event OnNativeSandboxCleanup(string eventName, string strArg, float numArg, Form sender)
-    {Fired by native SandboxManager on player cell change. Arrest's DispatchGuard is
-     the only actor registered with SandboxManager (via FallbackSandboxSearch), so
-     this handler unwinds the prisoner-sandbox state for that guard only.
-
-     Follow.psc also listens for this event; its handler gates on IsSandboxing (a
-     StorageUtil flag set only by Follow's own sandbox paths) and returns early for
-     the DispatchGuard, so dual-listener is safe.}
+    {SandboxManager's cell-change cleanup. Handles only the DispatchGuard, the one actor Arrest
+     registers (FallbackSandboxSearch); Follow's handler of this shared callback ignores actors
+     it is not sandboxing.}
 
     Actor akActor = sender as Actor
     If !akActor
         akActor = Game.GetFormEx(numArg as Int) as Actor
     EndIf
 
-    ; Only handle the active DispatchGuard — if the cleanup event isn't for our
-    ; guard, ignore it (it's either for Follow's sandbox flows or a stale event).
     If !akActor || akActor != DispatchGuard
         Return
     EndIf
 
     DebugMsg("Native cell-change cleanup for DispatchGuard: " + akActor.GetDisplayName())
 
-    ; Abort the prisoner sandbox — the FSM will detect the missing state and
-    ; transition forward on its next UpdateInterval tick. Clear the package +
-    ; linked ref here directly so the guard doesn't stand around with a stale
-    ; override waiting for the next phase check.
+    ; Drop the sandbox now so the guard does not idle on a stale override; the FSM moves on
+    ; at its next tick.
     SeverActionsNative.UnregisterSandboxUser(akActor)
     If SeverActions_PrisonerSandBox != None
         ActorUtil.RemovePackageOverride(akActor, SeverActions_PrisonerSandBox)
@@ -756,93 +672,53 @@ Event OnNativeSandboxCleanup(string eventName, string strArg, float numArg, Form
 EndEvent
 
 Event OnArrestSessionTimeout(string eventName, string strArg, float numArg, Form sender)
-    {Wave 4: ArrestSessionStore watchdog hit a per-state in-game-hour threshold.
-     strArg = decimal state enum (1..8; 9=kJailed has no budget). sender = the
-     prisoner actor.
-
-     Strategy: if the timed-out prisoner matches an active state (CurrentPrisoner
-     for same-cell, DispatchTarget for dispatch), approach/escort timeouts
-     force-finalize the jailing via the matching path; other states cancel.
-     Otherwise, just close the native session — no Papyrus state to recover from.}
+    {The ArrestSessionStore watchdog's timeout: strArg = the state (1..8; 9 kJailed has no budget),
+     sender = the prisoner. An approach or escort timeout of the same-cell arrest pushes the arrest
+     through; any other live arrest or dispatch is cancelled; with no live slot only the native
+     session is closed.}
 
     Actor akPrisoner = sender as Actor
-    ; numArg is deliberately 0 from the native side (float FormIDs corrupt above
-    ; 2^24) — log the real FormID from the sender instead.
+    ; numArg is 0 by design (a float FormID corrupts above 2^24).
     DebugMsg("ArrestSessionTimeout: prisoner=" + akPrisoner.GetFormID() + " state=" + strArg)
 
     If !akPrisoner
-        ; Actor evaporated — native side already cleared on its end, nothing else to do.
+        ; The native side ends a session whose actor is gone.
         Return
     EndIf
 
-    ; Same-cell arrest path. CancelCurrentArrest already ends the native session;
-    ; no second End() call here.
+    ; Same-cell arrest (CancelCurrentArrest ends the native session itself).
     If CurrentPrisoner == akPrisoner && ArrestState > 0
-        ; Phase 2.3b: kEscort timeout always finalizes the jailing (force-
-        ; teleport guard + prisoner to the jail marker, then OnArrivedAtJail).
-        ; This matches the legacy CheckEscortProgress force-teleport timeout
-        ; behavior — the prisoner committed a crime worth arresting, the
-        ; engine just failed to actually walk them to jail, so the right UX
-        ; is to PUSH THE ARREST THROUGH, not abandon it. The legacy
-        ; "guard already at jail" sub-case (time-skip arrival rescue) is now
-        ; just a fast path under the same finalize policy.
-        ;
-        ; Scoped to ArrestState == 3 (escort). State 5 ("arrived") means
-        ; OnArrivedAtJail is already mid-flight via the Utility.Wait calls
-        ; for the MoveTo + navmesh snap, and re-entering it would double-
-        ; process the jailing.
+        ; An escort timeout pushes the jailing through: the arrest is committed, the engine
+        ; only failed to walk them there. State 3 only - in state 5 OnArrivedAtJail is already
+        ; running and re-entering it would jail twice.
         If ArrestState == 3 && CurrentJailMarker != None
-            ; CRITICAL re-fire fix (PR #81 review): FireTimeoutEvent on the
-            ; native side does NOT End() the session entry — it just sends
-            ; the ModEvent. The entry stays in state=3 with the budget still
-            ; exceeded, so the 1Hz watchdog will re-fire SeverActions_ArrestSessionTimeout
-            ; ~1s from now. By then OnArrivedAtJail is mid-flight (Utility.Wait
-            ; calls during the MoveTo + navmesh snap), ArrestState has moved
-            ; to 5 ("arrived"), and the second timeout would fall through the
-            ; ArrestState==3 gate, hit CancelCurrentArrest, and race the
-            ; in-progress finalize — corrupting state and stripping the
-            ; session before RestorePrisonerStats can read the captured AVs.
-            ;
-            ; Pre-transition the session to kJailed=9 (no watchdog budget;
-            ; TimeoutForState returns 0 in the default branch and CheckTimeouts
-            ; skips threshold<=0). OnArrivedAtJail's own UpdateState(9) at the
-            ; end of its body becomes a no-op transition.
+            ; The watchdog does not End() the session, so it re-fires ~1 s later while
+            ; OnArrivedAtJail is mid-Wait in state 5; that re-fire would fall to
+            ; CancelCurrentArrest and strip the session before RestorePrisonerStats reads it.
+            ; kJailed (9) has no budget, so moving there first stops it; OnArrivedAtJail's own
+            ; UpdateState(9) becomes a no-op.
             SeverActionsNative.Native_ArrestSession_UpdateState(akPrisoner, 9, 0)
 
             If CurrentGuard != None && CurrentGuard.GetDistance(CurrentJailMarker) <= ArrivalDistance
-                ; Fast-finalize path — guard already at the marker. Prisoner
-                ; placement happens inside OnArrivedAtJail (it MoveTos the
-                ; prisoner relative to CurrentJailMarker), so the asymmetry
-                ; with the slow path below is intentional.
+                ; Guard already at the marker: OnArrivedAtJail places the prisoner itself.
                 DebugMsg("ArrestSessionTimeout: kEscort - guard already at jail, fast-finalize")
             Else
-                DebugMsg("ArrestSessionTimeout: kEscort - force-teleporting pair to jail (legacy EscortTimeout behavior)")
+                DebugMsg("ArrestSessionTimeout: kEscort - force-teleporting the prisoner to jail; the guard stays put")
                 CurrentPrisoner.MoveTo(CurrentJailMarker, 0.0, 0.0, 0.0)
                 SeverActionsNative.Native_MoveToNearestNavmesh(CurrentPrisoner, 0.0)
                 Utility.Wait(0.2)
-                If CurrentGuard != None
-                    CurrentGuard.MoveTo(CurrentJailMarker, 100.0, 0.0, 0.0)
-                    SeverActionsNative.Native_MoveToNearestNavmesh(CurrentGuard, 0.0)
-                    Utility.Wait(0.3)
-                EndIf
+                ; Never move the guard: a spot beside the cell marker is inside the cell, behind a
+                ; locked door they may hold no key to. OnArrivedAtJail needs the guard only for
+                ; the crime faction and the narration.
             EndIf
             OnArrivedAtJail()
             Return
         EndIf
 
-        ; Phase 2.3c: kApproach timeout — force-teleport guard to prisoner
-        ; and call PerformArrest, matching the legacy CheckApproachProgress
-        ; hard-timeout branch. Same finalize-don't-cancel policy as kEscort:
-        ; the arrest is committed once it gets this far, so a stuck approach
-        ; means the engine failed to walk the guard, not that the arrest
-        ; should be abandoned. UnfreezePrisonerMovement covers the BUG-A6
-        ; corner where the prisoner was frozen mid-approach and we now
-        ; need movement back for the follow-package phase.
-        ;
-        ; Re-fire prevention (same as kEscort fix in PR #81): pre-transition
-        ; the session to state=2 (kArresting) so the kApproach budget no
-        ; longer applies. PerformArrest itself transitions to kEscort=3
-        ; via StartEscortPhase a moment later.
+        ; An approach timeout finalizes too: teleport the guard in and PerformArrest.
+        ; UnfreezePrisonerMovement gives a prisoner frozen mid-approach their movement back
+        ; for the follow package. kArresting (2) first stops the re-fire, as above;
+        ; StartEscortPhase moves the session on to kEscort.
         If ArrestState == 1 && CurrentGuard != None && CurrentPrisoner != None
             DebugMsg("ArrestSessionTimeout: kApproach - force-teleporting guard + PerformArrest (legacy ApproachTimeout behavior)")
             SeverActionsNative.Native_ArrestSession_UpdateState(akPrisoner, 2, 0)
@@ -863,49 +739,24 @@ Event OnArrestSessionTimeout(string eventName, string strArg, float numArg, Form
         Return
     EndIf
 
-    ; Cross-cell dispatch path. CancelDispatch now ends the native session itself
-    ; (see CancelDispatch — added for symmetry with CancelCurrentArrest), so we
-    ; don't double-call End() here.
+    ; Dispatch (CancelDispatch ends the native session itself).
     If DispatchTarget == akPrisoner && DispatchPhase > 0
         DebugMsg("ArrestSessionTimeout: cancelling dispatch for " + akPrisoner.GetDisplayName())
         CancelDispatch()
         Return
     EndIf
 
-    ; Stale session — Papyrus already cleaned up but the native record didn't get
-    ; the End() call (most likely a script crash or a code path we missed wiring).
-    ; Just close the native side and trust the watchdog to log it.
+    ; No live slot: a native session a teardown failed to End(). Close it.
     DebugMsg("ArrestSessionTimeout: stale session for " + akPrisoner.GetDisplayName() + " - closing")
     SeverActionsNative.Native_ArrestSession_End(akPrisoner)
 EndEvent
 
 Event OnPrismaCancelArrest(string eventName, string strArg, float numArg, Form sender)
-    {PrismaUI arrests page → "Cancel arrest" button (PrimaryArrestCard or
-     compact session row).
-
-     Resolution is SENDER-FIRST — the C++ SendModEvent helper resolves the
-     prisoner and passes the exact reference as the ModEvent sender; numArg
-     is ALWAYS 0.0 from that helper. This handler has now been dead TWICE
-     from mismatched contracts: the original pipe-parsed strArg while C++
-     sent something else (PR #73), and the PR #73 fix read numArg per a
-     comment describing a payload the helper never sends — so every cancel
-     click hit the ==0 guard and no-opped. Trust neither side's comment:
-     the helper's actual behavior is name-or-decimal-fid in strArg,
-     sender = resolved actor, numArg = 0. (2026-07 button audit.)
-
-     Routing rule:
-       - If the prisoner matches CurrentPrisoner → CancelCurrentArrest()
-         (same-cell flow — Papyrus ArrestState 1/2/3/4; native session states
-         7=kPersuasion/8=kEscortPlea are owned by other teardown paths).
-       - Else if the prisoner matches DispatchTarget → CancelDispatch()
-         (cross-cell flow — state 5 + state 6 judgment).
-       - Else: stale UI request (the session ended between the page render
-         and the click). Log and no-op; PrismaUI will re-fetch on its
-         next refresh.
-
-     Both cancel paths close the native ArrestSessionStore entry as part
-     of teardown (CancelCurrentArrest at the End() call site we audited,
-     CancelDispatch via ClearDispatchState). So we don't double-end here.}
+    {Magelight arrests page "Cancel arrest" button. Payload (MagelightActionHandler's SendModEvent;
+     read the helper, not a comment, before changing the parse): sender = the prisoner, strArg =
+     "<name or signed-decimal FormID>|" (the FormID is the fallback when sender is None), numArg = 0.
+     Cancels the same-cell arrest or the dispatch whose prisoner it is (both end the native
+     session); otherwise the request is stale and only the native session is closed.}
 
     Actor akPrisoner = sender as Actor
     If !akPrisoner
@@ -918,44 +769,31 @@ Event OnPrismaCancelArrest(string eventName, string strArg, float numArg, Form s
         EndIf
     EndIf
     If !akPrisoner
-        DebugMsg("PrismaUI cancel: could not resolve prisoner (sender=None, strArg='" + strArg + "')")
+        DebugMsg("Magelight cancel: could not resolve prisoner (sender=None, strArg='" + strArg + "')")
         Return
     EndIf
 
     If CurrentPrisoner == akPrisoner && ArrestState > 0
-        DebugMsg("PrismaUI cancel: same-cell arrest for " + akPrisoner.GetDisplayName())
+        DebugMsg("Magelight cancel: same-cell arrest for " + akPrisoner.GetDisplayName())
         CancelCurrentArrest()
         Return
     EndIf
 
     If DispatchTarget == akPrisoner && DispatchPhase > 0
-        DebugMsg("PrismaUI cancel: dispatch for " + akPrisoner.GetDisplayName())
+        DebugMsg("Magelight cancel: dispatch for " + akPrisoner.GetDisplayName())
         CancelDispatch()
         Return
     EndIf
 
-    ; Neither slot matches — most likely a stale request. Close the native
-    ; session if one still exists, so the watchdog table stays clean.
-    DebugMsg("PrismaUI cancel: stale request for " + akPrisoner.GetDisplayName() + " - closing native session if any")
+    ; Stale request: close any native session so the watchdog table stays clean.
+    DebugMsg("Magelight cancel: stale request for " + akPrisoner.GetDisplayName() + " - closing native session if any")
     SeverActionsNative.Native_ArrestSession_End(akPrisoner)
 EndEvent
 
 Event OnPrismaReleasePrisoner(string eventName, string strArg, float numArg, Form sender)
-    {PrismaUI arrests page → Jail Roster → "Release" button.
-
-     Resolution is SENDER-FIRST: the C++ SendModEvent helper resolves the
-     prisoner by FormID and passes the exact reference as the ModEvent
-     sender (numArg is ALWAYS 0.0 from that helper — the old handler read
-     numArg per a comment that described a contract the helper never had,
-     so every click hit the ==0 guard and silently did nothing). When the
-     C++ lookup fails (deep-unloaded ref), the helper encodes the FormID
-     as signed decimal where the name would go in strArg — parse that as
-     the fallback via GetFormEx (ESL-safe).
-
-     Routes through FreePrisonerDirect → ReleaseFromJailCore, the same
-     path FreeAllPrisoners uses. ReleaseFromJailCore calls
-     Native_Jailed_Remove internally (B5 fix), so the native roster stays
-     in sync regardless of which entry point dropped the prisoner.}
+    {Magelight Jail Roster "Release" button; same payload as OnPrismaCancelArrest (sender first,
+     the strArg FormID via GetFormEx as the fallback). Frees through FreePrisonerDirect ->
+     ReleaseFromJailCore, which also drops the native roster row.}
 
     Actor akPrisoner = sender as Actor
     If !akPrisoner
@@ -968,19 +806,18 @@ Event OnPrismaReleasePrisoner(string eventName, string strArg, float numArg, For
         EndIf
     EndIf
     If !akPrisoner
-        DebugMsg("PrismaUI release: could not resolve prisoner (sender=None, strArg='" + strArg + "')")
+        DebugMsg("Magelight release: could not resolve prisoner (sender=None, strArg='" + strArg + "')")
         Return
     EndIf
-    DebugMsg("PrismaUI release: " + akPrisoner.GetDisplayName())
+    DebugMsg("Magelight release: " + akPrisoner.GetDisplayName())
     FreePrisonerDirect(akPrisoner)
 EndEvent
 
 Event OnFenceArrest(string eventName, string strArg, float numArg, Form sender)
-    {Enterprises (native VentureMonitor): a fence retainer's bounty triggered an
-     arrest. `sender` is the fence; strArg carries their hold's crime faction
-     FormID as signed decimal (v2), with numArg as the legacy float fallback.
-     On-screen (loaded in the player's cell) → a nearby guard walks up and runs
-     the normal NPC arrest. Off-screen (or no guard) → teleport straight to jail.}
+    {Enterprises (VentureMonitor): a fence retainer's bounty triggered an arrest. sender = the
+     fence; strArg = their hold's crime faction FormID as signed decimal (numArg is a float copy,
+     fallback only). Loaded in the player's cell with a guard nearby: a normal NPC arrest;
+     otherwise straight to jail.}
 
     Actor fence = sender as Actor
     If !fence
@@ -991,9 +828,7 @@ Event OnFenceArrest(string eventName, string strArg, float numArg, Form sender)
         Return
     EndIf
 
-    ; strArg carries the faction FormID as signed decimal (v2 — exact at any
-    ; load-order slot, incl. DLC holds above 2^24). numArg is the legacy float
-    ; copy kept for old-DLL pairing — fallback only, never preferred.
+    ; Signed decimal is exact at any load-order slot; the float numArg only below 2^24.
     Faction crimeFac = None
     If strArg != ""
         crimeFac = Game.GetFormEx(strArg as Int) as Faction
@@ -1018,9 +853,8 @@ Event OnFenceArrest(string eventName, string strArg, float numArg, Form sender)
 EndEvent
 
 Event OnFenceRelease(string eventName, string strArg, float numArg, Form sender)
-    {Enterprises: a jailed fence served their term or was bailed out. Route through
-     the shared FreePrisonerDirect teardown (factions, packages, outfit restore,
-     Native_Jailed_Remove) — same path as the PrismaUI release button.}
+    {Enterprises: a jailed fence served their term or was bailed out. Frees through
+     FreePrisonerDirect, like the Magelight release button.}
 
     Actor fence = sender as Actor
     If !fence
@@ -1033,10 +867,8 @@ Event OnFenceRelease(string eventName, string strArg, float numArg, Form sender)
 EndEvent
 
 Function JailFenceDirect(Actor akFence, Faction akCrime)
-    {Off-screen jailing: teleport the fence straight to their hold's jail and
-     register them, without the guard-approach FSM. Mirrors the OnArrivedAtJail
-     tail (MoveTo + navmesh snap + jail faction + JailedNPCStore). FreePrisonerDirect
-     releases them cleanly later (it tolerates the absence of a full arrest session).}
+    {Jail the fence without the guard FSM: MoveTo + navmesh snap + Jailed faction + JailedNPCStore,
+     like OnArrivedAtJail's tail. FreePrisonerDirect releases them (it needs no arrest session).}
 
     If akFence == None
         Return
@@ -1062,9 +894,8 @@ Function JailFenceDirect(Actor akFence, Faction akCrime)
     akFence.AddToFaction(SeverActions_Jailed)
     SeverActionsNativeExt.Native_Jailed_Add(akFence, jail, crime, 0)
 
-    ; Off-screen arrests have no live narration — seed the prisoner a memory of
-    ; being caught + jailed so they (and any later dialogue) recall why they're
-    ; locked up. No-op if SkyrimNet's memory API isn't loaded (returns 0).
+    ; No live narration off-screen, so seed a memory of the arrest (a no-op without
+    ; SkyrimNet's memory API).
     String fenceName = akFence.GetDisplayName()
     String memText = fenceName + " was caught by the guards and arrested for running an illicit fencing operation - moving and laundering stolen goods through the black market. " + fenceName + " was thrown in jail, and stays imprisoned until the sentence is served or someone pays the bounty."
     SeverActionsNative.Native_AddMemory(akFence, memText, 0.75, "EXPERIENCE", "fearful", "", "[\"arrest\",\"jail\",\"fencing\"]", "[]")
@@ -1072,97 +903,186 @@ Function JailFenceDirect(Actor akFence, Faction akCrime)
     DebugMsg("JailFenceDirect: " + akFence.GetDisplayName() + " moved to jail + memory seeded")
 EndFunction
 
-Event OnOrphanCleanup(string eventName, string strArg, float numArg, Form sender)
-    {Wave 2 (C.2) + post-Wave 8 hotfix: handle orphaned arrest LinkedRefs detected
-     by the native OrphanCleanup scanner. Fires for ANY actor holding our arrest
-     keywords. We treat the arrest as "active" only when a corresponding live
-     state exists somewhere (FSM slot OR native ArrestSessionStore entry). If
-     none of those match, the keyword is stale even if an arrest faction tag
-     lingers — and we MUST clean both the keyword and the stale faction tags,
-     otherwise ArrestNPC_Internal's "already arrested or jailed" guard at the
-     top of the function blocks every future arrest of that actor forever.
+Bool Function ClearStaleArrestState(Actor akActor, String asWhy)
+    {Clear a crashed arrest's residue from an actor: the four arrest factions (a stale Arrested /
+     Jailed tag makes ArrestNPC_Internal refuse them), both keyword links, every arrest package
+     override and the SkyrimNet busy lock. Called at arrest and dispatch start for guard and
+     suspect and at load for the FSM's slot actors. Refuses (false) while any live claim exists
+     (OnOrphanCleanup's exemptions, which it explains). True when it cleared something.}
+    If akActor == None || akActor == Game.GetPlayer()
+        Return false
+    EndIf
+    If IsNPCJailed(akActor)
+        Return false
+    EndIf
+    If SeverActionsNativeExt2.Camp_ChallengeIsPending(akActor)
+        Return false
+    EndIf
+    If SeverActionsNativeExt2.Venture_Audit_IsCollector(akActor)
+        Return false
+    EndIf
+    If SeverActionsNative.Native_GetWorkLoc(akActor) as Actor
+        Return false
+    EndIf
+    If SeverActionsNativeExt.Native_Kidnap_GetPhase(akActor) != 0 || SeverActionsNativeExt.Native_Kidnap_FindVictimOf(akActor) != None
+        Return false
+    EndIf
+    If SeverActionsNative.Native_BrawlChallenge_IsActive(akActor)
+        Return false
+    EndIf
+    If PlayerScript != None && akActor == PlayerScript.GetConfrontingGuard()
+        Return false ; the confrontation holds FollowTargetKW on the player whatever ArrestState says
+    EndIf
+    Bool isActiveSlot = (akActor == CurrentGuard || akActor == CurrentPrisoner \
+        || akActor == DispatchTarget || akActor == DispatchGuard)
+    If ArrestState != 0 && isActiveSlot
+        Return false
+    EndIf
+    If DispatchPhase > 0 && (akActor == DispatchTarget || akActor == DispatchGuard)
+        Return false
+    EndIf
+    If SeverActionsNative.Native_ArrestSession_HasSession(akActor)
+        Return false
+    EndIf
+    Bool inStale = (akActor.IsInFaction(SeverActions_WaitingArrest) \
+        || akActor.IsInFaction(SeverActions_Arrested) \
+        || akActor.IsInFaction(SeverActions_Jailed) \
+        || (SeverActions_DispatchFaction != None && akActor.IsInFaction(SeverActions_DispatchFaction)))
+    Bool hasLink = false
+    If SeverActions_FollowTargetKW && akActor.GetLinkedRef(SeverActions_FollowTargetKW) != None
+        hasLink = true
+    EndIf
+    If SeverActions_SandboxAnchorKW && akActor.GetLinkedRef(SeverActions_SandboxAnchorKW) != None
+        hasLink = true
+    EndIf
+    If !inStale && !hasLink
+        Return false
+    EndIf
+    DebugMsg("Stale arrest state cleared from " + akActor.GetDisplayName() + " (" + asWhy + "; faction=" + inStale + ", link=" + hasLink + ")")
+    If SeverActions_GuardEscortPackage
+        ActorUtil.RemovePackageOverride(akActor, SeverActions_GuardEscortPackage)
+    EndIf
+    If SeverActions_GuardApproachTarget
+        ActorUtil.RemovePackageOverride(akActor, SeverActions_GuardApproachTarget)
+    EndIf
+    If SeverActions_FollowGuard_Prisoner
+        ActorUtil.RemovePackageOverride(akActor, SeverActions_FollowGuard_Prisoner)
+    EndIf
+    If SeverActions_GuardFollowPlayer
+        ActorUtil.RemovePackageOverride(akActor, SeverActions_GuardFollowPlayer)
+    EndIf
+    If SeverActions_PrisonerSandBox
+        ActorUtil.RemovePackageOverride(akActor, SeverActions_PrisonerSandBox)
+    EndIf
+    If SeverActions_FollowTargetKW
+        SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_FollowTargetKW)
+    EndIf
+    If SeverActions_SandboxAnchorKW
+        SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_SandboxAnchorKW)
+    EndIf
+    If akActor.IsInFaction(SeverActions_WaitingArrest)
+        akActor.RemoveFromFaction(SeverActions_WaitingArrest)
+    EndIf
+    If akActor.IsInFaction(SeverActions_Arrested)
+        akActor.RemoveFromFaction(SeverActions_Arrested)
+    EndIf
+    If akActor.IsInFaction(SeverActions_Jailed)
+        akActor.RemoveFromFaction(SeverActions_Jailed)
+    EndIf
+    _LeaveTaskFaction(akActor)
+    SeverActionsNative.Native_SkyrimNet_ClearActorBusy(akActor)
+    akActor.EvaluatePackage()
+    Return true
+EndFunction
 
-     Note: this script also has 'follow' / 'travel' / 'furniture' strArg variants
-     for other systems' orphans — we ignore those here, the relevant subsystem's
-     OnOrphanCleanup handler will pick them up.}
+Function _BeginGuardTask(Actor akGuard)
+    {Puts akGuard on an arrest or dispatch: the on-task faction at rank 0. _GuardOffSchedule
+     follows once the native claim exists, which is also what keeps SkyrimNet from re-tasking
+     them (sever_is_dispatched).}
+    If akGuard == None || SeverActions_DispatchFaction == None
+        Return
+    EndIf
+    ; Erase a rank -1 residue an older build left first, so this rank-0 entry is the only one
+    ; a rank read can find.
+    SeverActionsNativeExt2.Faction_RemoveClean(akGuard, SeverActions_DispatchFaction)
+    akGuard.AddToFaction(SeverActions_DispatchFaction)
+    akGuard.SetFactionRank(SeverActions_DispatchFaction, 0)
+EndFunction
+
+Function _GuardOffSchedule(Actor akGuard)
+    {Takes a retainer guard off their schedule: a work shift outranks the arrest packages (100),
+     the guard pool by its quest priority 105 and the work overrides at 110. Call it only once
+     the arrest's native claim exists (PersistArrestState / ArrestSession_Begin,
+     PersistDispatchState): FollowerManager's schedule gates (_IsMakingArrest) read that claim to
+     keep the schedule off them until their part ends, and a schedule tick between an earlier
+     strip and the claim would seat them again.}
+    If akGuard && SeverActionsNative.Native_GetWorkLoc(akGuard)
+        SeverActions_ModuleBase.CallBool("followers", "jailStrip", akGuard)
+    EndIf
+EndFunction
+
+Function _LeaveTaskFaction(Actor akActor)
+    {Takes akActor off the on-task faction without the rank -1 residue RemoveFromFaction leaves,
+     which the stale sweeps' rank-blind IsInFaction reads as membership. A no-op for a non-member.}
+    If akActor == None || SeverActions_DispatchFaction == None
+        Return
+    EndIf
+    SeverActionsNativeExt2.Faction_RemoveClean(akActor, SeverActions_DispatchFaction)
+    ; A membership that survives the erase falls back to RemoveFromFaction. Its -1 residue cannot
+    ; block the guard's actions: sever_is_dispatched reads the native claim, not this faction.
+    If akActor.GetFactionRank(SeverActions_DispatchFaction) >= 0
+        DebugMsg("WARNING: DispatchFaction survived Faction_RemoveClean on " + akActor.GetDisplayName() + " - RemoveFromFaction fallback applied")
+        akActor.RemoveFromFaction(SeverActions_DispatchFaction)
+    EndIf
+EndFunction
+
+Event OnOrphanCleanup(string eventName, string strArg, float numArg, Form sender)
+    {The native OrphanCleanup scanner's report (off by default; ClearStaleArrestState is the primary
+     sweep). strArg arrest_follow / arrest_sandbox = a holder of FollowTargetKW / SandboxAnchorKW,
+     arrest_faction_sweep = a member of an arrest faction; every one is reported, live arrests
+     included. Other strArgs are other scripts'. With no live claim on the actor, strips the link,
+     its packages and the stale factions.}
 
     Actor akActor = sender as Actor
     If !akActor
         Return
     EndIf
 
-    ; Only handle arrest-related orphan strArgs.
-    ; arrest_follow / arrest_sandbox  → keyword-driven (LinkedRef package leak)
-    ; arrest_faction_sweep            → keyword-less stale faction membership
-    ;                                   (catches guards stuck in dispatch Phase 1
-    ;                                   before any keyword package was applied)
     If strArg != "arrest_follow" && strArg != "arrest_sandbox" && strArg != "arrest_faction_sweep"
         Return
     EndIf
 
-    ; --- Tracked jailed prisoner check (FIRST — must come before stale-faction logic) ---
-    ; Post-jailing, OnArrivedAtJail transitions the native session to kJailed=9
-    ; (it does NOT end the session — see the comment at the UpdateState call) and
-    ; clears CurrentPrisoner, but the prisoner legitimately retains:
-    ;   - SandboxAnchorKW LinkedRef → their jail marker
-    ;   - PrisonerSandBox package override
-    ;   - SeverActions_Jailed faction membership
-    ; Without this guard, the next orphan scan tick (5 seconds after jailing) would
-    ; fire arrest_sandbox + arrest_faction_sweep events and rip out the sandbox
-    ; package + Jailed faction. Result: prisoner walks straight out of jail.
-    ; IsNPCJailed (native JailedNPCStore) is the authoritative skip — if the actor
-    ; is jailed there, every arrest-related signal on them is intentional.
+    ; A jailed prisoner keeps the SandboxAnchorKW link, the PrisonerSandBox override and the
+    ; Jailed faction on purpose; test FIRST, or the sweep walks them out of jail.
     If IsNPCJailed(akActor)
         Return
     EndIf
 
-    ; --- Camp-challenge exemption ---
-    ; The camp challenger legitimately holds a FollowTargetKW LinkedRef to the
-    ; player for the walk over and the parley (SeverActions_Combat). Without
-    ; this the 5s orphan scan stripped the follow THREE SECONDS into the walk
-    ; (2026-08-03 log: walk 19:54:05, strip 19:54:08) - the bandit arrived
-    ; only because the player walked toward them, then stood unarmed and
-    ; wandered off mid-question. The challenge tears its own state down on
-    ; every verdict path, so nothing here is ever a true orphan.
+    ; Exemptions: actors that reuse the arrest apparatus and tear it down themselves.
+    ; Camp challenger: FollowTargetKW on the player for the walk and the parley.
     If SeverActionsNativeExt2.Camp_ChallengeIsPending(akActor)
         Return
     EndIf
 
-    ; --- Imperial Final Audit exemption ---
-    ; The Treasury's battlemages hold a FollowTargetKW LinkedRef to the Legate
-    ; for the whole march (the bodyguard package reads it), and the Legate holds
-    ; his own anchor link. None of them are arrest-system actors, so this sweep
-    ; read the links as orphans and scrubbed them ~4s after they were set -
-    ; which is exactly why the battlemages stood still while Cassius walked off.
+    ; Final Audit: the battlemages follow the Legate on FollowTargetKW; the Legate holds
+    ; his own anchor link.
     If SeverActionsNativeExt2.Venture_Audit_IsCollector(akActor)
         Return
     EndIf
 
-    ; --- SeverActions bodyguard exemption ---
-    ; An Enterprises Guard/Mercenary on bodyguard duty legitimately holds a
-    ; FollowTargetKW LinkedRef to their charge (reusing FollowGuard_Prisoner as a
-    ; sheathed guard follow). That's NOT an arrest orphan — Native_GetWorkLoc returning
-    ; an Actor means guard mode, so leave their follow link + package alone.
+    ; Bodyguard (Native_GetWorkLoc is an Actor): FollowTargetKW to their charge, with
+    ; FollowGuard_Prisoner as the follow.
     If SeverActionsNative.Native_GetWorkLoc(akActor) as Actor
         Return
     EndIf
 
-    ; --- SeverActions kidnap exemption ---
-    ; Kidnap participants legitimately reuse the arrest apparatus: the VICTIM
-    ; holds FollowTargetKW (escort trailing the kidnapper) and, once held,
-    ; SandboxAnchorKW (the hold anchor + PrisonerSandBox); the KIDNAPPER holds
-    ; SandboxAnchorKW while standing guard. All intentional — the kidnap
-    ; system tears everything down on bind/release/abort. Without this guard
-    ; the scrubber "freed" captives mid-march (the victim shrugged off the
-    ; escort and strolled home) and stripped the guard's anchor.
+    ; Kidnap: the victim trails the kidnapper on FollowTargetKW and is held on SandboxAnchorKW;
+    ; the kidnapper keeps SandboxAnchorKW while on guard (FindVictimOf, below).
     If SeverActionsNativeExt.Native_Kidnap_GetPhase(akActor) != 0
         Return
     EndIf
 
-    ; --- SeverActions brawl exemption ---
-    ; A brawl challenger trails their target on the arrest FollowTargetKW +
-    ; GuardFollowPlayer override while the challenge stands. Without this the
-    ; orphan scan stripped the trail ~5s after every challenge (audit H7).
+    ; Brawl challenger: trails their target on FollowTargetKW + GuardFollowPlayer.
     If SeverActionsNative.Native_BrawlChallenge_IsActive(akActor)
         Return
     EndIf
@@ -1170,32 +1090,26 @@ Event OnOrphanCleanup(string eventName, string strArg, float numArg, Form sender
         Return
     EndIf
 
-    ; --- Active-state detection ---
-    ; The actor is genuinely participating in a live arrest if any of these match.
-    ; Pre-Wave 8 the filter was faction-membership-only; that turned out to be a
-    ; trap, because if a previous arrest crashed before clearing SeverActions_Arrested
-    ; / SeverActions_Jailed, the faction tag survived save/load and locked the actor
-    ; out of the orphan cleanup pipeline AND out of new arrests indefinitely.
+    ; A live FSM slot or native session means an arrest in flight. A faction is no proof:
+    ; a crashed arrest's faction tag survives save/load.
     Bool isActiveSlot = (akActor == CurrentGuard || akActor == CurrentPrisoner \
         || akActor == DispatchTarget || akActor == DispatchGuard \
         || (PlayerScript != None && akActor == PlayerScript.GetConfrontingGuard()))
     Bool hasNativeSession = SeverActionsNative.Native_ArrestSession_HasSession(akActor)
 
     If isActiveSlot || hasNativeSession
-        ; Genuine in-flight arrest — leave the LinkedRef alone, the arrest FSM
-        ; will end the session and clear the keyword on its normal completion path.
+        ; In flight: the FSM clears the link when it completes.
         Return
     EndIf
 
-    ; --- Genuine orphan or stale-state survivor — clean up ---
+    ; An orphan: clean up.
     Bool inStaleArrestFaction = (akActor.IsInFaction(SeverActions_WaitingArrest) \
         || akActor.IsInFaction(SeverActions_Arrested) \
         || akActor.IsInFaction(SeverActions_Jailed) \
         || (SeverActions_DispatchFaction != None && akActor.IsInFaction(SeverActions_DispatchFaction)))
 
-    ; If the sweep fired without any actual stale faction tag (e.g. faction-clear
-    ; race between scan tick and arrest end), there's nothing to do — silently bail
-    ; rather than spam EvaluatePackage on a healthy actor every 5 seconds.
+    ; A faction sweep that finds no stale faction lost a race with the arrest's own teardown:
+    ; nothing to do (and no EvaluatePackage on a healthy actor every scan).
     If strArg == "arrest_faction_sweep" && !inStaleArrestFaction
         Return
     EndIf
@@ -1204,7 +1118,7 @@ Event OnOrphanCleanup(string eventName, string strArg, float numArg, Form sender
         + ", staleFaction=" + inStaleArrestFaction + ")")
 
     If strArg == "arrest_follow"
-        ; Strip every package that targets a FollowTargetKW LinkedRef.
+        ; The link's two follow packages and the guard's two alias-targeted travel packages.
         If SeverActions_GuardEscortPackage
             ActorUtil.RemovePackageOverride(akActor, SeverActions_GuardEscortPackage)
         EndIf
@@ -1225,10 +1139,7 @@ Event OnOrphanCleanup(string eventName, string strArg, float numArg, Form sender
         SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_SandboxAnchorKW)
     EndIf
 
-    ; Remove stale arrest factions so the actor isn't permanently locked out of
-    ; future arrests by ArrestNPC_Internal's "already arrested or jailed" guard.
-    ; We only do this in the orphan path — confirmed-no-live-session — so we
-    ; don't accidentally rip a legitimately-arrested actor out of their faction.
+    ; The stale factions go too (ClearStaleArrestState also clears them at arrest and dispatch start).
     If inStaleArrestFaction
         If akActor.IsInFaction(SeverActions_WaitingArrest)
             akActor.RemoveFromFaction(SeverActions_WaitingArrest)
@@ -1239,43 +1150,30 @@ Event OnOrphanCleanup(string eventName, string strArg, float numArg, Form sender
         If akActor.IsInFaction(SeverActions_Jailed)
             akActor.RemoveFromFaction(SeverActions_Jailed)
         EndIf
-        If SeverActions_DispatchFaction != None && akActor.IsInFaction(SeverActions_DispatchFaction)
-            akActor.RemoveFromFaction(SeverActions_DispatchFaction)
-        EndIf
+        _LeaveTaskFaction(akActor)
         DebugMsg("Orphan cleanup removed stale arrest factions from " + akActor.GetDisplayName())
     EndIf
 
-    ; Release the SkyrimNet v6+ busy lock if it was set during the arrest.
-    ; Without this, an actor whose arrest crashed (faction/keyword swept here)
-    ; carries is_busy="arrest" forever, blocking every third-party plugin's
-    ; multi-step actions on them. Idempotent — no-op if not set.
+    ; Release the SkyrimNet busy lock a crashed arrest left, which would otherwise block other
+    ; plugins' multi-step actions on the actor for good (idempotent).
     SeverActionsNative.Native_SkyrimNet_ClearActorBusy(akActor)
 
     akActor.EvaluatePackage()
 EndEvent
 
 Event OnEscortReapplyPackages(string eventName, string strArg, float numArg, Form sender)
-    {Phase 2.3a: native EscortPackageReapplier fired a re-apply signal.
-     strArg is "cellAttach" or "combatEnd" (diagnostic only — the
-     re-apply work is the same either way). The handler runs the
-     AddPackageOverride + EvaluatePackage pair that used to live
-     in CheckEscortProgress as a per-tick guard.
-
-     Defensive: re-validate the FSM slot before acting. If the world
-     moved on (cancel path, death, another arrest), silently no-op.}
+    {EscortPackageReapplier's signal after a cell transition (strArg "cellAttach") or combat end
+     ("combatEnd"; either way the work is the same): re-assert the escort packages. No-ops when
+     the escort has ended.}
 
     If CurrentGuard == None || CurrentPrisoner == None || ArrestState != 3
-        ; Stale event — escort not active. Don't call End() here:
-        ; ClearArrestState is the canonical teardown path, and a stale
-        ; event arriving in the transient gap between cancel + a fresh
-        ; StartEscortPhase on the same pair could otherwise tear down
-        ; the new tracker. Just silently drop.
+        ; Stale: no End() here. ClearArrestState is the teardown, and a stale event between a
+        ; cancel and a fresh StartEscortPhase on the same pair would tear down the new tracker.
         Return
     EndIf
 
     If CurrentGuard.IsDead() || CurrentPrisoner.IsDead()
-        ; Death is handled by the per-tick check + the kEscort watchdog;
-        ; just bail here.
+        ; Death is the per-tick check's and the kEscort watchdog's.
         Return
     EndIf
 
@@ -1288,17 +1186,19 @@ Event OnEscortReapplyPackages(string eventName, string strArg, float numArg, For
         ActorUtil.AddPackageOverride(CurrentPrisoner, SeverActions_FollowGuard_Prisoner, PackagePriority, 1)
         CurrentPrisoner.EvaluatePackage()
     EndIf
+
+    ; A cell transition resets the behaviour graph and drops the bound-hands offset too; replay
+    ; it after EvaluatePackage, which would drop it again (PerformArrest's ordering rule).
+    If OffsetBoundStandingStart
+        CurrentPrisoner.PlayIdle(OffsetBoundStandingStart)
+    EndIf
 EndEvent
 
 Event OnArrival(string eventName, string strArg, float numArg, Form sender)
-    {PR-C: native ArrivalMonitor fired a one-shot arrival event. strArg is the
-     callbackTag passed at Arrival_Register time; routes by tag.
-
-     Async safety: between the native detection and this Papyrus handler running,
-     the FSM state may have changed (cancel path, death, another arrest). Each
-     branch defensively re-validates the relevant slot/state before acting; if
-     the world moved on, the handler silently no-ops and the stale event is
-     discarded.}
+    {ArrivalMonitor's one-shot arrival: strArg = the tag given to Arrival_Register, numArg = the
+     final distance. A SHARED event (M-E): the canonical OnArrival runs on every script of the
+     quest (Combat and Kidnap answer their own tags); only arrest tags are handled here. The FSM
+     may have moved on since detection, so each branch re-validates and drops a stale event.}
 
     Actor arrivedActor = sender as Actor
     If arrivedActor == None
@@ -1318,35 +1218,6 @@ Event OnArrival(string eventName, string strArg, float numArg, Form sender)
         EndIf
         PerformArrest()
 
-    ElseIf strArg == "camp_challenge_arrived"
-        ; Camp challenge: the outlaw reached the player and can now ask their
-        ; business. Forwarded to SeverActions_Combat (which owns the truce and
-        ; camp machinery) — this router owns the quest's ONE OnArrival
-        ; callback, same contract as the restrain_/kidnap_ forwarding below.
-        SeverActions_Combat combatChallenge = (Self as Quest) as SeverActions_Combat
-        If combatChallenge
-            combatChallenge.HandleChallengeArrived(arrivedActor)
-        EndIf
-
-    ElseIf strArg == "restrain_arrived"
-        ; Restrain action: the restrainer reached their target. Forward to
-        ; FollowerManager (which owns the kidnap/restrain machinery) — this
-        ; router owns the quest's ONE OnArrival callback, same contract as
-        ; the kidnap_* travel-tag forwarding.
-        SeverActions_FollowerManager fmRestrain = (Self as Quest) as SeverActions_FollowerManager
-        If fmRestrain
-            fmRestrain.HandleRestrainArrived(arrivedActor)
-        EndIf
-
-    ElseIf strArg == "kidnap_grab_arrived"
-        ; Kidnap/relocation grab leg: the escort reached the target. Forward
-        ; to FollowerManager (same contract as restrain_arrived above); the
-        ; 1->2 phase CAS on the far side makes stale events harmless.
-        SeverActions_FollowerManager fmGrab = (Self as Quest) as SeverActions_FollowerManager
-        If fmGrab
-            fmGrab.HandleKidnapGrabArrived(arrivedActor)
-        EndIf
-
     ElseIf strArg == "arrest_escort_arrived"
         ; Guard reached the jail marker — finalize.
         If CurrentGuard != arrivedActor || CurrentPrisoner == None || CurrentJailMarker == None || ArrestState != 3
@@ -1357,8 +1228,8 @@ Event OnArrival(string eventName, string strArg, float numArg, Form sender)
         OnArrivedAtJail()
 
     ElseIf strArg == "narration_witness"
-        ; Player approached the deferred-narration sender. Fire the stored
-        ; narration once and clear state. arrivedActor here is the player.
+        ; The player reached the deferred-narration sender (arrivedActor is the player): fire
+        ; the stored line once.
         If DeferredNarrationSender == None
             ; Already cleared by another path — discard.
             Return
@@ -1367,7 +1238,6 @@ Event OnArrival(string eventName, string strArg, float numArg, Form sender)
             ClearDeferredNarration()
             Return
         EndIf
-        ; T1-D.3: native source of truth.
         String pendingNarration = SeverActionsNativeExt.Native_Arrest_GetPendingNarration(DeferredNarrationSender)
         If pendingNarration != ""
             SkyrimNetApi.DirectNarration(pendingNarration, DeferredNarrationSender, arrivedActor)
@@ -1376,10 +1246,7 @@ Event OnArrival(string eventName, string strArg, float numArg, Form sender)
         ClearDeferredNarration()
 
     ElseIf strArg == "dispatch_p1_arrived"
-        ; PR-D: dispatch guard arrived at travel destination (target actor for
-        ; arrest dispatch, home interior marker for home investigation).
-        ; Defensively re-validate FSM state — the async event may fire after
-        ; the FSM moved on (off-screen path teleported, cancelled, etc.).
+        ; Dispatch guard reached the travel destination (the target, or the home marker).
         If DispatchGuard != arrivedActor || DispatchPhase != 1
             DebugMsg("OnArrival(dispatch_p1): stale event (state moved on) - ignoring")
             Return
@@ -1392,10 +1259,8 @@ Event OnArrival(string eventName, string strArg, float numArg, Form sender)
         EndIf
 
     ElseIf strArg == "dispatch_p2_arrived"
-        ; PR-D: dispatch guard reached arrest threshold. Mirrors the arrest
-        ; finalization block in CheckDispatchPhase2_Approach (which the per-tick
-        ; poll used to fire). Kept inline rather than extracted so the per-tick
-        ; timeout path can keep its slightly different sequence (MoveTo first).
+        ; Dispatch guard reached arrest range. Mirrors CheckDispatchPhase2_Approach's arrest
+        ; block; kept inline because that function's timeout path teleports first.
         If DispatchGuard != arrivedActor || DispatchTarget == None || DispatchPhase != 2
             DebugMsg("OnArrival(dispatch_p2): stale event (state moved on) - ignoring")
             Return
@@ -1425,12 +1290,12 @@ Event OnArrival(string eventName, string strArg, float numArg, Form sender)
         String p2TargetName = DispatchTarget.GetDisplayName()
         String p2Narration = "*" + p2GuardName + " seizes " + p2TargetName + " and places them under arrest.*"
         SkyrimNetApi.DirectNarration(p2Narration, DispatchGuard, DispatchTarget)
-        Debug.Notification(p2GuardName + " has arrested " + p2TargetName)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.hasArrested", ("" + p2GuardName), ("" + p2TargetName)))
 
         StartDispatchReturnPhase()
 
     ElseIf strArg == "dispatch_p5_arrived"
-        ; PR-D: dispatch guard reached return destination (sender or jail).
+        ; Dispatch guard reached the return destination (sender or jail).
         If DispatchGuard != arrivedActor || DispatchPhase != 5
             DebugMsg("OnArrival(dispatch_p5): stale event (state moved on) - ignoring")
             Return
@@ -1445,11 +1310,9 @@ EndEvent
 ; =============================================================================
 
 Bool Function ArrestNPC_Internal(Actor akGuard, Actor akTarget)
-    {Main arrest function called by SkyrimNet action.
-     Guard will walk up to target, arrest them, then escort to jail.
-     Returns true if arrest sequence started successfully.}
+    {Same-cell arrest (SkyrimNet action): the guard walks up, arrests, escorts to jail.
+     Returns true if the sequence started.}
 
-    ; Validate inputs
     If akGuard == None
         DebugMsg("ERROR: ArrestNPC called with None guard")
         Return false
@@ -1470,47 +1333,33 @@ Bool Function ArrestNPC_Internal(Actor akGuard, Actor akTarget)
         Return false
     EndIf
 
-    ; Audit: no mutual exclusion existed between arrest and kidnap/restrain -
-    ; arresting a held captive stripped the hold's packages and faction while
-    ; KidnapTick kept re-asserting them, and both teardowns then fought over
-    ; the same actor. The kidnap side refuses jailed/arrested targets
-    ; symmetrically (_RejectInvalidCaptiveTarget).
+    ; Arrest and kidnap are mutually exclusive: both hold the actor with packages and factions and
+    ; their teardowns would fight. The kidnap side mirrors this (_RejectInvalidCaptiveTarget).
     If SeverActionsNativeExt.Native_Kidnap_GetPhase(akTarget) != 0
         DebugMsg("ArrestNPC rejected: target is an active kidnap/restraint victim")
         SkyrimNetApi.RegisterEvent("arrest_failed",             akGuard.GetDisplayName() + " cannot arrest " + akTarget.GetDisplayName() + " - someone else already holds them.",             akGuard, None)
         Return false
     EndIf
 
-    ; Wave 3 (loosened in Wave 8 hotfix): process level preflight. Reject only
-    ; kNone (-1) — not-loaded actors. kLow (0) is still in the process list and
-    ; can execute packages, just at the lowest priority tier. The original
-    ; <= 0 check was rejecting too aggressively and blocking valid arrests
-    ; against far-but-loaded NPCs. The dispatch path supports off-screen
-    ; targets via its own MoveTo bring-in, so this guard is only on the
-    ; same-cell ArrestNPC entry.
-    ; Note: DLL registers this on the main SeverActionsNative type (via
-    ; GuardFinder::RegisterFunctions), even though it was historically
-    ; declared in SeverActionsNativeExt.psc. The declaration moved to
-    ; SeverActionsNative.psc to match — caller updated accordingly so the
-    ; Papyrus linker finds the function at runtime.
+    ; Reject only a not-loaded target (process level -1): kLow (0) still runs packages. Off-screen
+    ; targets go through the dispatch path, which brings them in itself.
     Int targetProcessLevel = SeverActionsNative.Native_GetActorProcessLevel(akTarget)
     If targetProcessLevel < 0
         DebugMsg("ArrestNPC rejected: target process level " + targetProcessLevel + " (not loaded - use DispatchGuardToArrest for off-screen targets)")
         Return false
     EndIf
 
-    ; No scene preflight here: GetCurrentScene() returns non-null for any actor
-    ; with an active BGSScene, and in Skyrim most town NPCs are in SOME scene at
-    ; any given time (innkeepers running tavern routines, vendors at stalls,
-    ; citizens on daily walks), so a hard reject killed virtually every arrest.
-    ; Native_IsActorInScene remains exposed for future selective use (a defer in
-    ; ArrivalMonitor for heavy scripted scenes, not a hard reject).
+    ; No scene preflight: most town NPCs are in some BGSScene at any moment, so rejecting on
+    ; GetCurrentScene() blocks nearly every arrest.
 
-    ; Check if already processing an arrest
     If ArrestState != 0
         DebugMsg("WARNING: Already processing an arrest, canceling previous")
         CancelCurrentArrest()
     EndIf
+
+    ; A crashed prior arrest's residue on these two actors must not block this one.
+    ClearStaleArrestState(akTarget, "arrest start")
+    ClearStaleArrestState(akGuard, "arrest start")
 
     ; Block if target is already arrested or being escorted
     If akTarget.IsInFaction(SeverActions_Arrested) || akTarget.IsInFaction(SeverActions_Jailed)
@@ -1530,44 +1379,29 @@ Bool Function ArrestNPC_Internal(Actor akGuard, Actor akTarget)
     DebugMsg("Starting arrest: " + akGuard.GetDisplayName() + " arresting " + akTarget.GetDisplayName())
     DebugMsg("Destination: " + jailName)
 
-    ; Store state
     CurrentGuard = akGuard
     CurrentPrisoner = akTarget
     CurrentJailMarker = jailMarker
     CurrentJailName = jailName
     ArrestState = 1 ; approaching
 
-    ; Mark guard as on-task so SkyrimNet's eligibility filter
-    ; `is_in_faction(SeverActions_DispatchFaction) == false` excludes this guard
-    ; from every SeverActions arrest-category action for the duration. Mirrors
-    ; the InitDispatchCommon pattern used by the dispatch (off-screen) path.
-    ; Removed on OnArrivedAtJail and CancelCurrentArrest.
-    If SeverActions_DispatchFaction != None
-        akGuard.AddToFaction(SeverActions_DispatchFaction)
-        akGuard.SetFactionRank(SeverActions_DispatchFaction, 0)
-    EndIf
+    ; On task (_BeginGuardTask); every exit of the arrest takes them off (_LeaveTaskFaction).
+    _BeginGuardTask(akGuard)
 
-    ; Mark BOTH guard and prisoner as busy via SkyrimNet's PublicAPI v6+ —
-    ; this gates the global is_busy / busy_reason decorators that other
-    ; plugins also use to filter eligibility. Our DispatchFaction guard above
-    ; only excludes our own actions; this excludes any third-party plugin's
-    ; multi-step actions (escort, follow, travel, etc.) from latching onto
-    ; the guard or prisoner mid-arrest. Cleared in OnArrivedAtJail,
-    ; CancelCurrentArrest, ReleasePrisoner, and the timeout/orphan paths.
+    ; SkyrimNet busy lock (is_busy / busy_reason) on both: the faction above only excludes our own
+    ; actions, this keeps other plugins' multi-step actions off them too. Both clear when the arrest
+    ; ends, except a jailed prisoner's, which stays until a release path clears it.
     SeverActionsNative.Native_SkyrimNet_SetActorBusy(akGuard, "arrest")
     SeverActionsNative.Native_SkyrimNet_SetActorBusy(akTarget, "arrest")
 
-    ; Draw weapon initially (packages may override this - see CK package flags)
+    ; The packages' CK flags may sheathe it again.
     akGuard.DrawWeapon()
 
-    ; Check if already close enough
     Float dist = akGuard.GetDistance(akTarget)
     If dist <= ApproachDistance
-        ; Already close, skip approach phase
         DebugMsg("Guard already close to target, proceeding to arrest")
         PerformArrest()
     Else
-        ; Start approach phase
         DebugMsg("Guard approaching target (distance: " + dist + ")")
         StartApproachPhase()
     EndIf
@@ -1580,21 +1414,19 @@ EndFunction
 ; =============================================================================
 
 Function StartApproachPhase()
-    {Guard walks toward target with weapon drawn.
-     Includes stuck detection for cross-cell approaches.}
+    {Guard walks toward the target, weapon drawn, with stuck detection for cross-cell approaches.}
 
     If CurrentGuard == None || CurrentPrisoner == None
         DebugMsg("ERROR: StartApproachPhase - invalid state")
         Return
     EndIf
 
-    ; Fill reference aliases for approach
     ArrestTarget.ForceRefTo(CurrentPrisoner)
     ArrestingGuard.ForceRefTo(CurrentGuard)
 
     DebugMsg("Filled ArrestTarget alias with: " + CurrentPrisoner.GetDisplayName())
 
-    ; Apply approach package to guard (targets ArrestTarget alias)
+    ; The approach package targets the ArrestTarget alias.
     If SeverActions_GuardApproachTarget
         ActorUtil.AddPackageOverride(CurrentGuard, SeverActions_GuardApproachTarget, PackagePriority, 1)
         CurrentGuard.EvaluatePackage()
@@ -1603,58 +1435,41 @@ Function StartApproachPhase()
         DebugMsg("WARNING: No approach package defined!")
     EndIf
 
-    ; Start stuck detection for long-distance approaches
     SeverActionsNativeExt.Stuck_StartTracking(CurrentGuard)
 
-    ; BUG-A1: timeout window + prisoner movement freeze are timer-driven, so
-    ; record the start point and clear the freeze flag now.
     ApproachStartTime = Utility.GetCurrentRealTime()
     PrisonerMovementFrozen = false
     PrisonerFrozenAt = 0.0
 
-    ; BUG-A5: persist state so OnGameLoaded can rebuild this on reload.
+    ; For OnGameLoaded's recovery.
     PersistArrestState()
 
-    ; Wave 4: open native arrest session — state=1 (kApproach) so the watchdog
-    ; can fire a timeout if the approach phase exceeds its in-game-hour budget.
+    ; Native session in kApproach (1): its watchdog times the approach out after 1 game hour.
     Faction approachCrimeFaction = GetCrimeFactionForGuard(CurrentGuard)
     SeverActionsNative.Native_ArrestSession_Begin(CurrentPrisoner, CurrentGuard, CurrentJailMarker, approachCrimeFaction, 1, 0, 0)
+    _GuardOffSchedule(CurrentGuard)
 
-    ; PR-C: register the guard with ArrivalMonitor for proximity-driven arrival.
-    ; When the guard closes to ApproachDistance, OnArrival fires and routes to
-    ; PerformArrest. CheckApproachProgress still runs per-tick for freeze /
-    ; post-freeze-snap / stuck escalation / timeout — none of which are pure
-    ; proximity events.
+    ; ArrivalMonitor fires OnArrival -> PerformArrest at ApproachDistance; the tick below handles
+    ; the freeze, the fallback snap and stuck escalation.
     SeverActionsNativeExt.Arrival_Register(CurrentGuard, CurrentPrisoner, ApproachDistance, "arrest_approach_arrived")
 
-    ; SetActorArrested is deliberately not set during approach: setting the
-    ; engine's IsArrested flag before cuffs are on had vanilla AI side effects —
-    ; guards stopped pursuing (engine thought someone else got them), target
-    ; combat behavior changed mid-approach, etc. The native is still exposed for
-    ; selective use but not auto-set here.
+    ; Never SetActorArrested (here or later): the engine's IsArrested flag makes vanilla guards stop
+    ; pursuing and changes the target's combat AI.
 
-    ; Start monitoring for arrival
     ChronoArm(UpdateInterval)
 EndFunction
 
 Function ChronoArm(Float afSeconds)
-    {Arm this script's one-shot chronometer tick - replaces the FORM-keyed
-     RegisterForSingleUpdate (canonical explanation: the Chronometer block in
-     SeverActionsNativeExt2.psc + the CLAUDE.md lesson). Event name AND
-     callback name are unique per script - both, always. Re-arm replaces the
-     pending tick; ticks do NOT survive save/load (load paths re-arm); at
-     most one already-in-flight wake can land after Cancel/Clear, so keep
-     the handler state-guarded.}
+    {Arm this script's one-shot chronometer tick (see the Chronometer block in SeverActionsNativeExt2.psc);
+     the event AND callback names must stay unique to this script. Re-arm replaces the pending tick; ticks
+     don't survive a load; one in-flight tick can land after a cancel, so the handler stays state-guarded.}
     RegisterForModEvent("SeverActions_Tick_Arrest", "OnChronoTick_Arrest")
     SeverActionsNativeExt2.Chrono_Request("SeverActions_Tick_Arrest", afSeconds)
 EndFunction
 
 Event OnChronoTick_Arrest(String eventName, String strArg, Float numArg, Form sender)
-    ; PR-C: deferred-narration proximity polling moved to ArrivalMonitor.
-    ; CompleteDispatch arms `narration_witness` on the player; OnArrival fires
-    ; ClearDeferredNarration once the player closes to NarrationProximityRange.
-    ; Defensive guard: if the sender died after registration but before fire,
-    ; the native side won't notice — sweep that here.
+    ; Deferred narration is ArrivalMonitor's (narration_witness on the player); it can't see the
+    ; sender die before the player arrives, so sweep that here.
     If DeferredNarrationSender != None && DeferredNarrationSender.IsDead()
         ClearDeferredNarration()
     EndIf
@@ -1665,7 +1480,7 @@ Event OnChronoTick_Arrest(String eventName, String strArg, Float numArg, Form se
         CheckDispatchProgress()
     EndIf
 
-    ; NPC arrest states
+    ; Same-cell arrest states
     If ArrestState == 1
         ; Approaching target
         CheckApproachProgress()
@@ -1673,26 +1488,24 @@ Event OnChronoTick_Arrest(String eventName, String strArg, Float numArg, Form se
         ; Escorting to jail
         CheckEscortProgress()
     ElseIf ArrestState == 4
-        ; Wave 6.1: NPC prisoner is pleading their case mid-escort.
-        ; Escort packages are temporarily replaced with a follow-prisoner
-        ; package on the guard so they can hear the plea out.
+        ; Prisoner pleading mid-escort
         CheckEscortPleaProgress()
     EndIf
 
-    ; Wave 5b: persuasion mode + post-resist combat cleanup moved to
-    ; SeverActions_ArrestPlayer.psc, which drives its own OnUpdate independently.
-    ; This script's chronometer tick (OnChronoTick_Arrest) now only handles
-    ; dispatch / same-cell approach / same-cell escort. Deferred-narration
-    ; proximity is native (PR-C).
+    ; Nothing in flight: cancel to acknowledge the wake. The chronometer re-sends an unacknowledged
+    ; tick every 60 s, so OnGameLoaded's idempotent resume tick would otherwise repeat all session.
+    If DispatchPhase == 0 && ArrestState != 1 && ArrestState != 3 && ArrestState != 4
+        SeverActionsNativeExt2.Chrono_Cancel("SeverActions_Tick_Arrest")
+    EndIf
+
+    ; The player-arrest persuasion and post-resist cleanup tick on SeverActions_ArrestPlayer's own chronometer.
 EndEvent
 
 Function CheckApproachProgress()
-    {Check if guard has reached the target.
-     Includes stuck detection with progressive recovery for cross-cell approaches.
-     BUG-A1: freezes the prisoner once within ApproachFreezeDistance, so an NPC
-     running their own AI package can't keep distance oscillating around
-     ApproachDistance forever. (Hard timeout moved to the kApproach watchdog,
-     Phase 2.3c — no longer enforced in this function.)}
+    {Per-tick approach watchdog. Arrival itself is OnArrival's; this freezes the prisoner inside
+     ApproachFreezeDistance (their own AI would keep the distance oscillating around ApproachDistance),
+     snaps the guard in after the grace period, and escalates stuck recovery. The hard timeout is
+     the kApproach session watchdog (1 game hour; OnArrestSessionTimeout snaps and arrests).}
 
     Float dist
     Int stuckLevel
@@ -1713,11 +1526,9 @@ Function CheckApproachProgress()
         Return
     EndIf
 
-    ; Check if guard or prisoner died
     If CurrentGuard.IsDead()
         DebugMsg("Guard died during approach")
         SeverActionsNativeExt.Stuck_StopTracking(CurrentGuard)
-        ; BUG-A6: release prisoner freeze if held before bailing
         UnfreezePrisonerMovement()
         CancelCurrentArrest()
         Return
@@ -1733,25 +1544,9 @@ Function CheckApproachProgress()
 
     dist = CurrentGuard.GetDistance(CurrentPrisoner)
 
-    ; PR-C: the "dist <= ApproachDistance -> PerformArrest" branch lives in
-    ; OnArrival now (native ArrivalMonitor, registered at StartApproachPhase).
-    ; This per-tick function still runs as a watchdog for freeze, post-freeze
-    ; teleport-snap, hard timeout, and stuck escalation — none of which are
-    ; pure proximity events, all of which need to outlive the one-shot arrival.
-
-    ; UX hotfix (Wave 6 polish): freeze the prisoner the moment the guard
-        ; enters freeze range so they can't drift out of arrest range, but
-        ; let the guard walk in NATURALLY for ApproachPostFreezeGracePeriod
-        ; seconds (default 5s) before falling back to a teleport snap. The
-        ; original snap-on-freeze fix was reliable but visually jarring —
-        ; this preserves the reliability (guard always reaches arrest range
-        ; within bounded time) without the abrupt teleport on normal walks.
-        ;
-        ; Sequence after freeze:
-        ;   t=0   freeze fires, no teleport, guard keeps walking
-        ;   t<5   if dist <= ApproachDistance — natural walk-in arrest (smooth)
-        ;   t>=5  if still dist > ApproachDistance — fallback teleport snap
-        ;   hard safety net is the 1-game-hour kApproach watchdog (rarely reached)
+        ; Freeze the prisoner once the guard is in freeze range so they can't drift out of arrest
+        ; range, but let the guard walk in naturally for ApproachPostFreezeGracePeriod seconds before
+        ; the fallback snap below (snapping on freeze is reliable but jarring).
         If !PrisonerMovementFrozen && dist <= ApproachFreezeDistance
             CurrentPrisoner.SetDontMove(true)
             PrisonerMovementFrozen = true
@@ -1759,11 +1554,8 @@ Function CheckApproachProgress()
             DebugMsg("Approach: prisoner inside " + ApproachFreezeDistance + "u (dist=" + dist + "), frozen - guard walking in naturally (grace=" + ApproachPostFreezeGracePeriod + "s)")
         EndIf
 
-        ; Post-freeze fallback snap: if we've been frozen for the grace period
-        ; and the guard still hasn't closed to ApproachDistance, the engine is
-        ; failing us (slow walk, path stutter, package distance setting). Snap
-        ; the guard in and arrest. Without this fallback the user would just
-        ; sit there watching the guard "stuck" near but not at the prisoner.
+        ; Fallback snap: still out of arrest range after the grace period means the walk has stalled
+        ; near the prisoner (path stutter, the package's distance setting).
         If PrisonerMovementFrozen && PrisonerFrozenAt > 0.0
             Float frozenElapsed = Utility.GetCurrentRealTime() - PrisonerFrozenAt
             If frozenElapsed >= ApproachPostFreezeGracePeriod && dist > ApproachDistance
@@ -1785,19 +1577,11 @@ Function CheckApproachProgress()
             EndIf
         EndIf
 
-        ; Tick-by-tick distance trace so a future "guard parked next to prisoner
-        ; but arrest never fires" report tells us whether GetDistance is lying
-        ; vs. visual position (cell mismatch / Z-axis inflation / stale handle).
+        ; Distance trace: tells a lying GetDistance (cell mismatch, Z inflation, stale handle) from a
+        ; guard that is really parked beside the prisoner.
         DebugMsg("Approach tick: dist=" + dist + " (freeze=" + ApproachFreezeDistance + " arrest=" + ApproachDistance + ")")
 
-        ; Phase 2.3c: hard ApproachTimeout moved to the kApproach
-        ; ArrestSessionStore watchdog. OnArrestSessionTimeout's kApproach
-        ; branch now performs the same force-teleport + PerformArrest
-        ; finalize this block used to do. Budget is 1 game-hour (vs the
-        ; legacy 30s real-time default — looser, but game-time-scaled,
-        ; so a wait/sleep skip still trips it).
-
-        ; Not arrived yet - check for stuck (helps with cross-cell approaches)
+        ; Stuck escalation (cross-cell approaches)
         stuckLevel = SeverActionsNativeExt.Stuck_CheckStatus(CurrentGuard, UpdateInterval, 50.0)
 
         If stuckLevel == 1
@@ -1819,7 +1603,6 @@ Function CheckApproachProgress()
                 moveX = (dx / dist2d) * teleportDist
                 moveY = (dy / dist2d) * teleportDist
                 CurrentGuard.MoveTo(CurrentGuard, moveX, moveY, 0.0)
-                ; Wave 3: navmesh snap after relative leapfrog
                 SeverActionsNative.Native_MoveToNearestNavmesh(CurrentGuard, 0.0)
                 CurrentGuard.EvaluatePackage()
                 DebugMsg("Approach: leapfrog guard " + teleportDist + " units toward target")
@@ -1830,22 +1613,18 @@ Function CheckApproachProgress()
             ; Very stuck - force teleport near target
             DebugMsg("Approach: force teleporting guard near target")
             CurrentGuard.MoveTo(CurrentPrisoner, 200.0, 0.0, 0.0)
-            ; Wave 3: navmesh snap after offset teleport
             SeverActionsNative.Native_MoveToNearestNavmesh(CurrentGuard, 0.0)
             Utility.Wait(0.5)
             CurrentGuard.EvaluatePackage()
             SeverActionsNativeExt.Stuck_ResetEscalation(CurrentGuard)
         EndIf
 
-        ; Watchdog re-arm — proximity arrival is event-driven (OnArrival) now,
-        ; but freeze/timeout/stuck still need per-tick evaluation.
         ChronoArm(UpdateInterval)
 EndFunction
 
 Function UnfreezePrisonerMovement()
-    {Release the SetDontMove freeze applied during approach. Idempotent.
-     Called on PerformArrest, CancelCurrentArrest, and on prisoner-death paths
-     so we never leave a future-arrested NPC permanently stuck in place.}
+    {Release the approach's SetDontMove freeze. Idempotent; every exit from the approach calls it so
+     no NPC is left stuck in place.}
     If PrisonerMovementFrozen && CurrentPrisoner != None
         CurrentPrisoner.SetDontMove(false)
     EndIf
@@ -1866,10 +1645,7 @@ Function PerformArrest()
         Return
     EndIf
 
-    ; PR-C: cancel the approach-phase ArrivalMonitor registration. ArrivalMonitor
-    ; auto-removes on fire, so a natural-walk-in arrival already cleared the entry;
-    ; this cancel covers the teleport-snap / timeout paths where PerformArrest is
-    ; called WITHOUT the event firing.
+    ; The snap and timeout paths arrive here without OnArrival (which auto-removes the registration).
     SeverActionsNativeExt.Arrival_Cancel(CurrentGuard)
 
     ArrestState = 2 ; arresting
@@ -1877,57 +1653,36 @@ Function PerformArrest()
     Actor prisoner = CurrentPrisoner
     Actor guard = CurrentGuard
 
-    ; Wave 4: state=2 is transient (sub-second), but tell the watchdog so the
-    ; timer baseline resets — otherwise a sluggish PerformArrest could trip
-    ; the kApproach budget before the escort starts.
-    SeverActionsNative.Native_ArrestSession_UpdateState(prisoner, 2, 0)
+    ; EnsureBegin, not UpdateState: a guard already in range skipped StartApproachPhase, which opens the
+    ; session; without an entry CaptureAVs below is a no-op and release falls back to vanilla defaults.
+    SeverActionsNative.Native_ArrestSession_EnsureBegin(prisoner, guard, CurrentJailMarker, GetCrimeFactionForGuard(guard), 2, 0, 0)
+    ; A guard already in range skipped StartApproachPhase's strip (it is idempotent).
+    _GuardOffSchedule(guard)
 
     DebugMsg("Performing arrest on " + prisoner.GetDisplayName())
 
-    ; BUG-A1: release any movement freeze applied during approach BEFORE we
-    ; equip cuffs / start follow package, otherwise SetDontMove blocks the
-    ; follow path-finding and the prisoner just stands there.
+    ; Unfreeze before the follow package: SetDontMove blocks its pathing.
     UnfreezePrisonerMovement()
 
-    ; Stop any combat
     prisoner.StopCombat()
     prisoner.StopCombatAlarm()
 
-    ; Cancel any active travel errand so it doesn't fight with arrest escort
-    If TravelSystem != None
-        TravelSystem.CancelTravel(prisoner)
-    EndIf
+    ; So a travel errand doesn't fight the escort.
+    CancelTravelFor(prisoner)
 
-    ; Pacify the prisoner. Capture originals on the native ArrestSession entry
-    ; BEFORE zeroing so RestorePrisonerStats can put them back on release.
-    ; Without the capture/restore pair, prisoners would walk out of jail
-    ; permanently pacified (Aggression=0, Confidence=0) — bandits become
-    ; docile, hostile NPCs become friendly. CaptureAVs is idempotent —
-    ; only sets fields holding the sentinel -1.0, so a double-PerformArrest
-    ; doesn't clobber the captured originals with the about-to-be-zeroed
-    ; values. (Phase 1.4 migration: replaces the legacy StorageUtil
-    ; "SeverArrest_OrigAggression" / "_OrigConfidence" keys with cosave-
-    ; backed fields on the ArrestSession entry.)
+    ; Capture the originals on the session BEFORE zeroing, or the prisoner leaves jail permanently
+    ; pacified. CaptureAVs only fills fields still at the -1 sentinel, so a second PerformArrest
+    ; cannot capture the zeros.
     SeverActionsNative.Native_ArrestSession_CaptureAVs(prisoner, prisoner.GetAV("Aggression"), prisoner.GetAV("Confidence"))
     prisoner.SetAV("Aggression", 0)
     prisoner.SetAV("Confidence", 0)
 
-    ; Add to factions
     prisoner.AddToFaction(dunPrisonerFaction)      ; Guards won't attack
     prisoner.AddToFaction(SeverActions_Arrested)   ; Triggers follow package
 
-    ; Equip restraints
     If SeverActions_PrisonerCuffs
         prisoner.EquipItem(SeverActions_PrisonerCuffs, true, true) ; abPreventRemoval, abSilent
     EndIf
-
-    ; Play bound idle animation
-    If OffsetBoundStandingStart
-        prisoner.PlayIdle(OffsetBoundStandingStart)
-    EndIf
-
-    ; Reduce healing so they stay subdued
-    prisoner.SetAV("HealRate", 0.1)
 
     ; Link prisoner to guard so follow package works
     SeverActionsNative.LinkedRef_Set(prisoner, guard, SeverActions_FollowTargetKW)
@@ -1937,15 +1692,20 @@ Function PerformArrest()
     Debug.SendAnimationEvent(prisoner, "IdleForceDefaultState")
     Utility.Wait(0.1)
 
-    ; Apply follow package to prisoner
     If SeverActions_FollowGuard_Prisoner
         ActorUtil.AddPackageOverride(prisoner, SeverActions_FollowGuard_Prisoner, PackagePriority, 1)
         prisoner.EvaluatePackage()
         DebugMsg("Applied follow package to prisoner")
     EndIf
 
-    ; Notification
-    Debug.Notification(guard.GetDisplayName() + " arrested " + prisoner.GetDisplayName())
+    ; The bound-hands pose goes LAST, after the package's EvaluatePackage: the IdleForceDefaultState
+    ; above cancels any earlier idle. The cuffs item does not pose the hands; this offset idle does,
+    ; and it survives the walk. The kidnap march follows the same order.
+    If OffsetBoundStandingStart
+        prisoner.PlayIdle(OffsetBoundStandingStart)
+    EndIf
+
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.arrested", ("" + guard.GetDisplayName()), ("" + prisoner.GetDisplayName())))
 
     ; Direct narration for prisoner to react to being arrested
     String narration = "*" + guard.GetDisplayName() + " places " + prisoner.GetDisplayName() + " under arrest and binds their hands.*"
@@ -1958,7 +1718,6 @@ Function PerformArrest()
     ; Small delay for animations/packages to settle
     Utility.Wait(1.0)
 
-    ; Start escort phase
     StartEscortPhase()
 EndFunction
 
@@ -1980,11 +1739,10 @@ Function StartEscortPhase()
     Debug.Notification(CurrentGuard.GetDisplayName() + " is escorting " + CurrentPrisoner.GetDisplayName() + " to " + CurrentJailName)
     DebugMsg("Starting escort to " + CurrentJailName)
 
-    ; Fill JailDestination alias with the jail marker
     JailDestination.ForceRefTo(CurrentJailMarker)
     DebugMsg("Filled JailDestination alias with: " + CurrentJailMarker)
 
-    ; Apply travel package to guard (targets JailDestination alias)
+    ; The guard's travel package targets the JailDestination alias.
     If SeverActions_GuardEscortPackage
         ActorUtil.AddPackageOverride(CurrentGuard, SeverActions_GuardEscortPackage, PackagePriority, 1)
         CurrentGuard.EvaluatePackage()
@@ -1993,47 +1751,107 @@ Function StartEscortPhase()
         DebugMsg("WARNING: No guard travel package defined!")
     EndIf
 
-    ; BUG-A2: EscortStartTime kept written for cosave shape only; the force-teleport
-    ; fallback is now the kEscort session watchdog, not an elapsed-time check here.
     EscortStartTime = Utility.GetCurrentRealTime()
 
-    ; BUG-A5: persist state so OnGameLoaded can rebuild this on reload.
+    ; For OnGameLoaded's recovery.
     PersistArrestState()
 
-    ; Wave 4: state=3 (kEscort) — watchdog gets a 6-game-hour budget for this
-    ; phase. Use EnsureBegin instead of UpdateState because EndJudgment →
-    ; ClearDispatchState calls Native_ArrestSession_End before reaching here
-    ; for the judgment→jail handoff. A plain UpdateState would silently no-op
-    ; on that path, leaving the escort with no watchdog and no PrismaUI
-    ; visibility. EnsureBegin is begin-or-update, idempotent, and refreshes
-    ; guard/marker/faction fields if they rotated between legs.
+    ; kEscort (3), a 6-game-hour watchdog. EnsureBegin, not UpdateState: the judgment -> jail
+    ; handoff (EndJudgment -> ClearDispatchState) has already ended the session, and UpdateState
+    ; would no-op, leaving the escort with no watchdog and no Magelight row.
     Faction escortCrimeFaction = GetCrimeFactionForGuard(CurrentGuard)
     SeverActionsNative.Native_ArrestSession_EnsureBegin(CurrentPrisoner, CurrentGuard, CurrentJailMarker, escortCrimeFaction, 3, 0, 0)
 
-    ; Phase 2.3a: arm the native EscortPackageReapplier on the active pair.
-    ; The monitor sinks TESCellAttachDetachEvent + TESCombatEvent and fires
-    ; SeverActions_EscortReapplyPackages → OnEscortReapplyPackages when the
-    ; engine drops one of our overrides, replacing the 1Hz CheckEscortProgress
-    ; re-apply that used to paper over those drops.
+    ; The native EscortPackageReapplier re-applies our overrides (OnEscortReapplyPackages) when a
+    ; cell attach or combat end drops them.
     SeverActionsNative.Native_EscortReapply_Begin(CurrentGuard, CurrentPrisoner)
 
-    ; PR-C: register the guard with ArrivalMonitor for jail-marker arrival.
-    ; When the guard reaches ArrivalDistance of CurrentJailMarker, OnArrival
-    ; fires and routes to OnArrivedAtJail. CheckEscortProgress still ticks for
-    ; the death checks; package re-apply and the timeout moved to native monitors.
+    ; ArrivalMonitor fires OnArrival -> OnArrivedAtJail at ArrivalDistance of the marker.
     SeverActionsNativeExt.Arrival_Register(CurrentGuard, CurrentJailMarker, ArrivalDistance, "arrest_escort_arrived")
 
-    ; Start monitoring for arrival
+    ; Physical leash for the walk to jail, when the player has the framework.
+    _ArrestLeash(CurrentPrisoner, CurrentGuard, true)
+
+    ; Ticks for CheckEscortProgress's death checks.
     ChronoArm(UpdateInterval)
 EndFunction
 
+Bool Function _IsOurLeashSubject(Actor akActor)
+    {True for a rope THIS module owns: a live arrest session and no kidnap entry. The kidnap side uses
+     the same library and SeverKidnap_PhysLeash mark, so excluding any kidnap phase keeps the two
+     handler sets disjoint.}
+    Return akActor && SeverActionsNative.Native_ArrestSession_HasSession(akActor) \
+        && SeverActionsNativeExt.Native_Kidnap_GetPhase(akActor) == 0
+EndFunction
+
+Event OnLeashFrameworkPulled(String eventName, String strArg, Float numArg, Form sender)
+    {The framework started hauling someone on a rope. numArg = holder-to-collar distance.}
+    Actor pulled = sender as Actor
+    If SeverActionsNativeExt2.Native_IsLeashFrameworkInstalled() && _IsOurLeashSubject(pulled)
+        SeverActions_LeashLib.NarratePull(pulled, False, numArg, CurrentGuard, "the guard")
+    EndIf
+EndEvent
+
+Event OnLeashFrameworkRagdollPulled(String eventName, String strArg, Float numArg, Form sender)
+    {A forced ragdoll pull - the prisoner dug in past the threshold and is being dragged.}
+    Actor ragdolled = sender as Actor
+    If !_IsOurLeashSubject(ragdolled)
+        Return
+    EndIf
+    If SeverActionsNativeExt2.Native_IsLeashFrameworkInstalled()
+        SeverActions_LeashLib.NarratePull(ragdolled, True, numArg, CurrentGuard, "the guard")
+    EndIf
+    ; Restore the bound-hands pose the ragdoll cost them. The idle is passed in: the library never
+    ; reaches into a script.
+    If SeverActionsNativeExt2.Native_IsLeashFrameworkInstalled()
+        SeverActions_LeashLib.RestoreBoundPose(ragdolled, OffsetBoundStandingStart)
+    EndIf
+EndEvent
+
+Event OnLeashFrameworkUnleash(String eventName, String strArg, Float numArg, Form sender)
+    {The framework dropped a rope (strArg: disconnected / unleashAll / replaced): clear our live-rope
+     mark so the escort re-attaches once the guard is loaded. Our own detach unsets the mark before
+     calling the framework, so it returns early here.}
+    Actor v = sender as Actor
+    If !_IsOurLeashSubject(v) || StorageUtil.GetIntValue(v, "SeverKidnap_PhysLeash", 0) != 1
+        Return
+    EndIf
+    StorageUtil.UnsetIntValue(v, "SeverKidnap_PhysLeash")
+    DebugMsg("LeashFramework: escort rope on " + v.GetDisplayName() + " dropped by the framework (" + strArg + ") - it re-attaches when the guard is loaded")
+EndEvent
+
+Function _ArrestLeash(Actor akPrisoner, Actor akGuard, Bool abOn)
+    {Rope from the guard's hand to the prisoner's bound wrists for the escort (SeverActions_LeashLib),
+     layered over the escort-follow package as for a led captive; a silent no-op with the setting off.
+     Safe with no kidnap entry: the flag mirroring (KidnapStore::SetFlag) no-ops, so no captive record
+     is fabricated. Without the framework, abOn=false only clears rope marks a save recorded before it
+     was removed, through SeverActions_Kidnap (this module's own script, so a cast).}
+    If !akPrisoner
+        Return
+    EndIf
+    If abOn
+        If akGuard
+            If SeverActionsNativeExt2.Native_IsLeashFrameworkInstalled()
+                SeverActions_LeashLib.Attach(akPrisoner, akGuard)
+            EndIf
+        EndIf
+    Else
+        If SeverActionsNativeExt2.Native_IsLeashFrameworkInstalled()
+            SeverActions_LeashLib.Detach(akPrisoner)
+        Else
+            ; No framework: clear the stale rope marks (kidnap state, see the doc).
+            SeverActions_Kidnap kidnapMarks = (Self as Quest) as SeverActions_Kidnap
+            If kidnapMarks
+                kidnapMarks._ClearLeashMarks(akPrisoner)
+            EndIf
+        EndIf
+    EndIf
+EndFunction
+
 Function CheckEscortProgress()
-    {Per-tick escort watchdog remnant: death checks + BUG-A6 LinkedRef cleanup.
-     Arrival is event-driven (PR-C, native ArrivalMonitor), package re-apply is
-     native (Phase 2.3a EscortPackageReapplier), and the timeout is the kEscort
-     session watchdog (Phase 2.3b) — none of those live here anymore.
-     BUG-A6: clears the prisoner's LinkedRef on death so the cosave entry doesn't
-     dangle past the prisoner's lifetime.}
+    {Per-tick escort check: deaths only. Arrival is OnArrival's (ArrivalMonitor), package re-apply
+     is the native EscortPackageReapplier's, and the timeout is the kEscort session watchdog's
+     (6 game hours, TimeoutForState in ArrestSessionStore.h).}
 
     If CurrentGuard == None || CurrentPrisoner == None || CurrentJailMarker == None
         DebugMsg("ERROR: CheckEscortProgress - invalid state")
@@ -2041,7 +1859,6 @@ Function CheckEscortProgress()
         Return
     EndIf
 
-    ; Check if guard or prisoner died during escort
     If CurrentGuard.IsDead()
         DebugMsg("Guard died during escort")
         ; ReleasePrisoner already clears LinkedRefs on the prisoner.
@@ -2052,58 +1869,28 @@ Function CheckEscortProgress()
 
     If CurrentPrisoner.IsDead()
         DebugMsg("Prisoner died during escort")
-        ; BUG-A6: explicit LinkedRef cleanup on the dead prisoner. The native
-        ; PackageManager TESDeathEvent handler will normally do this, but the
-        ; event fires asynchronously and CancelCurrentArrest doesn't wait, so
-        ; clear here defensively to keep the cosave clean.
+        ; Clear the dead prisoner's LinkedRefs now: the native TESDeathEvent cleanup is async and
+        ; CancelCurrentArrest doesn't wait for it.
         SeverActionsNative.LinkedRef_Clear(CurrentPrisoner, SeverActions_FollowTargetKW)
         SeverActionsNative.LinkedRef_Clear(CurrentPrisoner, SeverActions_SandboxAnchorKW)
         CancelCurrentArrest()
         Return
     EndIf
 
-    ; Phase 2.3a: per-tick package re-apply moved to the native
-    ; EscortPackageReapplier monitor. It sinks TESCellAttachDetachEvent +
-    ; TESCombatEvent and fires SeverActions_EscortReapplyPackages →
-    ; OnEscortReapplyPackages exactly when one of the two drop scenarios
-    ; the legacy code papered over (cell transition / combat-end) happens.
-    ; This loop still runs per-tick for the timeout + death checks
-    ; below, but the AddPackageOverride 1Hz spam is gone.
-
-    ; Phase 2.3b: escort timeout moved to the ArrestSessionStore kEscort
-    ; watchdog. OnArrestSessionTimeout's kEscort branch now performs the
-    ; force-teleport-to-jail + OnArrivedAtJail finalize that used to live
-    ; here. Budget is 6 game-hours (TimeoutForState(kEscort) in
-    ; ArrestSessionStore.h) — at the default timescale 20 that's ~18 real
-    ; minutes, a longer budget than the legacy 10 real-min EscortTimeout
-    ; but tracks game-time so a sleep-skip still trips it.
-    ;
-    ; PR-C: arrival at jail is event-driven now (OnArrival fires from
-    ; native ArrivalMonitor). This function still ticks for death checks;
-    ; pending 2.3c those move to TESDeathEvent and the OnUpdate goes away
-    ; entirely for the kEscort branch.
     ChronoArm(UpdateInterval)
 EndFunction
 
 ; =============================================================================
-; ESCORT PLEA - Mid-march negotiation (Wave 6.1)
-; The NPC prisoner can call AppealDuringEscort once during ArrestState == 3.
-; Guard pauses the escort, switches from GuardEscortPackage to a follow-prisoner
-; package (weapon stays drawn), and listens. Outcomes:
-;   - AcceptEscortPlea_Internal → release prisoner (full faction/cuff cleanup)
-;   - RejectEscortPlea_Internal → resume escort to jail (back to State 3)
-;   - timeout / distance         → silent resume escort with annoyed narration
-; Single attempt per arrest — EscortPleaAttempted gates re-entry.
-; Mirrors PlayerScript's HandlePersuade / Accept / Reject flow but for an NPC
-; mid-escort instead of the player at the start of an arrest.
+; ESCORT PLEA - the NPC prisoner's one mid-march appeal (ArrestState 3 -> 4).
+; The guard stops, follows the prisoner with weapon drawn and listens. Accept
+; releases them; Reject, a timeout or walking off resumes the escort.
+; EscortPleaAttempted allows one per arrest. The NPC twin of PlayerScript's
+; HandlePersuade flow.
 ; =============================================================================
 
 Bool Function AppealDuringEscort_Internal(Actor akPrisoner)
-    {NPC prisoner pleads their case to the escorting guard mid-march.
-     Guard pauses the escort and listens. Returns true if the plea state was
-     successfully entered, false on rejection (wrong state, wrong actor, or
-     plea already attempted this arrest).
-     Wired via appealduringescort.yaml (speaker = prisoner).}
+    {The prisoner pleads to the escorting guard mid-march (appealduringescort.yaml, speaker = prisoner).
+     False when not escorting, not the current prisoner, or already pleaded this arrest.}
 
     If akPrisoner == None
         DebugMsg("ERROR: AppealDuringEscort called with None prisoner")
@@ -2139,21 +1926,15 @@ Bool Function AppealDuringEscort_Internal(Actor akPrisoner)
     ; Stop stuck tracking — the guard is intentionally not moving toward jail now
     SeverActionsNativeExt.Stuck_StopTracking(CurrentGuard)
 
-    ; PR-C: cancel the escort-phase ArrivalMonitor registration. The guard now
-    ; tracks the prisoner instead, and would otherwise drift "arrived at jail"
-    ; over the rest of the plea if any path brought them close to the marker.
+    ; No jail arrival during the plea (the guard could pass the marker while following the prisoner).
     SeverActionsNativeExt.Arrival_Cancel(CurrentGuard)
 
-    ; Remove the escort package
     If SeverActions_GuardEscortPackage
         ActorUtil.RemovePackageOverride(CurrentGuard, SeverActions_GuardEscortPackage)
     EndIf
 
-    ; Relink guard's FollowTargetKW from the jail marker → prisoner. The
-    ; SeverActions_GuardFollowPlayer package follows whatever FollowTargetKW
-    ; LinkedRef points at, so this swap is what makes the guard track the
-    ; prisoner instead of continuing toward the jail marker. Same trick
-    ; HandlePersuade uses for the player FSM.
+    ; SeverActions_GuardFollowPlayer follows whatever FollowTargetKW points at, so pointing it at the
+    ; prisoner makes the guard track them (HandlePersuade's trick for the player).
     SeverActionsNative.LinkedRef_Set(CurrentGuard, akPrisoner, SeverActions_FollowTargetKW)
 
     If SeverActions_GuardFollowPlayer
@@ -2164,9 +1945,7 @@ Bool Function AppealDuringEscort_Internal(Actor akPrisoner)
     ; Keep weapon drawn — the threat persists during the plea
     CurrentGuard.DrawWeapon()
 
-    ; Also remove the prisoner's follow-guard package so the two actors don't
-    ; oscillate (guard following prisoner who's following guard...). Prisoner
-    ; stands still / can gesture; guard tracks them.
+    ; Drop the prisoner's follow-guard package, or the two follow each other in a loop.
     If SeverActions_FollowGuard_Prisoner
         ActorUtil.RemovePackageOverride(akPrisoner, SeverActions_FollowGuard_Prisoner)
     EndIf
@@ -2177,12 +1956,8 @@ Bool Function AppealDuringEscort_Internal(Actor akPrisoner)
     EscortPleaStartTime = Utility.GetCurrentRealTime()
     EscortPleaAttempted = true
 
-    ; Update the native watchdog to kEscortPlea (8). Previously this wrote 7
-    ; (kPersuasion) and intentionally overloaded the persuasion semantic to
-    ; reuse the 15-minute timeout budget. After the cosave enum split
-    ; (kEscortPlea now distinct from kPersuasion) the PrismaUI arrests page
-    ; can show the accurate "Escort Plea" label instead of mislabeling
-    ; everyone as "Persuasion." Budget is unchanged at 15 in-game minutes.
+    ; kEscortPlea (8): a 15-game-minute watchdog, shown as Escort Plea on the Magelight arrests page.
+    ; It also latches the plea for the session: sever_is_escorted_prisoner stops offering the appeal.
     SeverActionsNative.Native_ArrestSession_UpdateState(CurrentPrisoner, 8, 0)
 
     ; --- Set context for SkyrimNet so the LLM has the full picture ---
@@ -2195,20 +1970,19 @@ Bool Function AppealDuringEscort_Internal(Actor akPrisoner)
     String narration = "*" + CurrentGuard.GetDisplayName() + " halts the march, weapon still in hand, willing to hear what " + akPrisoner.GetDisplayName() + " has to say.*"
     SkyrimNetApi.DirectNarration(narration, akPrisoner, CurrentGuard)
 
-    String eventMsg = akPrisoner.GetDisplayName() + " is pleading their case to " + CurrentGuard.GetDisplayName() + " mid-escort to jail. They have a tracked bounty of " + bounty + " gold in " + holdName + ". The guard is listening but skeptical - they may accept the plea and release the prisoner, or reject it and continue the escort to jail."
+    String eventMsg = akPrisoner.GetDisplayName() + " stopped the march to plead with " + CurrentGuard.GetDisplayName() + " over a " + bounty + " gold bounty in " + holdName + "."
     SkyrimNetApi.RegisterPersistentEvent(eventMsg, CurrentGuard, akPrisoner)
 
-    Debug.Notification("The escort pauses - " + CurrentGuard.GetDisplayName() + " is listening")
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.theEscortPauses", ("" + CurrentGuard.GetDisplayName())))
 
-    ; Make sure OnUpdate is armed for the per-tick check
+    ; Make sure the tick is armed for the per-tick check
     ChronoArm(UpdateInterval)
 
     Return true
 EndFunction
 
 Function CheckEscortPleaProgress()
-    {Per-tick check — called from the chronometer tick (OnChronoTick_Arrest)
-     when ArrestState == 4. Handles timeout, distance, and dead-actor failures.}
+    {Tick while ArrestState == 4: ends the plea on a timeout, the prisoner walking off, or a death.}
 
     If ArrestState != 4
         Return
@@ -2231,7 +2005,7 @@ Function CheckEscortPleaProgress()
     ; Timeout — guard runs out of patience, silent resume with annoyed narration
     If elapsed >= EscortPleaTimeLimit
         DebugMsg("Escort plea timed out after " + elapsed + "s - resuming escort")
-        String narration = "*" + CurrentGuard.GetDisplayName() + " grows tired of " + CurrentPrisoner.GetDisplayName() + "'s excuses.* \"Enough. Move.\""
+        String narration = "*" + CurrentGuard.GetDisplayName() + " grows tired of " + CurrentPrisoner.GetDisplayName() + "'s excuses, cuts the plea short and orders them to keep moving.*"
         SkyrimNetApi.DirectNarration(narration, CurrentPrisoner, CurrentGuard)
 
         String eventMsg = CurrentGuard.GetDisplayName() + " grew tired of " + CurrentPrisoner.GetDisplayName() + "'s pleading and resumed the march to jail."
@@ -2246,7 +2020,7 @@ Function CheckEscortPleaProgress()
     Float distance = CurrentGuard.GetDistance(CurrentPrisoner)
     If distance > EscortPleaFollowDistance
         DebugMsg("Escort plea: prisoner moved " + distance + "u from guard - resuming escort")
-        String narration = "*" + CurrentGuard.GetDisplayName() + " catches up, gripping " + CurrentPrisoner.GetDisplayName() + " firmly.* \"Trying to slip away? Walk.\""
+        String narration = "*" + CurrentGuard.GetDisplayName() + " catches up, gripping " + CurrentPrisoner.GetDisplayName() + " firmly - no more slipping away; the march goes on.*"
         SkyrimNetApi.DirectNarration(narration, CurrentPrisoner, CurrentGuard)
 
         String eventMsg = CurrentPrisoner.GetDisplayName() + " tried to walk away during their plea. " + CurrentGuard.GetDisplayName() + " resumed the escort to jail."
@@ -2284,20 +2058,23 @@ Bool Function AcceptEscortPlea_Internal(Actor akGuard)
         Return false
     EndIf
 
+    ; Rope off (one of the four escort exits, with arrival, cancel and jail release). BELOW the
+    ; rejections: a rejected call leaves the escort live, and nothing would re-attach the rope.
+    _ArrestLeash(CurrentPrisoner, CurrentGuard, false)
+
     DebugMsg(akGuard.GetDisplayName() + " accepted " + CurrentPrisoner.GetDisplayName() + "'s plea - releasing")
 
     ; Capture refs before clearing state
     Actor releasedPrisoner = CurrentPrisoner
     Actor escortingGuard = CurrentGuard
 
-    ; Narration + persistent event
-    String narration = "*" + escortingGuard.GetDisplayName() + " sighs and lowers their weapon.* \"Get out of here. Don't let me see your face again.\""
+    String narration = "*" + escortingGuard.GetDisplayName() + " sighs, lowers their weapon and waves " + releasedPrisoner.GetDisplayName() + " off - free to go, and warned not to be seen again.*"
     SkyrimNetApi.DirectNarration(narration, releasedPrisoner, escortingGuard)
 
     String eventMsg = escortingGuard.GetDisplayName() + " was convinced by " + releasedPrisoner.GetDisplayName() + " and released them mid-escort instead of taking them to jail."
     SkyrimNetApi.RegisterPersistentEvent(eventMsg, escortingGuard, releasedPrisoner)
 
-    Debug.Notification(releasedPrisoner.GetDisplayName() + " has been released")
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.hasBeenReleased", ("" + releasedPrisoner.GetDisplayName())))
 
     ; --- Clean up packages on guard ---
     SeverActionsNativeExt.Stuck_StopTracking(escortingGuard)
@@ -2308,9 +2085,7 @@ Bool Function AcceptEscortPlea_Internal(Actor akGuard)
     escortingGuard.SheatheWeapon()
 
     ; Release the SkyrimNet on-task lock + busy lock
-    If SeverActions_DispatchFaction != None && escortingGuard.IsInFaction(SeverActions_DispatchFaction)
-        escortingGuard.RemoveFromFaction(SeverActions_DispatchFaction)
-    EndIf
+    _LeaveTaskFaction(escortingGuard)
     SeverActionsNative.Native_SkyrimNet_ClearActorBusy(escortingGuard)
     escortingGuard.EvaluatePackage()
 
@@ -2358,24 +2133,15 @@ Bool Function RejectEscortPlea_Internal(Actor akGuard)
     String eventMsg = akGuard.GetDisplayName() + " was not convinced by " + CurrentPrisoner.GetDisplayName() + "'s pleading and resumed the escort to jail."
     SkyrimNetApi.RegisterPersistentEvent(eventMsg, akGuard, CurrentPrisoner)
 
-    Debug.Notification("The plea was rejected")
+    Debug.Notification(SeverActionsNativeExt2.Native_L10n("arrest.thePleaWasRejected"))
 
     ResumeEscortFromPlea()
     Return true
 EndFunction
 
 Function ResumeEscortFromPlea()
-    {Internal helper: re-arm escort packages + LinkedRef back to jail marker
-     and transition ArrestState back to 3. Called by Reject + timeout +
-     distance-fail paths.
-
-     Phase 2.3a invariant: the native EscortPackageReapplier tracker stays
-     ARMED across the plea pause — plea-entry doesn't call
-     Native_EscortReapply_End and plea-resume doesn't re-Begin. The plea
-     swap (GuardEscortPackage → GuardFollowPlayer) doesn't change the
-     tracked actor pair, so the existing tracker is still valid; tearing
-     it down and re-arming would just open a transient window where a
-     cell-attach or combat-end during the plea wouldn't fire a re-apply.}
+    {Back to the escort (ArrestState 3) after a rejected, timed-out or abandoned plea. The native
+     EscortPackageReapplier stays armed across the plea (same actor pair), so it is not re-begun here.}
 
     If CurrentGuard == None || CurrentPrisoner == None || CurrentJailMarker == None
         DebugMsg("ERROR: ResumeEscortFromPlea - invalid state, canceling")
@@ -2388,13 +2154,10 @@ Function ResumeEscortFromPlea()
         ActorUtil.RemovePackageOverride(CurrentGuard, SeverActions_GuardFollowPlayer)
     EndIf
 
-    ; Clear the prisoner-pointing LinkedRef. ReapplyEscortPackages below will
-    ; re-set the LinkedRef pattern that escort needs (prisoner→guard via
-    ; FollowGuard_Prisoner).
+    ; The guard's link to the prisoner; ReapplyEscortPackages re-links the prisoner to the guard.
     SeverActionsNative.LinkedRef_Clear(CurrentGuard, SeverActions_FollowTargetKW)
 
-    ; Re-fill aliases (defensive — they should still be filled but in case
-    ; something cleared them during the plea state)
+    ; In case something cleared the aliases during the plea.
     ArrestTarget.ForceRefTo(CurrentPrisoner)
     ArrestingGuard.ForceRefTo(CurrentGuard)
     If CurrentJailMarker != None
@@ -2407,7 +2170,6 @@ Function ResumeEscortFromPlea()
     ; Re-arm stuck tracking — the guard is moving toward jail again
     SeverActionsNativeExt.Stuck_StartTracking(CurrentGuard)
 
-    ; Reset state to escort
     ArrestState = 3
     EscortStartTime = Utility.GetCurrentRealTime()
     EscortPleaStartTime = 0.0
@@ -2415,11 +2177,7 @@ Function ResumeEscortFromPlea()
     ; Reset the watchdog timer to the escort budget
     SeverActionsNative.Native_ArrestSession_UpdateState(CurrentPrisoner, 3, 0)
 
-    ; PR-C: re-arm ArrivalMonitor for the jail marker — the plea cancelled
-    ; the prior registration; without this re-register the guard would walk
-    ; the full distance with no proximity-event safety net (only the slower
-    ; 6-game-hour kEscort watchdog would catch an "arrived but never noticed"
-    ; stall).
+    ; Re-register the jail arrival the plea cancelled.
     SeverActionsNativeExt.Arrival_Register(CurrentGuard, CurrentJailMarker, ArrivalDistance, "arrest_escort_arrived")
 
     DebugMsg("Resumed escort from plea - " + CurrentGuard.GetDisplayName() + " escorting " + CurrentPrisoner.GetDisplayName() + " to " + CurrentJailName)
@@ -2434,53 +2192,47 @@ EndFunction
 Function OnArrivedAtJail()
     {Guard and prisoner have arrived at jail - finalize arrest}
 
+    ; Rope off first, even ahead of the invalid-state bail: a half-torn-down arrest can still leave
+    ; a real rope on a real prisoner.
+    _ArrestLeash(CurrentPrisoner, CurrentGuard, false)
+
     If CurrentGuard == None || CurrentPrisoner == None
         DebugMsg("ERROR: OnArrivedAtJail - invalid state")
         CancelCurrentArrest()
         Return
     EndIf
 
-    ; PR-C: cancel the escort-phase ArrivalMonitor registration. ArrivalMonitor
-    ; auto-removes on fire, so a natural arrival already cleared the entry; this
-    ; cancel covers the kEscort watchdog force-teleport finalize path where
-    ; OnArrivedAtJail is called without the event firing.
+    ; The watchdog's finalize arrives here without OnArrival (which auto-removes the registration).
     SeverActionsNativeExt.Arrival_Cancel(CurrentGuard)
 
-    ArrestState = 5 ; arrived (transient — distinct from state 4 "escort plea" to avoid OnUpdate routing collision)
+    ArrestState = 5 ; arrived (transient; 4 is the escort plea, which the tick routes)
+    JailPrisonerAt(CurrentGuard, CurrentPrisoner, CurrentJailMarker, CurrentJailName, true)
+EndFunction
 
-    ; Store local references before clearing state
-    Actor prisoner = CurrentPrisoner
-    Actor guard = CurrentGuard
-    ObjectReference jailMarker = CurrentJailMarker
-    String jailName = CurrentJailName
+Function JailPrisonerAt(Actor guard, Actor prisoner, ObjectReference jailMarker, String jailName, Bool abSameCell)
+    {Put prisoner in the cell at jailMarker and finish the arrest. abSameCell: the same-cell arrest's
+     (OnArrivedAtJail), whose aliases and slots this clears; false for a dispatch's delivery, which
+     leaves both to a same-cell arrest that may be running.}
 
     DebugMsg("Processing prisoner at jail: " + prisoner.GetDisplayName())
 
-    ; Strip every SeverActions arrest package from both actors. Idempotent —
-    ; safely no-ops any packages they don't currently hold (e.g. the dispatch
-    ; packages on a guard who only ran same-cell flow). PrisonerSandBox is
-    ; re-applied below if DisablePrisonerOnArrival is false.
+    ; Every arrest package (idempotent); PrisonerSandBox is re-applied below unless the prisoner is disabled.
     RemoveAllArrestPackages(guard)
     RemoveAllArrestPackages(prisoner)
 
-    ; Clear prisoner's linked ref to guard (was used for follow). Don't blanket-
-    ; clear via ClearAllDispatchLinkedRefs since SandboxAnchorKW is about to be
-    ; re-set on the prisoner immediately below.
+    ; Only the follow link, not ClearAllDispatchLinkedRefs: SandboxAnchorKW is re-set below.
     SeverActionsNative.LinkedRef_Clear(prisoner, SeverActions_FollowTargetKW)
 
-    ; Clear every reference alias the arrest / dispatch FSM uses.
-    ClearAllArrestAliases()
+    ; Keep the dispatch aliases if a cross-cell dispatch is still running - this is the same-cell arrest ending.
+    If abSameCell
+        ClearAllArrestAliases(DispatchPhase > 0)
+    EndIf
 
-    ; Update factions
     prisoner.RemoveFromFaction(SeverActions_Arrested)
     prisoner.AddToFaction(SeverActions_Jailed)
 
-    ; Move prisoner to jail cell with verification
-    ; Wave 3: replaced the Disable/Enable retry hack with MoveToNearestNavmesh.
-    ; The previous loop disabled the prisoner, MoveTo'd, then re-enabled — heavy
-    ; hammer that disrupts alias attachments and active package overrides. The
-    ; navmesh snap (CommonLib v4.4+) reliably places the prisoner on a valid
-    ; pathfinding tile in one engine call, eliminating the retry need.
+    ; MoveTo, then a navmesh snap. Never Disable/Enable to re-place an actor: it breaks alias
+    ; attachment and package overrides.
     If jailMarker
         prisoner.MoveTo(jailMarker, 0.0, 0.0, 0.0)
         Utility.Wait(0.3)
@@ -2488,10 +2240,7 @@ Function OnArrivedAtJail()
         Utility.Wait(0.2)
 
         Float distToJail = prisoner.GetDistance(jailMarker)
-        ; Single retry only as defense-in-depth — if the navmesh snap landed us
-        ; somewhere unexpected, redo the MoveTo + snap once.
-        ; Wave 5: tolerance is now JailMarkerVerifyDistance (named property,
-        ; default 500u) instead of a magic 500.0 sprinkled across the script.
+        ; One retry if the snap landed farther than JailMarkerVerifyDistance.
         If distToJail > JailMarkerVerifyDistance
             DebugMsg("Initial MoveTo+navmesh placed prisoner " + distToJail + "u from marker - retrying")
             prisoner.MoveTo(jailMarker, 0.0, 0.0, 0.0)
@@ -2512,49 +2261,38 @@ Function OnArrivedAtJail()
     Faction crimeFaction = GetCrimeFactionForGuard(guard)
     ChangeToJailClothes(prisoner, crimeFaction)
 
-    ; Track this jailed NPC. T3-B: dropped the StorageUtil "backward-
-    ; compat shim" — JailedNPCStore (set inside AddJailedNPC) is the
-    ; sole source of truth, and all readers were migrated to
-    ; Native_Jailed_GetMarker.
-    AddJailedNPC(prisoner)
+    ; JailedNPCStore is the only record. The marker is passed in: the store has no entry for a new
+    ; prisoner yet, so reading it back would store 0 and leave the load-time reposition no target.
+    ; The faction of the local guard: CurrentGuard may be another arrest's by now.
+    AddJailedNPCAt(prisoner, jailMarker, crimeFaction)
 
     If DisablePrisonerOnArrival
-        ; Simple approach: just disable the prisoner
-        ; They're "in jail" but removed from the world
+        ; "In jail" means removed from the world.
         Utility.Wait(0.5)
         prisoner.Disable()
         DebugMsg("Prisoner disabled (jailed)")
     Else
         ; Keep prisoner active with sandbox package
         If SeverActions_PrisonerSandBox && jailMarker
-            ; Link prisoner to their jail marker for sandbox (per-actor, supports multiple prisoners)
-            ; Permanent (LREF v3): a sentence can outlast the 30-day staleness
-            ; prune — pruned jail anchors left prisoners on default AI.
+            ; Per-actor sandbox anchor. Permanent (LREF v3): a sentence can outlast the 30-day
+            ; staleness prune, which would leave the prisoner on default AI.
             SeverActionsNativeExt.LinkedRef_SetPermanent(prisoner, jailMarker, SeverActions_SandboxAnchorKW)
             ActorUtil.AddPackageOverride(prisoner, SeverActions_PrisonerSandBox, PackagePriority + 10, 1)
             prisoner.EvaluatePackage()
             DebugMsg("Prisoner sandboxing in jail (linked to marker)")
         Else
-            ; No sandbox package - prisoner may wander
             DebugMsg("WARNING: No jail sandbox package or marker - prisoner may escape!")
             prisoner.EvaluatePackage()
         EndIf
     EndIf
 
-    ; Guard sheathes weapon and returns to normal
     guard.SheatheWeapon()
 
-    ; Release the SkyrimNet on-task lock so the guard becomes eligible for new
-    ; arrest actions again. Pair to the AddToFaction in ArrestNPC_Internal.
-    If SeverActions_DispatchFaction != None && guard.IsInFaction(SeverActions_DispatchFaction)
-        guard.RemoveFromFaction(SeverActions_DispatchFaction)
-    EndIf
+    ; Pair of ArrestNPC_Internal's on-task faction.
+    _LeaveTaskFaction(guard)
 
-    ; Clear the SkyrimNet busy lock on the guard. The prisoner's busy lock is
-    ; intentionally LEFT in place — they're now in jail, and we don't want
-    ; third-party plugins picking actions for them while they're behind bars.
-    ; (The lock survives save/load via SkyrimNet's persistence; ReleasePrisoner
-    ; and the free-from-jail paths clear it when the prisoner is released.)
+    ; The guard's busy lock only: the prisoner's stays while jailed (it survives save/load) so other
+    ; plugins leave them alone; the release paths clear it.
     SeverActionsNative.Native_SkyrimNet_ClearActorBusy(guard)
 
     guard.EvaluatePackage()
@@ -2567,47 +2305,44 @@ Function OnArrivedAtJail()
     String jailMessage = prisoner.GetDisplayName() + " has been jailed in " + jailName + "."
     SkyrimNetApi.RegisterPersistentEvent(jailMessage, prisoner, None)
 
-    ; BUG-A5: clear persisted save/load recovery state — arrest is complete.
-    ClearPersistedArrestState()
-    ApproachStartTime = 0.0
-    EscortStartTime = 0.0
+    ; The waits above let a cancel or a new arrest run: clear only the slots this jailing still owns.
+    Bool ownsSlots = abSameCell && (CurrentPrisoner == prisoner || CurrentPrisoner == None)
 
-    ; Wave 4 / Phase 1.4: transition the native session to kJailed=9 instead
-    ; of ending it. The session must outlive jail arrival so that
-    ; RestorePrisonerStats (called from ClearPrisonerCommonArtifacts at
-    ; release time, well after this function returns) can still read the
-    ; pre-arrest Aggression/Confidence stored on the session entry.
-    ; kJailed has no watchdog timeout — release timing is driven by the
-    ; jail-time scripts, not by session age. The session is finally ended
-    ; in ClearPrisonerCommonArtifacts (post-RestorePrisonerStats).
+    ; Arrest complete: drop the save/load recovery state.
+    If ownsSlots
+        ClearPersistedArrestState()
+        ApproachStartTime = 0.0
+        EscortStartTime = 0.0
+    EndIf
+
+    ; kJailed (9, no watchdog) instead of ending the session: RestorePrisonerStats reads the
+    ; pre-arrest Aggression/Confidence off it at release, and ClearPrisonerCommonArtifacts ends it.
     SeverActionsNative.Native_ArrestSession_UpdateState(prisoner, 9, 0)
 
-    ; The engine's SetActorArrested is deliberately not managed by the FSM:
-    ; setting the IsArrested flag triggered unwanted vanilla AI side effects
-    ; (guards stopped pursuing, etc.). The native stays available for
-    ; selective use.
-
     ; Clear state (do this last since we stored local copies)
-    ClearArrestState()
+    If ownsSlots
+        ClearArrestState()
+    EndIf
 
-    Debug.Notification(prisoner.GetDisplayName() + " has been jailed")
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.hasBeenJailed", ("" + prisoner.GetDisplayName())))
     DebugMsg("Arrest complete - prisoner delivered to " + jailName)
 EndFunction
 
-Function ChangeToJailClothes(Actor akPrisoner, Faction akCrimeFaction)
-    {Strip prisoner and give them jail clothes using SetOutfit for persistence.
-     Uses the faction's jail outfit if available, falls back to property.
-
-     Suspends the outfit lock for the duration of the op so that if the
-     prisoner is a registered follower (player committed a crime, was
-     witnessed by a guard, got dispatched-arrested), the OutfitAlias
-     enforcement loop doesn't fight our SetOutfit. SuspendOutfitLock is a
-     cheap StorageUtil write — no-op for non-followers.}
-
-    SeverActions_Outfit outfitSys = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_Outfit
-    If outfitSys
-        outfitSys.SuspendOutfitLock(akPrisoner)
+Function CancelTravelFor(Actor akActor)
+    {Cancel akActor's journey or wait (restoring a follower) before the arrest takes their packages.
+     A direct call: travelcore is in arrest's requires closure.}
+    If akActor == None
+        Return
     EndIf
+    SeverActions_TravelCore.CancelJourney(akActor, true)
+EndFunction
+
+Function ChangeToJailClothes(Actor akPrisoner, Faction akCrimeFaction)
+    {Cuffs off and SetOutfit the faction's jail outfit (else the property), which persists through
+     cell loads. The outfit lock is suspended around it so a follower's OutfitAlias doesn't fight the
+     SetOutfit; the lock is the kernel's, so this holds without the Outfit module.}
+
+    SeverActionsNativeExt.Native_Outfit_SuspendLock(akPrisoner)
 
     ; Remove cuffs (they're in jail now)
     If SeverActions_PrisonerCuffs
@@ -2629,13 +2364,10 @@ Function ChangeToJailClothes(Actor akPrisoner, Faction akCrimeFaction)
         jailOutfit = SeverActions_PrisonerOutfit
     EndIf
 
-    ; Set prisoner outfit - this persists through cell reloads
     If jailOutfit
-        ; Store the original outfit so we can restore it when freed
-        ; Captured on the native ArrestSession entry (v3), not StorageUtil
+        ; The original outfit goes on the ArrestSession (v3) for the release.
         Outfit originalOutfit = akPrisoner.GetActorBase().GetOutfit()
         If originalOutfit
-            ; T3-B: native source of truth on ArrestSession (v3).
             SeverActionsNativeExt.Native_ArrestSession_SetOriginalOutfit(akPrisoner, originalOutfit)
             DebugMsg("Stored original outfit for " + akPrisoner.GetDisplayName())
         EndIf
@@ -2649,9 +2381,8 @@ Function ChangeToJailClothes(Actor akPrisoner, Faction akCrimeFaction)
         DebugMsg("WARNING: No jail outfit available, using direct equip (won't persist)")
     EndIf
 
-    If outfitSys
-        outfitSys.ResumeOutfitLock(akPrisoner)
-    EndIf
+    SeverActionsNativeExt.Native_Outfit_ResumeLock(akPrisoner)
+    SeverActionsNative.Native_Outfit_ClearBurstSuppression(akPrisoner)
 EndFunction
 
 ; =============================================================================
@@ -2689,36 +2420,28 @@ Function CancelCurrentArrest()
 
     DebugMsg("Canceling current arrest")
 
-    ; BUG-A1: always release any movement freeze first so the prisoner isn't
-    ; left frozen if cancellation happens mid-approach.
+    ; Rope off first - a cancelled arrest must not leave the guard holding one.
+    _ArrestLeash(CurrentPrisoner, CurrentGuard, false)
+
+    ; Unfreeze first so a cancel mid-approach never leaves the prisoner frozen.
     UnfreezePrisonerMovement()
 
-    ; PR-C: cancel any pending ArrivalMonitor registration on the guard.
-    ; Idempotent — no-op if we never registered or it already fired/auto-removed.
+    ; Any pending arrival registration (idempotent).
     If CurrentGuard
         SeverActionsNativeExt.Arrival_Cancel(CurrentGuard)
     EndIf
 
     If CurrentGuard
-        ; Stop stuck tracking
         SeverActionsNativeExt.Stuck_StopTracking(CurrentGuard)
 
-        ; Strip every SeverActions arrest package — covers the approach package,
-        ; escort package, follow-player (state-4 plea), and any dispatch packages
-        ; this same guard might also be carrying. Idempotent.
+        ; Every arrest package (approach, escort, plea follow, any dispatch ones). Idempotent.
         RemoveAllArrestPackages(CurrentGuard)
-        ; Wave 6.1: Clear any FollowTargetKW LinkedRef the guard may be carrying
-        ; (set during state 4 plea; harmless to clear in any other state).
+        ; The plea's FollowTargetKW link; harmless in any other state.
         SeverActionsNative.LinkedRef_Clear(CurrentGuard, SeverActions_FollowTargetKW)
 
-        ; Release the SkyrimNet on-task lock — pair to the AddToFaction in
-        ; ArrestNPC_Internal so the guard becomes eligible for new arrest
-        ; actions after a cancel.
-        If SeverActions_DispatchFaction != None && CurrentGuard.IsInFaction(SeverActions_DispatchFaction)
-            CurrentGuard.RemoveFromFaction(SeverActions_DispatchFaction)
-        EndIf
+        ; Pair of ArrestNPC_Internal's on-task faction.
+        _LeaveTaskFaction(CurrentGuard)
 
-        ; Clear the SkyrimNet v6+ busy lock on the guard.
         SeverActionsNative.Native_SkyrimNet_ClearActorBusy(CurrentGuard)
 
         CurrentGuard.SheatheWeapon()
@@ -2726,69 +2449,43 @@ Function CancelCurrentArrest()
     EndIf
 
     If CurrentPrisoner && ArrestState >= 2 && ArrestState != 5
-        ; Prisoner was already arrested but is not in the transient "just
-        ; arrived at jail" window — release them (ReleasePrisoner clears
-        ; the SkyrimNet busy lock as part of its teardown).
-        ;
-        ; ArrestState 5 is the brief window between OnArrivedAtJail kicking
-        ; off and full jail-faction setup completing. A cancel firing here
-        ; would race ReleasePrisoner against OnArrivedAtJail, stripping
-        ; SeverActions_Jailed from a prisoner who is logically already
-        ; jailed. Leave the jail-finalize path to complete; OrderRelease
-        ; / FreeNPC_Internal are the correct exits from state 5.
+        ; Arrested: release them (ReleasePrisoner clears the busy lock). Never in state 5, OnArrivedAtJail's
+        ; finalize window: a release there strips Jailed from a prisoner who is logically jailed;
+        ; OrderRelease / FreeNPC_Internal are the exits from state 5.
         ReleasePrisoner(CurrentPrisoner)
-    ElseIf CurrentPrisoner
-        ; Prisoner was inside the approach window (ArrestState 1), or is in
-        ; the transient post-arrival window (state 5) where the jail-finalize
-        ; path owns teardown. Either way ReleasePrisoner won't be called from
-        ; here — clear the busy lock we set in ArrestNPC_Internal directly so
-        ; third-party plugins regain action eligibility.
+    ElseIf CurrentPrisoner && ArrestState != 5
+        ; Approach (1): no ReleasePrisoner here, so clear the busy lock ArrestNPC_Internal set. In state 5
+        ; the jailed prisoner keeps it (OnArrivedAtJail).
         SeverActionsNative.Native_SkyrimNet_ClearActorBusy(CurrentPrisoner)
     EndIf
 
-    ; BUG-A5: clear persisted save/load recovery state.
+    ; Drop the save/load recovery state.
     ClearPersistedArrestState()
     ApproachStartTime = 0.0
     EscortStartTime = 0.0
 
-    ; Wave 4: close the native arrest session.
-    If CurrentPrisoner != None
+    ; Not in state 5: OnArrivedAtJail is finishing the jailing, which keeps the session (kJailed)
+    ; for the pre-arrest AVs and outfit the release restores.
+    If CurrentPrisoner != None && ArrestState != 5
         SeverActionsNative.Native_ArrestSession_End(CurrentPrisoner)
     EndIf
 
-    ; Clear dispatch state if active
-    If DispatchPhase > 0
+    ; Only a dispatch about THIS arrest: the two FSMs run concurrently. Not in state 5: the jailing
+    ; is finishing on its own.
+    If DispatchPhase > 0 && ArrestState != 5 && (DispatchTarget == CurrentPrisoner || DispatchGuard == CurrentGuard)
         CancelDispatch()
     EndIf
 
-    ; Clear every reference alias the arrest / dispatch FSM uses.
-    ClearAllArrestAliases()
+    ClearAllArrestAliases(DispatchPhase > 0)
 
     ClearArrestState()
 EndFunction
 
 Function ClearPrisonerCommonArtifacts(Actor akActor)
-    {Cleanup work shared by ReleasePrisoner (mid-arrest release) and
-     ReleaseFromJailCore (post-jail release). Everything here is safe to
-     run idempotently regardless of which phase the prisoner is in:
-
-       - Drops the two factions every arrest path puts the prisoner into
-         (SeverActions_Jailed, dunPrisonerFaction).
-       - Strips the sandbox package + clears the sandbox anchor LinkedRef.
-       - Releases the SkyrimNet v6+ busy lock so third-party actions can
-         target the actor again.
-       - Removes the native JailedNPCStore record (idempotent — no-op if
-         the prisoner wasn't yet in the roster). Plugs the leak that
-         FreeNPC_Internal / FreePrisonerDirect used to have (B5 fix).
-       - Restores Aggression / Confidence via the existing helper, plus
-         depletable HealRate via RestoreAV.
-
-     Does NOT handle the phase-specific work — that stays in each caller:
-       - ReleasePrisoner: mid-arrest factions (WaitingArrest, Arrested),
-         cuffs, follow-guard package, FollowTargetKW LinkedRef,
-         post-release EvaluatePackage.
-       - ReleaseFromJailCore: outfit restore, jail-marker StorageUtil
-         clear.}
+    {Idempotent teardown shared by ReleasePrisoner (mid-arrest) and ReleaseFromJailCore (post-jail):
+     drops Jailed and dunPrisonerFaction, the sandbox package and anchor, the SkyrimNet busy lock and
+     the JailedNPCStore row, restores Aggression/Confidence, then ends the session. Phase-specific work
+     (cuffs, mid-arrest factions, follow link; the outfit restore) stays in the callers.}
 
     akActor.RemoveFromFaction(SeverActions_Jailed)
     akActor.RemoveFromFaction(dunPrisonerFaction)
@@ -2801,28 +2498,17 @@ Function ClearPrisonerCommonArtifacts(Actor akActor)
     SeverActionsNative.Native_SkyrimNet_ClearActorBusy(akActor)
     SeverActionsNativeExt.Native_Jailed_Remove(akActor)
 
-    ; Restore normal stats. Aggression/Confidence are base attributes (not
-    ; depletable resources), so RestoreAV doesn't work — we have to read the
-    ; pre-arrest originals back (native ArrestSession capture, StorageUtil as
-    ; legacy fallback) and SetAV via the helper.
-    ; HealRate IS depletable, so RestoreAV is correct for it.
+    ; The arrest leaves HealRate alone: lowering it needs its original stored on the session, since
+    ; RestoreAV only heals damage up to the base and cannot undo a SetAV.
     RestorePrisonerStats(akActor)
-    akActor.RestoreAV("HealRate", 100)
 
-    ; Phase 1.4: end the native arrest session AFTER RestorePrisonerStats has
-    ; read the pre-arrest Aggression/Confidence off the session entry.
-    ; OnArrivedAtJail transitions to kJailed=9 (no watchdog) instead of
-    ; ending the session, so jail-release paths reach here with the session
-    ; still alive. Idempotent — no-op when there's no session (mid-arrest
-    ; release paths that already ended it).
+    ; Only after RestorePrisonerStats has read the session. Idempotent (a mid-arrest path may have ended it).
     SeverActionsNative.Native_ArrestSession_End(akActor)
 EndFunction
 
 Function ReleasePrisoner(Actor akPrisoner)
-    {Release a prisoner mid-arrest — remove restraints, mid-arrest factions,
-     and the follow-guard package. The common artifact cleanup (jailed
-     faction, sandbox, busy lock, native jailed, stats) is shared with
-     ReleaseFromJailCore via ClearPrisonerCommonArtifacts.}
+    {Release a prisoner mid-arrest: cuffs, mid-arrest factions and the follow-guard package, then
+     ClearPrisonerCommonArtifacts.}
 
     If akPrisoner == None
         Return
@@ -2834,7 +2520,6 @@ Function ReleasePrisoner(Actor akPrisoner)
     akPrisoner.RemoveFromFaction(SeverActions_WaitingArrest)
     akPrisoner.RemoveFromFaction(SeverActions_Arrested)
 
-    ; Remove restraints
     If SeverActions_PrisonerCuffs
         akPrisoner.UnequipItem(SeverActions_PrisonerCuffs, false, true)
         akPrisoner.RemoveItem(SeverActions_PrisonerCuffs, 1, true)
@@ -2851,31 +2536,20 @@ Function ReleasePrisoner(Actor akPrisoner)
 EndFunction
 
 Function ReleaseFromJailCore(Actor akTarget)
-    {Core jail-release cleanup shared by FreeNPC_Internal and FreePrisonerDirect.
-     The shared artifact teardown (factions, sandbox, busy lock, native
-     jailed, stats) lives in ClearPrisonerCommonArtifacts; this function
-     only adds the jail-specific work: restore the original outfit (with
-     OutfitAlias suspended) and clear the jail-marker StorageUtil entry.
-     Does NOT handle guard approach, animations, narration, tracking
-     removal, or EvaluatePackage — callers do that.}
+    {Jail-release core for FreeNPC_Internal and FreePrisonerDirect: ClearPrisonerCommonArtifacts plus
+     restoring the original outfit (outfit lock suspended). Callers handle the guard, animations,
+     narration, tracking removal and EvaluatePackage.}
+    ; Belt: a rope survives to here only if the escort teardown was skipped (a reload mid-escort,
+    ; another exit). Idempotent.
+    _ArrestLeash(akTarget, None, false)
 
-    ; T3-B critical fix: capture OriginalOutfit BEFORE ClearPrisoner-
-    ; CommonArtifacts runs. That function calls Native_ArrestSession_End
-    ; which erases the ArrestSession entry — reading the outfit after
-    ; would always return None and the prisoner would never get their
-    ; outfit restored. Same pre-clear capture pattern that the existing
-    ; RestorePrisonerStats path uses for Aggression/Confidence.
+    ; Read the original outfit BEFORE ClearPrisonerCommonArtifacts ends the session that holds it.
     Outfit originalOutfit = SeverActionsNativeExt.Native_ArrestSession_GetOriginalOutfit(akTarget) as Outfit
 
     ClearPrisonerCommonArtifacts(akTarget)
 
-    ; Restore original outfit if we stored one. Suspend/Resume the outfit
-    ; lock around the op so OutfitAlias enforcement won't fight us if the
-    ; released NPC is a registered follower.
-    SeverActions_Outfit outfitSys = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_Outfit
-    If outfitSys
-        outfitSys.SuspendOutfitLock(akTarget)
-    EndIf
+    ; Suspend the outfit lock so a follower's OutfitAlias doesn't fight the restore.
+    SeverActionsNativeExt.Native_Outfit_SuspendLock(akTarget)
     If originalOutfit
         akTarget.SetOutfit(originalOutfit)
         DebugMsg("Restored original outfit for " + akTarget.GetDisplayName())
@@ -2884,43 +2558,20 @@ Function ReleaseFromJailCore(Actor akTarget)
         akTarget.RemoveItem(SeverActions_PrisonerRags, 1, true)
     EndIf
 
-    If outfitSys
-        outfitSys.ResumeOutfitLock(akTarget)
-    EndIf
-
-    ; T3-B: jail marker lives in JailedNPCStore (cleared by the session-
-    ; end flow elsewhere) and on ArrestSession (erased when the session
-    ; ends). No manual unset needed.
+    SeverActionsNativeExt.Native_Outfit_ResumeLock(akTarget)
+    SeverActionsNative.Native_Outfit_ClearBurstSuppression(akTarget)
 EndFunction
 
 Function RestorePrisonerStats(Actor akActor)
-    {Restore Aggression and Confidence from the pre-arrest originals captured
-     on the native ArrestSession entry during PerformArrest /
-     ApplyDispatchArrestEffects (StorageUtil keys only as a legacy-save fallback).
-
-     Aggression and Confidence are base actor attributes (0=Unaggressive
-     ... 3=Frenzied / 0=Cowardly ... 4=Foolhardy) — they don't get
-     "damaged" the way HealRate or stamina do, so RestoreAV does nothing
-     useful for them. Only SetAV with the captured original value puts
-     them back correctly. This bug used to leave released prisoners with
-     Aggression=0 / Confidence=0 forever — bandits walked out docile,
-     hostile NPCs walked out friendly to everyone.
-
-     If no original was stored (legacy save before the fix, or NPC was
-     never properly arrested via our flow), we fall back to sane vanilla
-     defaults: Aggression=1 (Aggressive) and Confidence=2 (Average).}
+    {Restore Aggression and Confidence from the pre-arrest originals captured on the ArrestSession
+     (PerformArrest / ApplyDispatchArrestEffects). They are base attributes (0-3 Unaggressive..Frenzied,
+     0-4 Cowardly..Foolhardy), so only SetAV with the original works; RestoreAV does nothing.}
     If !akActor
         Return
     EndIf
 
-    ; Phase 1.4: prefer the native ArrestSession capture (cosave-backed,
-    ; persists across save/load). Fall back to the legacy StorageUtil keys
-    ; for saves that were mid-arrest at the v1→v2 cosave version bump —
-    ; their session entry was dropped by the version-mismatch path so the
-    ; native capture is empty, but the StorageUtil keys from the previous
-    ; mod version may still be on the actor. Final fallback: vanilla
-    ; defaults so a freshly-arrested actor without a capture still
-    ; recovers to sensible AVs.
+    ; Fallbacks: the legacy SeverArrest_Orig* StorageUtil keys (a save mid-arrest across the v1->v2
+    ; cosave bump lost its session entry), then vanilla defaults Aggression 1 / Confidence 2.
     Float origAggression = SeverActionsNative.Native_ArrestSession_GetOrigAggression(akActor)
     If origAggression < 0.0
         origAggression = StorageUtil.GetFloatValue(akActor, "SeverArrest_OrigAggression", -1.0)
@@ -2949,15 +2600,10 @@ Function RestorePrisonerStats(Actor akActor)
 EndFunction
 
 ; =============================================================================
-; CROSS-SCRIPT ACCESSORS (Wave 5b)
-; The dispatch + same-cell state vars below are script-local (not Auto
-; properties) by design — they're runtime-only state, persisted via the
-; native cosave records ('AARS'/'ARDC'), not StorageUtil or VMAD. To let
-; extracted sub-scripts (JudgmentScript,
-; future Player extraction) read/mutate them without exposing them as Auto
-; properties (which would balloon the save VMAD), we provide explicit
-; getter/setter functions here. Keep this list narrow — only what
-; sub-scripts actually need.
+; CROSS-SCRIPT ACCESSORS for the sub-scripts (JudgmentScript, PlayerScript).
+; The dispatch and same-cell state is script-local and persisted in the native
+; 'AARS'/'ARDC' records, not as Auto properties. Keep this list to what the
+; sub-scripts need.
 ; =============================================================================
 
 Actor Function GetDispatchGuard()
@@ -2977,15 +2623,12 @@ Int Function GetDispatchPhase()
 EndFunction
 
 Function SetCurrentArrestSlots(Actor akGuard, Actor akPrisoner, ObjectReference akJailMarker, String asJailName)
-    {Set the four same-cell arrest slots in one call. Used by JudgmentScript
-     when handing off from Phase 6 (judgment) to the same-cell escort pipeline.}
+    {Set the four same-cell arrest slots: JudgmentScript's judgment (dispatch phase 6) -> escort handoff.}
     CurrentGuard = akGuard
     CurrentPrisoner = akPrisoner
     CurrentJailMarker = akJailMarker
     CurrentJailName = asJailName
 EndFunction
-
-; =============================================================================
 
 Function ClearArrestState()
     {Clear all tracking state}
@@ -2995,21 +2638,15 @@ Function ClearArrestState()
     CurrentJailMarker = None
     CurrentJailName = ""
     ArrestState = 0
-    ; Wave 6.1: clear plea-phase tracking so the next arrest gets a fresh
-    ; single-attempt budget for AppealDuringEscort.
+    ; The next arrest gets a fresh plea.
     EscortPleaStartTime = 0.0
     EscortPleaAttempted = false
 
-    ; Phase 2.3a: tear down the native EscortPackageReapplier tracker
-    ; alongside the rest of the FSM. Idempotent — no-op if not armed.
+    ; The EscortPackageReapplier (idempotent).
     SeverActionsNative.Native_EscortReapply_End()
 
-    ; The same-cell FSM and the cross-cell dispatch FSM share this script's
-    ; single OnUpdate channel. Unregistering unconditionally here silently
-    ; froze a live dispatch (off-screen ETA ticks, time-skip arrival, 24h
-    ; timeout) whenever a same-cell arrest completed or was cancelled while
-    ; a dispatch was in flight -- nothing ticked again until the native
-    ; watchdog noticed. Keep the update loop alive for the dispatch FSM.
+    ; The dispatch FSM shares this script's one chronometer slot: keep it armed while a dispatch
+    ; runs, or its ticks stop until the native watchdog notices.
     If DispatchPhase > 0
         ChronoArm(UpdateInterval)
     Else
@@ -3018,19 +2655,13 @@ Function ClearArrestState()
 EndFunction
 
 ; =============================================================================
-; CLEANUP HELPERS (Wave 5)
-; Centralizes the package-strip and alias-clear patterns that were duplicated
-; 5+ times each across CancelCurrentArrest / OnArrivedAtJail / CompleteDispatch
-; / CancelDispatch / EndJudgment. Behavior is unchanged from the inline forms
-; — these just consolidate the same RemovePackageOverride sequences into a
-; single function so a future package addition only needs one edit.
+; CLEANUP HELPERS - the package strip and alias clear every exit path shares,
+; so a new package needs one edit.
 ; =============================================================================
 
 Function RemoveAllArrestPackages(Actor akActor)
-    {Strip every SeverActions arrest-related package from akActor. Idempotent:
-     RemovePackageOverride is a no-op when the actor doesn't currently have
-     the package, so we can call this on any actor without checking which
-     packages they actually had.}
+    {Strip every arrest-related package override from akActor. Idempotent (RemovePackageOverride
+     no-ops on a package the actor doesn't hold).}
 
     If akActor == None
         Return
@@ -3063,13 +2694,9 @@ Function RemoveAllArrestPackages(Actor akActor)
 EndFunction
 
 Bool Function _DispatchAliasesBorrowed()
-    {Audit: the kidnap system BORROWS DispatchGuardAlias/DispatchTargetAlias/
-     DispatchPrisonerAlias for its high-process legs (it checks they are
-     empty before claiming; see FollowerManager._LaunchGrabLeg). TRUE while a
-     kidnap fill is live - the guard alias holds an actor the KidnapStore
-     recognizes as an active kidnapper. Arrest dispatch must not ForceRefTo
-     over it (that sent the kidnapper jogging after the ARREST target and
-     dropped the kidnap victim to low process).}
+    {TRUE while a kidnap leg borrows the dispatch aliases for its high-process legs (the guard alias
+     holds an active kidnapper; see SeverActions_Kidnap._LaunchGrabLeg). Arrest dispatch must not
+     ForceRefTo over it: the kidnapper would chase the arrest target and the victim drop to low process.}
     If DispatchGuardAlias == None
         Return false
     EndIf
@@ -3080,18 +2707,55 @@ Bool Function _DispatchAliasesBorrowed()
     Return false
 EndFunction
 
-Function ClearAllArrestAliases()
-    {Clear every reference alias used by the arrest / dispatch FSM. Safe to
-     call from any cleanup path — ForceRefTo None on a quest alias is a
-     no-op when nothing is currently filled.}
+Bool Function IsSameCellArrestActive()
+    {True while a same-cell arrest runs: its slots and ArrestTarget / ArrestingGuard / JailDestination are in use.}
+    Return ArrestState != 0
+EndFunction
+
+Function ClearDispatchExitAliases()
+    {A dispatch exit's alias clear: the dispatch aliases always, the same-cell arrest's only while none
+     is running (they drive its guard's packages).}
+    If !IsSameCellArrestActive()
+        ArrestTarget.Clear()
+        ArrestingGuard.Clear()
+        JailDestination.Clear()
+    EndIf
+    _ClearDispatchAliases()
+EndFunction
+
+Function JailDispatchPrisonerNow(Actor akGuard, Actor akPrisoner, ObjectReference akJailMarker, String asJailName)
+    {The judgment's jail order while a same-cell arrest holds the escort slots: the dispatch state is
+     cleared, then the prisoner goes straight to the cell.}
+    ; Cleared first: the judgment's tick would otherwise run during the jailing's waits and re-apply
+    ; the prisoner's follow package or jail them again. The session must survive (release reads it),
+    ; so ClearDispatchState must not end it.
+    DispatchTarget = None
+    ClearDispatchExitAliases()
+    ClearPersistedDispatchState()
+    ClearDispatchState()
+    JailPrisonerAt(akGuard, akPrisoner, akJailMarker, asJailName, false)
+EndFunction
+
+Function ClearAllArrestAliases(Bool abKeepDispatch = false)
+    {Clear every arrest / dispatch alias; safe from any cleanup path. abKeepDispatch keeps the dispatch
+     aliases for a caller ending the SAME-CELL arrest while a dispatch runs: its packages resolve their
+     destination through them and nothing refills them per tick.}
 
     ArrestTarget.Clear()
     ArrestingGuard.Clear()
     JailDestination.Clear()
-    ; Audit: the dispatch aliases may be BORROWED by a live kidnap leg
-    ; (arrest completion paths used to wipe them unconditionally, dropping
-    ; the kidnap pair to low process mid-march). Leave a kidnap fill alone -
-    ; the kidnap's own _EndDispatchAliases hands them back.
+    If abKeepDispatch
+        If DispatchTravelDestination != None
+            DispatchTravelDestination.Clear()
+        EndIf
+    Else
+        _ClearDispatchAliases()
+    EndIf
+EndFunction
+
+Function _ClearDispatchAliases()
+    {The dispatch aliases and DispatchTravelDestination, leaving any a live kidnap leg borrowed (its
+     _EndDispatchAliases hands them back).}
     If !_DispatchAliasesBorrowed()
         DispatchGuardAlias.Clear()
         DispatchTargetAlias.Clear()
@@ -3105,10 +2769,9 @@ Function ClearAllArrestAliases()
 EndFunction
 
 Function ReapplyEscortPackages(Actor akGuard, Actor akPrisoner, ObjectReference akJailMarker)
-    {Atomically (re)apply the escort-phase packages: guard's GuardEscortPackage
-     targeting JailDestination, prisoner's FollowGuard_Prisoner targeting the
-     LinkedRef-managed guard. Used by ResumeEscortFromPlea and RecoverActiveArrest;
-     StartEscortPhase keeps its own inline copy of the sequence.}
+    {(Re)apply the escort packages: the guard's GuardEscortPackage to JailDestination, the prisoner's
+     FollowGuard_Prisoner to the guard through FollowTargetKW. ResumeEscortFromPlea and
+     RecoverActiveArrest use it; StartEscortPhase keeps an inline copy.}
 
     If akGuard == None || akPrisoner == None || akJailMarker == None
         Return
@@ -3129,16 +2792,8 @@ Function ReapplyEscortPackages(Actor akGuard, Actor akPrisoner, ObjectReference 
 EndFunction
 
 ; =============================================================================
-; BOUNTY API
+; HOLD HELPERS (AddBountyToPlayer_Internal lives in SeverActions_ArrestBounty.psc)
 ; =============================================================================
-;
-; Wave 5b: AddBountyToPlayer_Internal moved to SeverActions_ArrestBounty.psc.
-; The action YAML (addbountytoplayer.yaml) now points scriptName at that
-; sub-script directly, so no thin-wrapper is needed here.
-;
-; The 9 tracked-bounty CRUD functions also moved. Internal callsites in this
-; file delegate via BountyScript.GetTrackedBounty(...) etc. — see the
-; BountyScript property declaration near the top.
 
 Faction Function GetCrimeFactionForGuard(Actor akGuard)
     {Get the crime faction the guard belongs to. Native HoldResolver.}
@@ -3162,17 +2817,15 @@ EndFunction
 
 Function DebugMsg(String msg)
     Debug.Trace("SeverArrest: " + msg)
-    ; Mirror to SeverActionsNative.log so the arrest FSM is observable for users
-    ; who haven't enabled bPapyrusLog. The native side prefixes with [Arrest].
+    ; Also to SeverActionsNative.log ([Arrest]) for users without bPapyrusLog.
     SeverActionsNative.Native_Arrest_Log(msg)
     If EnableDebugMessages
-        Debug.Notification("Arrest: " + msg)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.arrest", ("" + msg)))
     EndIf
 EndFunction
 
 Function ClearAllDispatchLinkedRefs(Actor akActor)
-    {Clear linked refs for both dispatch keywords on an actor.
-     Used during dispatch cleanup to ensure no stale linked refs remain.}
+    {Clear both dispatch keywords' linked refs on an actor (dispatch cleanup).}
     If akActor != None
         SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_FollowTargetKW)
         SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_SandboxAnchorKW)
@@ -3182,23 +2835,14 @@ EndFunction
 Function ClearDispatchState()
     {Reset all dispatch-related script variables to their defaults.
      Called by CompleteDispatch, CancelDispatch, and EndJudgment branches.}
-    ; Wave 5b: judgment timer lives on JudgmentScript. Call BEFORE nulling
-    ; DispatchSender/DispatchGuard so ResetState's busy-flag clear can still
-    ; resolve the actor it needs to clear via GetDispatchSender/Guard. The
-    ; field-null block below would otherwise leak the "judgment" busy flag
-    ; on the sender (or guard, for player-sender dispatches) through the
-    ; CancelDispatch path, permanently blocking is_busy-gated actions on
-    ; that NPC until game restart.
+    ; BEFORE the fields are nulled: ResetState clears the "judgment" busy flag on the actor
+    ; GetDispatchSender/Guard resolve (the sender, or the guard for a player sender), which would
+    ; otherwise block is_busy-gated actions on them for good.
     If JudgmentScript
         JudgmentScript.ResetState()
     EndIf
 
-    ; Close the cosave ArrestSession entry for the dispatch target. Must
-    ; happen BEFORE the DispatchTarget = None line below so we can still
-    ; resolve the actor. Native_ArrestSession_End is idempotent (no-op when
-    ; the entry doesn't exist), so it's safe to call on every cleanup path
-    ; — including same-cell paths that close their own entry via a
-    ; different code site.
+    ; End the target's session while DispatchTarget still resolves. Idempotent.
     If DispatchTarget != None
         SeverActionsNative.Native_ArrestSession_End(DispatchTarget)
     EndIf
@@ -3210,6 +2854,7 @@ Function ClearDispatchState()
     DispatchGuardOffScreen = false
     DispatchTargetLocation = ""
     DispatchGameTimeStart = 0.0
+    DispatchReturnTimeStart = 0.0
     DispatchInitialDistance = 0.0
     DispatchIsHomeInvestigation = false
     DispatchInvestigationReason = ""
@@ -3251,35 +2896,26 @@ Function ClearDispatchState()
 EndFunction
 
 Function ClearDeferredNarration()
-    {Clear deferred evidence narration stored on a sender actor.
-     Called when the narration fires (player approached sender) or sender dies.}
+    {Clear the deferred evidence narration on the sender, once it fires (the player reached the
+     sender) or the sender dies.}
     If DeferredNarrationSender != None
-        ; T1-D.3: single native call clears the per-sender entry AND
-        ; auto-clears the deferred-sender singleton when it matches.
+        ; Clears the sender's entry and, when it matches, the deferred-sender singleton.
         SeverActionsNativeExt.Native_Arrest_ClearPendingEvidence(DeferredNarrationSender)
         DeferredNarrationSender = None
         DebugMsg("Cleared deferred narration state")
     EndIf
-    ; PR-C: drop the player's ArrivalMonitor narration-witness registration.
-    ; Idempotent — Arrival_Cancel is a no-op when nothing is registered.
+    ; The player's narration-witness arrival registration (idempotent).
     SeverActionsNativeExt.Arrival_Cancel(Game.GetPlayer())
 EndFunction
 
 Function InitDispatchCommon(Actor akGuard, ObjectReference akDestination)
-    {Shared setup for both arrest and home dispatches.
-     Call after dispatch state and aliases are fully configured.
-     akGuard: the dispatched guard
-     akDestination: the ObjectReference the guard is traveling to (target actor or home marker)}
+    {Shared setup for arrest and home dispatches, called once the dispatch state and aliases are set.
+     akDestination: where the guard travels (the target actor or the home marker).}
 
-    ; Mark guard as on-task (prevents SkyrimNet re-tasking via YAML eligibility)
-    If SeverActions_DispatchFaction != None
-        akGuard.AddToFaction(SeverActions_DispatchFaction)
-        akGuard.SetFactionRank(SeverActions_DispatchFaction, 0)
-    EndIf
+    ; On task: YAML eligibility keeps SkyrimNet from re-tasking the guard.
+    _BeginGuardTask(akGuard)
 
-    ; Mark guard busy via SkyrimNet's PublicAPI v6+ so cross-plugin actions
-    ; (escort, follow, travel from any other mod) also exclude this guard for
-    ; the duration of the dispatch. Cleared in CompleteDispatch / CancelDispatch.
+    ; SkyrimNet busy lock for other mods' actions; cleared in CompleteDispatch / CancelDispatch.
     SeverActionsNative.Native_SkyrimNet_SetActorBusy(akGuard, "arrest")
 
     ; Prevent guard from stopping for idle greetings/dialogue during dispatch
@@ -3310,44 +2946,34 @@ Function InitDispatchCommon(Actor akGuard, ObjectReference akDestination)
     ; Initialize off-screen travel estimation (distance-based arrival time)
     SeverActionsNative.OffScreen_InitTracking(akGuard, akDestination, 0.5, 18.0)
 
-    ; PR-D: register the guard with ArrivalMonitor for Phase-1 travel arrival.
-    ; Fires when the guard closes to DispatchArrivalDistance of akDestination
-    ; (target actor for arrest dispatch, home interior marker for home
-    ; investigation). CheckDispatchPhase1_Travel still runs per-tick for the
-    ; off-screen path (snapshot distance, OffScreen_CheckArrival, stale-snapshot
-    ; redirect) and stuck escalation; only the loaded-same-area proximity
-    ; transition is event-driven now.
+    ; The loaded phase-1 arrival (DispatchArrivalDistance of akDestination) is OnArrival's;
+    ; CheckDispatchPhase1_Travel still ticks for the off-screen path and stuck escalation.
     SeverActionsNativeExt.Arrival_Register(akGuard, akDestination, DispatchArrivalDistance, "dispatch_p1_arrived")
 
     ; Persist dispatch state for save/load recovery
     PersistDispatchState()
+    _GuardOffSchedule(akGuard)
 
     ; Start monitoring
     ChronoArm(UpdateInterval)
 EndFunction
 
 Function ApplyDispatchArrestEffects()
-    {Apply arrest effects to DispatchTarget during dispatch arrest.
-     Does NOT set ArrestState/CurrentGuard/CurrentPrisoner to avoid
-     conflicting with the same-cell escort system in OnUpdate.
-     Called by PerformOffScreenArrest and CheckDispatchPhase2_Approach.}
+    {Arrest DispatchTarget for a dispatch (PerformOffScreenArrest, CheckDispatchPhase2_Approach,
+     OnArrival dispatch_p2_arrived). Leaves ArrestState / CurrentGuard / CurrentPrisoner alone:
+     they belong to the same-cell arrest on the shared tick.}
 
     DispatchTarget.StopCombat()
     DispatchTarget.StopCombatAlarm()
 
-    ; Cancel any active travel errand so it doesn't fight with arrest escort
-    If TravelSystem != None
-        TravelSystem.CancelTravel(DispatchTarget)
-    EndIf
+    ; A travel errand would fight the escort for the actor's packages.
+    CancelTravelFor(DispatchTarget)
 
-    ; Capture originals on the native ArrestSession entry before pacifying —
-    ; same store/restore pattern as PerformArrest. Without this, dispatch-
-    ; arrested NPCs would never recover their Aggression / Confidence on
-    ; release. (Phase 1.4 migration: replaces the legacy StorageUtil keys.)
+    ; Capture the originals on the ArrestSession before pacifying, as PerformArrest does: release
+    ; restores them from there.
     SeverActionsNative.Native_ArrestSession_CaptureAVs(DispatchTarget, DispatchTarget.GetAV("Aggression"), DispatchTarget.GetAV("Confidence"))
     DispatchTarget.SetAV("Aggression", 0)
     DispatchTarget.SetAV("Confidence", 0)
-    DispatchTarget.SetAV("HealRate", 0.1)
 
     If SeverActions_Arrested
         DispatchTarget.AddToFaction(SeverActions_Arrested)
@@ -3364,15 +2990,12 @@ Function ApplyDispatchArrestEffects()
         DispatchTarget.EquipItem(SeverActions_PrisonerCuffs, true, true)
     EndIf
 
-    If OffsetBoundStandingStart
-        DispatchTarget.PlayIdle(OffsetBoundStandingStart)
-    EndIf
+    ; (Bound pose played after the package below - see PerformArrest.)
 
-    ; Link prisoner to guard for follow package
     SeverActionsNative.LinkedRef_Set(DispatchTarget, DispatchGuard, SeverActions_FollowTargetKW)
     Utility.Wait(0.2)
 
-    ; Break any animation lock from PlayIdle before activating follow package
+    ; Break any PlayIdle animation lock before the follow package.
     Debug.SendAnimationEvent(DispatchTarget, "IdleForceDefaultState")
     Utility.Wait(0.1)
 
@@ -3381,31 +3004,23 @@ Function ApplyDispatchArrestEffects()
         DispatchTarget.SetLookAt(DispatchGuard)
         DispatchTarget.EvaluatePackage()
     EndIf
+
+    ; Bound-hands march look, last so nothing cancels it (see PerformArrest).
+    If OffsetBoundStandingStart
+        DispatchTarget.PlayIdle(OffsetBoundStandingStart)
+    EndIf
 EndFunction
 
-; Wave 5b: StopPersuasionFollow moved to SeverActions_ArrestPlayer.psc
-; alongside the rest of the persuasion FSM.
-
-; =============================================================================
-; TRACKED BOUNTY SYSTEM
-; =============================================================================
-;
-; Wave 5b: the 7 tracked-bounty CRUD functions (
-; GetTrackedBounty, SetTrackedBounty, ModTrackedBounty, ClearTrackedBounty,
-; ApplyTrackedBountyToVanilla, GetTrackedBountyForGuard) moved to
-; SeverActions_ArrestBounty.psc. Internal callers in this file delegate via
-; BountyScript.X — see the BountyScript property declaration at the top of
-; the file. PrismaUI / MCM / external callers go straight to BountyScript.
+; Tracked bounty (Get/Set/Mod/ClearTrackedBounty and friends): SeverActions_ArrestBounty.psc,
+; called through BountyScript.
 
 ; =============================================================================
 ; FREE NPC API - Release jailed NPCs
 ; =============================================================================
 
 Bool Function FreeNPC_Internal(Actor akGuard, Actor akTarget)
-    {Free a jailed NPC. Guard will approach and release the prisoner.
-     Called by SkyrimNet FreeNPC action.
-     akGuard: The guard or authority figure doing the freeing
-     akTarget: The jailed NPC to free}
+    {SkyrimNet FreeNPC action: akGuard (a guard or authority) walks to the jailed akTarget
+     (up to 15 s), gestures and releases them. False when akTarget is not jailed.}
 
     If akGuard == None
         DebugMsg("ERROR: FreeNPC called with None guard")
@@ -3417,7 +3032,6 @@ Bool Function FreeNPC_Internal(Actor akGuard, Actor akTarget)
         Return false
     EndIf
 
-    ; Check if this NPC is actually jailed
     If !akTarget.IsInFaction(SeverActions_Jailed)
         DebugMsg("ERROR: " + akTarget.GetDisplayName() + " is not jailed")
         Return false
@@ -3425,30 +3039,27 @@ Bool Function FreeNPC_Internal(Actor akGuard, Actor akTarget)
 
     DebugMsg(akGuard.GetDisplayName() + " is freeing prisoner: " + akTarget.GetDisplayName())
 
-    ; Re-enable prisoner if disabled
     If akTarget.IsDisabled()
         akTarget.Enable()
         Utility.Wait(0.5)
     EndIf
 
-    ; Check distance - if guard is far from prisoner, have them approach first
+    ; A guard farther than 200 units walks to the prisoner first, through the ArrestTarget alias: not
+    ; while a same-cell arrest uses it (the release then happens from where the guard stands).
     Float distance = akGuard.GetDistance(akTarget)
-    If distance > 200.0
+    If distance > 200.0 && !IsSameCellArrestActive()
         DebugMsg("Guard approaching prisoner (distance: " + distance + ")")
 
-        ; Link guard to prisoner for approach package
         SeverActionsNative.LinkedRef_Set(akGuard, akTarget, SeverActions_FollowTargetKW)
 
-        ; Fill the ArrestTarget alias with the prisoner for the approach package
+        ; GuardApproachTarget targets the ArrestTarget alias.
         ArrestTarget.ForceRefTo(akTarget)
 
-        ; Apply approach package to guard
         If SeverActions_GuardApproachTarget
             ActorUtil.AddPackageOverride(akGuard, SeverActions_GuardApproachTarget, PackagePriority, 1)
             akGuard.EvaluatePackage()
         EndIf
 
-        ; Wait for guard to approach (with timeout)
         Float timeout = 15.0
         Float elapsed = 0.0
         While akGuard.GetDistance(akTarget) > 150.0 && elapsed < timeout
@@ -3456,7 +3067,6 @@ Bool Function FreeNPC_Internal(Actor akGuard, Actor akTarget)
             elapsed += 0.5
         EndWhile
 
-        ; Remove approach package
         If SeverActions_GuardApproachTarget
             ActorUtil.RemovePackageOverride(akGuard, SeverActions_GuardApproachTarget)
         EndIf
@@ -3466,7 +3076,6 @@ Bool Function FreeNPC_Internal(Actor akGuard, Actor akTarget)
         DebugMsg("Guard reached prisoner (elapsed: " + elapsed + "s)")
     EndIf
 
-    ; Play give/release gesture animation
     If IdleGive
         akGuard.PlayIdle(IdleGive)
         Utility.Wait(1.5)
@@ -3474,52 +3083,38 @@ Bool Function FreeNPC_Internal(Actor akGuard, Actor akTarget)
 
     ReleaseFromJailCore(akTarget)
 
-    ; Force re-evaluation so prisoner returns to normal AI
     akTarget.EvaluatePackage()
     akGuard.EvaluatePackage()
 
-    ; Remove from tracking
     RemoveJailedNPC(akTarget)
 
-    ; Direct narration for the release
-    String narration = "*" + akGuard.GetDisplayName() + " unlocks the cell door and gestures for " + akTarget.GetDisplayName() + " to leave.* \"You're free to go.\""
+    String narration = "*" + akGuard.GetDisplayName() + " unlocks the cell door and gestures for " + akTarget.GetDisplayName() + " to leave - they are free to go.*"
     SkyrimNetApi.DirectNarration(narration, akGuard, akTarget)
 
-    Debug.Notification(akTarget.GetDisplayName() + " has been freed from jail")
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.hasBeenFreedFromJail", ("" + akTarget.GetDisplayName())))
     DebugMsg("Prisoner freed: " + akTarget.GetDisplayName())
 
     Return true
 EndFunction
 
 Function FreePrisonerDirect(Actor akTarget)
-    {Free a prisoner directly without guard approach - used by FreeAllPrisoners
-     and the PrismaUI Jail Roster Release button. Does not play animations or
-     approach, just releases the prisoner immediately. Works for BOTH loaded
-     (same-cell) and unloaded (off-screen) prisoners: the whole teardown in
-     ReleaseFromJailCore is form-level (factions, package override, LinkedRef,
-     AVs, native session/roster, SetOutfit) and needs no 3D.}
+    {Release a prisoner at once, with no guard walk or animation (FreeAllPrisoners, the
+     Magelight Jail Roster button). Works on unloaded prisoners too: ReleaseFromJailCore is
+     form-level and needs no 3D.}
 
     If akTarget == None
         Return
     EndIf
 
-    ; Re-enable prisoner if disabled
     If akTarget.IsDisabled()
         akTarget.Enable()
     EndIf
 
     ReleaseFromJailCore(akTarget)
 
-    ; Positional handling. Same cell as the player: leave them where they
-    ; stand - their restored AI takes over in view. Off-screen (or loaded
-    ; but elsewhere): send them back to their editor placement. Their own
-    ; packages would eventually travel them home, but jail interiors have
-    ; locked doors, so a released prisoner could stay physically stuck in
-    ; the cell for days of game time. MoveToMyEditorLocation is a
-    ; bookkeeping move for unloaded refs (no 3D needed); runtime-spawned
-    ; actors without an editor placement no-op harmlessly. If the PrismaUI
-    ; menu has the game paused, the engine may defer the move to unpause -
-    ; that is fine, it is the op we want, just a moment late.
+    ; Outside the player's cell, send them to their editor placement: jail doors are locked, so
+    ; their own packages could leave them stuck in the cell for days. MoveToMyEditorLocation
+    ; needs no 3D, no-ops on an actor with no placement, and may wait for a paused menu to close.
     Actor releasePC = Game.GetPlayer()
     Bool sameCell = akTarget.Is3DLoaded() && releasePC && akTarget.GetParentCell() == releasePC.GetParentCell()
     If !sameCell
@@ -3527,17 +3122,14 @@ Function FreePrisonerDirect(Actor akTarget)
         DebugMsg("Off-screen release: sent " + akTarget.GetDisplayName() + " to editor location")
     EndIf
 
-    ; Force re-evaluation
     akTarget.EvaluatePackage()
 
     DebugMsg("Prisoner freed directly: " + akTarget.GetDisplayName())
 EndFunction
 
 Function FreeAllPrisoners()
-    {Free all currently jailed NPCs (direct release, no guard approach).
-     Snapshots the native roster before iterating so each FreePrisonerDirect
-     call (which internally Native_Jailed_Removes via ReleaseFromJailCore →
-     ClearPrisonerCommonArtifacts) can mutate the store safely.}
+    {Release every jailed NPC with FreePrisonerDirect. Iterates a snapshot of the native
+     roster, since each release removes its own entry.}
 
     Actor[] roster = SeverActionsNativeExt.Native_Jailed_GetAll()
     Int count = roster.Length
@@ -3555,9 +3147,7 @@ Function FreeAllPrisoners()
         i -= 1
     EndWhile
 
-    ; Belt-and-suspenders: defensively clear anything FreePrisonerDirect missed
-    ; (e.g. an entry with a stale prisoner ref that ReleaseFromJailCore couldn't
-    ; resolve). The pre-PR-B Papyrus array is also wiped here for migrated saves.
+    ; Clear any entry the loop left (a prisoner ref that no longer resolves) and the legacy array.
     SeverActionsNativeExt.Native_Jailed_RemoveAll()
     JailedNPCs = PapyrusUtil.ActorArray(0)
     DebugMsg("All prisoners freed")
@@ -3568,21 +3158,14 @@ EndFunction
 ; =============================================================================
 
 Function MigrateJailedNPCsToNative()
-    {One-shot migration of pre-PR-B saves: the Papyrus-side Actor[] JailedNPCs
-     array was the source of truth before the native JailedNPCStore cosave existed.
-     On the first OnGameLoaded after the upgrade, if the array still has
-     entries AND the native store is empty, seed native from the array and then
-     wipe the array. Subsequent loads see Native_GetCount > 0 and skip the migration.}
+    {Seed the native JailedNPCStore from the legacy JailedNPCs array when the array has entries
+     and the store is empty, then empty the array. A populated store just drops the array.}
 
-    ; !arr, not arr == None: comparing a None-valued ARRAY to the None
-    ; literal logs a cosmetic 'Cannot cast from None to Actor[]' error on
-    ; every evaluation (the guard still works). The bare truthy check
-    ; compiles without the cast.
+    ; !arr, not arr == None: the None cast logs an error on every evaluation.
     If !JailedNPCs || JailedNPCs.Length == 0
         Return
     EndIf
     If SeverActionsNativeExt.Native_Jailed_GetCount() > 0
-        ; Native already populated by an earlier post-PR-B save — drop the legacy array.
         JailedNPCs = PapyrusUtil.ActorArray(0)
         Return
     EndIf
@@ -3593,17 +3176,12 @@ Function MigrateJailedNPCsToNative()
     While i < JailedNPCs.Length
         Actor prisoner = JailedNPCs[i]
         If prisoner != None && !prisoner.IsDead()
-            ; T3-B fix: this is the legacy-save migration path. Native
-            ; map may not yet have an entry for this prisoner, so check
-            ; native FIRST then fall back to the StorageUtil key the
-            ; old code wrote. Without the fallback, every pre-T3-B save
-            ; loses its jail-marker data on migration.
+            ; The marker: native first, then the legacy StorageUtil key.
             ObjectReference marker = SeverActionsNativeExt.Native_Jailed_GetMarker(prisoner)
             If marker == None
                 marker = StorageUtil.GetFormValue(prisoner, "SeverActions_JailMarker") as ObjectReference
             EndIf
-            ; Crime faction not stored in the legacy data — left as None on migration.
-            ; The flag bit for "was Disabled" is also unrecoverable; default to 0.
+            ; The legacy data has no crime faction and no "was disabled" flag.
             SeverActionsNativeExt.Native_Jailed_Add(prisoner, marker, None, 0)
             migrated += 1
         EndIf
@@ -3614,41 +3192,46 @@ Function MigrateJailedNPCsToNative()
 EndFunction
 
 Function AddJailedNPC(Actor akNPC)
-    {Add an NPC to the jailed roster. Native JailedNPCStore. Idempotent — re-
-     adding overwrites the prior entry. Stores the jail marker and crime faction
-     alongside so VerifyJailedNPCs and release paths can read them back.}
+    {AddJailedNPCAt with no marker, keeping the one-argument signature for older callers.}
+    AddJailedNPCAt(akNPC, None)
+EndFunction
+
+Function AddJailedNPCAt(Actor akNPC, ObjectReference akJailMarker, Faction akCrimeFaction = None)
+    {Add an NPC to the native jailed roster (re-adding overwrites), with the jail marker and crime
+     faction that VerifyJailedNPCs and the release paths read back. Marker: akJailMarker, else the
+     store's, else the legacy SeverActions_JailMarker StorageUtil key.}
 
     If akNPC == None
         Return
     EndIf
 
-    ObjectReference marker = SeverActionsNativeExt.Native_Jailed_GetMarker(akNPC)
-    Faction crime = None
-    Actor guardForCrime = CurrentGuard
-    If guardForCrime
-        crime = GetCrimeFactionForGuard(guardForCrime)
+    ObjectReference marker = akJailMarker
+    If marker == None
+        marker = SeverActionsNativeExt.Native_Jailed_GetMarker(akNPC)
+    EndIf
+    If marker == None
+        marker = StorageUtil.GetFormValue(akNPC, "SeverActions_JailMarker") as ObjectReference
+    EndIf
+    ; The caller's faction first: off-screen sentencing has no CurrentGuard, and with no crime faction the
+    ; bounty is never discharged and the prisoner is missing from the hold's jail roster.
+    Faction crime = akCrimeFaction
+    If crime == None && CurrentGuard != None
+        crime = GetCrimeFactionForGuard(CurrentGuard)
     EndIf
     Int flags = 0
     If DisablePrisonerOnArrival
         flags = 1
     EndIf
     SeverActionsNativeExt.Native_Jailed_Add(akNPC, marker, crime, flags)
-    ; Schedule strip (meli field report): a jailed NPC with a work marker was
-    ; re-seated on their job by the schedule tick — the work package's prio
-    ; 110 TIES the PrisonerSandBox hold, and whichever override lands last
-    ; wins, so prisoners walked out to work while this store still said
-    ; jailed. Every jailing path flows through AddJailedNPC, making this the
-    ; single choke point; the schedule side's own jail gates keep them off
-    ; the roster until RemoveJailedNPC.
-    SeverActions_FollowerManager fmJail = (Self as Quest) as SeverActions_FollowerManager
-    If fmJail
-        fmJail.StripScheduleForJail(akNPC)
-    EndIf
+    ; Strip the schedule: the work package's priority 110 ties the PrisonerSandBox hold and the last
+    ; override applied wins, so the schedule tick would walk a prisoner out to work. Every jailing path
+    ; comes through here; the schedule's own jail gates keep them off it until RemoveJailedNPC.
+    SeverActions_ModuleBase.CallBool("followers", "jailStrip", akNPC)
     DebugMsg("Tracking jailed NPC: " + akNPC.GetDisplayName() + " (total: " + SeverActionsNativeExt.Native_Jailed_GetCount() + ")")
 EndFunction
 
 Function RemoveJailedNPC(Actor akNPC)
-    {Remove an NPC from the jailed roster. Native JailedNPCStore.}
+    {Remove an NPC from the native jailed roster.}
 
     If akNPC == None
         Return
@@ -3659,19 +3242,19 @@ Function RemoveJailedNPC(Actor akNPC)
 EndFunction
 
 Actor[] Function GetJailedNPCs()
-    {Get array of all currently jailed NPCs (native — capped at 128).}
+    {All jailed NPCs (native roster, capped at 128).}
 
     Return SeverActionsNativeExt.Native_Jailed_GetAll()
 EndFunction
 
 Int Function GetJailedCount()
-    {Get count of jailed NPCs (native).}
+    {Number of jailed NPCs.}
 
     Return SeverActionsNativeExt.Native_Jailed_GetCount()
 EndFunction
 
 Bool Function IsNPCJailed(Actor akNPC)
-    {O(1) check via native JailedNPCStore.}
+    {True when akNPC is on the native jailed roster.}
 
     If akNPC == None
         Return false
@@ -3680,10 +3263,9 @@ Bool Function IsNPCJailed(Actor akNPC)
 EndFunction
 
 Function VerifyJailedNPCs()
-    {Verify all jailed NPCs are actually at their jail markers.
-     Called on game load to fix prisoners who got displaced during fast travel or time advancement.
-     Reads from native JailedNPCStore — TESDeathEvent already pruned dead actors there,
-     so no None/dead checks are needed beyond a defensive guard.}
+    {Move any jailed NPC farther than JailMarkerVerifyDistance from their jail marker back to it
+     (fast travel and waiting can displace them). Runs on load and from OnTrackedStatsEvent. The
+     native roster is pruned of the dead by TESDeathEvent.}
 
     Actor[] roster = SeverActionsNativeExt.Native_Jailed_GetAll()
     Int count = roster.Length
@@ -3695,9 +3277,8 @@ Function VerifyJailedNPCs()
     Int fixedCount = 0
     Int prunedCount = 0
 
-    ; Two-pass: first prune None/dead entries (PapyrusUtil.RemoveActor returns
-    ; a new array, so mutation-during-iteration is safe via re-fetch). Then
-    ; verify positions on the survivors.
+    ; Prune None/dead entries from the legacy array (empty once migrated). The loop below walks
+    ; the native roster and skips the dead itself.
     Int p = JailedNPCs.Length - 1
     While p >= 0
         Actor pCandidate = JailedNPCs[p]
@@ -3717,13 +3298,16 @@ Function VerifyJailedNPCs()
         Actor prisoner = roster[i]
         If prisoner != None && !prisoner.IsDead()
             ObjectReference jailMarker = SeverActionsNativeExt.Native_Jailed_GetMarker(prisoner)
+            Bool fromAnchor = false
             If jailMarker == None
-                ; Backward-compat: pre-T3-B saves may have only stored the
-                ; marker in the SeverActions_JailMarker StorageUtil key
-                ; (the dual-write shim retired in T3-B). Read it directly
-                ; here as the last fallback so legacy saves can still
-                ; verify and reposition stuck prisoners.
+                ; Older saves may hold the marker only in the legacy StorageUtil key.
                 jailMarker = StorageUtil.GetFormValue(prisoner, "SeverActions_JailMarker") as ObjectReference
+            EndIf
+            If jailMarker == None && SeverActions_SandboxAnchorKW
+                ; A prisoner jailed with no stored marker still has the sandbox anchor to it
+                ; (unless an old, non-permanent anchor was pruned).
+                jailMarker = prisoner.GetLinkedRef(SeverActions_SandboxAnchorKW)
+                fromAnchor = jailMarker != None
             EndIf
             If jailMarker != None
                 Float distance = prisoner.GetDistance(jailMarker)
@@ -3737,13 +3321,17 @@ Function VerifyJailedNPCs()
                     prisoner.Enable()
 
                     If SeverActions_PrisonerSandBox
-                        ; Permanent (LREF v3) — same rationale as the jailing site.
+                        ; Permanent (LREF v3), as at the jailing site.
                         SeverActionsNativeExt.LinkedRef_SetPermanent(prisoner, jailMarker, SeverActions_SandboxAnchorKW)
                         ActorUtil.AddPackageOverride(prisoner, SeverActions_PrisonerSandBox, PackagePriority + 10, 1)
                         prisoner.EvaluatePackage()
                     EndIf
 
                     fixedCount += 1
+                ElseIf fromAnchor
+                    ; The anchor is the only record of the jail: make it permanent so the prune
+                    ; cannot drop it (idempotent).
+                    SeverActionsNativeExt.LinkedRef_SetPermanent(prisoner, jailMarker, SeverActions_SandboxAnchorKW)
                 EndIf
             Else
                 DebugMsg("WARNING: No stored jail marker for " + prisoner.GetDisplayName())
@@ -3757,53 +3345,21 @@ Function VerifyJailedNPCs()
     EndIf
 EndFunction
 
-; =============================================================================
-; PLAYER ARREST API
-; =============================================================================
-;
-; Wave 5b: the entire player-confrontation + persuasion FSM (~580 lines, 16
-; functions, 9 state vars) moved to SeverActions_ArrestPlayer.psc. The action
-; YAMLs (arrestplayer / acceptpersuasion / rejectpersuasion) point their
-; scriptName at the new sub-script directly. PlayerScript drives its own
-; OnUpdate so the persuasion timer + post-resist combat cleanup tick
-; independently of this script's update loop.
-;
-; If you need a property/state from the player FSM externally, prefer the
-; small public-query API on PlayerScript (IsPlayerInConfrontation /
-; IsPlayerInPersuasion / CancelPlayerConfrontation). All other state is
-; private to PlayerScript by design — same encapsulation that BountyScript
-; and JudgmentScript follow.
-
+; Player confrontation and persuasion FSM: SeverActions_ArrestPlayer.psc (PlayerScript, with its
+; own chronometer tick). Outside code uses its public queries: IsPlayerInConfrontation,
+; IsPlayerInPersuasion, CancelPlayerConfrontation.
 
 ; =============================================================================
-; GUARD DISPATCH - Find and arrest NPCs anywhere in the world
-; Uses native ActorFinder for NPC lookup. Self-contained travel: own packages
-; (DispatchJog/DispatchWalk) + native stuck/off-screen trackers; does not use
-; SeverActions_Travel. Arrests when within range of the target.
+; GUARD DISPATCH - find and arrest an NPC anywhere, or search their home
+; Self-contained travel: own packages (DispatchJog/DispatchWalk) and the native
+; stuck/off-screen trackers, never SeverActions_Travel.
 ; =============================================================================
 
 Bool Function DispatchGuardToArrest(Actor akGuard, String targetName, Actor akSender = None)
-    {Dispatch a guard to find and arrest an NPC by name, wherever they are.
-     Self-contained system - does NOT use TravelSystem.
-
-     Travels directly to the target Actor reference (no door intermediary).
-     Skyrim's AI pathfinding handles cross-cell navigation natively.
-     Guard walks the entire way - no off-screen teleportation shortcuts.
-
-     Phases:
-       1: Guard travels directly to target Actor (linked ref + travel package)
-       2: Guard approaches target for arrest (same cell, within range)
-       5: Guard returns with prisoner to sender or jail
-
-     Off-screen handling:
-       - Same-cell interior detection: if guard reaches target's cell off-screen, transition to approach
-       - Game-time timeout (24h): force-completes if dispatch takes too long
-
-     akGuard: The guard to dispatch (if None, finds nearest guard to player)
-     targetName: The name of the NPC to arrest
-     akSender: Who ordered the arrest. If set, guard brings prisoner back to this actor.
-               If None, guard takes prisoner to jail.
-     Returns true if dispatch was initiated successfully.}
+    {Send akGuard (None: the guard nearest the player) to find and arrest the NPC named targetName,
+     wherever they are. Phases 1 (travel straight to the target actor; the AI paths across cells),
+     2 (approach) and 5 (return to akSender for judgment, or to jail when None). Returns true when
+     the dispatch started.}
 
     Actor target
     String targetLocation
@@ -3814,75 +3370,75 @@ Bool Function DispatchGuardToArrest(Actor akGuard, String targetName, Actor akSe
         Return false
     EndIf
 
-    ; Prevent dispatch spam — reject if another dispatch is active
+    ; One dispatch at a time.
     If DispatchPhase > 0
         DebugMsg("Dispatch rejected: another dispatch already in progress (Phase " + DispatchPhase + ")")
-        Debug.Notification("A guard is already dispatched!")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("arrest.aGuardIsAlreadyDispatched"))
         Return false
     EndIf
-    ; Audit: the dispatch aliases may be borrowed by a live kidnap leg -
-    ; kidnap checks before borrowing, so arrest must check back.
+    ; A live kidnap leg may have borrowed the dispatch aliases: kidnap checks before borrowing, so
+    ; arrest checks back.
     If _DispatchAliasesBorrowed()
         DebugMsg("Dispatch rejected: dispatch aliases borrowed by a kidnap leg")
-        Debug.Notification("No guard is available for that right now.")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("arrest.noGuardIsAvailable"))
         Return false
     EndIf
 
-    ; Anti-spam guard: reject if last dispatch was < 15 seconds ago.
+    ; 15 s real-time cooldown between dispatches.
     Float dispatchNow = Utility.GetCurrentRealTime()
     If LastDispatchSpamTime > 0.0 && (dispatchNow - LastDispatchSpamTime) < 15.0
         DebugMsg("Dispatch rejected: cooldown not elapsed (" + (dispatchNow - LastDispatchSpamTime) + "s)")
-        Debug.Notification("Please wait before dispatching another guard")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("arrest.pleaseWaitBeforeDispatching"))
         Return false
     EndIf
     LastDispatchSpamTime = dispatchNow
 
-    ; Check if ActorFinder is ready
     If !SeverActionsNative.IsActorFinderReady()
         DebugMsg("ERROR: Native ActorFinder not initialized")
         Return false
     EndIf
 
-    ; Find the target NPC by name using native lookup
     target = SeverActionsNative.FindActorByName(targetName)
     If target == None
         DebugMsg("ERROR: Could not find NPC named '" + targetName + "'")
-        Debug.Notification("Cannot find NPC: " + targetName)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.cannotFindNpc", ("" + targetName)))
         Return false
     EndIf
 
-    ; Block if target is already arrested or jailed
+    ; A crashed earlier arrest's residue on the suspect must not block this dispatch for good. The
+    ; helper refuses a genuinely held prisoner, so the rejection below still fires for them.
+    ClearStaleArrestState(target, "dispatch start")
+
     If target.IsInFaction(SeverActions_Arrested) || target.IsInFaction(SeverActions_Jailed)
         DebugMsg("DispatchGuardToArrest rejected: " + targetName + " already arrested or jailed")
         Return false
     EndIf
 
-    ; Find a guard if none provided
     If akGuard == None
         akGuard = FindNearestGuard(Game.GetPlayer())
         If akGuard == None
             DebugMsg("ERROR: No guard nearby to dispatch")
-            Debug.Notification("No guard nearby to dispatch!")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("arrest.noGuardNearbyToDispatch"))
             Return false
         EndIf
     EndIf
+    ; The guard too: a crashed phase-1 dispatch can leave its faction, links and packages on them.
+    ClearStaleArrestState(akGuard, "dispatch start")
 
-    ; If already in same cell and close enough, just arrest directly
+    ; Already close in the same cell: a plain arrest.
     If akGuard.GetParentCell() == target.GetParentCell() && akGuard.GetDistance(target) <= ArrivalDistance
         DebugMsg("Guard already close to target in same cell, starting direct arrest")
         Return ArrestNPC_Internal(akGuard, target)
     EndIf
 
-    ; Get the NPC's location name for narration
     targetLocation = SeverActionsNative.GetActorLocationName(target)
     DebugMsg("Dispatching " + akGuard.GetDisplayName() + " to arrest " + target.GetDisplayName() + " at " + targetLocation)
 
-    ; Register persistent event so NPCs know what's happening
     eventMsg = akGuard.GetDisplayName() + " has been dispatched to arrest " + target.GetDisplayName() + " at " + targetLocation + "."
     SkyrimNetApi.RegisterPersistentEvent(eventMsg, akGuard, target)
-    Debug.Notification(akGuard.GetDisplayName() + " dispatched to arrest " + target.GetDisplayName())
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.dispatchedToArrest", ("" + akGuard.GetDisplayName()), ("" + target.GetDisplayName())))
 
-    ; Set up dispatch state - travel directly to target Actor (no door intermediary)
+    ; Travel straight to the target actor (no door intermediary).
     DispatchPhase = 1
     DispatchTarget = target
     DispatchGuard = akGuard
@@ -3891,18 +3447,18 @@ Bool Function DispatchGuardToArrest(Actor akGuard, String targetName, Actor akSe
     DispatchOffScreenStartTime = 0.0
     DispatchGameTimeStart = Utility.GetCurrentGameTime()
 
-    ; Store initial distance for time-skip/off-screen calculations
-    ; GetDistance returns 0 when guard and target are in different cells (3D not loaded)
+    ; Trip distance for the time-skip and off-screen estimates. GetDistance is 0 across cells, so
+    ; anything under 1000 becomes 5000 (a typical city traverse).
     Float dispatchDist = 0.0
     If akGuard.Is3DLoaded() && target.Is3DLoaded()
         dispatchDist = akGuard.GetDistance(target)
     EndIf
     If dispatchDist < 1000.0
-        dispatchDist = 5000.0  ; Conservative default (typical city traverse)
+        dispatchDist = 5000.0
     EndIf
     DispatchInitialDistance = dispatchDist
 
-    ; Return destination: sender (live actor) or jail (static marker)
+    ; Return destination: the sender (a live actor) or the jail marker.
     If akSender != None
         DispatchSender = akSender
         DispatchReturnMarker = akSender as ObjectReference
@@ -3914,19 +3470,14 @@ Bool Function DispatchGuardToArrest(Actor akGuard, String targetName, Actor akSe
         DebugMsg("Prisoner will be taken to jail")
     EndIf
 
-    ; Fill dedicated dispatch aliases so the engine keeps both actors in high-process
-    ; while unloaded. Separated from ArrestingGuard/ArrestTarget to avoid clobbering
-    ; if a same-cell arrest runs while dispatch is active.
+    ; The dispatch aliases hold both actors in high process off-screen (see DispatchGuardAlias).
     DispatchGuardAlias.ForceRefTo(akGuard)
     DispatchTargetAlias.ForceRefTo(target)
 
     InitDispatchCommon(akGuard, target as ObjectReference)
 
-    ; Open a cosave ArrestSession entry so the PrismaUI arrests page can
-    ; surface cross-cell dispatches alongside same-cell arrests. State 5 =
-    ; kDispatch (per ArrestSessionStore.h); dispatchPhase=1 matches the
-    ; FSM scalar set above. Flag 0 means "arrest dispatch" (not home
-    ; investigation — see DispatchToInvestigateHome for the flag=1 variant).
+    ; ArrestSession entry for the Magelight arrests page: state 5 = kDispatch (ArrestSessionStore.h),
+    ; dispatch phase 1, flag 0 = arrest (1 = home investigation, DispatchGuardToHome).
     ObjectReference cosaveJailMarker = GetJailMarkerForGuard(akGuard)
     Faction cosaveCrimeFaction = GetCrimeFactionForGuard(akGuard)
     SeverActionsNative.Native_ArrestSession_Begin(target, akGuard, cosaveJailMarker, cosaveCrimeFaction, 5, 1, 0)
@@ -3934,22 +3485,55 @@ Bool Function DispatchGuardToArrest(Actor akGuard, String targetName, Actor akSe
     Return true
 EndFunction
 
-Bool Function DispatchGuardToArrest_Execute(Actor akGuard, String targetName, String senderName = "")
-    {SkyrimNet action entry point: Dispatch a guard to find and arrest an NPC by name.
-     The guard will travel to the target, arrest them, and either bring them back to the
-     sender for judgment or take them to jail.
-     senderName: Name of the person who ordered the arrest. If provided, the guard brings
-                 the prisoner back to this person for judgment. If empty, guard takes
-                 prisoner directly to the nearest hold jail.}
+Bool Function OrderArrest_Execute(Actor akAuthority, String targetName)
+    {SkyrimNet action for a jarl or housecarl (gated on is_hold_noble; the arrest actions
+     themselves gate on is_guard): a noble orders an arrest rather than making it. The guard
+     nearest the speaker arrests the player (ArrestPlayer_Internal), a loaded NPC
+     (ArrestNPC_Internal), or anyone else by DispatchGuardToArrest with the speaker as sender,
+     so the prisoner is brought back for judgment.}
+    If akAuthority == None || targetName == "" || targetName == "None"
+        Return false
+    EndIf
+    String targetLabel = targetName
+    If targetName == "Player" || targetName == "player"
+        targetLabel = Game.GetPlayer().GetDisplayName()
+    EndIf
+    Actor guard = FindNearestGuard(akAuthority)
+    If guard == None || guard == akAuthority
+        SkyrimNetApi.RegisterEvent("order_arrest_failed", akAuthority.GetDisplayName() + " calls for a guard to arrest " + targetLabel + ", but none is within earshot", akAuthority, None)
+        Return false
+    EndIf
+    Actor player = Game.GetPlayer()
+    Actor target = None
+    If targetName == "Player" || targetName == "player" || player.GetDisplayName() == targetName
+        target = player
+    Else
+        target = SeverActionsNative.FindActorByName(targetName)
+    EndIf
+    String order = akAuthority.GetDisplayName() + " orders " + guard.GetDisplayName() + " to arrest " + targetLabel
+    If target == player
+        SkyrimNetApi.RegisterEvent("arrest_ordered", order, akAuthority, guard)
+        If PlayerScript
+            Return PlayerScript.ArrestPlayer_Internal(guard)
+        EndIf
+        Return false
+    EndIf
+    If target != None && SeverActionsNative.Native_GetActorProcessLevel(target) >= 0
+        SkyrimNetApi.RegisterEvent("arrest_ordered", order, akAuthority, guard)
+        Return ArrestNPC_Internal(guard, target)
+    EndIf
+    SkyrimNetApi.RegisterEvent("arrest_ordered", order + " and bring them back for judgment", akAuthority, guard)
+    Return DispatchGuardToArrest(guard, targetName, akAuthority)
+EndFunction
 
-    ; Resolve sender by name — None means take prisoner to jail
+Bool Function DispatchGuardToArrest_Execute(Actor akGuard, String targetName, String senderName = "")
+    {SkyrimNet action: DispatchGuardToArrest by name. senderName: who ordered it; the prisoner is
+     brought back to them for judgment, or taken to the hold jail when empty or not found.}
+
     Actor sender = None
     If senderName != "" && senderName != "None" && senderName != "none"
-        ; Check player first — FindActorByName fuzzy-matches via Levenshtein,
-        ; so a literal "Player" sentinel (sent by PrismaUI's authority picker)
-        ; would otherwise match any NPC whose name contains "Player" (e.g.
-        ; "Player Friend"). Match against either the actual player name OR
-        ; the literal sentinel.
+        ; The player first: FindActorByName fuzzy-matches, so the literal "Player" sentinel
+        ; (Magelight's authority picker) would match an NPC named like "Player Friend".
         Actor playerRef = Game.GetPlayer()
         If playerRef.GetDisplayName() == senderName || senderName == "Player" || senderName == "player"
             sender = playerRef
@@ -3965,25 +3549,11 @@ Bool Function DispatchGuardToArrest_Execute(Actor akGuard, String targetName, St
 EndFunction
 
 Bool Function DispatchGuardToHome(Actor akGuard, String targetName, Actor akSender = None, String reason = "")
-    {Dispatch a guard to an NPC's home to investigate.
-     The guard travels to the NPC's home, sandboxes for a while searching through
-     belongings, picks up an item as evidence, then returns to whoever sent them.
-
-     Uses native ActorFinder to find the NPC and their home location.
-     akGuard: The guard to dispatch (if None, finds nearest guard)
-     targetName: The name of the NPC whose home to search
-     akSender: Who sent the guard - the guard returns to this actor with evidence.
-               If None, defaults to the guard themselves (return-to-guard, a
-               moving reference — not a captured position).
-     reason: Why the investigation was ordered (e.g. "dibella worship", "thieving", "skooma").
-             Used to generate thematically appropriate evidence. If empty, falls back to NPC class.
-     Returns true if dispatch was initiated successfully.
-
-     Phases:
-       1: Guard travels to target's home
-       3: Guard sandboxes at home (investigating)
-       4: Guard collects evidence item
-       5: Guard returns to sender with evidence}
+    {Send akGuard (None: the guard nearest the player) to search the home of the NPC named
+     targetName and bring evidence back to akSender (None: the guard themselves, a moving
+     reference, not a captured position). reason (e.g. "skooma") picks thematic evidence; empty
+     falls back to the NPC's class. Phases 1 (travel), 3 (search), 4 (evidence), 5 (return).
+     Returns true when the dispatch started.}
 
     Actor target
     ObjectReference home
@@ -3995,24 +3565,23 @@ Bool Function DispatchGuardToHome(Actor akGuard, String targetName, Actor akSend
         Return false
     EndIf
 
-    ; Prevent dispatch spam — reject if another dispatch is active
+    ; One dispatch at a time, aliases not borrowed by a kidnap leg, 15 s cooldown (as in
+    ; DispatchGuardToArrest).
     If DispatchPhase > 0
         DebugMsg("Dispatch rejected: another dispatch already in progress (Phase " + DispatchPhase + ")")
-        Debug.Notification("A guard is already dispatched!")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("arrest.aGuardIsAlreadyDispatched"))
         Return false
     EndIf
-    ; Audit: dispatch aliases may be borrowed by a live kidnap leg.
     If _DispatchAliasesBorrowed()
         DebugMsg("Home dispatch rejected: dispatch aliases borrowed by a kidnap leg")
-        Debug.Notification("No guard is available for that right now.")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("arrest.noGuardIsAvailable"))
         Return false
     EndIf
 
-    ; Anti-spam guard: reject if last dispatch was < 15 seconds ago.
     Float dispatchNow = Utility.GetCurrentRealTime()
     If LastDispatchSpamTime > 0.0 && (dispatchNow - LastDispatchSpamTime) < 15.0
         DebugMsg("Dispatch rejected: cooldown not elapsed (" + (dispatchNow - LastDispatchSpamTime) + "s)")
-        Debug.Notification("Please wait before dispatching another guard")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("arrest.pleaseWaitBeforeDispatching"))
         Return false
     EndIf
     LastDispatchSpamTime = dispatchNow
@@ -4022,43 +3591,38 @@ Bool Function DispatchGuardToHome(Actor akGuard, String targetName, Actor akSend
         Return false
     EndIf
 
-    ; Find the target NPC by name
     target = SeverActionsNative.FindActorByName(targetName)
     If target == None
         DebugMsg("ERROR: Could not find NPC named '" + targetName + "'")
-        Debug.Notification("Cannot find NPC: " + targetName)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.cannotFindNpc", ("" + targetName)))
         Return false
     EndIf
 
-    ; Find a guard if none provided
     If akGuard == None
         akGuard = FindNearestGuard(Game.GetPlayer())
         If akGuard == None
             DebugMsg("ERROR: No guard nearby to dispatch")
-            Debug.Notification("No guard nearby to dispatch!")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("arrest.noGuardNearbyToDispatch"))
             Return false
         EndIf
     EndIf
 
     guardName = akGuard.GetDisplayName()
 
-    ; Find the NPC's home — interior marker preferred, exterior door as fallback
-    ; If an interior marker exists, use it directly as the travel destination.
-    ; The NPC's AI will pathfind through doors automatically to reach it.
-    ; This avoids all cross-cell GetDistance issues from targeting exterior doors.
+    ; Destination: the home's interior marker when there is one (the AI paths through the doors,
+    ; and it avoids cross-cell GetDistance on an exterior door), else the exterior door.
     ObjectReference interiorMarker = SeverActionsNative.FindHomeInteriorMarker(target)
     home = SeverActionsNative.FindDoorToActorHome(target)
     If home == None
-        ; Fallback: try FindActorHome (bed ownership scan, works if NPC is loaded)
+        ; FindActorHome scans bed ownership; it needs the NPC loaded.
         home = SeverActionsNative.FindActorHome(target)
     EndIf
     If home == None && interiorMarker == None
         DebugMsg("ERROR: No home found for " + target.GetDisplayName() + ", cannot investigate")
-        Debug.Notification("Cannot find " + target.GetDisplayName() + "'s home!")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.cannotFindHome", ("" + target.GetDisplayName())))
         Return false
     EndIf
 
-    ; Resolve to final destination: prefer interior marker over exterior door
     ObjectReference finalDest = home
     If interiorMarker != None
         finalDest = interiorMarker
@@ -4069,15 +3633,14 @@ Bool Function DispatchGuardToHome(Actor akGuard, String targetName, Actor akSend
 
     DebugMsg("Dispatching " + guardName + " to investigate " + target.GetDisplayName() + "'s home")
 
-    ; If we resolved to an interior marker, unlock the exterior door so the guard can pathfind through
-    ; The homeowner will re-lock it naturally when they return home
+    ; Heading for the interior marker: unlock the exterior door so the guard can path through.
+    ; CompleteDispatch / CancelDispatch re-lock it.
     If finalDest == interiorMarker && home != None && home.IsLocked()
         DebugMsg("Unlocked home door for guard entry")
         home.Lock(false)
-        DispatchUnlockedDoor = home  ; Track for re-lock on completion
+        DispatchUnlockedDoor = home
     EndIf
 
-    ; Set up dispatch state as home investigation
     DispatchPhase = 1
     DispatchTarget = target
     DispatchGuard = akGuard
@@ -4087,7 +3650,7 @@ Bool Function DispatchGuardToHome(Actor akGuard, String targetName, Actor akSend
     DispatchOffScreenStartTime = 0.0
     DispatchGameTimeStart = Utility.GetCurrentGameTime()
 
-    ; Store initial distance for time-skip/off-screen calculations
+    ; Trip distance, as in DispatchGuardToArrest.
     Float homeDispatchDist = 0.0
     If akGuard.Is3DLoaded() && finalDest != None && finalDest.Is3DLoaded()
         homeDispatchDist = akGuard.GetDistance(finalDest)
@@ -4107,7 +3670,6 @@ Bool Function DispatchGuardToHome(Actor akGuard, String targetName, Actor akSend
         DebugMsg("Investigation reason: " + reason)
     EndIf
 
-    ; Set sender - guard returns to this actor with evidence
     If akSender != None
         DispatchSender = akSender
         DispatchReturnMarker = akSender as ObjectReference
@@ -4118,21 +3680,17 @@ Bool Function DispatchGuardToHome(Actor akGuard, String targetName, Actor akSend
         DebugMsg("No sender specified - guard will return to starting position")
     EndIf
 
-    ; Fill dedicated dispatch aliases so the engine keeps the guard in high-process
-    ; while unloaded. Separated from ArrestingGuard/ArrestTarget to avoid clobbering.
+    ; The guard in high process off-screen; the target alias holds the destination.
     DispatchGuardAlias.ForceRefTo(akGuard)
     DispatchTargetAlias.ForceRefTo(finalDest)
 
-    ; Register persistent event
     eventMsg = guardName + " has been dispatched to search " + target.GetDisplayName() + "'s home for evidence."
     SkyrimNetApi.RegisterPersistentEvent(eventMsg, akGuard, target)
-    Debug.Notification(guardName + " heading to " + target.GetDisplayName() + "'s home to investigate")
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.headingToHomeToInvestigate", ("" + guardName), ("" + target.GetDisplayName())))
 
     InitDispatchCommon(akGuard, finalDest)
 
-    ; Open a cosave ArrestSession entry — same shape as the arrest-dispatch
-    ; site above. Flag bit 0 = home investigation, so the PrismaUI page can
-    ; differentiate the row label / icon.
+    ; ArrestSession entry as in DispatchGuardToArrest, flag 1 = home investigation.
     ObjectReference cosaveHomeJailMarker = GetJailMarkerForGuard(akGuard)
     Faction cosaveHomeCrimeFaction = GetCrimeFactionForGuard(akGuard)
     SeverActionsNative.Native_ArrestSession_Begin(target, akGuard, cosaveHomeJailMarker, cosaveHomeCrimeFaction, 5, 1, 1)
@@ -4141,21 +3699,13 @@ Bool Function DispatchGuardToHome(Actor akGuard, String targetName, Actor akSend
 EndFunction
 
 Bool Function DispatchGuardToHome_Execute(Actor akGuard, String targetName, String senderName, String reason = "")
-    {SkyrimNet action entry point: Dispatch a guard to search an NPC's home for evidence.
-     The guard will travel to the home, search through belongings, collect an item as evidence,
-     and return to whoever sent them.
-     senderName: Name of the NPC who ordered the search - the guard brings evidence back to them.
-     reason: Why the investigation was ordered (e.g. "dibella worship", "thieving", "skooma").
-             Used to generate thematically appropriate evidence when the player isn't watching.}
+    {SkyrimNet action: DispatchGuardToHome by name. senderName: who ordered the search and gets
+     the evidence (the player when empty or not found). reason picks thematic evidence.}
 
-    ; Resolve sender by name — default to player if not found
     Actor sender = None
     Actor playerRef = Game.GetPlayer()
     If senderName != ""
-        ; Check player first — FindActorByName fuzzy-matches via Levenshtein,
-        ; so a literal "Player" sentinel would otherwise match any NPC whose
-        ; name contains "Player" (e.g. "Player Friend"). Match against either
-        ; the actual player name OR the literal sentinel.
+        ; The player first (see DispatchGuardToArrest_Execute).
         If playerRef.GetDisplayName() == senderName || senderName == "Player" || senderName == "player"
             sender = playerRef
         Else
@@ -4174,25 +3724,19 @@ Bool Function DispatchGuardToHome_Execute(Actor akGuard, String targetName, Stri
 EndFunction
 
 ; =============================================================================
-; DISPATCH PROGRESS MONITORING (Self-contained system)
-; Phases:
-;   1: Guard traveling to destination (target Actor or home marker)
-;   2: Guard approaching target for arrest (same cell, within range)
-;   3: Guard sandboxing at target's home (investigating)
-;   4: Guard collecting evidence (picking up item)
-;   5: Returning with prisoner or evidence to destination
-;
-; Off-screen handling:
-;   - Guard walks the entire way - no teleportation shortcuts
-;   - Same-cell interior detection (guard reached destination cell while off-screen)
-;   - Game-time timeout (24h): force-complete if dispatch takes too long
+; DISPATCH PROGRESS MONITORING
+; Phases: 1 travel (to the target actor or home marker), 2 approach for the arrest,
+; 3 home search, 4 evidence collected, 5 return to the sender or jail, 6 judgment hold.
+; Off-screen the AI walks; arrival is a shared interior cell, the snapshot distance, or
+; an elapsed travel-time estimate that teleports the guard. A 24 game-hour timeout
+; force-completes the dispatch.
 ; =============================================================================
 
 Function CheckDispatchProgress()
-    {Main dispatch monitor - called from the chronometer tick (OnChronoTick_Arrest)
-     when DispatchPhase > 0. Handles off-screen detection and routes to phase handlers.}
+    {The dispatch monitor, run from the chronometer tick (OnChronoTick_Arrest) while
+     DispatchPhase > 0: validity checks, time-skip arrivals, then the phase handler.}
 
-    ; Validate state - guard is always required; target required for arrest dispatches
+    ; The guard is always required, the target for an arrest dispatch.
     If DispatchGuard == None
         DebugMsg("ERROR: CheckDispatchProgress - guard is None")
         CancelDispatch()
@@ -4205,27 +3749,30 @@ Function CheckDispatchProgress()
         Return
     EndIf
 
-    ; Check if guard died
     If DispatchGuard.IsDead()
         DebugMsg("Guard died during dispatch")
         CancelDispatch()
         Return
     EndIf
 
-    ; Check if target died (only matters for arrest dispatches in phases 1-2)
-    If !DispatchIsHomeInvestigation && DispatchPhase <= 2 && DispatchTarget != None && DispatchTarget.IsDead()
+    ; An arrest dispatch's target dying before the arrest, or on the way back (a corpse is not brought
+    ; before anyone); a judgment hold (6) ends itself (ArrestJudgment).
+    If !DispatchIsHomeInvestigation && (DispatchPhase <= 2 || DispatchPhase == 5) && DispatchTarget != None && DispatchTarget.IsDead()
         DebugMsg("Target died during dispatch")
         CancelDispatch()
         Return
     EndIf
 
-    ; Game-time timeout (24 game-hours max for entire dispatch)
-    If DispatchGameTimeStart > 0.0
+    ; 24 game-hour timeout for the outbound phases (1-4); the return and the judgment have their own.
+    If DispatchGameTimeStart > 0.0 && DispatchPhase < 5
         Float elapsedHours = (Utility.GetCurrentGameTime() - DispatchGameTimeStart) * 24.0
         If elapsedHours > 24.0
             DebugMsg("Dispatch timeout (" + elapsedHours + "h) - force-completing")
+            ; Stop the clock first: this branch returns before the phase routing, so a running clock would
+            ; re-run the force-complete on every tick.
+            DispatchGameTimeStart = 0.0
             If DispatchIsHomeInvestigation
-                ; Home investigation timeout: skip to return phase with whatever we have
+                ; Return with whatever was found.
                 DebugMsg("Home investigation timeout - returning to sender")
                 StartDispatchReturnPhase()
             Else
@@ -4235,12 +3782,11 @@ Function CheckDispatchProgress()
         EndIf
     EndIf
 
-    ; Game-time-based arrival check for travel phases (handles T-wait / sleeping time skips)
-    ; During time skips, OnUpdate doesn't fire but game time advances. When the update
-    ; resumes, we check if enough game time elapsed for the guard to have arrived.
+    ; Time skips (waiting, sleeping) advance game time without ticks: once the trip's game time at
+    ; GuardJogPerGameHour has passed, the guard has arrived.
     If DispatchPhase == 1 && DispatchGameTimeStart > 0.0
         Float gameHoursElapsed = (Utility.GetCurrentGameTime() - DispatchGameTimeStart) * 24.0
-        If gameHoursElapsed >= 0.25  ; At least 15 game-minutes (catches time-skips)
+        If gameHoursElapsed >= 0.25
             ObjectReference travelDestCheck = None
             If DispatchIsHomeInvestigation && DispatchHomeMarker != None
                 travelDestCheck = DispatchHomeMarker
@@ -4249,7 +3795,7 @@ Function CheckDispatchProgress()
             EndIf
 
             If travelDestCheck != None
-                ; Use stored initial distance — GetDistance returns 0 cross-cell
+                ; The stored trip distance: GetDistance is 0 across cells.
                 Float travelDistCheck = DispatchInitialDistance
                 If travelDistCheck < 1000.0
                     travelDistCheck = 5000.0
@@ -4262,25 +3808,24 @@ Function CheckDispatchProgress()
                 If gameHoursElapsed >= requiredGameHours
                     DebugMsg("Time-skip arrival: " + gameHoursElapsed + "h elapsed, " + requiredGameHours + "h required")
                     If DispatchIsHomeInvestigation
-                        ; Move guard directly to home destination (interior marker)
                         If DispatchHomeMarker != None
                             DispatchGuard.MoveTo(DispatchHomeMarker)
                             Utility.Wait(0.3)
                             TransitionToSandboxPhase()
                         EndIf
                     Else
-                        ; Arrest dispatch: perform off-screen arrest
                         PerformOffScreenArrest()
                     EndIf
                     Return
                 EndIf
             EndIf
         EndIf
-    ElseIf DispatchPhase == 5 && DispatchGameTimeStart > 0.0
-        ; Return phase time-skip: check if guard has had enough time to return
-        Float gameHoursReturn = (Utility.GetCurrentGameTime() - DispatchGameTimeStart) * 24.0
+    ElseIf DispatchPhase == 5 && DispatchReturnTimeStart > 0.0
+        ; The return leg's time skip, measured from the return start: the dispatch start would count the
+        ; outbound leg too and teleport the escort on its first phase-5 tick, in front of the player.
+        Float gameHoursReturn = (Utility.GetCurrentGameTime() - DispatchReturnTimeStart) * 24.0
         If gameHoursReturn >= 0.5 && DispatchReturnMarker != None
-            ; Use stored initial distance as proxy for return trip — GetDistance returns 0 cross-cell
+            ; The outbound trip distance stands in for the return trip.
             Float returnDistCheck = DispatchInitialDistance
             If returnDistCheck < 1000.0
                 returnDistCheck = 5000.0
@@ -4289,7 +3834,6 @@ Function CheckDispatchProgress()
             If requiredReturnHours < 0.25
                 requiredReturnHours = 0.25
             EndIf
-            ; Return phase started after outbound travel, so check total time is enough for both legs
             If gameHoursReturn >= requiredReturnHours
                 DebugMsg("Time-skip return arrival: " + gameHoursReturn + "h elapsed")
                 DispatchGuard.MoveTo(DispatchReturnMarker, 200.0, 0.0, 0.0, false)
@@ -4303,12 +3847,10 @@ Function CheckDispatchProgress()
         EndIf
     EndIf
 
-    ; Check off-screen status (phase 1 only, not during return)
     If DispatchPhase == 1
         CheckDispatchOffScreen()
     EndIf
 
-    ; Route to phase handler
     If DispatchPhase == 1
         CheckDispatchPhase1_Travel()
     ElseIf DispatchPhase == 2
@@ -4320,7 +3862,7 @@ Function CheckDispatchProgress()
     ElseIf DispatchPhase == 5
         CheckDispatchPhase5_Return()
     ElseIf DispatchPhase == 6
-        ; Wave 5b: Phase-6 routed to extracted JudgmentScript.
+        ; The judgment hold lives in SeverActions_ArrestJudgment.
         If JudgmentScript
             JudgmentScript.CheckJudgmentProgress()
         EndIf
@@ -4328,29 +3870,23 @@ Function CheckDispatchProgress()
 EndFunction
 
 Function CheckDispatchOffScreen()
-    {Check if guard has arrived at destination while off-screen during Phase 1 travel.
-     Uses a tiered approach: trust AI first, then intervene only as a last resort.
-
-     The guard has an approach package and Skyrim's AI can pathfind through load doors.
-     We give the AI generous time (minimum 120s) before teleporting, since same-cell
-     detection in CheckDispatchPhase1_Travel handles natural arrival through doors.}
+    {Phase 1 with the guard off-screen: trust the AI's own pathing (it crosses load doors, and
+     CheckDispatchPhase1_Travel's same-cell check usually sees the arrival first). Only after the
+     trip's real time (distance / GuardJogSpeed, clamped to 120-600 s) move the guard there.}
 
     Bool guardInLoadedArea = DispatchGuard.Is3DLoaded()
 
     If !guardInLoadedArea
         Cell guardCell = DispatchGuard.GetParentCell()
 
-        ; --- First time going off-screen: record the timestamp ---
         If !DispatchGuardOffScreen
             DispatchGuardOffScreen = true
             DispatchOffScreenStartTime = Utility.GetCurrentRealTime()
             DebugMsg("Guard went off-screen during travel, trusting AI pathfinding")
         EndIf
 
-        ; --- Calculate how long the guard should take to arrive ---
         Float elapsedOffScreen = Utility.GetCurrentRealTime() - DispatchOffScreenStartTime
 
-        ; Determine destination reference
         ObjectReference travelDest = None
         If DispatchIsHomeInvestigation && DispatchHomeMarker != None
             travelDest = DispatchHomeMarker
@@ -4358,11 +3894,7 @@ Function CheckDispatchOffScreen()
             travelDest = DispatchTarget as ObjectReference
         EndIf
 
-        ; Calculate required travel time from distance (300 units/sec jogging speed)
-        ; Minimum 120 seconds — give AI plenty of time to pathfind through doors naturally.
-        ; The same-cell check in CheckDispatchPhase1_Travel detects arrival through doors
-        ; much earlier than this timer, so this is purely a fallback.
-        Float requiredTime = 120.0  ; 2 minutes minimum before intervening
+        Float requiredTime = 120.0
         If travelDest != None
             Float dist = DispatchInitialDistance
             If dist < 1000.0
@@ -4372,18 +3904,15 @@ Function CheckDispatchOffScreen()
             If travelTime > requiredTime
                 requiredTime = travelTime
             EndIf
-            ; Cap at 10 minutes real time to prevent absurdly long waits
             If requiredTime > 600.0
                 requiredTime = 600.0
             EndIf
         EndIf
 
-        ; --- Check if enough time has passed for arrival ---
         If elapsedOffScreen >= requiredTime
             DebugMsg("Off-screen travel time elapsed (" + elapsedOffScreen + "s / " + requiredTime + "s required)")
 
             If DispatchIsHomeInvestigation
-                ; Home investigation: move guard directly to home destination (interior marker)
                 If DispatchHomeMarker != None
                     DebugMsg("Off-screen: moving guard to home destination")
                     DispatchGuard.MoveTo(DispatchHomeMarker)
@@ -4392,7 +3921,6 @@ Function CheckDispatchOffScreen()
                     Return
                 EndIf
             ElseIf DispatchTarget != None
-                ; Arrest dispatch: move guard near target and transition to approach
                 DebugMsg("Off-screen: guard arrived at target location")
                 DispatchGuard.MoveTo(DispatchTarget, 200.0, 0.0, 0.0, false)
                 Utility.Wait(0.3)
@@ -4400,13 +3928,12 @@ Function CheckDispatchOffScreen()
                 Return
             EndIf
         Else
-            ; Still traveling — log progress periodically
+            ; Progress log every 30 s.
             If Math.Floor(elapsedOffScreen) as Int % 30 == 0 && Math.Floor(elapsedOffScreen) as Int > 0
                 DebugMsg("Off-screen travel: " + elapsedOffScreen as Int + "s / " + requiredTime as Int + "s, trusting AI")
             EndIf
         EndIf
     Else
-        ; Guard is on-screen
         If DispatchGuardOffScreen
             DebugMsg("Guard back on-screen")
             DispatchGuardOffScreen = false
@@ -4416,24 +3943,20 @@ Function CheckDispatchOffScreen()
 EndFunction
 
 Function PerformOffScreenArrest()
-    {Called when guard has been off-screen long enough or game-time timeout reached.
-     Teleports guard to target, performs instant arrest, then starts return phase.
-     Does NOT teleport to return destination — Phase 5 handles the return journey
-     with proper time-based simulation so the guard doesn't appear out of thin air.}
+    {The off-screen travel time or the 24h timeout ran out: teleport the guard to the target,
+     arrest there, and start phase 5. The return is walked and estimated, not teleported, so the
+     pair does not appear out of thin air at the destination.}
 
     DebugMsg("Performing off-screen arrest of " + DispatchTarget.GetDisplayName())
 
-    ; Stop stuck tracking
     SeverActionsNativeExt.Stuck_StopTracking(DispatchGuard)
 
-    ; Strip every active arrest package on the guard and clear linked refs.
     RemoveAllArrestPackages(DispatchGuard)
     If DispatchTravelDestination != None
         DispatchTravelDestination.Clear()
     EndIf
     ClearAllDispatchLinkedRefs(DispatchGuard)
 
-    ; Teleport guard to target (arrest happens at target's location, not at return destination)
     DispatchGuard.MoveTo(DispatchTarget, 100.0, 0.0, 0.0, false)
     Utility.Wait(0.2)
 
@@ -4441,26 +3964,23 @@ Function PerformOffScreenArrest()
 
     DebugMsg("Off-screen dispatch arrest effects applied to " + DispatchTarget.GetDisplayName())
 
-    ; Narration: the arrest happened off-screen
     String guardName = DispatchGuard.GetDisplayName()
     String targetName = DispatchTarget.GetDisplayName()
     String narration = "*" + guardName + " arrests " + targetName + " and begins escorting them back.*"
     SkyrimNetApi.DirectNarration(narration, DispatchTarget, DispatchGuard)
 
-    ; Notify the player that the arrest happened
-    Debug.Notification(guardName + " has arrested " + targetName + " and is returning")
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.hasArrestedAndIsReturning", ("" + guardName), ("" + targetName)))
 
     Utility.Wait(0.3)
 
-    ; Start return phase — guard+prisoner travel back via time-based simulation
-    ; They are NOT teleported to the destination; Phase 5 handles the journey
     StartDispatchReturnPhase()
 EndFunction
 
 Function StartDispatchReturnPhase()
-    {Start Phase 5: Guard returning with prisoner/evidence to sender or jail.
-     Uses unified DispatchWalk package targeting DispatchTargetAlias (filled with
-     DispatchReturnMarker, which is either the sender actor or the jail marker).}
+    {Enter phase 5: the guard walks the prisoner or evidence back to DispatchReturnMarker (the
+     sender or the jail marker) with DispatchWalk, which targets DispatchTargetAlias.}
+
+    DispatchReturnTimeStart = Utility.GetCurrentGameTime()
 
     If DispatchSender != None
         DebugMsg("Starting return phase - returning to " + DispatchSender.GetDisplayName())
@@ -4468,21 +3988,16 @@ Function StartDispatchReturnPhase()
         DebugMsg("Starting return phase - escorting prisoner to jail")
     EndIf
 
-    ; Put prisoner in alias to keep them high-process while unloaded.
-    ; Without an alias, the engine stops evaluating the prisoner's AI packages
-    ; when they're not 3D loaded, so their travel package wouldn't execute.
+    ; The alias keeps the prisoner in high process off-screen, so their follow package runs.
     If DispatchTarget != None && !DispatchIsHomeInvestigation && DispatchPrisonerAlias != None
         DispatchPrisonerAlias.ForceRefTo(DispatchTarget)
         DebugMsg("Prisoner alias filled: " + DispatchTarget.GetDisplayName())
     EndIf
 
-    ; Fill dedicated alias with return destination (sender OR jail marker)
-    ; DispatchWalk targets DispatchTargetAlias, so no sender-vs-jail branching needed.
     If DispatchReturnMarker != None
         DispatchTargetAlias.ForceRefTo(DispatchReturnMarker)
         DispatchGuardAlias.ForceRefTo(DispatchGuard)
 
-        ; Apply walk-speed return package (targets DispatchTargetAlias)
         If SeverActions_DispatchWalk
             ActorUtil.AddPackageOverride(DispatchGuard, SeverActions_DispatchWalk, PackagePriority, 1)
             DispatchGuard.EvaluatePackage()
@@ -4493,13 +4008,11 @@ Function StartDispatchReturnPhase()
             EndIf
         EndIf
 
-        ; Disable NPC-NPC collision for the return journey
+        ; No NPC-NPC collision on the return.
         SeverActionsNative.SetActorBumpable(DispatchGuard, false)
     EndIf
 
-    ; Prisoner follows the guard for the entire return journey.
-    ; DispatchPrisonerAlias keeps the prisoner high-process so Follow works across cells.
-    ; Disable collision so guard and prisoner don't block each other at doors.
+    ; The prisoner follows the guard, with no collision so the two do not block each other at doors.
     If DispatchTarget != None && !DispatchIsHomeInvestigation
         SeverActionsNative.SetActorBumpable(DispatchTarget, false)
         SeverActionsNative.LinkedRef_Set(DispatchTarget, DispatchGuard, SeverActions_FollowTargetKW)
@@ -4513,11 +4026,9 @@ Function StartDispatchReturnPhase()
         DebugMsg("Prisoner following guard for return journey")
     EndIf
 
-    ; Start stuck tracking for return journey
     SeverActionsNativeExt.Stuck_StartTracking(DispatchGuard)
 
-    ; Initialize off-screen travel estimation for the return journey
-    ; Use shorter bounds (0.25-12h) since return trips are typically shorter
+    ; Off-screen arrival estimate, bounded to 0.25-12 game hours.
     If DispatchReturnMarker != None
         SeverActionsNative.OffScreen_InitTracking(DispatchGuard, DispatchReturnMarker, 0.25, 12.0)
     EndIf
@@ -4530,12 +4041,8 @@ Function StartDispatchReturnPhase()
     DispatchReturnOffScreenCycle = 0
     DispatchReturnNarrated = false
 
-    ; PR-D: register ArrivalMonitor at the return destination. Fires when the
-    ; loaded guard closes to DispatchArrivalDistance of DispatchReturnMarker.
-    ; CheckDispatchPhase5_Return still runs per-tick for the off-screen tiered
-    ; logic (interior-exit virtual door, OffScreen_CheckArrival, snapshot
-    ; distance, tier-2 safety teleport) and on-screen stuck escalation; only
-    ; the loaded-area proximity arrival is event-driven now.
+    ; Loaded arrival (within DispatchArrivalDistance) is OnArrival(dispatch_p5_arrived);
+    ; CheckDispatchPhase5_Return keeps the off-screen tiers and the stuck escalation.
     If DispatchReturnMarker != None
         SeverActionsNativeExt.Arrival_Register(DispatchGuard, DispatchReturnMarker, DispatchArrivalDistance, "dispatch_p5_arrived")
     EndIf
@@ -4544,8 +4051,8 @@ Function StartDispatchReturnPhase()
 EndFunction
 
 Function ReapplyReturnPackages()
-    {Re-apply aliases and walk package after a cross-cell MoveTo.
-     Simplified -- DispatchWalk always targets DispatchTargetAlias.}
+    {Re-apply the return aliases, packages and prisoner link after a cross-cell MoveTo (a cell
+     transition often drops the overrides), and restart stuck tracking with a 5 s grace.}
 
     DispatchTargetAlias.ForceRefTo(DispatchReturnMarker)
     DispatchGuardAlias.ForceRefTo(DispatchGuard)
@@ -4553,7 +4060,6 @@ Function ReapplyReturnPackages()
         ActorUtil.AddPackageOverride(DispatchGuard, SeverActions_DispatchWalk, PackagePriority, 1)
     EndIf
 
-    ; Re-apply prisoner follow if applicable
     If DispatchTarget != None && !DispatchIsHomeInvestigation
         SeverActionsNative.LinkedRef_Set(DispatchTarget, DispatchGuard, SeverActions_FollowTargetKW)
         Utility.Wait(0.2)
@@ -4565,28 +4071,26 @@ Function ReapplyReturnPackages()
 
     DispatchGuard.EvaluatePackage()
 
-    ; Reset stuck tracking since position snapshot is stale after teleport
+    ; The stuck baseline is stale after the teleport.
     SeverActionsNativeExt.Stuck_StopTracking(DispatchGuard)
     SeverActionsNativeExt.Stuck_StartTracking(DispatchGuard)
 
-    ; Grace period: suppress stuck detection for 5 seconds to let actors settle on navmesh
+    ; No stuck checks for 5 s while the actors settle on the navmesh.
     DispatchStuckGraceUntil = Utility.GetCurrentRealTime() + 5.0
 
     DebugMsg("Re-applied return packages after cell transition")
 EndFunction
 
 Function CheckDispatchPhase1_Travel()
-    {Phase 1: Guard traveling to destination (target Actor or home interior marker).
-     Skyrim AI handles cross-cell pathfinding through doors automatically. We monitor for:
-     - Same cell as destination (transition to approach or sandbox)
-     - Close enough to destination (transition to approach or sandbox)
-     - Stuck detection with leapfrog recovery}
+    {Phase 1: the guard travels to the target actor or home marker; the AI paths across cells.
+     This tick handles a failed departure, stuck escalation, same-interior-cell and off-screen
+     arrivals, and a stale-snapshot redirect to the target's home. Loaded arrival is
+     OnArrival(dispatch_p1_arrived).}
 
     Float dist
     Int stuckLevel
     ObjectReference travelDest
 
-    ; Determine travel destination based on dispatch type
     If DispatchIsHomeInvestigation && DispatchHomeMarker != None
         travelDest = DispatchHomeMarker
     ElseIf DispatchTarget != None
@@ -4597,15 +4101,14 @@ Function CheckDispatchPhase1_Travel()
         Return
     EndIf
 
-    ; Departure check — verify guard actually started moving
-    ; CheckDeparture has a 15-second grace period, then returns 2 if guard hasn't moved 100+ units
+    ; Stuck_CheckDeparture returns 2 when the guard is still within 100 units of the start after
+    ; its grace ticks: a soft recovery.
     If DispatchGuard.Is3DLoaded()
         Int departureStatus = SeverActionsNativeExt.Stuck_CheckDeparture(DispatchGuard, 100.0)
         If departureStatus == 2
-            ; Guard hasn't moved in 30 seconds — soft recovery
             DebugMsg("Guard failed to depart - applying soft recovery")
             DispatchGuard.EvaluatePackage()
-            ; Disable AI processing briefly and re-enable to break any animation lock
+            ; A brief SetDontMove toggle breaks an animation lock.
             DispatchGuard.SetDontMove(true)
             Utility.Wait(0.3)
             DispatchGuard.SetDontMove(false)
@@ -4614,18 +4117,17 @@ Function CheckDispatchPhase1_Travel()
         EndIf
     EndIf
 
-    ; Check stuck detection
+    ; Stuck escalation: 2 nudge, 3 leapfrog toward the destination.
     stuckLevel = SeverActionsNativeExt.Stuck_CheckStatus(DispatchGuard, UpdateInterval, 50.0)
     If stuckLevel >= 2
         DebugMsg("Guard stuck (level " + stuckLevel + "), nudging...")
         DispatchGuard.EvaluatePackage()
         If stuckLevel >= 3 && travelDest != None
-            ; Severe stuck - leapfrog toward destination
             Float teleportDist = SeverActionsNativeExt.Stuck_GetTeleportDistance(DispatchGuard)
             DispatchGuard.MoveTo(travelDest, teleportDist, 0.0, 0.0, false)
             SeverActionsNativeExt.Stuck_ResetEscalation(DispatchGuard)
 
-            ; If severely stuck and target is in an interior, try the door instead
+            ; A target in an interior: go to the door of their cell instead.
             If !DispatchIsHomeInvestigation && DispatchTarget != None
                 Cell targetCell = DispatchTarget.GetParentCell()
                 If targetCell != None && targetCell.IsInterior()
@@ -4639,12 +4141,8 @@ Function CheckDispatchPhase1_Travel()
         EndIf
     EndIf
 
-    ; Same cell check — for INTERIOR cells only. Interior cells are small enough
-    ; that same-cell = arrived; ArrivalMonitor's distance threshold doesn't fire
-    ; reliably inside cramped interiors so this fast-path stays.
-    ; Loaded-area exterior arrivals (same/adjacent cells, both 3D loaded) are
-    ; event-driven now via OnArrival(dispatch_p1_arrived) registered at
-    ; InitDispatchCommon.
+    ; Same INTERIOR cell = arrived: interiors are small, and ArrivalMonitor's distance test is
+    ; unreliable in cramped ones.
     Cell guardCell = DispatchGuard.GetParentCell()
     Cell destCell = travelDest.GetParentCell()
     If guardCell != None && destCell != None && guardCell == destCell && guardCell.IsInterior()
@@ -4659,11 +4157,10 @@ Function CheckDispatchPhase1_Travel()
         EndIf
     EndIf
 
-    ; Snapshot-based distance check (works off-screen via position snapshots)
+    ; Either one off-screen: the native position-snapshot distance (actors only, so not for the
+    ; home marker).
     If !DispatchGuard.Is3DLoaded() || !travelDest.Is3DLoaded()
-        ; Guard or destination is off-screen — try native distance
         If !DispatchIsHomeInvestigation
-            ; Home marker isn't an actor, can't use GetDistanceBetweenActors
             Float snapDist = SeverActionsNative.GetDistanceBetweenActors(DispatchGuard, DispatchTarget)
             If snapDist >= 0.0 && snapDist <= DispatchArrivalDistance
                 DebugMsg("Snapshot distance arrival: guard within " + snapDist + " of target (off-screen)")
@@ -4673,44 +4170,35 @@ Function CheckDispatchPhase1_Travel()
         EndIf
     EndIf
 
-    ; Off-screen travel estimation — if guard has been traveling off-screen long enough,
-    ; teleport them to destination based on distance-calculated estimate
+    ; Guard off-screen and OffScreenTracker's distance estimate elapsed: teleport them there
+    ; (beside the target for an arrest).
     If !DispatchGuard.Is3DLoaded()
         Int arrivalStatus = SeverActionsNative.OffScreen_CheckArrival(DispatchGuard, Utility.GetCurrentGameTime())
         If arrivalStatus == 1
             DebugMsg("Off-screen travel estimate elapsed - teleporting guard to destination")
             DispatchGuard.MoveTo(travelDest, 300.0, 0.0, 0.0, false)
             If !DispatchIsHomeInvestigation && DispatchTarget != None
-                ; Place guard near target for arrest
                 DispatchGuard.MoveTo(DispatchTarget, ApproachDistance, 0.0, 0.0, false)
             EndIf
             Utility.Wait(0.5)
             DispatchGuard.EvaluatePackage()
             SeverActionsNative.OffScreen_StopTracking(DispatchGuard)
-            ; Let the next tick detect same-cell/proximity and transition naturally
+            ; The next tick sees the arrival and moves on.
             ChronoArm(UpdateInterval)
             Return
         EndIf
     EndIf
 
-    ; PR-D: loaded-area arrival is event-driven now — OnArrival(dispatch_p1_arrived)
-    ; fires from native ArrivalMonitor registered in InitDispatchCommon. The
-    ; per-tick path retains the off-screen logic above (snapshot distance,
-    ; OffScreen_CheckArrival) since those operate on unloaded actors where
-    ; ArrivalMonitor can't get reliable distance.
-
-    ; Stale snapshot redirect — if guard has been traveling 5+ game-hours without finding target,
-    ; check if target's position data is very old and redirect to their home instead
+    ; After 5+ game hours of travel, a target snapshot older than 24 game hours means the guard is
+    ; chasing a stale position: redirect them to the target's home.
     If !DispatchIsHomeInvestigation && DispatchGameTimeStart > 0.0
         Float travelHours = (Utility.GetCurrentGameTime() - DispatchGameTimeStart) * 24.0
         If travelHours >= 5.0
-            ; Check how old the target's snapshot is
             Float snapshotTime = SeverActionsNative.GetActorSnapshotGameTime(DispatchTarget)
             If snapshotTime > 0.0
                 Float snapshotAge = (Utility.GetCurrentGameTime() - snapshotTime) * 24.0
                 If snapshotAge > 24.0
                     DebugMsg("Target snapshot is " + snapshotAge + "h old - redirecting to home")
-                    ; Try to find target's home
                     ObjectReference homeMarker = SeverActionsNative.FindHomeInteriorMarker(DispatchTarget)
                     If homeMarker == None
                         ObjectReference homeDoor = SeverActionsNative.FindDoorToActorHome(DispatchTarget)
@@ -4720,22 +4208,18 @@ Function CheckDispatchPhase1_Travel()
                     EndIf
 
                     If homeMarker != None
-                        ; Redirect guard to target's home. The dispatch guard's
-                        ; package follows DispatchTargetAlias (not ArrestTarget,
-                        ; which is the same-cell arrest alias) — pointing the wrong
-                        ; alias here made this redirect a silent no-op.
+                        ; The dispatch package follows DispatchTargetAlias, not ArrestTarget
+                        ; (the same-cell alias); the wrong one makes this a silent no-op.
                         DebugMsg("Redirecting guard to target's home")
                         DispatchTargetAlias.ForceRefTo(homeMarker)
                         DispatchGuard.EvaluatePackage()
-                        ; Don't change DispatchTarget — still arresting same person
-                        ; Guard will arrive at home and wait for target
+                        ; DispatchTarget is unchanged: the guard waits at the home for them.
                     EndIf
                 EndIf
             EndIf
         EndIf
     EndIf
 
-    ; Continue monitoring
     ChronoArm(UpdateInterval)
 EndFunction
 
@@ -4748,35 +4232,23 @@ Function RestoreGuardCombatAI()
 EndFunction
 
 Function TransitionToApproachPhase()
-    {Transition to Phase 2: approaching target for arrest.
-     Dispatch start applied DispatchJog; this function stops travel tracking,
-     swaps in GuardApproachTarget, restores NPC collision, re-fills the aliases,
-     re-arms stuck tracking + the BUG-A3 timers at the tighter arrest threshold,
-     and draws the guard's weapon.
+    {Enter phase 2 (approach for the arrest): aim DispatchJog at the target, restore collision, restart
+     stuck tracking and the phase-2 timeout, watch for arrival at ApproachDistance, draw the weapon.
+     RestoreGuardCombatAI is deliberately NOT called here: with their aggression back before the
+     target is pacified, the guard fights a still-hostile target instead of arresting them. It runs
+     after ApplyDispatchArrestEffects instead.}
 
-     BUG-A4: RestoreGuardCombatAI is intentionally NOT called here. Restoring
-     the guard's aggression before the prisoner is pacified can cause the guard
-     to start combat with a still-hostile target instead of arresting them.
-     RestoreGuardCombatAI now runs inside CheckDispatchPhase2_Approach AFTER
-     ApplyDispatchArrestEffects has zeroed the target's aggression.
-
-     BUG-A3: kicks off DispatchPhase2StartTime / DispatchTargetMovementFrozen
-     so the new stuck-recovery logic in CheckDispatchPhase2_Approach has its
-     timing baseline.}
-
-    ; Stop stuck tracking for travel
     SeverActionsNativeExt.Stuck_StopTracking(DispatchGuard)
 
-    ; Restore normal NPC-NPC collision — guard is near target
     SeverActionsNative.SetActorBumpable(DispatchGuard, true)
 
-    ; Ensure aliases are current (they should already be filled from dispatch start)
-    ArrestTarget.ForceRefTo(DispatchTarget)
-    ArrestingGuard.ForceRefTo(DispatchGuard)
-
-    ; Ensure approach package is applied and re-evaluate
-    If SeverActions_GuardApproachTarget
-        ActorUtil.AddPackageOverride(DispatchGuard, SeverActions_GuardApproachTarget, PackagePriority, 1)
+    ; The dispatch's own alias and package, never ArrestTarget / GuardApproachTarget: a same-cell
+    ; arrest running at the same time refills those. Phase 1 may have aimed the alias at a home marker.
+    DispatchTargetAlias.ForceRefTo(DispatchTarget)
+    If SeverActions_DispatchJog
+        ; Phase 1 ran the same package: remove it first so the travel restarts toward the new target.
+        ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchJog)
+        ActorUtil.AddPackageOverride(DispatchGuard, SeverActions_DispatchJog, PackagePriority, 1)
         DispatchGuard.EvaluatePackage()
         DebugMsg("Approach phase: guard approaching target")
     EndIf
@@ -4786,19 +4258,15 @@ Function TransitionToApproachPhase()
     SeverActionsNativeExt.Native_Arrest_SetDispatchPhase(DispatchGuard, DispatchPhase)
     SeverActionsNative.Native_ArrestSession_UpdateState(DispatchTarget, 5, 2)
 
-    ; BUG-A3: timing + freeze flags for Phase 2 stuck/timeout recovery.
+    ; Baseline for the phase-2 timeout, and no freeze yet.
     DispatchPhase2StartTime = Utility.GetCurrentRealTime()
     DispatchTargetMovementFrozen = false
 
-    ; BUG-A3: re-enable stuck tracking on the dispatch guard for the approach
-    ; window. Phase 1 stopped it; without re-enabling, Phase 2 has no recovery.
+    ; Stopped above; phase 2 needs it for its own stuck recovery.
     SeverActionsNativeExt.Stuck_StartTracking(DispatchGuard)
 
-    ; PR-D: re-register the guard with ArrivalMonitor at the tighter Phase-2
-    ; arrest threshold (ApproachDistance ~150u). Overwrites the Phase-1
-    ; registration (one-actor-one-entry semantics). When the guard closes to
-    ; ApproachDistance of the target, OnArrival fires the dispatch_p2_arrived
-    ; branch and the arrest finalization runs.
+    ; Replaces the phase-1 arrival watch (one entry per actor); OnArrival(dispatch_p2_arrived) makes
+    ; the arrest.
     If DispatchTarget != None
         SeverActionsNativeExt.Arrival_Register(DispatchGuard, DispatchTarget, ApproachDistance, "dispatch_p2_arrived")
     EndIf
@@ -4807,20 +4275,12 @@ Function TransitionToApproachPhase()
 EndFunction
 
 Function CheckDispatchPhase2_Approach()
-    {Phase 2: Guard approaching target in same cell for arrest.
-     GetDistance returns 0 for unloaded actors, so we must guard against false positives.
-     If neither is 3D loaded, use snapshot distance instead. If both unloaded and snapshot
-     confirms proximity (or is unavailable), proceed — the guard was transitioned to Phase 2
-     because same-cell was already confirmed.
-
-     BUG-A3: previously had no stuck detection or timeout. If the target was running
-     a sandbox / sweep package, the guard would chase forever. Now mirrors Phase 1's
-     escalation (Stuck_CheckStatus → leapfrog → force teleport) and adds a hard
-     timeout that fires ApplyDispatchArrestEffects in place after the timer elapses.
-
-     BUG-A4: RestoreGuardCombatAI is now called here, after ApplyDispatchArrestEffects
-     has zeroed the target's aggression. Restoring it earlier (in TransitionToApproachPhase)
-     caused guards to enter combat with hostile targets instead of arresting them.}
+    {Phase 2: the guard closes on the target. Loaded arrival is OnArrival(dispatch_p2_arrived);
+     this tick handles the unloaded arrival (snapshot distance, since GetDistance reads 0 for an
+     unloaded actor; with no snapshot it trusts the arrival that led here), freezes the target
+     inside ApproachFreezeDistance, arrests in place after ApproachTimeout (a target on a sandbox
+     package could otherwise be chased forever) and escalates a stuck guard. RestoreGuardCombatAI
+     follows ApplyDispatchArrestEffects (see TransitionToApproachPhase).}
 
     Float dist = -1.0
     Bool bothLoaded = DispatchGuard.Is3DLoaded() && DispatchTarget.Is3DLoaded()
@@ -4828,21 +4288,14 @@ Function CheckDispatchPhase2_Approach()
     If bothLoaded
         dist = DispatchGuard.GetDistance(DispatchTarget)
     Else
-        ; One or both actors not loaded — use snapshot distance
         dist = SeverActionsNative.GetDistanceBetweenActors(DispatchGuard, DispatchTarget)
         If dist < 0.0
-            ; Snapshot unavailable — we already confirmed same-cell to reach Phase 2,
-            ; so trust it and proceed with the arrest
             dist = 0.0
             DebugMsg("Phase 2: both unloaded, no snapshot - trusting same-cell arrival")
         EndIf
     EndIf
 
-    ; PR-D: loaded arrival is event-driven now via OnArrival(dispatch_p2_arrived)
-    ; registered at TransitionToApproachPhase. For off-screen / unloaded cases
-    ; where the snapshot distance confirmed proximity, fall through to the
-    ; same arrest sequence (snapshot proximity won't trip ArrivalMonitor
-    ; since it requires 3D-loaded distance).
+    ; ArrivalMonitor needs 3D, so an unloaded arrival makes the arrest here.
     If !bothLoaded && dist >= 0.0 && dist <= ApproachDistance
         DebugMsg("Phase 2: off-screen snapshot arrival (dist=" + dist + ") - performing arrest")
         SeverActionsNativeExt.Stuck_StopTracking(DispatchGuard)
@@ -4863,33 +4316,31 @@ Function CheckDispatchPhase2_Approach()
         String snapTargetName = DispatchTarget.GetDisplayName()
         String snapNarration = "*" + snapGuardName + " seizes " + snapTargetName + " and places them under arrest.*"
         SkyrimNetApi.DirectNarration(snapNarration, DispatchGuard, DispatchTarget)
-        Debug.Notification(snapGuardName + " has arrested " + snapTargetName)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.hasArrested", ("" + snapGuardName), ("" + snapTargetName)))
         StartDispatchReturnPhase()
         Return
     EndIf
 
-    ; BUG-A3: freeze the target once close enough so their AI package doesn't
-    ; oscillate them out of arrest range. Mirrors the same-cell A1 fix.
+    ; Freeze the target once close, or their own AI keeps walking them out of arrest range (as in
+    ; the same-cell approach).
     If !DispatchTargetMovementFrozen && DispatchTarget != None && bothLoaded && dist > 0.0 && dist <= ApproachFreezeDistance
         DispatchTarget.SetDontMove(true)
         DispatchTargetMovementFrozen = true
         DebugMsg("Phase 2: target inside " + ApproachFreezeDistance + "u, freezing movement")
     EndIf
 
-    ; BUG-A3: hard timeout. ApproachTimeout (30s default) is enough — guard is
-    ; already in the same cell at this point; if they can't close the gap in
-    ; that window, we force-teleport and proceed with the arrest in place.
+    ; Hard timeout (ApproachTimeout, real seconds): the guard is already close by, so teleport
+    ; them in and arrest in place.
     Float phase2Elapsed = Utility.GetCurrentRealTime() - DispatchPhase2StartTime
     If DispatchPhase2StartTime > 0.0 && phase2Elapsed >= ApproachTimeout
         DebugMsg("Phase 2 timeout (" + phase2Elapsed + "s) - force-teleporting guard for in-place arrest")
         SeverActionsNativeExt.Stuck_StopTracking(DispatchGuard)
         If DispatchTarget != None
             DispatchGuard.MoveTo(DispatchTarget, 100.0, 0.0, 0.0)
-            ; Wave 3: navmesh snap after offset teleport
+            ; An offset teleport can land off the navmesh.
             SeverActionsNative.Native_MoveToNearestNavmesh(DispatchGuard, 0.0)
             Utility.Wait(0.3)
         EndIf
-        ; Release movement freeze and proceed with the arrest path.
         If DispatchTargetMovementFrozen && DispatchTarget != None
             DispatchTarget.SetDontMove(false)
             DispatchTargetMovementFrozen = false
@@ -4909,19 +4360,18 @@ Function CheckDispatchPhase2_Approach()
         String gName = DispatchGuard.GetDisplayName()
         String forcedNarration = "*" + gName + " seizes " + tgName + " and places them under arrest.*"
         SkyrimNetApi.DirectNarration(forcedNarration, DispatchGuard, DispatchTarget)
-        Debug.Notification(gName + " has arrested " + tgName)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.hasArrested", ("" + gName), ("" + tgName)))
 
         StartDispatchReturnPhase()
         Return
     EndIf
 
-    ; BUG-A3: stuck escalation mirroring Phase 1.
+    ; Stuck escalation: 1 nudge, 2 leapfrog toward the target, 3 teleport beside them.
     If bothLoaded
         Int stuckLevel = SeverActionsNativeExt.Stuck_CheckStatus(DispatchGuard, UpdateInterval, 50.0)
         If stuckLevel == 1
             DispatchGuard.EvaluatePackage()
         ElseIf stuckLevel == 2
-            ; Leapfrog toward target
             Float teleportDist = SeverActionsNativeExt.Stuck_GetTeleportDistance(DispatchGuard)
             Float gx = DispatchGuard.GetPositionX()
             Float gy = DispatchGuard.GetPositionY()
@@ -4934,7 +4384,6 @@ Function CheckDispatchPhase2_Approach()
                 Float mx = (ddx / ddist2d) * teleportDist
                 Float my = (ddy / ddist2d) * teleportDist
                 DispatchGuard.MoveTo(DispatchGuard, mx, my, 0.0)
-                ; Wave 3: navmesh snap after relative leapfrog
                 SeverActionsNative.Native_MoveToNearestNavmesh(DispatchGuard, 0.0)
                 DispatchGuard.EvaluatePackage()
                 DebugMsg("Phase 2: leapfrog guard " + teleportDist + " units toward target")
@@ -4943,7 +4392,6 @@ Function CheckDispatchPhase2_Approach()
         ElseIf stuckLevel >= 3
             DebugMsg("Phase 2: force teleporting guard near target")
             DispatchGuard.MoveTo(DispatchTarget, 200.0, 0.0, 0.0)
-            ; Wave 3: navmesh snap after offset teleport
             SeverActionsNative.Native_MoveToNearestNavmesh(DispatchGuard, 0.0)
             Utility.Wait(0.3)
             DispatchGuard.EvaluatePackage()
@@ -4955,18 +4403,15 @@ Function CheckDispatchPhase2_Approach()
 EndFunction
 
 Function TransitionToSandboxPhase()
-    {Transition to Phase 3: Guard searches target's home container-by-container.
-     On-screen: Guard walks to each container, activates it, searches, then moves to next.
-     Off-screen: Evidence selected from pool, search simulated with timer.
-     Two-pass system: First checks for player-planted evidence, then falls back to spawning.}
+    {Enter phase 3, the home search. On-screen the guard walks to each container, opens and
+     searches it; evidence is a suspicious item already in the home, else items from the pool.
+     Off-screen the evidence is picked and handed over at once and a timer stands in for the search.}
 
-    ; Stop stuck tracking for travel
     SeverActionsNativeExt.Stuck_StopTracking(DispatchGuard)
 
-    ; Restore normal NPC-NPC collision — guard is inside home
     SeverActionsNative.SetActorBumpable(DispatchGuard, true)
 
-    ; Remove travel/approach/dispatch packages and clear linked ref
+    ; Drop the travel packages and linked refs.
     If SeverActions_GuardApproachTarget
         ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_GuardApproachTarget)
     EndIf
@@ -4981,7 +4426,6 @@ Function TransitionToSandboxPhase()
     EndIf
     ClearAllDispatchLinkedRefs(DispatchGuard)
 
-    ; Suppress trespass reactions from homeowner
     SuppressTrespass()
 
     String guardName = DispatchGuard.GetDisplayName()
@@ -4997,21 +4441,20 @@ Function TransitionToSandboxPhase()
     Bool playerWatching = DispatchGuard.Is3DLoaded()
 
     If playerWatching
-        ; === ON-SCREEN: Container-by-container search ===
+        ; On-screen: container by container.
         DebugMsg("Phase 3: On-screen container search beginning")
 
-        ; Scan cell for searchable containers
         DispatchContainerCount = SeverActionsNative.FindSearchContainers(DispatchGuard, 3000.0)
         DebugMsg("Found " + DispatchContainerCount + " searchable containers in cell")
 
         If DispatchContainerCount == 0
-            ; No containers found — fall back to old sandbox behavior
             DebugMsg("No containers found, falling back to sandbox + evidence generation")
             FallbackSandboxSearch(guardName, targetName)
             Return
         EndIf
 
-        ; === PASS 1: Pre-scan all containers for player-planted evidence ===
+        ; Pass 1: the first container already holding something suspicious. It counts as player-planted
+        ; (ScanContainerForEvidence cannot tell who put it there).
         DispatchPlayerPlantedFound = false
         DispatchEvidenceContainerIndex = -1
         Int i = 0
@@ -5020,7 +4463,6 @@ Function TransitionToSandboxPhase()
             If containerRef != None
                 Form plantedEvidence = SeverActionsNative.ScanContainerForEvidence(containerRef, DispatchInvestigationReason)
                 If plantedEvidence != None && !DispatchPlayerPlantedFound
-                    ; Found player-planted evidence!
                     DispatchPlayerPlantedFound = true
                     DispatchEvidenceContainerIndex = i
                     DispatchEvidenceForm = plantedEvidence
@@ -5031,13 +4473,13 @@ Function TransitionToSandboxPhase()
             i += 1
         EndWhile
 
-        ; === PASS 2: If no player evidence, select from pool and plant in last container ===
+        ; Pass 2, nothing planted: up to three pool items (SelectEvidenceFromPool: one common, maybe a
+        ; rare and a damning one), all planted in the LAST container to build tension.
         If !DispatchPlayerPlantedFound
             String evidencePoolResult = SeverActionsNative.SelectEvidenceFromPool(DispatchInvestigationReason, DispatchTarget)
             Int evidenceCount = SeverActionsNative.GetEvidenceCount()
             DebugMsg("Pass 2: Selected " + evidenceCount + " evidence items from pool")
 
-            ; Primary evidence (always present)
             If evidenceCount >= 1
                 DispatchEvidenceForm = SeverActionsNative.GetEvidenceAtIndex(0) as Form
                 If DispatchEvidenceForm != None
@@ -5045,7 +4487,6 @@ Function TransitionToSandboxPhase()
                 EndIf
             EndIf
 
-            ; Secondary evidence (rare tier, 30% chance)
             If evidenceCount >= 2
                 DispatchEvidenceForm2 = SeverActionsNative.GetEvidenceAtIndex(1) as Form
                 If DispatchEvidenceForm2 != None
@@ -5053,7 +4494,6 @@ Function TransitionToSandboxPhase()
                 EndIf
             EndIf
 
-            ; Tertiary evidence (damning tier, 10% chance)
             If evidenceCount >= 3
                 DispatchEvidenceForm3 = SeverActionsNative.GetEvidenceAtIndex(2) as Form
                 If DispatchEvidenceForm3 != None
@@ -5061,7 +4501,6 @@ Function TransitionToSandboxPhase()
                 EndIf
             EndIf
 
-            ; Plant evidence in the LAST container (builds tension)
             DispatchEvidenceContainerIndex = DispatchContainerCount - 1
             ObjectReference plantTarget = SeverActionsNative.GetSearchContainer(DispatchEvidenceContainerIndex)
             If plantTarget != None && DispatchEvidenceForm != None
@@ -5076,28 +4515,25 @@ Function TransitionToSandboxPhase()
             EndIf
         EndIf
 
-        ; Narration: guard enters and looks around
         String narration = "*" + guardName + " enters " + targetName + "'s home and begins a methodical search, eyes scanning the room.*"
         SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
 
-        ; Brief entry scan pause (5 seconds) then start searching containers
+        ; A 5 s look around the room before the first container.
         DispatchCurrentContainer = 0
         DispatchSearchSubPhase = 0
         DispatchSandboxStartTime = Utility.GetCurrentRealTime()
-        DispatchSandboxDuration = 5.0  ; Entry scan duration
+        DispatchSandboxDuration = 5.0
 
         ChronoArm(UpdateInterval)
 
     Else
-        ; === OFF-SCREEN: Simulate search with expanded evidence pool ===
+        ; Off-screen: the evidence goes straight to the guard; a 20-45 s timer stands in for the search.
         DebugMsg("Phase 3: Off-screen search - simulating with timer")
 
-        ; Select evidence from expanded pool
         String evidencePoolResult = SeverActionsNative.SelectEvidenceFromPool(DispatchInvestigationReason, DispatchTarget)
         Int evidenceCount = SeverActionsNative.GetEvidenceCount()
         DebugMsg("Off-screen: Selected " + evidenceCount + " evidence items from pool")
 
-        ; Store evidence
         If evidenceCount >= 1
             DispatchEvidenceForm = SeverActionsNative.GetEvidenceAtIndex(0) as Form
             If DispatchEvidenceForm != None
@@ -5120,7 +4556,6 @@ Function TransitionToSandboxPhase()
             EndIf
         EndIf
 
-        ; Build evidence summary and register event
         BuildEvidenceSummary(targetName)
 
         If DispatchEvidenceForm != None
@@ -5130,7 +4565,6 @@ Function TransitionToSandboxPhase()
             DebugMsg("Off-screen: No evidence generated - guard returning empty-handed")
         EndIf
 
-        ; Simulate search duration (20-45 seconds)
         DispatchSandboxStartTime = Utility.GetCurrentRealTime()
         DispatchSandboxDuration = Utility.RandomFloat(20.0, 45.0)
         DebugMsg("Off-screen search simulated for " + DispatchSandboxDuration + " seconds")
@@ -5140,9 +4574,9 @@ Function TransitionToSandboxPhase()
 EndFunction
 
 Function FallbackSandboxSearch(String guardName, String targetName)
-    {Fallback when no containers are found in cell. Uses old sandbox + evidence generation.}
+    {No searchable containers: the guard sandboxes at the home for 15-30 s, and
+     CheckDispatchPhase3_Sandbox then hands over one item picked from the pool.}
 
-    ; Set up sandbox anchor
     ObjectReference sandboxAnchor = DispatchGuard as ObjectReference
     If DispatchHomeMarker != None
         sandboxAnchor = DispatchHomeMarker
@@ -5157,7 +4591,6 @@ Function FallbackSandboxSearch(String guardName, String targetName)
         SeverActionsNative.RegisterSandboxUser(DispatchGuard, SeverActions_PrisonerSandBox, 2000.0)
     EndIf
 
-    ; Generate evidence from pool (no containers to search)
     String evidencePoolResult = SeverActionsNative.SelectEvidenceFromPool(DispatchInvestigationReason, DispatchTarget)
     Int evidenceCount = SeverActionsNative.GetEvidenceCount()
     If evidenceCount >= 1
@@ -5167,7 +4600,6 @@ Function FallbackSandboxSearch(String guardName, String targetName)
         EndIf
     EndIf
 
-    ; Use sandbox timer, then collect evidence at end
     DispatchSandboxStartTime = Utility.GetCurrentRealTime()
     DispatchSandboxDuration = Utility.RandomFloat(15.0, 30.0)
     DispatchContainerCount = 0  ; Signal fallback mode
@@ -5179,31 +4611,28 @@ Function FallbackSandboxSearch(String guardName, String targetName)
 EndFunction
 
 Function CheckDispatchPhase3_Sandbox()
-    {Phase 3: Guard searching target's home.
-     On-screen: Sequential container search with walking, activation, and evidence discovery.
-     Off-screen: Timer-based simulation.
-     Fallback (no containers): Simple sandbox timer.}
+    {Phase 3, the home search: on-screen one container at a time (walk, open, search), off-screen
+     a timer, and with no containers the fallback sandbox timer.}
 
     Bool playerWatching = DispatchGuard.Is3DLoaded()
 
-    ; === FALLBACK MODE: No containers, using old sandbox timer ===
+    ; Container count 0: the no-container fallback. An off-screen search (which never sets the count)
+    ; lands here too.
     If DispatchContainerCount == 0
         Float elapsed = Utility.GetCurrentRealTime() - DispatchSandboxStartTime
         If elapsed >= DispatchSandboxDuration
             DebugMsg("Fallback sandbox complete, collecting evidence")
 
-            ; Cleanup sandbox
             SeverActionsNative.UnregisterSandboxUser(DispatchGuard)
             If SeverActions_PrisonerSandBox
                 ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_PrisonerSandBox)
             EndIf
             SeverActionsNative.LinkedRef_Clear(DispatchGuard, SeverActions_SandboxAnchorKW)
 
-            ; Add evidence to guard
             If DispatchEvidenceForm != None
                 DispatchGuard.AddItem(DispatchEvidenceForm, 1, true)
                 BuildEvidenceSummary(DispatchTarget.GetDisplayName())
-                Debug.Notification(DispatchGuard.GetDisplayName() + " collected evidence: " + DispatchEvidenceName)
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.collectedEvidence", ("" + DispatchGuard.GetDisplayName()), ("" + DispatchEvidenceName)))
             EndIf
 
             TransitionToEvidenceComplete()
@@ -5213,41 +4642,26 @@ Function CheckDispatchPhase3_Sandbox()
         Return
     EndIf
 
-    ; === OFF-SCREEN MODE: Timer simulation ===
+    ; Only an on-screen search gets here (an off-screen one keeps the count at 0): the guard went
+    ; off-screen mid-search, so finish the rest at once, collecting the evidence.
     If !playerWatching
-        Float elapsed = Utility.GetCurrentRealTime() - DispatchSandboxStartTime
-        If elapsed >= DispatchSandboxDuration
-            DebugMsg("Off-screen search timer complete")
-            TransitionToEvidenceComplete()
-            Return
-        EndIf
-        ChronoArm(UpdateInterval)
+        DebugMsg("Guard went off-screen mid-search, completing remaining containers instantly")
+        CompleteRemainingContainersInstantly()
+        TransitionToEvidenceComplete()
         Return
     EndIf
 
-    ; === ON-SCREEN: Container-by-container search ===
-
-    ; Entry scan pause (first 5 seconds — guard looks around)
+    ; On-screen: the 5 s entry pause first.
     Float elapsed = Utility.GetCurrentRealTime() - DispatchSandboxStartTime
     If DispatchCurrentContainer == 0 && DispatchSearchSubPhase == 0 && elapsed < 5.0
         ChronoArm(UpdateInterval)
         Return
     EndIf
 
-    ; Handle current container search sub-phases
+    ; Sub-phases: 0 pick the next container, 1 walk to it, 2 search it.
     If DispatchSearchSubPhase == 0
-        ; Sub-phase 0: Start walking to next container
         If DispatchCurrentContainer >= DispatchContainerCount
-            ; All containers searched — finalize
             DebugMsg("All " + DispatchContainerCount + " containers searched, finalizing")
-            TransitionToEvidenceComplete()
-            Return
-        EndIf
-
-        ; GRACEFUL FALLBACK: If player left mid-search, complete remaining instantly
-        If !DispatchGuard.Is3DLoaded()
-            DebugMsg("Guard went off-screen mid-search, completing remaining containers instantly")
-            CompleteRemainingContainersInstantly()
             TransitionToEvidenceComplete()
             Return
         EndIf
@@ -5263,7 +4677,6 @@ Function CheckDispatchPhase3_Sandbox()
         DispatchCurrentContainerRef = containerRef
         DebugMsg("Walking guard to container " + DispatchCurrentContainer + " of " + DispatchContainerCount)
 
-        ; Point travel alias at the container and apply travel package
         If DispatchTravelDestination != None
             DispatchTravelDestination.ForceRefTo(containerRef)
         EndIf
@@ -5277,7 +4690,6 @@ Function CheckDispatchPhase3_Sandbox()
         ChronoArm(UpdateInterval)
 
     ElseIf DispatchSearchSubPhase == 1
-        ; Sub-phase 1: Guard walking to container — check arrival
         If DispatchCurrentContainerRef == None
             DispatchSearchSubPhase = 0
             DispatchCurrentContainer += 1
@@ -5288,10 +4700,8 @@ Function CheckDispatchPhase3_Sandbox()
         Float dist = DispatchGuard.GetDistance(DispatchCurrentContainerRef)
 
         If dist <= 200.0
-            ; Guard arrived at container — start searching
             DebugMsg("Guard arrived at container " + DispatchCurrentContainer + " (dist=" + dist + ")")
 
-            ; Remove travel package
             If SeverActions_DispatchTravel
                 ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchTravel)
             EndIf
@@ -5299,11 +4709,10 @@ Function CheckDispatchPhase3_Sandbox()
                 DispatchTravelDestination.Clear()
             EndIf
 
-            ; Play search animation — activate container (opens it visually)
+            ; Activate opens the container visually.
             DispatchCurrentContainerRef.Activate(DispatchGuard)
             Debug.SendAnimationEvent(DispatchGuard, "IdlePickupFromTableStart")
 
-            ; Set random search duration for this container
             DispatchContainerSearchDuration = Utility.RandomFloat(8.0, 12.0)
             DispatchContainerSearchStart = Utility.GetCurrentRealTime()
             DispatchSearchSubPhase = 2
@@ -5312,7 +4721,7 @@ Function CheckDispatchPhase3_Sandbox()
             ChronoArm(UpdateInterval)
 
         Else
-            ; Still walking — check for stuck (timeout after 15 seconds)
+            ; Skip a container the guard cannot reach in 15 s.
             Float walkElapsed = Utility.GetCurrentRealTime() - DispatchContainerSearchStart
             If walkElapsed > 15.0
                 DebugMsg("Guard stuck walking to container " + DispatchCurrentContainer + ", skipping")
@@ -5329,11 +4738,9 @@ Function CheckDispatchPhase3_Sandbox()
         EndIf
 
     ElseIf DispatchSearchSubPhase == 2
-        ; Sub-phase 2: Guard searching container — wait for duration
         Float searchElapsed = Utility.GetCurrentRealTime() - DispatchContainerSearchStart
 
         If searchElapsed >= DispatchContainerSearchDuration
-            ; Search duration elapsed — check for evidence
             String guardName = DispatchGuard.GetDisplayName()
             String targetName = ""
             If DispatchTarget != None
@@ -5342,10 +4749,8 @@ Function CheckDispatchPhase3_Sandbox()
             String containerDesc = SeverActionsNative.GetContainerDescription(DispatchCurrentContainerRef)
 
             If DispatchCurrentContainer == DispatchEvidenceContainerIndex
-                ; === THIS IS THE EVIDENCE CONTAINER ===
                 DebugMsg("EVIDENCE FOUND in container " + DispatchCurrentContainer + "!")
 
-                ; Remove evidence from container and add to guard
                 If DispatchEvidenceForm != None
                     SeverActionsNative.RemoveEvidenceFromContainer(DispatchCurrentContainerRef, DispatchGuard, DispatchEvidenceForm, 1)
                     DispatchEvidenceQualityScore += SeverActionsNative.ScoreEvidenceQuality(DispatchEvidenceForm, DispatchCurrentContainerRef, DispatchInvestigationReason)
@@ -5359,30 +4764,25 @@ Function CheckDispatchPhase3_Sandbox()
                     DispatchEvidenceQualityScore += SeverActionsNative.ScoreEvidenceQuality(DispatchEvidenceForm3, DispatchCurrentContainerRef, DispatchInvestigationReason)
                 EndIf
 
-                ; Play discovery animation
                 Debug.SendAnimationEvent(DispatchGuard, "IdlePickupFromTableStart")
 
-                ; Build evidence summary with container context
                 BuildEvidenceSummary(targetName)
 
-                ; Narrate the discovery
                 String narration = "*" + guardName + " searches " + containerDesc + " and discovers " + DispatchEvidenceSummary + ", tucking the evidence away.*"
                 SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
 
                 String eventMsg = guardName + " found evidence at " + targetName + "'s home: " + DispatchEvidenceSummary
                 SkyrimNetApi.RegisterPersistentEvent(eventMsg, DispatchGuard, DispatchTarget)
 
-                Debug.Notification(guardName + " found evidence: " + DispatchEvidenceName)
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.foundEvidence", ("" + guardName), ("" + DispatchEvidenceName)))
 
             Else
-                ; === NOTHING FOUND — tension building ===
                 DebugMsg("Nothing found in container " + DispatchCurrentContainer)
 
                 String narration = "*" + guardName + " searches " + containerDesc + " but finds nothing suspicious.*"
                 SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchTarget)
             EndIf
 
-            ; Move to next container
             DispatchSearchSubPhase = 0
             DispatchCurrentContainer += 1
             ChronoArm(UpdateInterval + 1.0)  ; Brief pause between containers
@@ -5393,21 +4793,20 @@ Function CheckDispatchPhase3_Sandbox()
 EndFunction
 
 Function CompleteRemainingContainersInstantly()
-    {Complete remaining container searches instantly when player leaves mid-search.
-     Evidence is still collected but no walking/animation occurs.}
+    {Finish the remaining containers at once, without walking or animation, when the guard goes
+     off-screen mid-search. The evidence is still collected.}
 
     If DispatchEvidenceForm != None && DispatchCurrentContainer <= DispatchEvidenceContainerIndex
-        ; Evidence container hasn't been reached yet — add evidence to guard directly
-        DispatchGuard.AddItem(DispatchEvidenceForm, 1, true)
+        ; The evidence container was not reached: move the evidence to the guard, as the on-screen
+        ; search does, so none is left behind for a later search to find.
+        ObjectReference evidenceRef = SeverActionsNative.GetSearchContainer(DispatchEvidenceContainerIndex)
+        _TakeEvidence(evidenceRef, DispatchEvidenceForm)
         If DispatchEvidenceForm2 != None
-            DispatchGuard.AddItem(DispatchEvidenceForm2, 1, true)
+            _TakeEvidence(evidenceRef, DispatchEvidenceForm2)
         EndIf
         If DispatchEvidenceForm3 != None
-            DispatchGuard.AddItem(DispatchEvidenceForm3, 1, true)
+            _TakeEvidence(evidenceRef, DispatchEvidenceForm3)
         EndIf
-
-        ; Score evidence generically (no container context since off-screen)
-        DispatchEvidenceQualityScore += SeverActionsNative.ScoreEvidenceQuality(DispatchEvidenceForm, None, DispatchInvestigationReason)
 
         String targetName = ""
         If DispatchTarget != None
@@ -5424,12 +4823,21 @@ Function CompleteRemainingContainersInstantly()
     DebugMsg("Completed remaining containers instantly (off-screen fallback)")
 EndFunction
 
-Function TransitionToEvidenceComplete()
-    {Transition from Phase 3 search to Phase 4 (simplified).
-     Evidence was already collected during the container search.
-     This now handles cleanup and starts the return phase.}
+Function _TakeEvidence(ObjectReference akContainer, Form akEvidence)
+    {Move one evidence item from its container to the dispatch guard and score it; with no container,
+     give the guard a copy scored without container context.}
+    If akContainer != None
+        SeverActionsNative.RemoveEvidenceFromContainer(akContainer, DispatchGuard, akEvidence, 1)
+    Else
+        DispatchGuard.AddItem(akEvidence, 1, true)
+    EndIf
+    DispatchEvidenceQualityScore += SeverActionsNative.ScoreEvidenceQuality(akEvidence, akContainer, DispatchInvestigationReason)
+EndFunction
 
-    ; Cleanup any remaining packages
+Function TransitionToEvidenceComplete()
+    {End the phase-3 search (the evidence is already collected): clean up, restore trespass, pass
+     through phase 4 and start the return.}
+
     If SeverActions_DispatchTravel
         ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_DispatchTravel)
     EndIf
@@ -5437,30 +4845,26 @@ Function TransitionToEvidenceComplete()
         DispatchTravelDestination.Clear()
     EndIf
 
-    ; Restore trespass
     RestoreTrespass()
 
     DispatchPhase = 4
     SeverActionsNativeExt.Native_Arrest_SetDispatchPhase(DispatchGuard, DispatchPhase)
     SeverActionsNative.Native_ArrestSession_UpdateState(DispatchTarget, 5, 4)
 
-    ; Short pause then start return
     Utility.Wait(1.0)
     StartDispatchReturnPhase()
 EndFunction
 
 Function CheckDispatchPhase4_Evidence()
-    {Phase 4: Evidence already collected during Phase 3 search.
-     This phase now just ensures the return starts.
-     Kept for save/load recovery — if player loads mid-Phase4, just start return.}
+    {Phase 4 lasts only until StartDispatchReturnPhase; a tick that finds it (a save loaded
+     mid-phase-4) starts the return.}
 
     DebugMsg("Phase 4: Evidence collection complete (handled in Phase 3), starting return")
     StartDispatchReturnPhase()
 EndFunction
 
 Function BuildEvidenceSummary(String targetName)
-    {Build a human-readable evidence summary string from the collected evidence.
-     Stored in DispatchEvidenceSummary for use in prompts and narration.}
+    {Set DispatchEvidenceSummary ("A and B and C", or "nothing of note") for narration and events.}
 
     DispatchEvidenceSummary = ""
 
@@ -5492,22 +4896,18 @@ Function BuildEvidenceSummary(String targetName)
 EndFunction
 
 Function SuppressTrespass()
-    {Temporarily make the guard (and player if present) an ally of the homeowner
-     to prevent trespass reactions during the home search.}
+    {Make the guard (and a loaded player) allies of the homeowner for the search: allies do not
+     trigger trespass. RestoreTrespass undoes it.}
 
     DispatchHomeOwner = DispatchTarget
     If DispatchHomeOwner == None
         Return
     EndIf
 
-    ; Make guard an ally of homeowner — allies don't trigger trespass
     DispatchOrigRelRankGuard = DispatchGuard.GetRelationshipRank(DispatchHomeOwner)
     DispatchGuard.SetRelationshipRank(DispatchHomeOwner, 3)
 
-    ; If player is present, make them an ally too. Only set the player flag
-    ; if we ACTUALLY captured a value — otherwise RestoreTrespass would clobber
-    ; the player's relationship-to-homeowner to the default 0 on the restore
-    ; path, since DispatchOrigRelRankPlayer starts at 0.
+    ; Flag the player only when their rank was captured, or RestoreTrespass would set it to 0.
     Actor playerRef = Game.GetPlayer()
     If playerRef.Is3DLoaded()
         DispatchOrigRelRankPlayer = playerRef.GetRelationshipRank(DispatchHomeOwner)
@@ -5520,7 +4920,7 @@ Function SuppressTrespass()
 EndFunction
 
 Function RestoreTrespass()
-    {Restore original relationship ranks after the home search is complete.}
+    {Restore the relationship ranks SuppressTrespass changed.}
 
     If !DispatchRelRankModified || DispatchHomeOwner == None
         Return
@@ -5530,10 +4930,7 @@ Function RestoreTrespass()
         DispatchGuard.SetRelationshipRank(DispatchHomeOwner, DispatchOrigRelRankGuard)
     EndIf
 
-    ; Only restore the player rank if SuppressTrespass actually captured one
-    ; (i.e. player was 3D-loaded at the time). Otherwise the captured value is
-    ; the script default 0 and we'd clobber whatever the player's actual
-    ; relationship was.
+    ; Only a captured player rank (see SuppressTrespass).
     If DispatchPlayerRelRankModified
         Actor playerRef = Game.GetPlayer()
         playerRef.SetRelationshipRank(DispatchHomeOwner, DispatchOrigRelRankPlayer)
@@ -5545,24 +4942,19 @@ Function RestoreTrespass()
 EndFunction
 
 Function CheckDispatchPhase5_Return()
-    {Phase 5: Guard returning with prisoner to sender or jail.
-     Tiered off-screen approach with interior-aware early exit.
-
-     Off-screen tiers:
-       Interior exit (10s): If guard is in interior, move both to exterior side of door
-                            (Skyrim AI cannot pathfind in unloaded interiors)
-       Tier 0 (0-90s):     Trust AI for exterior travel
-       Tier 1 (90-150s):   Re-evaluate packages as a nudge
-       Tier 2 (150s+):     Teleport to destination, force complete after 2 cycles}
-
-    ; Prisoner follows the guard directly — no tether needed.
+    {Phase 5: the guard returns with the prisoner or evidence to the sender or jail. Loaded arrival
+     is OnArrival(dispatch_p5_arrived); on-screen this tick narrates and escalates a stuck guard.
+     Off-screen, arrival is the same interior cell or the snapshot distance to the sender, and
+     otherwise: a guard in an interior is moved out its door after 10 s (the AI does not path in
+     unloaded interiors); else OffScreen_CheckArrival's estimate places them at the destination,
+     with a package nudge at 300 s. After the exit or the nudge the dispatch completes on the
+     estimate or once the off-screen stretch reaches 180 s.}
 
     Float dist
     Int stuckLevel
     Bool guardLoaded = DispatchGuard.Is3DLoaded()
 
     If guardLoaded
-        ; --- On-screen: normal stuck detection and distance checks ---
         If DispatchGuardOffScreen
             DebugMsg("Guard back on-screen during return")
             DispatchGuardOffScreen = false
@@ -5570,8 +4962,7 @@ Function CheckDispatchPhase5_Return()
             DispatchReturnOffScreenCycle = 0
         EndIf
 
-        ; First time guard is on-screen with prisoner: narrate the arrest so NPCs can speak about it.
-        ; DirectNarration fires when actors are loaded, allowing SkyrimNet to generate voiced dialogue.
+        ; Narrate the escort once, while the pair is loaded, so nearby NPCs can react to it.
         If !DispatchReturnNarrated && !DispatchIsHomeInvestigation && DispatchTarget != None
             DispatchReturnNarrated = true
             String guardName = DispatchGuard.GetDisplayName()
@@ -5581,7 +4972,7 @@ Function CheckDispatchPhase5_Return()
             DebugMsg("Narrated on-screen return: " + guardName + " escorting " + targetName)
         EndIf
 
-        ; Check stuck detection (suppressed during grace period after cell transitions)
+        ; Stuck escalation, outside the grace after a teleport.
         If Utility.GetCurrentRealTime() >= DispatchStuckGraceUntil
             stuckLevel = SeverActionsNativeExt.Stuck_CheckStatus(DispatchGuard, UpdateInterval, 50.0)
             If stuckLevel >= 2
@@ -5596,26 +4987,18 @@ Function CheckDispatchPhase5_Return()
                         DispatchTarget.MoveTo(DispatchGuard, 50.0, 0.0, 0.0, false)
                     EndIf
                     SeverActionsNativeExt.Stuck_ResetEscalation(DispatchGuard)
-                    ; Grace period after this teleport too
                     DispatchStuckGraceUntil = Utility.GetCurrentRealTime() + 5.0
                 EndIf
             EndIf
         EndIf
-
-        ; PR-D: on-screen arrival at the return destination is event-driven now —
-        ; OnArrival(dispatch_p5_arrived) fires from native ArrivalMonitor registered
-        ; in StartDispatchReturnPhase. The off-screen tiered paths below (interior
-        ; exit, snapshot distance, OffScreen_CheckArrival, tier-2 force complete)
-        ; remain per-tick because ArrivalMonitor can't measure cross-cell distance.
     Else
-        ; --- Off-screen: tiered escalation ---
         If !DispatchGuardOffScreen
             DispatchGuardOffScreen = true
             DispatchOffScreenStartTime = Utility.GetCurrentRealTime()
             DebugMsg("Guard went off-screen during return (cycle " + DispatchReturnOffScreenCycle + ")")
         EndIf
 
-        ; Always check: same interior cell as destination (instant arrival detection)
+        ; Same interior cell as the destination = arrived.
         Cell guardCell = DispatchGuard.GetParentCell()
         If DispatchReturnMarker != None
             Cell destCell = DispatchReturnMarker.GetParentCell()
@@ -5626,7 +5009,7 @@ Function CheckDispatchPhase5_Return()
             EndIf
         EndIf
 
-        ; Always check: snapshot distance to sender (works off-screen via position snapshots)
+        ; Position-snapshot distance to the sender.
         If DispatchSender != None
             Float snapReturnDist = SeverActionsNative.GetDistanceBetweenActors(DispatchGuard, DispatchSender)
             If snapReturnDist >= 0.0 && snapReturnDist <= DispatchArrivalDistance
@@ -5638,15 +5021,12 @@ Function CheckDispatchPhase5_Return()
 
         Float elapsedOffScreen = Utility.GetCurrentRealTime() - DispatchOffScreenStartTime
 
-        ; === INTERIOR EARLY EXIT (10 seconds) ===
-        ; Skyrim's AI does NOT process NPC movement in unloaded interiors. When the player
-        ; is outside and the guard is inside, the guard will never pathfind to the door on
-        ; their own. After a short immersion delay (simulating walking to the exit), move
-        ; both guard and prisoner to the exterior side of the door.
+        ; Interior exit after 10 s: the AI does not move NPCs in an unloaded interior, so the guard
+        ; would never reach the door. The delay stands in for the walk out.
         If guardCell != None && guardCell.IsInterior() && elapsedOffScreen >= 10.0 && DispatchReturnOffScreenCycle == 0
             DebugMsg("Return: guard still in interior after " + elapsedOffScreen as Int + "s - forcing virtual exit")
 
-            ; FindDoorToActorCell returns the EXTERIOR door leading to the guard's interior cell
+            ; FindDoorToActorCell returns the EXTERIOR door into the guard's cell.
             ObjectReference exteriorDoor = SeverActionsNative.FindDoorToActorCell(DispatchGuard)
             If exteriorDoor != None
                 DebugMsg("Found exterior door - moving guard+prisoner outside")
@@ -5656,11 +5036,9 @@ Function CheckDispatchPhase5_Return()
                 EndIf
                 Utility.Wait(0.3)
 
-                ; Re-apply linked ref + packages after cross-cell MoveTo.
-                ; Skyrim's AI stack often loses overrides after a cell transition.
                 ReapplyReturnPackages()
             Else
-                ; Fallback: try interior exit door and nudge toward it
+                ; No exterior door: move to the interior exit door instead.
                 ObjectReference exitDoor = SeverActionsNative.FindExitDoorFromCell(DispatchGuard)
                 If exitDoor != None
                     DebugMsg("No exterior door found - nudging guard to interior exit door")
@@ -5675,14 +5053,11 @@ Function CheckDispatchPhase5_Return()
                 EndIf
             EndIf
 
-            ; Mark that we've done the interior exit so we don't repeat it
+            ; Once only.
             DispatchReturnOffScreenCycle = 1
 
-        ; === OFF-SCREEN TRAVEL ESTIMATION ===
-        ; Instead of hardcoded timers, use distance-based estimation from OffScreenTracker.
-        ; Short trips complete faster, long trips wait proportionally longer.
+        ; Cycle 0: OffScreenTracker's distance-based arrival estimate.
         ElseIf DispatchReturnOffScreenCycle == 0
-            ; First off-screen cycle: check travel estimate
             Int arrivalStatus = SeverActionsNative.OffScreen_CheckArrival(DispatchGuard, Utility.GetCurrentGameTime())
             If arrivalStatus == 1
                 DebugMsg("Return: off-screen travel estimate elapsed - teleporting to destination")
@@ -5694,19 +5069,19 @@ Function CheckDispatchPhase5_Return()
                     Utility.Wait(0.5)
                     ReapplyReturnPackages()
                 EndIf
-                ; Mark cycle 2 so next off-screen check force-completes
+                ; Cycle 2: the next off-screen tick force-completes.
                 DispatchReturnOffScreenCycle = 2
                 DispatchGuardOffScreen = false
                 DispatchOffScreenStartTime = 0.0
                 DebugMsg("Guard placed near return destination, checking if they load in")
             Else
-                ; Still in transit — log progress every ~30s
+                ; Progress log every 30 s.
                 If Math.Floor(elapsedOffScreen) as Int % 30 == 0 && Math.Floor(elapsedOffScreen) as Int > 0
                     Float estArrival = SeverActionsNative.OffScreen_GetEstimatedArrival(DispatchGuard)
                     DebugMsg("Return: off-screen " + elapsedOffScreen as Int + "s, est. arrival=" + estArrival + ", current=" + Utility.GetCurrentGameTime())
                 EndIf
 
-                ; Safety fallback: if real-time exceeds 5 minutes with no arrival, nudge packages
+                ; 300 s real time with no arrival: nudge the packages.
                 If elapsedOffScreen >= 300.0
                     DebugMsg("Return: 5 min real-time off-screen - nudging packages as safety measure")
                     ReapplyReturnPackages()
@@ -5714,7 +5089,7 @@ Function CheckDispatchPhase5_Return()
                 EndIf
             EndIf
 
-        ; === FALLBACK: Cycle 1+ — re-check estimate or force complete ===
+        ; Cycle 1+: complete at cycle 2 (already placed), on the estimate (teleport first), or at 180 s.
         Else
             Int arrivalStatus = SeverActionsNative.OffScreen_CheckArrival(DispatchGuard, Utility.GetCurrentGameTime())
             If arrivalStatus == 1 || DispatchReturnOffScreenCycle >= 2
@@ -5729,7 +5104,8 @@ Function CheckDispatchPhase5_Return()
                 CompleteDispatch()
                 Return
             ElseIf elapsedOffScreen >= 180.0
-                ; Safety: if still off-screen 3 min after nudge, teleport and complete
+                ; 180 s since this off-screen stretch began, NOT since the nudge: after the 300 s nudge
+                ; this fires on the next tick.
                 DebugMsg("Return: extended off-screen after nudge - teleporting and completing")
                 If DispatchReturnMarker != None
                     DispatchGuard.MoveTo(DispatchReturnMarker, 300.0, 0.0, 0.0, false)
@@ -5748,48 +5124,40 @@ Function CheckDispatchPhase5_Return()
 EndFunction
 
 Function CompleteDispatch()
-    {Called when dispatch is fully complete - guard delivered prisoner or returned with evidence.}
+    {The dispatch is done: the prisoner delivered (judgment hold or jail) or the evidence brought
+     back. Tears down the guard's dispatch state and reports.}
 
     DebugMsg("Dispatch complete!")
 
-    ; PR-D: cancel any pending dispatch-phase ArrivalMonitor registration on
-    ; the guard. ArrivalMonitor auto-removes on fire, so a natural Phase-5
-    ; arrival already cleared the entry; this cancel covers the time-skip /
-    ; tier-2 teleport / snapshot paths where CompleteDispatch is called
-    ; without the event firing.
+    ; ArrivalMonitor drops an entry when it fires; this covers completions that came without the
+    ; event (time skip, teleport, snapshot).
     If DispatchGuard != None
         SeverActionsNativeExt.Arrival_Cancel(DispatchGuard)
     EndIf
 
-    ; Stop stuck tracking and off-screen estimation
     SeverActionsNativeExt.Stuck_StopTracking(DispatchGuard)
     SeverActionsNative.OffScreen_StopTracking(DispatchGuard)
 
-    ; Remove task faction so guard can be dispatched again
-    If SeverActions_DispatchFaction != None && DispatchGuard != None
-        DispatchGuard.RemoveFromFaction(SeverActions_DispatchFaction)
-    EndIf
+    ; Out of the task faction, so the guard can be dispatched (and re-tasked by SkyrimNet) again.
+    _LeaveTaskFaction(DispatchGuard)
 
-    ; Clear the SkyrimNet v6+ busy lock on the dispatched guard
+    ; The SkyrimNet (API v6+) busy lock on the guard.
     If DispatchGuard != None
         SeverActionsNative.Native_SkyrimNet_ClearActorBusy(DispatchGuard)
     EndIf
 
-    ; Restore normal NPC-NPC collision
     SeverActionsNative.SetActorBumpable(DispatchGuard, true)
     If DispatchTarget != None
         SeverActionsNative.SetActorBumpable(DispatchTarget, true)
     EndIf
 
-    ; Restore guard combat AI
     RestoreGuardCombatAI()
 
-    ; Restore guard's ability to talk to the player
     If DispatchGuard != None
         DispatchGuard.AllowPCDialogue(true)
     EndIf
 
-    ; Ensure prisoner is near the guard (they should already be close from Phase 5)
+    ; Keep the prisoner beside the guard.
     If DispatchGuard != None && DispatchTarget != None
         If DispatchTarget.Is3DLoaded() && DispatchGuard.Is3DLoaded()
             If DispatchTarget.GetDistance(DispatchGuard) > 300.0
@@ -5799,23 +5167,20 @@ Function CompleteDispatch()
         Utility.Wait(0.3)
     EndIf
 
-    ; Strip every SeverActions arrest package from the guard and clear linked refs.
     RemoveAllArrestPackages(DispatchGuard)
     If DispatchTravelDestination != None
         DispatchTravelDestination.Clear()
     EndIf
     ClearAllDispatchLinkedRefs(DispatchGuard)
 
-    ; Remove prisoner's follow package
     If DispatchTarget != None && !DispatchIsHomeInvestigation
         If SeverActions_FollowGuard_Prisoner
             ActorUtil.RemovePackageOverride(DispatchTarget, SeverActions_FollowGuard_Prisoner)
         EndIf
     EndIf
 
-    ; Handle completion based on dispatch type
     If DispatchIsHomeInvestigation
-        ; Home investigation complete - guard returned to sender with evidence
+        ; Home investigation: report the findings to the sender.
         String guardName = DispatchGuard.GetDisplayName()
         String senderName = ""
         If DispatchSender != None
@@ -5826,8 +5191,7 @@ Function CompleteDispatch()
             targetName = DispatchTarget.GetDisplayName()
         EndIf
 
-        ; Wait for player to be close enough to witness evidence handoff (200 units)
-        ; If player doesn't arrive within 30 seconds, proceed anyway
+        ; Give a loaded player up to 30 s to come within 200 units and witness the hand-off.
         Actor playerRef = Game.GetPlayer()
         Float waitStart = Utility.GetCurrentRealTime()
         Float maxWaitTime = 30.0
@@ -5841,20 +5205,17 @@ Function CompleteDispatch()
             String itemName = DispatchEvidenceName
             DebugMsg("Guard returned to " + senderName + " with evidence: " + itemName + " (player witnessed: " + playerWitnessed + ")")
 
-            ; Hand the evidence to the sender via GiveItem (walks to them, plays give animation, transfers)
+            ; The items module's giveItem walks over, plays the give animation and transfers it.
             If DispatchSender != None
-                SeverActions_Loot lootSys = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_Loot
-                If lootSys
-                    lootSys.GiveItem_Execute(DispatchGuard, DispatchSender, itemName, 1)
+                If SeverActions_ModuleBase.CallBool("items", "giveItem", DispatchGuard, DispatchSender, itemName, 1.0)
                     DebugMsg("Guard gave evidence to " + senderName + " via GiveItem")
                 Else
-                    ; Fallback: direct transfer if Loot script unavailable
+                    ; No items module (or the hand-off refused): transfer it outright.
                     DispatchGuard.RemoveItem(DispatchEvidenceForm, 1, true, DispatchSender)
                     DebugMsg("Transferred evidence item to " + senderName + " (direct fallback)")
                 EndIf
             EndIf
 
-            ; Narrate the findings including investigation reason for context
             String reasonContext = ""
             If DispatchInvestigationReason != ""
                 reasonContext = " regarding " + DispatchInvestigationReason
@@ -5862,19 +5223,15 @@ Function CompleteDispatch()
 
             String narration = "*" + guardName + " returns to " + senderName + " and presents the evidence found at " + targetName + "'s home" + reasonContext + ": " + itemName + ". The guard explains where it was found and what it suggests.*"
 
-            ; Immediate narration if player is present, otherwise defer for non-player senders
+            ; Narrate now when the player is there (or is the sender), else defer it.
             If playerWitnessed || senderIsPlayer
                 SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchSender)
             Else
-                ; Player absent and sender is not the player — store for deferred delivery
-                ; T1-D.3: native source of truth. Map entry's existence
-                ; IS the "is pending" flag — no separate boolean stored.
+                ; The native pending entry IS the "pending" flag; the arrival watch fires the
+                ; narration when the player comes within NarrationProximityRange of the sender.
                 SeverActionsNativeExt.Native_Arrest_SetPendingEvidence(DispatchSender, narration, DispatchGuard)
                 SeverActionsNativeExt.Native_Arrest_SetDeferredSender(DispatchSender)
                 DeferredNarrationSender = DispatchSender
-                ; PR-C: arm ArrivalMonitor so the narration fires natively when the
-                ; player closes within NarrationProximityRange of the sender, with
-                ; no per-tick OnUpdate polling required.
                 SeverActionsNativeExt.Arrival_Register(Game.GetPlayer(), DispatchSender, NarrationProximityRange, "narration_witness")
                 DebugMsg("Stored deferred evidence narration on " + senderName)
             EndIf
@@ -5882,7 +5239,7 @@ Function CompleteDispatch()
             String eventMsg = guardName + " returned from searching " + targetName + "'s home" + reasonContext + " and brought back " + itemName + " as evidence."
             SkyrimNetApi.RegisterPersistentEvent(eventMsg, DispatchGuard, DispatchSender)
 
-            Debug.Notification(guardName + " returned with evidence: " + itemName)
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.returnedWithEvidence", ("" + guardName), ("" + itemName)))
         Else
             DebugMsg("Guard returned to " + senderName + " without evidence")
 
@@ -5893,16 +5250,13 @@ Function CompleteDispatch()
 
             String narration = "*" + guardName + " returns to " + senderName + " after searching " + targetName + "'s home" + reasonContext + ", reporting that nothing incriminating was found.*"
 
-            ; Immediate narration if player is present, otherwise defer for non-player senders
+            ; Now or deferred, as above.
             If playerWitnessed || senderIsPlayer
                 SkyrimNetApi.DirectNarration(narration, DispatchGuard, DispatchSender)
             Else
-                ; T1-D.3: native source of truth. Map entry's existence
-                ; IS the "is pending" flag — no separate boolean stored.
                 SeverActionsNativeExt.Native_Arrest_SetPendingEvidence(DispatchSender, narration, DispatchGuard)
                 SeverActionsNativeExt.Native_Arrest_SetDeferredSender(DispatchSender)
                 DeferredNarrationSender = DispatchSender
-                ; PR-C: arm ArrivalMonitor for the player-witness threshold.
                 SeverActionsNativeExt.Arrival_Register(Game.GetPlayer(), DispatchSender, NarrationProximityRange, "narration_witness")
                 DebugMsg("Stored deferred no-evidence narration on " + senderName)
             EndIf
@@ -5910,11 +5264,11 @@ Function CompleteDispatch()
             String eventMsg = guardName + " returned from searching " + targetName + "'s home but found no evidence."
             SkyrimNetApi.RegisterPersistentEvent(eventMsg, DispatchGuard, DispatchSender)
 
-            Debug.Notification(guardName + " found no evidence at " + targetName + "'s home")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.foundNoEvidenceAt", ("" + guardName), ("" + targetName)))
         EndIf
 
     ElseIf DispatchSender != None && !DispatchSender.IsDead() && !DispatchIsHomeInvestigation
-        ; Returned prisoner to sender for judgment - enter judgment hold phase
+        ; Prisoner delivered to the sender: the phase-6 judgment hold.
         Actor sender = DispatchSender
         Actor prisoner = DispatchTarget
         Actor guard = DispatchGuard
@@ -5927,27 +5281,23 @@ Function CompleteDispatch()
 
         DebugMsg("Guard returned prisoner " + prisonerName + " to " + senderName + " - entering judgment phase")
 
-        ; Narration: guard presents prisoner before the sender
         String narration = "*" + guardName + " brings " + prisonerName + " before " + senderName + " for judgment. The prisoner stands restrained, awaiting their fate.*"
         SkyrimNetApi.DirectNarration(narration, prisoner, sender)
 
-        ; Persistent event: sender now has the prisoner and can decide
-        String eventMsg = guardName + " has brought " + prisonerName + " before " + senderName + " for judgment. " + senderName + " can order them released or sent to jail."
+        String eventMsg = guardName + " has brought " + prisonerName + " before " + senderName + " for judgment."
         SkyrimNetApi.RegisterPersistentEvent(eventMsg, prisoner, sender)
 
-        Debug.Notification(prisonerName + " awaits judgment from " + senderName)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.awaitsJudgmentFrom", ("" + prisonerName), ("" + senderName)))
 
-        ; Transition to judgment hold phase (Phase 6)
-        ; Do NOT clear dispatch state - we need guard, prisoner, and sender references
+        ; Phase 6 keeps the dispatch state: the judgment needs the guard, prisoner and sender.
         DispatchPhase = 6
         SeverActionsNativeExt.Native_Arrest_SetDispatchPhase(DispatchGuard, DispatchPhase)
         SeverActionsNative.Native_ArrestSession_UpdateState(prisoner, 6, 6)
-        ; Wave 5b: judgment timer now lives on JudgmentScript.
         If JudgmentScript
             JudgmentScript.StartJudgment()
         EndIf
 
-        ; Keep guard near sender — link guard to sender and apply follow package
+        ; The guard stays with the sender, the prisoner with the guard.
         SeverActionsNative.LinkedRef_Set(guard, sender, SeverActions_FollowTargetKW)
         If SeverActions_GuardFollowPlayer
             ActorUtil.AddPackageOverride(guard, SeverActions_GuardFollowPlayer, PackagePriority, 1)
@@ -5955,8 +5305,6 @@ Function CompleteDispatch()
             DebugMsg("Judgment phase: guard following sender " + senderName)
         EndIf
 
-        ; Keep prisoner following the guard during judgment.
-        ; Re-apply follow package to ensure prisoner stays near guard.
         If prisoner != None
             SeverActionsNative.LinkedRef_Set(prisoner, guard, SeverActions_FollowTargetKW)
             Utility.Wait(0.1)
@@ -5967,86 +5315,78 @@ Function CompleteDispatch()
             DebugMsg("Judgment phase: prisoner following guard")
         EndIf
 
-        ; Keep monitoring for timeout
+        ; The tick runs the judgment timeout.
         ChronoArm(UpdateInterval)
         Return
     ElseIf DispatchReturnMarker != None
-        ; Deliver to jail
-        CurrentGuard = DispatchGuard
-        CurrentPrisoner = DispatchTarget
-        CurrentJailMarker = DispatchReturnMarker
-        CurrentJailName = GetJailNameForGuard(DispatchGuard)
-        OnArrivedAtJail()
-        ; OnArrivedAtJail moved the native ArrestSession to kJailed — that
-        ; entry must SURVIVE (release reads the captured pre-arrest AVs and
-        ; OriginalOutfit from it; without it prisoners release with default
-        ; aggression and keep the prison outfit forever, since SetOutfit
-        ; persists). ClearDispatchState below unconditionally calls
-        ; Native_ArrestSession_End(DispatchTarget) — null the target first
-        ; so the kJailed entry lives, mirroring how the judgment→jail path
-        ; survives via EnsureBegin. The rest of ClearDispatchState only
-        ; needs DispatchGuard, which stays set until it nulls it itself.
+        ; Delivered to jail, with the dispatch's own actors: the Current* slots may be a running
+        ; same-cell arrest's.
+        If DispatchGuard != None && DispatchTarget != None
+            _ArrestLeash(DispatchTarget, DispatchGuard, false)
+            JailPrisonerAt(DispatchGuard, DispatchTarget, DispatchReturnMarker, GetJailNameForGuard(DispatchGuard), false)
+        EndIf
+        ; JailPrisonerAt moved the ArrestSession to kJailed, and that entry must survive: release reads
+        ; the captured AVs and OriginalOutfit from it (without it the prisoner keeps the prison outfit for
+        ; good). ClearDispatchState ends DispatchTarget's session, so null the target first; the rest of
+        ; it needs only DispatchGuard. (The judgment -> jail paths keep it too: the escort through
+        ; EnsureBegin, JailDispatchPrisonerNow the same way as here.)
         DispatchTarget = None
     EndIf
 
-    ; Re-lock home door if we unlocked it during investigation
     If DispatchUnlockedDoor != None
         DispatchUnlockedDoor.Lock(true)
         DebugMsg("Re-locked home door after investigation")
         DispatchUnlockedDoor = None
     EndIf
 
-    ; Clear every reference alias the arrest / dispatch FSM uses.
-    ClearAllArrestAliases()
+    ClearDispatchExitAliases()
 
-    ; Clear persisted dispatch state
     ClearPersistedDispatchState()
 
     ClearDispatchState()
 
-    ; If guard is lingering or deferred narration is pending, keep the tick loop running
+    ; A pending deferred narration keeps the tick running
     If DeferredNarrationSender != None
         ChronoArm(UpdateInterval)
     EndIf
 EndFunction
 
 Function CancelDispatch()
-    {Cancel an active dispatch and clean up all state.}
+    {Abort the active dispatch: undo everything it did to the guard and target (a target arrested
+     on the way back is released) and clear the state.}
 
-    ; PR-D: cancel any pending dispatch-phase ArrivalMonitor registration on
-    ; the guard. Idempotent — no-op if nothing is registered.
+    ; A no-op when nothing is registered.
     If DispatchGuard != None
         SeverActionsNativeExt.Arrival_Cancel(DispatchGuard)
     EndIf
 
-    ; Stop stuck tracking, off-screen estimation, restore collision, and restore combat AI
     If DispatchGuard != None
         SeverActionsNativeExt.Stuck_StopTracking(DispatchGuard)
         SeverActionsNative.OffScreen_StopTracking(DispatchGuard)
         SeverActionsNative.SetActorBumpable(DispatchGuard, true)
     EndIf
 
-    ; Remove task faction so guard can be dispatched again
-    If SeverActions_DispatchFaction != None && DispatchGuard != None
-        DispatchGuard.RemoveFromFaction(SeverActions_DispatchFaction)
-    EndIf
+    _LeaveTaskFaction(DispatchGuard)
 
-    ; Clear the SkyrimNet v6+ busy lock on the dispatched guard
     If DispatchGuard != None
         SeverActionsNative.Native_SkyrimNet_ClearActorBusy(DispatchGuard)
     EndIf
 
     If DispatchTarget != None
         SeverActionsNative.SetActorBumpable(DispatchTarget, true)
+        ; Phase 2 may have frozen the target; release them, or a guard who dies mid-approach leaves
+        ; them unable to move.
+        If DispatchTargetMovementFrozen
+            DispatchTarget.SetDontMove(false)
+            DispatchTargetMovementFrozen = false
+        EndIf
     EndIf
     RestoreGuardCombatAI()
 
-    ; Unregister from sandbox manager if in sandbox phase
     If DispatchIsHomeInvestigation && DispatchGuard != None
         SeverActionsNative.UnregisterSandboxUser(DispatchGuard)
     EndIf
 
-    ; Restore dialogue, strip every arrest package, and clear linked refs.
     If DispatchGuard != None
         DispatchGuard.AllowPCDialogue(true)
         RemoveAllArrestPackages(DispatchGuard)
@@ -6057,7 +5397,7 @@ Function CancelDispatch()
         DispatchGuard.EvaluatePackage()
     EndIf
 
-    ; Clean up prisoner if they were arrested during this dispatch (Phase 5 = escorting)
+    ; An arrest dispatch's target, arrested or not yet: release them.
     If !DispatchIsHomeInvestigation && DispatchTarget != None
         If SeverActions_FollowGuard_Prisoner
             ActorUtil.RemovePackageOverride(DispatchTarget, SeverActions_FollowGuard_Prisoner)
@@ -6067,26 +5407,20 @@ Function CancelDispatch()
         DispatchTarget.EvaluatePackage()
     EndIf
 
-    ; Clear every reference alias the arrest / dispatch FSM uses.
-    ClearAllArrestAliases()
+    ClearDispatchExitAliases()
 
-    ; Re-lock home door if we unlocked it during investigation
     If DispatchUnlockedDoor != None
         DispatchUnlockedDoor.Lock(true)
         DebugMsg("Re-locked home door after cancelled investigation")
         DispatchUnlockedDoor = None
     EndIf
 
-    ; End the native arrest session for the target prisoner. CancelCurrentArrest
-    ; does this on the same-cell path; we mirror it here so OnArrestSessionTimeout
-    ; doesn't need a separate End() call and so any direct CancelDispatch caller
-    ; (dead-actor cleanup, user-triggered abort) doesn't leak a native session
-    ; until the watchdog times out hours later.
+    ; End the target's ArrestSession here, as CancelCurrentArrest does on the same-cell path, so no
+    ; caller (the session timeout, dead-actor cleanup, an abort) leaks it until the watchdog.
     If DispatchTarget != None
         SeverActionsNative.Native_ArrestSession_End(DispatchTarget)
     EndIf
 
-    ; Clear persisted dispatch state
     ClearPersistedDispatchState()
 
     ClearDispatchState()
@@ -6095,8 +5429,7 @@ Function CancelDispatch()
 EndFunction
 
 Actor Function FindNearestGuard(Actor akNearActor)
-    {Returns the nearest guard to akNearActor within 3000 units, or None.
-     Delegates to native GuardFinder (logs distance + hit/miss natively).}
+    {The nearest guard to akNearActor within 3000 units, or None (native GuardFinder).}
 
     If akNearActor == None
         Return None
@@ -6105,8 +5438,8 @@ Actor Function FindNearestGuard(Actor akNearActor)
 EndFunction
 
 String Function GetNPCLocation(String npcName)
-    {Get the current location name of an NPC by name.
-     Utility function for SkyrimNet prompts/decorators.}
+    {Location name of the NPC named npcName: "unknown" before ActorFinder is ready, "not found"
+     when no NPC matches.}
 
     If !SeverActionsNative.IsActorFinderReady()
         Return "unknown"
@@ -6120,49 +5453,34 @@ String Function GetNPCLocation(String npcName)
     Return SeverActionsNative.GetActorLocationName(npc)
 EndFunction
 
-; =============================================================================
-; JUDGMENT HOLD (Phase 6)
-; =============================================================================
-;
-; Wave 5b: the 4 judgment functions (CheckJudgmentProgress, OrderRelease_Execute,
-; OrderJailed_Execute, EndJudgment) plus the JudgmentStartTime / JudgmentTimeLimit
-; state moved to SeverActions_ArrestJudgment.psc. Per-tick routing happens in
-; CheckDispatchProgress; YAML actions (orderrelease.yaml + orderjailed.yaml) point
-; their scriptName at the new sub-script directly.
+; Judgment hold (phase 6): SeverActions_ArrestJudgment.psc (JudgmentScript); CheckDispatchProgress
+; routes the tick to it, and the OrderRelease / OrderJailed actions call it directly.
 
 ; =============================================================================
-; SAVE/LOAD ARREST RECOVERY (same-cell — Wave 1, BUG-A5)
-; Mirrors the dispatch system's persistence so that saving mid-approach,
-; mid-arrest, or mid-escort doesn't orphan packages on the guard. Without
-; this, the guard/prisoner packages are left orphaned and no chronometer tick
-; is re-armed — symptom: prisoner trailing a guard that's idle.
+; SAVE/LOAD ARREST RECOVERY (same-cell)
+; A save mid-approach, mid-arrest or mid-escort must not leave the packages
+; orphaned with no tick running: the state is persisted natively and load
+; recovery rebuilds the FSM.
 ; =============================================================================
 
 Function PersistArrestState()
-    {Mirror dispatch persistence for same-cell arrest. Called whenever
-     ArrestState transitions to a non-zero value so that OnGameLoaded
-     can rebuild the FSM and resume the chronometer tick.}
+    {Persist the same-cell arrest into the native 'AARS' singleton (separate from the 'ARST'
+     session map) whenever ArrestState becomes non-zero, for RecoverActiveArrest.}
     If CurrentGuard == None
         Return
     EndIf
 
-    ; T1-D.1: native source of truth — single call carries all 7 fields
-    ; into the 'AARS' cosave record (singleton, separate from the 'ARST'
-    ; session map). No more StorageUtil keys-on-quest-form pattern.
     SeverActionsNativeExt.Native_Arrest_SetActiveArrest(ArrestState, CurrentGuard, CurrentPrisoner, CurrentJailMarker, CurrentJailName, ApproachStartTime, EscortStartTime)
 EndFunction
 
 Function ClearPersistedArrestState()
-    {Wipe the persisted active-arrest state after arrest completes / cancels.}
-    ; T1-D.1: single native call clears the 'AARS' singleton.
+    {Clear the persisted active arrest ('AARS') when the arrest completes or is cancelled.}
     SeverActionsNativeExt.Native_Arrest_ClearActiveArrest()
 EndFunction
 
 Function RecoverActiveArrest()
-    {Rebuild same-cell arrest state from the native active-arrest singleton
-     after save/load. Re-applies packages and aliases based on the persisted
-     ArrestState, then re-arms the tick so the FSM resumes.}
-    ; T1-D.1: native source of truth for the active-arrest singleton.
+    {Load recovery: rebuild the same-cell arrest from the native active-arrest singleton,
+     re-apply the aliases and packages for its ArrestState, and re-arm the tick.}
     Int savedState = SeverActionsNativeExt.Native_Arrest_GetActiveArrestState()
     If savedState <= 0
         Return  ; No active arrest
@@ -6189,7 +5507,6 @@ Function RecoverActiveArrest()
 
     DebugMsg("Save/load recovery: rebuilding arrest at state " + savedState)
 
-    ; Rebuild script properties
     CurrentGuard = guard
     CurrentPrisoner = prisoner
     CurrentJailMarker = SeverActionsNativeExt.Native_Arrest_GetActiveArrestJailMarker()
@@ -6198,57 +5515,43 @@ Function RecoverActiveArrest()
         CurrentJailName = "jail"
     EndIf
     ArrestState = savedState
-    ; Reset phase timers — Utility.GetCurrentRealTime() is session-relative,
-    ; so the saved values are stale; restart the timeout window from now.
+    ; Real time is session-relative, so the saved timers are stale: restart the windows from now.
     ApproachStartTime = Utility.GetCurrentRealTime()
     EscortStartTime = Utility.GetCurrentRealTime()
     PrisonerMovementFrozen = false  ; SetDontMove doesn't survive save/load anyway
     PrisonerFrozenAt = 0.0
 
-    ; Re-fill aliases that the packages target
+    ; The aliases the packages target.
     ArrestTarget.ForceRefTo(CurrentPrisoner)
     ArrestingGuard.ForceRefTo(CurrentGuard)
     If CurrentJailMarker != None
         JailDestination.ForceRefTo(CurrentJailMarker)
     EndIf
 
-    ; Re-apply packages based on state
     If ArrestState == 1
-        ; Approaching — guard needs the approach package back
+        ; Approaching.
         If SeverActions_GuardApproachTarget
             ActorUtil.AddPackageOverride(CurrentGuard, SeverActions_GuardApproachTarget, PackagePriority, 1)
             CurrentGuard.EvaluatePackage()
         EndIf
         SeverActionsNativeExt.Stuck_StartTracking(CurrentGuard)
-        ; PR-C: re-arm ArrivalMonitor for the approach threshold. The native
-        ; registration does NOT survive save/load (one-shot in-memory map).
+        ; ArrivalMonitor registrations are in memory only: re-arm.
         SeverActionsNativeExt.Arrival_Register(CurrentGuard, CurrentPrisoner, ApproachDistance, "arrest_approach_arrived")
     ElseIf ArrestState == 3
-        ; Escorting — guard escort package + prisoner follow package + LinkedRef.
-        ; Wave 5: ReapplyEscortPackages helper consolidates the (previously
-        ; inline-three-times) sequence of forceRefTo + addPkgOverride pairs
-        ; that was identical here, in StartEscortPhase, and in the per-tick
-        ; CheckEscortProgress re-apply.
+        ; Escorting.
         ReapplyEscortPackages(CurrentGuard, CurrentPrisoner, CurrentJailMarker)
-        ; PR-C: re-arm ArrivalMonitor for the jail marker.
         If CurrentJailMarker != None
             SeverActionsNativeExt.Arrival_Register(CurrentGuard, CurrentJailMarker, ArrivalDistance, "arrest_escort_arrived")
         EndIf
-        ; Re-arm the native escort-package reapplier too — its map is
-        ; in-memory only (EscortPackageReapplier.h documents this resume path
-        ; as the re-arm, but it was never actually called here). Without it a
-        ; post-load cell transition / combat that drops our override went
-        ; uncorrected and the guard froze mid-escort until the 6h watchdog.
-        ; (The ArrestState==2 fast-forward below arms it via StartEscortPhase.)
+        ; The native escort reapplier is in memory only too. Without it an override dropped by a
+        ; post-load cell transition or combat stays dropped and the guard freezes mid-escort.
+        ; (ArrestState 2 arms it through StartEscortPhase.)
         SeverActionsNative.Native_EscortReapply_Begin(CurrentGuard, CurrentPrisoner)
     EndIf
-    ; ArrestState 2 (arresting) is a transient sub-state inside PerformArrest; if we
-    ; load while in it, the safest move is to fast-forward to escort:
+    ; ArrestState 2 is transient inside PerformArrest: fast-forward to the escort.
     If ArrestState == 2
-        ; T1-D.1 review fix: if the jail marker FormID failed to resolve
-        ; on load (mod removed from load order), StartEscortPhase would
-        ; dereference None. Treat missing marker as "cancel and release"
-        ; the same way dead-participant handling does above.
+        ; A jail marker that no longer resolves (its plugin removed) would be dereferenced by
+        ; StartEscortPhase: cancel and release instead.
         If CurrentJailMarker == None
             DebugMsg("Save/load recovery: ArrestState==2 with missing jail marker - canceling arrest")
             ClearPersistedArrestState()
@@ -6261,7 +5564,6 @@ Function RecoverActiveArrest()
         Return
     EndIf
 
-    ; Resume the tick loop
     ChronoArm(UpdateInterval)
     DebugMsg("Save/load recovery complete - resumed at ArrestState " + ArrestState)
 EndFunction
@@ -6276,9 +5578,8 @@ Function PersistDispatchState()
     If DispatchGuard == None
         Return
     EndIf
-    ; T1-D.2: single native call carries all 9 context fields into the
-    ; 'ARDC' cosave map (keyed by guard FormID), plus the active-dispatch-
-    ; guard singleton in the same record.
+    ; The nine context fields go into the 'ARDC' cosave map (keyed by guard FormID); the
+    ; active-dispatch-guard singleton rides the same record.
     SeverActionsNativeExt.Native_Arrest_SetDispatchContext(DispatchGuard, DispatchPhase, DispatchTarget, DispatchReturnMarker, DispatchSender, DispatchHomeMarker, DispatchInvestigationReason, DispatchIsHomeInvestigation, DispatchGuardOrigAggression, DispatchGuardOrigConfidence)
     SeverActionsNativeExt.Native_Arrest_SetActiveDispatchGuard(DispatchGuard)
     DebugMsg("Persisted dispatch state for save/load recovery")
@@ -6286,7 +5587,6 @@ EndFunction
 
 Function ClearPersistedDispatchState()
     {Remove dispatch state after dispatch ends.}
-    ; T1-D.2: native source of truth.
     If DispatchGuard != None
         SeverActionsNativeExt.Native_Arrest_ClearDispatchContext(DispatchGuard)
     EndIf
@@ -6294,13 +5594,10 @@ Function ClearPersistedDispatchState()
 EndFunction
 
 Function RecoverActiveDispatch()
-    {Rebuild dispatch state from the native cosave after a save/load.
-     Package overrides and aliases don't survive the load, so this re-applies
-     them based on the persisted phase.}
+    {Rebuild dispatch state from the native cosave after a save/load and re-apply the
+     aliases, packages and in-memory native registrations of the persisted phase.}
 
-    ; T1-D.2: native source of truth. Singleton tracks which guard the
-    ; player quest's dispatch FSM was managing; per-guard map carries
-    ; the rest.
+    ; The singleton names the guard the dispatch was managing; the per-guard map has the rest.
     Actor guard = SeverActionsNativeExt.Native_Arrest_GetActiveDispatchGuard()
     If guard == None
         Return  ; No active dispatch
@@ -6313,7 +5610,6 @@ Function RecoverActiveDispatch()
         Return
     EndIf
 
-    ; Verify guard is alive
     If guard.IsDead()
         DebugMsg("Save/load recovery: dispatch guard is dead, canceling")
         ClearPersistedDispatchState()
@@ -6323,7 +5619,6 @@ Function RecoverActiveDispatch()
 
     DebugMsg("Save/load recovery: rebuilding dispatch Phase " + phase)
 
-    ; Rebuild script state from native
     DispatchGuard = guard
     DispatchTarget = SeverActionsNativeExt.Native_Arrest_GetDispatchTarget(guard)
     DispatchReturnMarker = SeverActionsNativeExt.Native_Arrest_GetDispatchReturnMarker(guard)
@@ -6335,11 +5630,8 @@ Function RecoverActiveDispatch()
     DispatchGuardOrigConfidence = SeverActionsNativeExt.Native_Arrest_GetDispatchOrigConf(guard)
     DispatchPhase = phase
 
-    ; Reset real-time clocks: Utility.GetCurrentRealTime() resets to ~0 on
-    ; session restart, so saved values would trigger instant timeout / stuck
-    ; / freeze fallbacks on the very first OnUpdate tick after load.
-    ; Restart the per-phase windows from now. Same fix as RecoverActiveArrest
-    ; does for ApproachStartTime / EscortStartTime.
+    ; Real time is session-relative, so the saved timers would fire the timeout / stuck / freeze
+    ; fallbacks on the first tick: restart the phase windows from now (as RecoverActiveArrest does).
     Float realNow = Utility.GetCurrentRealTime()
     DispatchPhase2StartTime = realNow
     DispatchSandboxStartTime = realNow
@@ -6349,14 +5641,11 @@ Function RecoverActiveDispatch()
     EscortPleaStartTime = 0.0
     DispatchTargetMovementFrozen = false
 
-    ; Re-fill dedicated aliases
     DispatchGuardAlias.ForceRefTo(guard)
 
-    ; Re-apply task faction
-    If SeverActions_DispatchFaction != None
-        guard.AddToFaction(SeverActions_DispatchFaction)
-        guard.SetFactionRank(SeverActions_DispatchFaction, 0)
-    EndIf
+    ; The cosaved dispatch context is the claim, so the strip can run at once.
+    _BeginGuardTask(guard)
+    _GuardOffSchedule(guard)
 
     ; Re-suppress combat AI
     guard.SetAV("Aggression", 0)
@@ -6364,12 +5653,10 @@ Function RecoverActiveDispatch()
     guard.AllowPCDialogue(false)
     SeverActionsNative.SetActorBumpable(guard, false)
 
-    ; Re-start stuck tracking
     SeverActionsNativeExt.Stuck_StartTracking(guard)
 
-    ; Phase-specific package rebuild
     If phase == 1
-        ; Traveling to target/home — re-apply jog package
+        ; Travelling to the target or their home.
         If DispatchIsHomeInvestigation && DispatchHomeMarker != None
             DispatchTargetAlias.ForceRefTo(DispatchHomeMarker)
         ElseIf DispatchTarget != None
@@ -6379,20 +5666,17 @@ Function RecoverActiveDispatch()
             ActorUtil.AddPackageOverride(guard, SeverActions_DispatchJog, PackagePriority, 1)
             guard.EvaluatePackage()
         EndIf
-        ; Re-init off-screen estimation
         ObjectReference dest = DispatchTargetAlias.GetReference()
         If dest != None
             SeverActionsNative.OffScreen_InitTracking(guard, dest, 0.5, 18.0)
-            ; PR-D: re-register ArrivalMonitor at the Phase-1 destination. The
-            ; native map is in-memory only and doesn't survive save/load.
+            ; ArrivalMonitor registrations are in memory only: re-arm (phases 2 and 5 too).
             SeverActionsNativeExt.Arrival_Register(guard, dest, DispatchArrivalDistance, "dispatch_p1_arrived")
         EndIf
 
     ElseIf phase == 2
-        ; Approaching target for arrest — same as Phase 1 outbound
+        ; Approaching the target for the arrest.
         If DispatchTarget != None
             DispatchTargetAlias.ForceRefTo(DispatchTarget)
-            ; PR-D: re-register ArrivalMonitor at the Phase-2 arrest threshold.
             SeverActionsNativeExt.Arrival_Register(guard, DispatchTarget, ApproachDistance, "dispatch_p2_arrived")
         EndIf
         If SeverActions_DispatchJog
@@ -6401,36 +5685,30 @@ Function RecoverActiveDispatch()
         EndIf
 
     ElseIf phase == 3 || phase == 4
-        ; Investigating home / collecting evidence
-        ; Simplified: restart Phase 1 travel to home (guard will re-arrive and re-trigger)
+        ; Investigating the home / collecting evidence: restart as phase 1 travel to the home;
+        ; the guard re-arrives and re-triggers the search.
         If DispatchHomeMarker != None
             DispatchTargetAlias.ForceRefTo(DispatchHomeMarker)
             If SeverActions_DispatchJog
                 ActorUtil.AddPackageOverride(guard, SeverActions_DispatchJog, PackagePriority, 1)
                 guard.EvaluatePackage()
             EndIf
-            ; Defensive LinkedRef re-assertion. The native cosave SHOULD have restored
-            ; the sandbox anchor LinkedRef on kPostLoadGame, but Papyrus can run before
-            ; that (quest OnInit / alias OnLoad between SKSE's kLoad and kPostLoadGame)
-            ; and cache a null GetLinkedRef result. Re-setting here guarantees the
-            ; anchor is present by the time we re-enter Phase 3/4 logic.
+            ; Re-set the sandbox anchor: the cosave restores it at kPostLoadGame, but Papyrus can
+            ; run before that and read a null GetLinkedRef.
             If SeverActions_SandboxAnchorKW != None
                 ObjectReference anchor = DispatchHomeMarker
                 SeverActionsNative.LinkedRef_Set(guard, anchor, SeverActions_SandboxAnchorKW)
             EndIf
             DispatchPhase = 1
             SeverActionsNativeExt.Native_Arrest_SetDispatchPhase(guard, 1)
-            ; Re-sync the cosave session entry with the recovery-reset phase.
-            ; The entry already persists from before save/load (ArrestSessionStore
-            ; is cosave-backed); we just push the new phase value through so the
-            ; PrismaUI page reflects the restart-at-Phase-1 decision.
+            ; Push the reset phase into the cosaved ArrestSessionStore entry for the Magelight page.
             If DispatchTarget != None
                 SeverActionsNative.Native_ArrestSession_UpdateState(DispatchTarget, 5, 1)
             EndIf
         EndIf
 
     ElseIf phase == 5
-        ; Returning with prisoner/evidence — re-apply walk package + prisoner follow
+        ; Returning with the prisoner or evidence.
         If DispatchReturnMarker != None
             DispatchTargetAlias.ForceRefTo(DispatchReturnMarker)
         EndIf
@@ -6438,7 +5716,7 @@ Function RecoverActiveDispatch()
             ActorUtil.AddPackageOverride(guard, SeverActions_DispatchWalk, PackagePriority, 1)
             guard.EvaluatePackage()
         EndIf
-        ; Re-apply prisoner follow if arrest dispatch
+        ; An arrest dispatch's prisoner follows the guard.
         If DispatchTarget != None && !DispatchIsHomeInvestigation
             DispatchPrisonerAlias.ForceRefTo(DispatchTarget)
             SeverActionsNative.SetActorBumpable(DispatchTarget, false)
@@ -6448,48 +5726,42 @@ Function RecoverActiveDispatch()
                 DispatchTarget.EvaluatePackage()
             EndIf
         EndIf
-        ; Re-init off-screen estimation for return
         If DispatchReturnMarker != None
             SeverActionsNative.OffScreen_InitTracking(guard, DispatchReturnMarker, 0.25, 12.0)
-            ; PR-D: re-register ArrivalMonitor at the Phase-5 return destination.
             SeverActionsNativeExt.Arrival_Register(guard, DispatchReturnMarker, DispatchArrivalDistance, "dispatch_p5_arrived")
         EndIf
 
     ElseIf phase == 6
-        ; Judgment hold — just restart update timer, phase logic handles the rest
+        ; Judgment hold: restart the judgment timer; the phase tick does the rest.
         If JudgmentScript
             JudgmentScript.StartJudgment()
         EndIf
     EndIf
 
-    ; Resume update loop
     ChronoArm(UpdateInterval)
     DebugMsg("Save/load recovery complete - resumed at Phase " + DispatchPhase)
 EndFunction
 
 Event OnTrespassNoticed(String eventName, String strArg, Float numArg, Form sender)
-    {Native TrespassMonitor suppressed the vanilla warn-follow for this NPC
-     (LLM-driven trespass) - file the reaction event so they confront the
-     player in dialogue instead. sender = the NPC, strArg = location name.
-     Fires once per episode (the native side dedupes re-offers).}
+    {TrespassMonitor suppressed the vanilla warn-follow for this NPC: file the event so they
+     confront the player in dialogue. sender = the NPC, strArg = location name. Once per
+     episode (the native side dedupes).}
     Actor npc = sender as Actor
     If !npc
         Return
     EndIf
-    ; A sleeper whose detection fired must physically get up - vanilla's wake
-    ; was a side effect of the trespass package we suppress. MoveTo(self)
-    ; interrupts the sleep package (the proven wake idiom).
+    ; A sleeper must get up: vanilla's wake came from the trespass package we suppress.
+    ; MoveTo(self) interrupts the sleep package.
     If npc.GetSleepState() != 0
         npc.MoveTo(npc)
         npc.EvaluatePackage()
     EndIf
-    ; Keep them UP and moving toward the intruder - without a hold package
-    ; their sleep/schedule package re-evaluates and wins, and they crawl
-    ; straight back into bed. SkyrimNet's FollowPlayer (same package the
-    ; follow hotkey uses, prio 50) doubles as investigate-the-intruder;
-    ; released when the trespass ends (OnTrespassWakeEnd).
+    ; Hold them up and moving toward the intruder, or the sleep/schedule package wins and they go
+    ; back to bed. SkyrimNet's FollowPlayer (prio 50) doubles as investigate; OnTrespassWakeEnd
+    ; releases it. NOT persistent: the DLL finds whom to release in an in-memory set the revert
+    ; hook clears, so a load mid-trespass would leave a persistent package on the NPC for good.
     If !npc.IsPlayerTeammate()
-        SkyrimNetApi.RegisterPackage(npc, "FollowPlayer", 50, 0, true)
+        SkyrimNetApi.RegisterPackage(npc, "FollowPlayer", 50, 0, false)
     EndIf
     Actor player = Game.GetPlayer()
     String place = strArg
@@ -6504,11 +5776,9 @@ Event OnTrespassNoticed(String eventName, String strArg, Float numArg, Form send
 EndEvent
 
 Event OnTrespassWake(String eventName, String strArg, Float numArg, Form sender)
-    {The intruding player made too much noise near this sleeper (native
-     TrespassMonitor noise scan) - wake them. Waking is NOT noticing: they
-     get out of bed and the engine's normal detection decides whether they
-     actually spot the player (which then fires OnTrespassNoticed). The
-     event text stays deliberately vague - they heard SOMETHING.}
+    {TrespassMonitor's noise scan heard the player near this sleeper: wake them. Waking is
+     not noticing - engine detection decides whether they spot the player (then
+     OnTrespassNoticed fires), so the event text only says they heard something.}
     Actor npc = sender as Actor
     If !npc || npc.IsDead()
         Return
@@ -6517,10 +5787,9 @@ Event OnTrespassWake(String eventName, String strArg, Float numArg, Form sender)
         npc.MoveTo(npc)
         npc.EvaluatePackage()
     EndIf
-    ; Hold them up + send them looking (see OnTrespassNoticed for rationale) -
-    ; otherwise the sleep package re-wins and they go straight back to bed.
+    ; Hold them up and send them looking (see OnTrespassNoticed).
     If !npc.IsPlayerTeammate()
-        SkyrimNetApi.RegisterPackage(npc, "FollowPlayer", 50, 0, true)
+        SkyrimNetApi.RegisterPackage(npc, "FollowPlayer", 50, 0, false)
     EndIf
     SkyrimNetApi.DirectNarration(npc.GetDisplayName() + " stirs awake at the sound of footsteps that should not be there, and rises from bed to see what made them.", npc, Game.GetPlayer())
     SkyrimNetApi.RegisterShortLivedEvent("trespasswake_" + npc.GetFormID(), \
@@ -6531,9 +5800,8 @@ Event OnTrespassWake(String eventName, String strArg, Float numArg, Form sender)
 EndEvent
 
 Event OnTrespassWakeEnd(String eventName, String strArg, Float numArg, Form sender)
-    {Trespass ended (player left or gained legitimate access) - release the
-     FollowPlayer hold on a woken investigator so their normal schedule
-     (including going back to bed) resumes.}
+    {Trespass ended (player left or gained legitimate access): release the FollowPlayer
+     hold so the NPC's normal schedule resumes.}
     Actor npc = sender as Actor
     If !npc
         Return
@@ -6542,3 +5810,385 @@ Event OnTrespassWakeEnd(String eventName, String strArg, Float numArg, Form send
     npc.EvaluatePackage()
     DebugMsg("LLM trespass: released woken investigator " + npc.GetDisplayName())
 EndEvent
+
+; ============================================================================
+; M-V VERB DISPATCHER (DR10)
+; ============================================================================
+; The DLL routes this module's UI verbs (Native/data/verb_table.json) as the ModEvent
+; SeverActions_Verb_Arrest with the Actions page's 8 pipe fields. This is the ONE script that
+; defines OnVerb_Arrest (a shared callback name runs on every script of the form, F4);
+; Maintenance registers it (DR16).
+Event OnVerb_Arrest(String eventName, String strArg, Float numArg, Form sender)
+    String actionId = SeverActions_ModuleBase.VerbField(strArg, 0)
+    String targetName = SeverActions_ModuleBase.VerbField(strArg, 1)
+    String target2Name = SeverActions_ModuleBase.VerbField(strArg, 2)
+    String strParam = SeverActions_ModuleBase.VerbField(strArg, 3)
+    Int intParam = SeverActions_ModuleBase.VerbField(strArg, 4) as Int
+    String str2Param = SeverActions_ModuleBase.VerbField(strArg, 5)
+    Int targetFid = SeverActions_ModuleBase.VerbField(strArg, 6) as Int
+    Int target2Fid = SeverActions_ModuleBase.VerbField(strArg, 7) as Int
+    Debug.Trace("[SeverActions_Arrest] OnVerb_Arrest: " + actionId + " target=" + targetName + " target2=" + target2Name \
+        + " str=" + strParam + " int=" + intParam + " str2=" + str2Param + " fid=" + targetFid + " fid2=" + target2Fid)
+
+    ; Resolve by the picker's sender, then the encoded FormID, then the fuzzy name; names are
+    ; re-canonicalized to display names for the branches that pass a name on.
+    Actor target = SeverActions_ModuleBase.VerbActor(sender, targetFid, targetName)
+    If !target
+        Debug.Trace("[SeverActions_Arrest] OnVerb_Arrest: could not resolve target '" + targetName + "' for " + actionId)
+        Return
+    EndIf
+    targetName = target.GetDisplayName()
+    Actor target2 = SeverActions_ModuleBase.VerbActor(None, target2Fid, target2Name)
+    If target2
+        target2Name = target2.GetDisplayName()
+    ElseIf target2Name != ""
+        Debug.Trace("[SeverActions_Arrest] OnVerb_Arrest: target2 name '" + target2Name + "' did not resolve to an actor (action=" + actionId + ")")
+        SeverActionsNative.Native_Arrest_Log("verb dispatch: target2 name '" + target2Name + "' did not resolve to an actor (action=" + actionId + ")")
+    EndIf
+
+    ; This module's captivity script on the same quest: the eight kidnap verbs forward to it.
+    SeverActions_Kidnap kidnap = (Self as Quest) as SeverActions_Kidnap
+
+    ; -- Arrest (own code) --
+    If actionId == "arrestNPC"
+        If !target2
+            SeverActionsNative.Native_Arrest_Log("verb arrestNPC skipped - target2 (suspect) is None. target='" + targetName + "' target2Name='" + target2Name + "'")
+        Else
+            SeverActionsNative.Native_Arrest_Log("verb arrestNPC dispatching: guard='" + targetName + "' suspect='" + target2Name + "'")
+            Bool arrestStarted = ArrestNPC_Internal(target, target2)
+            SeverActionsNative.Native_Arrest_Log("verb arrestNPC result: " + arrestStarted)
+        EndIf
+
+    ElseIf actionId == "freeFromJail"
+        If !target2
+            SeverActionsNative.Native_Arrest_Log("verb freeFromJail skipped - target2 (jailed NPC) is None. target='" + targetName + "' target2Name='" + target2Name + "'")
+        Else
+            FreeNPC_Internal(target, target2)
+        EndIf
+
+    ElseIf actionId == "dispatchGuardArrest"
+        ; target = the guard; target2Name = the NPC to arrest; str2Param = the ordering
+        ; authority, the player when unspecified. "Player" becomes the player's display name:
+        ; the Execute path's FindActorByName would fuzzy-match it to any NPC containing it.
+        String senderName = str2Param
+        If senderName == "" || senderName == "Player" || senderName == "player"
+            senderName = Game.GetPlayer().GetDisplayName()
+        EndIf
+        DispatchGuardToArrest_Execute(target, target2Name, senderName)
+
+    ElseIf actionId == "dispatchGuardHome"
+        ; target = the guard; target2Name = whose home to search; strParam = the reason;
+        ; str2Param = the authority (same normalization).
+        String homeSender = str2Param
+        If homeSender == "" || homeSender == "Player" || homeSender == "player"
+            homeSender = Game.GetPlayer().GetDisplayName()
+        EndIf
+        DispatchGuardToHome_Execute(target, target2Name, homeSender, strParam)
+
+    ; -- Bounty and the player's own surrender (sibling scripts) --
+    ElseIf actionId == "payNpcBounty"
+        ; target = the authority taking payment; target2Name = the wanted person, who need not
+        ; be present (the authority reads their own hold's wanted list).
+        SeverActions_ArrestBounty bountySys = (Self as Quest) as SeverActions_ArrestBounty
+        If bountySys
+            bountySys.PayNpcBountyToGuard_Internal(target, target2Name)
+        EndIf
+
+    ElseIf actionId == "turnMeIn"
+        ; The guard (target) arrests the PLAYER: surrender to clear a bounty.
+        SeverActions_ArrestPlayer surrenderSys = (Self as Quest) as SeverActions_ArrestPlayer
+        If surrenderSys
+            surrenderSys.ArrestPlayer_Internal(target)
+        EndIf
+
+    ; -- Kidnap (forwarded to SeverActions_Kidnap) --
+    ElseIf actionId == "kidnapNPC"
+        ; target = the abducting companion; strParam = the victim's name (resolved globally
+        ; inside KidnapNPC); str2Param = the destination. KidnapNPC notifies if the toggle is off.
+        If kidnap
+            kidnap.KidnapNPC(target, strParam, str2Param)
+        EndIf
+
+    ElseIf actionId == "releaseCaptive"
+        ; target = whoever unties them; strParam = captive name (optional -
+        ; matched against active captives only, single captive needs no name).
+        If kidnap
+            kidnap.ReleaseCaptive(target, strParam)
+        EndIf
+
+    ElseIf actionId == "moveCaptive"
+        ; target = escorting companion; strParam = captive name (optional);
+        ; str2Param = the new hold destination.
+        If kidnap
+            kidnap.MoveCaptive(target, strParam, str2Param)
+        EndIf
+
+    ElseIf actionId == "moveCaptiveHere"
+        ; target = the row's kidnapper (hint only - the entry's CURRENT
+        ; kidnapper is authoritative inside); strParam = captive name.
+        If kidnap
+            kidnap.MoveCaptiveHere(target, strParam)
+        EndIf
+
+    ElseIf actionId == "demandRansom"
+        ; target = the companion sending the demand; strParam = captive name
+        ; (optional); intParam = gold demanded (0 = ask a fair price).
+        If kidnap
+            kidnap.DemandRansom(target, strParam, intParam)
+        EndIf
+
+    ElseIf actionId == "untieCaptive"
+        If kidnap
+            kidnap.UntieCaptive(target, strParam)
+        EndIf
+
+    ElseIf actionId == "interrogateCaptive"
+        ; target = the interrogator; strParam = captive name (optional).
+        If kidnap
+            kidnap.InterrogateCaptive(target, strParam)
+        EndIf
+
+    ElseIf actionId == "restrainNPC"
+        ; RestrainNPC takes the victim by NAME (not an Actor) - target2Name is
+        ; the resolved display name from the frontend's actor picker.
+        If kidnap
+            kidnap.RestrainNPC(target, target2Name)
+        EndIf
+
+    ; -- Off-screen jailing (sent by SeverActions_CompanionLife) --
+    ElseIf actionId == "offscreenJail"
+        ; target = the dismissed companion an off-screen event arrested; strParam = the hold /
+        ; home it named. An async verb so the companions module never names this type (B05).
+        OffScreenJail(target, strParam)
+
+    Else
+        Debug.Trace("[SeverActions_Arrest] OnVerb_Arrest: unknown actionId '" + actionId + "' (not a row this dispatcher carries)")
+    EndIf
+
+    ; The DLL's refresh one frame after routing runs before most verbs have written their
+    ; stores; by here the forwarded call has returned, so refresh again.
+    SeverActionsNative.Magelight_RefreshPage("world")
+    SeverActionsNative.Magelight_RefreshPage("enterprises")
+EndEvent
+
+Event OnHotkey_Arrest(String eventName, String strArg, Float numArg, Form sender)
+    {The arrest module's hotkeys from the DLL's input sink (M-K): TieUntie, also as "wheel:TieUntie"
+     when a quick-wheel slot holds it (fromWheel changes nothing here; the wheel lets it through with
+     no NPC target, for the furniture tie). TieUntie on furniture while
+     the player leads a bound captive: tie them to it (PlayerTieLedCaptive). On the crosshair NPC:
+     BOUND -> ReleaseCaptive (any captor); UNBOUND -> restrain with the player as captor and lead
+     them (LeashCaptive).}
+    String hotkeyId = strArg
+    If StringUtil.Substring(strArg, 0, 6) == "wheel:"
+        hotkeyId = StringUtil.Substring(strArg, 6)
+    EndIf
+    Actor target = sender as Actor
+    Actor player = Game.GetPlayer()
+    Debug.Trace("[SeverActions_Arrest] OnHotkey_Arrest: " + hotkeyId + " target=" + target)
+    SeverActions_Kidnap kidnap = (Self as Quest) as SeverActions_Kidnap
+    If !kidnap
+        Debug.Trace("[SeverActions_Arrest] OnHotkey_Arrest: SeverActions_Kidnap is not bound - ignoring " + hotkeyId)
+        Return
+    EndIf
+
+    If hotkeyId == "TieUntie"
+        ; Before the NPC target: "nearest NPC" target mode would otherwise hand over the led captive.
+        ObjectReference aimed = Game.GetCurrentCrosshairRef()
+        If aimed && aimed.GetBaseObject() as Furniture && kidnap.PlayerTieLedCaptive(aimed)
+            Return
+        EndIf
+        If !target
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("hotkeys.aimAtSomeoneTie"))
+        ElseIf target == player
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("hotkeys.cannotTieYourself"))
+        ElseIf target.IsDead()
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hotkeys.isBeyondTying", ("" + target.GetDisplayName())))
+        Else
+            ; Phase 3 = held/bound (the only state with something to untie);
+            ; phases 1-2 are an in-flight approach/grab a hotkey must not race.
+            Int phase = SeverActionsNativeExt.Native_Kidnap_GetPhase(target)
+            If phase == 3
+                String capName = target.GetDisplayName()
+                kidnap.ReleaseCaptive(player, capName)
+                ; ReleaseCaptive clears the entry on success; re-read before
+                ; narrating a freeing that a refusal may have blocked.
+                If SeverActionsNativeExt.Native_Kidnap_GetPhase(target) == 0
+                    SkyrimNetApi.RegisterEvent("captive_untied", \
+                        player.GetDisplayName() + " unties " + capName + "'s hands and lets them go free.", \
+                        player, target)
+                    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hotkeys.youUntie", ("" + capName)))
+                EndIf
+            ElseIf phase == 1 || phase == 2
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hotkeys.isBeingTaken", ("" + target.GetDisplayName())))
+            ElseIf !SeverActionsNativeExt2.Settings_GetBool("restrainEnabled")
+                Debug.Notification(SeverActionsNativeExt2.Native_L10n("hotkeys.restrainingDisabled"))
+            ElseIf SeverActionsNativeExt.Native_GetIsFollower(target)
+                Debug.Notification(SeverActionsNativeExt2.Native_L10n("hotkeys.willNotBindCompanion"))
+            Else
+                ; Bind narration deferred: LeashCaptive narrates bind and lead as one event, and
+                ; NarrateRestrainedInPlace covers a refused lead.
+                If kidnap.PlayerRestrainOnSpot(target, true)
+                    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hotkeys.youBindHands", ("" + target.GetDisplayName())))
+                    If !kidnap.LeashCaptive(target, player, true)
+                        kidnap.NarrateRestrainedInPlace(target, player)
+                    EndIf
+                EndIf
+            EndIf
+        EndIf
+
+    Else
+        Debug.Trace("[SeverActions_Arrest] OnHotkey_Arrest: unknown hotkeyId '" + hotkeyId + "' (not a row this dispatcher carries)")
+    EndIf
+EndEvent
+
+Function OffScreenJail(Actor akNPC, String asHome)
+    {Jail a dismissed companion an off-screen life event arrested in the hold it named
+     (asHome): jailed faction, cell, jail clothes, tracking row and sandbox pin. Reached by
+     the verb arrest.offscreenJail from SeverActions_CompanionLife, which already recorded
+     the bounty. No-op when already jailed or the hold has no crime faction or jail marker.}
+    If !akNPC || akNPC.IsDead()
+        Return
+    EndIf
+    String actorName = akNPC.GetDisplayName()
+    If IsNPCJailed(akNPC)
+        DebugMsg("OffScreenJail: " + actorName + " is already jailed, skipping placement")
+        Return
+    EndIf
+    Faction crimeFaction = GetCrimeFactionForHoldName(asHome)
+    If !crimeFaction
+        DebugMsg("OffScreenJail: no crime faction found for '" + asHome + "' - arrest recorded but " + actorName + " not moved")
+        Return
+    EndIf
+    ObjectReference jailMarker = SeverActionsNative.GetFactionJailMarker(crimeFaction)
+    If !jailMarker
+        DebugMsg("OffScreenJail: no jail marker found for " + asHome + " - arrest recorded but " + actorName + " not moved")
+        Return
+    EndIf
+    akNPC.AddToFaction(SeverActions_Jailed)
+
+    akNPC.Disable()
+    Utility.Wait(0.1)
+    akNPC.MoveTo(jailMarker, 0.0, 0.0, 0.0)
+    Utility.Wait(0.1)
+    akNPC.Enable()
+
+    ChangeToJailClothes(akNPC, crimeFaction)
+
+    StorageUtil.SetFormValue(akNPC, "SeverActions_JailMarker", jailMarker)
+    AddJailedNPCAt(akNPC, jailMarker, crimeFaction)
+
+    If SeverActions_PrisonerSandBox
+        SeverActionsNativeExt.LinkedRef_SetPermanent(akNPC, jailMarker, SeverActions_SandboxAnchorKW)
+        ActorUtil.AddPackageOverride(akNPC, SeverActions_PrisonerSandBox, 110, 1)
+        akNPC.EvaluatePackage()
+    EndIf
+
+    SkyrimNetApi.RegisterPersistentEvent(actorName + " has been jailed in " + asHome + ".", akNPC, None)
+    DebugMsg("OffScreenJail: " + actorName + " placed in jail at " + asHome)
+EndFunction
+
+
+; =============================================================================
+; UI BOUNTY BUTTONS
+; =============================================================================
+
+Event OnPrismaClearBounty(String eventName, String strArg, Float numArg, Form sender)
+    {The UI's Clear Bounty button. strArg = "0|<hold>" - the native helper packs
+     "actorName|payload" and a hold-level clear has no actor, so the name half is "0".}
+    Int pipePos = StringUtil.Find(strArg, "|")
+    String hold = strArg
+    If pipePos >= 0
+        hold = StringUtil.Substring(strArg, pipePos + 1)
+    EndIf
+    If hold != ""
+        ClearBountyForHold(hold)
+    EndIf
+EndEvent
+
+Event OnPrismaClearAllBounties(String eventName, String strArg, Float numArg, Form sender)
+    {The UI's Clear All Bounties button. See OnPrismaClearBounty.}
+    ClearAllBounties()
+EndEvent
+
+Function ClearBountyForHold(String hold)
+    {Clear the tracked bounty of a hold by its UI display name (Maintenance fills BountyScript).}
+    If !BountyScript
+        Return
+    EndIf
+    Faction f = GetCrimeFactionForHold(hold)
+    If f
+        BountyScript.ClearTrackedBounty(f)
+    EndIf
+EndFunction
+
+Function ClearAllBounties()
+    If !BountyScript
+        Return
+    EndIf
+    BountyScript.ClearTrackedBounty(CrimeFactionEastmarch)
+    BountyScript.ClearTrackedBounty(CrimeFactionFalkreath)
+    BountyScript.ClearTrackedBounty(CrimeFactionHaafingar)
+    BountyScript.ClearTrackedBounty(CrimeFactionHjaalmarch)
+    BountyScript.ClearTrackedBounty(CrimeFactionPale)
+    BountyScript.ClearTrackedBounty(CrimeFactionReach)
+    BountyScript.ClearTrackedBounty(CrimeFactionRift)
+    BountyScript.ClearTrackedBounty(CrimeFactionWhiterun)
+    BountyScript.ClearTrackedBounty(CrimeFactionWinterhold)
+EndFunction
+
+Faction Function GetCrimeFactionForHold(String hold)
+    {Hold display name (as the UI sends it, not an EditorID) -> crime faction, or None.}
+    If hold == "Eastmarch"
+        Return CrimeFactionEastmarch
+    ElseIf hold == "Falkreath"
+        Return CrimeFactionFalkreath
+    ElseIf hold == "Haafingar"
+        Return CrimeFactionHaafingar
+    ElseIf hold == "Hjaalmarch"
+        Return CrimeFactionHjaalmarch
+    ElseIf hold == "The Pale"
+        Return CrimeFactionPale
+    ElseIf hold == "The Reach"
+        Return CrimeFactionReach
+    ElseIf hold == "The Rift"
+        Return CrimeFactionRift
+    ElseIf hold == "Whiterun"
+        Return CrimeFactionWhiterun
+    ElseIf hold == "Winterhold"
+        Return CrimeFactionWinterhold
+    EndIf
+    Return None
+EndFunction
+
+Faction Function GetCrimeFactionForHoldName(String asPlace)
+    {Forgiving resolver for an off-screen event's "home", which is whatever AssignHome stored
+     (a city, a house such as "Breezehome in Whiterun", a hold). Exact hold name first, then
+     substrings of each hold and its city; None when nothing matches.}
+    If asPlace == ""
+        Return None
+    EndIf
+    Faction exact = GetCrimeFactionForHold(asPlace)
+    If exact
+        Return exact
+    EndIf
+    If StringUtil.Find(asPlace, "Whiterun") >= 0
+        Return CrimeFactionWhiterun
+    ElseIf StringUtil.Find(asPlace, "Riften") >= 0 || StringUtil.Find(asPlace, "Rift") >= 0
+        Return CrimeFactionRift
+    ElseIf StringUtil.Find(asPlace, "Solitude") >= 0 || StringUtil.Find(asPlace, "Haafingar") >= 0
+        Return CrimeFactionHaafingar
+    ElseIf StringUtil.Find(asPlace, "Windhelm") >= 0 || StringUtil.Find(asPlace, "Eastmarch") >= 0
+        Return CrimeFactionEastmarch
+    ElseIf StringUtil.Find(asPlace, "Markarth") >= 0 || StringUtil.Find(asPlace, "Reach") >= 0
+        Return CrimeFactionReach
+    ElseIf StringUtil.Find(asPlace, "Falkreath") >= 0
+        Return CrimeFactionFalkreath
+    ElseIf StringUtil.Find(asPlace, "Dawnstar") >= 0 || StringUtil.Find(asPlace, "Pale") >= 0
+        Return CrimeFactionPale
+    ElseIf StringUtil.Find(asPlace, "Morthal") >= 0 || StringUtil.Find(asPlace, "Hjaalmarch") >= 0
+        Return CrimeFactionHjaalmarch
+    ElseIf StringUtil.Find(asPlace, "Winterhold") >= 0
+        Return CrimeFactionWinterhold
+    EndIf
+    Return None
+EndFunction

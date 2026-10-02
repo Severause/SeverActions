@@ -1,0 +1,50 @@
+customCategory: crafting
+name: BrewPotion
+description: "Use when the speaker commits in this line to brewing a named potion now for someone who asked for it: a healing draught, an antidote, a tonic. They go to the nearest alchemy lab, brew it and hand it over; it costs nothing. Potions only, not poisons. Not for brewing already under way, tidying ingredients, or selling a potion already in stock (Economy). Cooking food is CookMeal; smithing is CraftItem."
+questEditorId: SeverActions
+scriptName: SeverActions_Crafting
+executionFunctionName: BrewPotion_Internal
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor working the mortar and pestle
+  - type: dynamic
+    name: potionName
+    description: "the potion's in-game name or its effect ('Potion of Minor Healing', 'Cure Disease')"
+  - type: dynamic
+    name: recipient
+    description: "who receives it: exact name as listed in Nearby Actors, or the player's name"
+  - type: dynamic
+    name: itemCount
+    description: "how many; above 1 only when several were asked for"
+    optional: true
+    default: 1
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: is_in_combat
+        arguments:
+          - currentActor
+        comparisonOperator: ==
+        expectedValue: false
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

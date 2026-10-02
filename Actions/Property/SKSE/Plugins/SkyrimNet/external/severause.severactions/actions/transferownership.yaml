@@ -1,0 +1,50 @@
+customCategory: items
+name: TransferOwnership
+description: "Use only when the speaker formally hands {{ player.name }} a house or building they own in this line, deed and keys from now on: a Jarl rewarding a great service, an owner giving up their home or business. Only its owner, a member of the household or guild that owns it, or that hold's Jarl can grant it; a steward or courtier cannot, even on the Jarl's word. Anyone living there keeps their place. Not for inviting {{ player.name }} to stay, renting a room, a sale still being haggled over, or a promise for later."
+questEditorId: SeverActions
+scriptName: SeverActions_Property
+executionFunctionName: TransferOwnership
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor with authority to grant the property — its current owner, a member of its owning faction, or the Jarl whose hold contains it
+  - type: dynamic
+    name: propertyName
+    # optional: an omitted required key aborts the call.
+    optional: true
+    default: ""
+    description: "the building being granted, by name (e.g. 'Bannered Mare', 'Breezehome'); leave empty for the building the speaker and the player are both standing in"
+# default() guards the render: an omitted optional is not an eventString variable.
+eventString: "{{ actor.name }} has transferred ownership of {{ default(propertyName, \"their property\") }} to {{ player.name }}"
+enabled: true
+useConfirmationWindow: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

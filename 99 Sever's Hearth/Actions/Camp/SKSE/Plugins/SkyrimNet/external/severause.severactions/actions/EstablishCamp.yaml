@@ -1,0 +1,40 @@
+customCategory: camp
+name: EstablishCamp
+description: "Use when the speaker and {{ player.name }} settle, in this line, on making camp right here and now to rest, eat or keep watch. Pitches fire, tents and bedrolls where {{ player.name }} stands (outdoors only; the screen fades while it goes up). With no base yet this camp becomes the company's permanent base; while a base stands elsewhere it is only tonight's bivouac. Not for camping later or elsewhere ('we should camp soon', 'let's find a clearing'), and not as a question."
+questEditorId: SeversHearth
+scriptName: SeversHearth_Camp
+executionFunctionName: EstablishCamp
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The actor who suggested or initiated camping (player or companion).
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+      # current_camp is a STRING decorator: empty = no camp yet. The old
+      # description CLAIMED this restriction without enforcing it (P0-14).
+      - decoratorName: "current_camp"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

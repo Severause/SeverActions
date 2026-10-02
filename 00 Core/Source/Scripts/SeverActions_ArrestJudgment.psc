@@ -1,56 +1,23 @@
 Scriptname SeverActions_ArrestJudgment Extends Quest
-{Phase-6 judgment hold subsystem.
-
- After a guard brings a prisoner back to the sender (the original NPC who
- ordered the arrest), the sender can:
-   - OrderRelease: free the prisoner (uncuff, restore, back to normal)
-   - OrderJailed: send the prisoner to jail (guard starts standard escort)
- If neither fires within JudgmentTimeLimit, defaults to jail.
-
- This subsystem is small but heavily coupled to the dispatch FSM in the
- parent SeverActions_Arrest script — DispatchGuard / DispatchTarget /
- DispatchSender / DispatchPhase / package properties / ReferenceAliases /
- cleanup helpers all live there. The back-reference ArrestScript property
- below is the bridge.
-
- Public API (also wired via orderrelease.yaml + orderjailed.yaml):
-   - StartJudgment()       — called from CheckDispatchPhase5_Return to begin
-   - ResetState()          — called from ClearDispatchState to wipe timer
-   - CheckJudgmentProgress() — per-tick router target, called from arrest's
-                               CheckDispatchProgress when DispatchPhase == 6
-   - OrderRelease_Execute(akSender)
-   - OrderJailed_Execute(akSender)
-   - EndJudgment(released) — terminal cleanup; routes to release or jail-escort
-
- Attached to the same SeverActions quest (FormID 0x000D62) as every other
- sub-script. Resolve via `quest as SeverActions_ArrestJudgment` from any
- caller.}
-
-; =============================================================================
-; SCRIPT REFERENCES
-; =============================================================================
+{Phase-6 judgment hold: after a guard brings a prisoner back to the NPC who
+ ordered the arrest, that sender orders release (OrderRelease_Execute) or jail
+ (OrderJailed_Execute); no decision within JudgmentTimeLimit means jail.
+ All dispatch state, packages, aliases and cleanup helpers live on
+ SeverActions_Arrest (ArrestScript), which drives StartJudgment, ResetState
+ and CheckJudgmentProgress. Attached to quest 0x000D62.}
 
 SeverActions_Arrest Property ArrestScript Auto
-{Back-reference to the main arrest script. Filled at runtime via Maintenance().
- Required — every function on this script reaches into ArrestScript for
- dispatch state, packages, aliases, cleanup helpers, and the same-cell
- escort hand-off. CK fill optional; runtime fallback always works.}
+{The main arrest script; every function here goes through it. Resolved in
+ Maintenance() when the CK leaves it unfilled.}
 
-; =============================================================================
-; STATE
-; =============================================================================
+Float JudgmentStartTime           ; real time the hold began
+Float JudgmentTimeLimit = 90.0    ; seconds before defaulting to jail
 
-Float JudgmentStartTime           ; Real time when judgment phase started
-Float JudgmentTimeLimit = 90.0    ; Seconds before defaulting to jail
-
-; =============================================================================
-; LIFECYCLE
-; =============================================================================
+; --- Lifecycle ---
 
 Function Maintenance()
-    {Resolve the ArrestScript back-reference at runtime if CK didn't fill it.
-     Called from the parent SeverActions_Arrest.Maintenance after that script
-     finishes its own setup so we know the parent is alive.}
+    {Resolves ArrestScript if the CK left it unfilled. Called from
+     SeverActions_Arrest.Maintenance.}
     If !ArrestScript
         Quest q = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
         If q
@@ -60,22 +27,9 @@ Function Maintenance()
 EndFunction
 
 Function StartJudgment()
-    {Begin the judgment timer. Called from CheckDispatchPhase5_Return when
-     DispatchPhase transitions to 6, and from RecoverActiveDispatch on
-     save/load recovery so the timer restarts cleanly.
-
-     Marks the actor whose LLM eligibility gates OrderJailed/OrderRelease
-     busy with reason "judgment". Which actor that is depends on who
-     initiated the dispatch:
-       - NPC sender (jarl, housecarl, witness): mark the SENDER. The LLM
-         considers the sender as currentActor when offering the order
-         actions, so the busy flag must sit on them.
-       - Player sender: mark the GUARD. The _Execute functions accept the
-         guard as a valid caller "acting on the player's behalf" (see
-         OrderRelease_Execute / OrderJailed_Execute), but since
-         the player doesn't drive SkyrimNet's action selection, eligibility
-         runs against the guard as the actual LLM speaker — so the busy
-         flag must sit on the guard for that case.}
+    {Starts the judgment timer (from CheckDispatchPhase5_Return on entering
+     phase 6, and from RecoverActiveDispatch on load) and marks the order
+     actions' LLM speaker busy with "judgment" (see ResolveBusyTarget).}
     JudgmentStartTime = Utility.GetCurrentRealTime()
 
     Actor target = ResolveBusyTarget()
@@ -85,18 +39,10 @@ Function StartJudgment()
 EndFunction
 
 Function ResetState()
-    {Clear the judgment timer. Called from ClearDispatchState so a stale
-     timer doesn't bleed into the next dispatch cycle.
-
-     Also clears any "judgment" busy flag still set on the dispatch's busy
-     target — covers the CancelDispatch path that bypasses EndJudgment
-     entirely. Idempotent: ClearActorBusy is safe to call on an actor
-     that isn't busy.
-
-     CRITICAL: callers must invoke this BEFORE nulling DispatchSender /
-     DispatchGuard on ArrestScript, otherwise ResolveBusyTarget can't
-     find the actor to clear and the busy flag leaks. See the reorder in
-     SeverActions_Arrest.psc::ClearDispatchState.}
+    {Clears the timer and the "judgment" busy flag (this is what clears it on
+     CancelDispatch, which bypasses EndJudgment). Called from
+     ClearDispatchState, which must call it BEFORE nulling DispatchSender /
+     DispatchGuard or ResolveBusyTarget finds nobody and the flag leaks.}
     JudgmentStartTime = 0.0
 
     Actor target = ResolveBusyTarget()
@@ -106,13 +52,10 @@ Function ResetState()
 EndFunction
 
 Actor Function ResolveBusyTarget()
-    {Returns the actor whose busy flag gates OrderJailed/OrderRelease
-     eligibility for the current dispatch:
-       - If sender is the player, returns the dispatch guard (the actual
-         LLM speaker for the order actions in the player-initiated path).
-       - Otherwise returns the sender (the LLM speaker in the standard
-         NPC-initiated path).
-     Returns None if ArrestScript is None or the resolved actor is None.}
+    {Returns the actor the order actions' eligibility runs against: the
+     dispatch guard when the player sent the dispatch (the player does not
+     drive SkyrimNet's action selection, so the guard speaks for them), else
+     the sender. None without ArrestScript.}
     If !ArrestScript
         Return None
     EndIf
@@ -123,22 +66,18 @@ Actor Function ResolveBusyTarget()
     Return sender
 EndFunction
 
-; =============================================================================
-; ROUTER — called from SeverActions_Arrest.CheckDispatchProgress (DispatchPhase == 6)
-; =============================================================================
+; --- Per-tick router (SeverActions_Arrest.CheckDispatchProgress, phase 6) ---
 
 Function CheckJudgmentProgress()
-    {Check if judgment hold has timed out or participants became invalid.}
+    {Ends the hold when a participant is gone or the time limit has passed.}
     If !ArrestScript
         Return
     EndIf
 
-    ; Cache references so we don't dereference ArrestScript repeatedly per tick.
     Actor guard    = ArrestScript.GetDispatchGuard()
     Actor prisoner = ArrestScript.GetDispatchTarget()
     Actor sender   = ArrestScript.GetDispatchSender()
 
-    ; Validate participants
     If guard == None || guard.IsDead()
         ArrestScript.DebugMsg("Judgment: Guard died or invalid, releasing prisoner")
         EndJudgment(true)
@@ -146,8 +85,9 @@ Function CheckJudgmentProgress()
     EndIf
 
     If prisoner == None || prisoner.IsDead()
-        ArrestScript.DebugMsg("Judgment: Prisoner died or invalid, ending judgment")
-        EndJudgment(false)
+        ; The release path tears everything down; the jail path would cuff and escort a corpse.
+        ArrestScript.DebugMsg("Judgment: Prisoner died or invalid, ending judgment (released)")
+        EndJudgment(true)
         Return
     EndIf
 
@@ -157,7 +97,6 @@ Function CheckJudgmentProgress()
         Return
     EndIf
 
-    ; Check timeout
     Float elapsed = Utility.GetCurrentRealTime() - JudgmentStartTime
     If elapsed >= JudgmentTimeLimit
         ArrestScript.DebugMsg("Judgment timed out after " + elapsed + "s - defaulting to jail")
@@ -169,7 +108,7 @@ Function CheckJudgmentProgress()
         String narration = "*" + senderName + " grows tired of deliberating. " + guardName + " takes hold of " + prisonerName + " and begins leading them away to jail.*"
         SkyrimNetApi.DirectNarration(narration, prisoner, sender)
 
-        String eventMsg = senderName + " did not reach a decision. " + prisonerName + " will be taken to jail by default."
+        String eventMsg = senderName + " never gave a ruling, so " + guardName + " is taking " + prisonerName + " to jail."
         SkyrimNetApi.RegisterPersistentEvent(eventMsg, prisoner, sender)
 
         Debug.Notification(senderName + " lost patience - " + prisonerName + " sent to jail")
@@ -178,28 +117,20 @@ Function CheckJudgmentProgress()
         Return
     EndIf
 
-    ; Re-apply prisoner follow package each tick — Skyrim's AI can drop overrides
+    ; Re-applied every tick: the engine can drop package overrides.
     If prisoner != None && guard != None && ArrestScript.SeverActions_FollowGuard_Prisoner
         ActorUtil.AddPackageOverride(prisoner, ArrestScript.SeverActions_FollowGuard_Prisoner, ArrestScript.PackagePriority, 1)
         prisoner.EvaluatePackage()
     EndIf
 
-    ; Still waiting for sender's decision — the parent's chronometer tick
-    ; (OnChronoTick_Arrest → CheckDispatchProgress → CheckJudgmentProgress) is the
-    ; actual update tick; we don't arm one here because that would conflict with
-    ; the parent's per-state cadence.
+    ; No tick armed here: the parent's OnChronoTick_Arrest drives this cadence.
 EndFunction
 
-; =============================================================================
-; ACTION ENTRY POINTS — wired via orderrelease.yaml / orderjailed.yaml
-; =============================================================================
+; --- SkyrimNet actions (orderrelease.yaml / orderjailed.yaml) ---
 
 Bool Function OrderRelease_Execute(Actor akSender)
-    {Sender orders the prisoner released. Called by SkyrimNet when the sender
-     decides to show mercy or accepts the prisoner's plea.
-     akSender: The NPC giving the release order (must be the dispatch sender,
-               or the guard if sender is player).
-     Returns true if the prisoner was released.}
+    {The sender frees the prisoner. akSender must be the dispatch sender, or
+     the guard when the player sent the dispatch. Returns true when released.}
 
     If !ArrestScript
         Return false
@@ -220,7 +151,7 @@ Bool Function OrderRelease_Execute(Actor akSender)
     Actor prisoner = ArrestScript.GetDispatchTarget()
     Actor guard    = ArrestScript.GetDispatchGuard()
 
-    ; If the player is the dispatch sender, accept the guard as the caller acting on the player's behalf
+    ; On a player-sent dispatch the guard speaks for the player.
     Bool validCaller = (akSender == sender)
     If !validCaller && sender == Game.GetPlayer() && akSender == guard
         validCaller = true
@@ -244,11 +175,9 @@ Bool Function OrderRelease_Execute(Actor akSender)
 
     ArrestScript.DebugMsg(senderName + " ordered release of " + prisonerName)
 
-    ; Narration: sender orders the guard to release the prisoner
     String narration = "*" + senderName + " raises a hand, halting " + guardName + ". " + prisonerName + " is released from restraints.*"
     SkyrimNetApi.DirectNarration(narration, prisoner, sender)
 
-    ; Persistent event
     String eventMsg = senderName + " ordered " + prisonerName + " released."
     SkyrimNetApi.RegisterPersistentEvent(eventMsg, prisoner, sender)
 
@@ -259,11 +188,8 @@ Bool Function OrderRelease_Execute(Actor akSender)
 EndFunction
 
 Bool Function OrderJailed_Execute(Actor akSender)
-    {Sender orders the prisoner taken to jail. Called by SkyrimNet when the
-     sender decides the prisoner deserves imprisonment.
-     akSender: The NPC giving the jail order (must be the dispatch sender,
-               or the guard if sender is player).
-     Returns true if the prisoner was sent to jail.}
+    {The sender sends the prisoner to jail. akSender as for
+     OrderRelease_Execute. Returns true when the order was accepted.}
 
     If !ArrestScript
         Return false
@@ -284,7 +210,7 @@ Bool Function OrderJailed_Execute(Actor akSender)
     Actor prisoner = ArrestScript.GetDispatchTarget()
     Actor guard    = ArrestScript.GetDispatchGuard()
 
-    ; If the player is the dispatch sender, accept the guard as the caller acting on the player's behalf
+    ; On a player-sent dispatch the guard speaks for the player.
     Bool validCaller = (akSender == sender)
     If !validCaller && sender == Game.GetPlayer() && akSender == guard
         validCaller = true
@@ -308,11 +234,9 @@ Bool Function OrderJailed_Execute(Actor akSender)
 
     ArrestScript.DebugMsg(senderName + " ordered " + prisonerName + " taken to jail")
 
-    ; Narration: sender orders the guard to take the prisoner away
     String narration = "*" + senderName + " shakes their head. " + guardName + " tightens their grip on " + prisonerName + " and begins leading them away.*"
     SkyrimNetApi.DirectNarration(narration, prisoner, sender)
 
-    ; Persistent event
     String eventMsg = senderName + " ordered " + prisonerName + " taken to jail."
     SkyrimNetApi.RegisterPersistentEvent(eventMsg, prisoner, sender)
 
@@ -322,14 +246,13 @@ Bool Function OrderJailed_Execute(Actor akSender)
     Return true
 EndFunction
 
-; =============================================================================
-; TERMINAL CLEANUP — release path or jail-escort hand-off
-; =============================================================================
+; --- Terminal cleanup ---
 
 Function EndJudgment(Bool released)
-    {End the judgment hold and either release the prisoner or escort them to jail.
-     released: true = free the prisoner, false = escort to jail.
-     Cleans up dispatch state either way.}
+    {Ends the hold: released = true frees the prisoner, false hands them to
+     the jail escort (jails them at once while a same-cell arrest holds the
+     escort slots; releases them when neither can start). Clears the dispatch
+     state, persisted and script-side, either way.}
 
     If !ArrestScript
         Return
@@ -338,25 +261,21 @@ Function EndJudgment(Bool released)
     Actor prisoner = ArrestScript.GetDispatchTarget()
     Actor guard    = ArrestScript.GetDispatchGuard()
     Actor sender   = ArrestScript.GetDispatchSender()
+    String prisonerName = ""
+    If prisoner
+        prisonerName = prisoner.GetDisplayName()
+    EndIf
 
-    ; Clear the "judgment" busy flag set in StartJudgment so the busy target
-    ; is eligible for normal SkyrimNet behaviour again. ResolveBusyTarget
-    ; returns the sender for NPC-initiated dispatches and the guard for
-    ; player-initiated dispatches — both must be cleared symmetrically.
-    ;
-    ; Belt-and-suspenders: ClearDispatchState below also calls ResetState
-    ; (which clears via ResolveBusyTarget) before nulling sender/guard, so
-    ; the same flag gets cleared twice. ClearActorBusy is idempotent.
+    ; Clear the busy flag StartJudgment set. ClearDispatchState's ResetState
+    ; clears it again; ClearActorBusy is idempotent.
     Actor busyTarget = ResolveBusyTarget()
     If busyTarget != None
         SeverActionsNative.Native_SkyrimNet_ClearActorBusy(busyTarget)
     EndIf
 
     If released
-        ; --- RELEASE: Undo all restraint and clean up ---
-        ArrestScript.DebugMsg("Judgment ended: releasing " + prisoner.GetDisplayName())
+        ArrestScript.DebugMsg("Judgment ended: releasing " + prisonerName)
 
-        ; Strip every arrest package, clear linked refs, restore dialogue.
         If guard != None
             ArrestScript.RemoveAllArrestPackages(guard)
             ArrestScript.ClearAllDispatchLinkedRefs(guard)
@@ -364,56 +283,45 @@ Function EndJudgment(Bool released)
             guard.EvaluatePackage()
         EndIf
 
-        ; Release the prisoner (removes factions, cuffs, linked ref, restores AVs)
         If prisoner != None
             ArrestScript.ReleasePrisoner(prisoner)
         EndIf
 
-        ; Clear every reference alias the arrest / dispatch FSM uses.
-        ArrestScript.ClearAllArrestAliases()
+        ArrestScript.ClearDispatchExitAliases()
 
-        ; PHANTOM-ARREST FIX (2026-08-04 user report): ClearDispatchState only
-        ; resets the SCRIPT variables - the cosaved dispatch context (native
-        ; ARDC record: per-guard entry + active-guard singleton) is cleared
-        ; ONLY by ClearPersistedDispatchState, which CompleteDispatch and
-        ; CancelDispatch call and every EndJudgment branch forgot. A dispatch
-        ; that ended through a judgment left active=<guard> in EVERY
-        ; subsequent cosave, so every load rebuilt Phase 6 from it, the
-        ; resumed timer timed out, and a phantom judgment re-ran - forever,
-        ; any number of saves later. Must run BEFORE ClearDispatchState,
-        ; which nulls the DispatchGuard it needs.
+        ; ClearDispatchState resets only the script variables; the cosaved
+        ; dispatch context (ARDC: per-guard entry + active-guard singleton) is
+        ; cleared only by ClearPersistedDispatchState. Skipping it leaves
+        ; active=<guard> in every later cosave, and each load rebuilds phase 6
+        ; and re-runs a phantom judgment.
+        ; Must run BEFORE ClearDispatchState, which nulls the DispatchGuard it needs.
         ArrestScript.ClearPersistedDispatchState()
         ArrestScript.ClearDispatchState()
     Else
-        ; --- JAIL: Hand off to standard escort pipeline ---
-        ArrestScript.DebugMsg("Judgment ended: sending " + prisoner.GetDisplayName() + " to jail")
+        ; Jail: hand off to the standard escort.
+        ArrestScript.DebugMsg("Judgment ended: sending " + prisonerName + " to jail")
 
-        ; Strip every arrest package and clear the follow LinkedRef. StartEscortPhase
-        ; below will re-apply the escort package the guard actually needs next.
+        ; StartEscortPhase re-applies the escort package the guard needs.
         If guard != None
             ArrestScript.RemoveAllArrestPackages(guard)
             SeverActionsNative.LinkedRef_Clear(guard, ArrestScript.SeverActions_FollowTargetKW)
         EndIf
 
-        ; Determine jail destination
         ObjectReference jailMarker = ArrestScript.GetJailMarkerForGuard(guard)
         String jailName = ArrestScript.GetJailNameForGuard(guard)
 
-        If jailMarker != None && guard != None && prisoner != None
-            ; Set up standard arrest state for escort via the cross-script accessor
-            ArrestScript.SetCurrentArrestSlots(guard, prisoner, jailMarker, jailName)
-
-            ; See the release branch above - the persisted context must go too,
-            ; and must go first.
+        If jailMarker != None && guard != None && prisoner != None && ArrestScript.IsSameCellArrestActive()
+            ; The escort would take a running same-cell arrest's slots: jail straight away instead.
+            ArrestScript.JailDispatchPrisonerNow(guard, prisoner, jailMarker, jailName)
+        ElseIf jailMarker != None && guard != None && prisoner != None
+            ; Persisted context first (see the release branch).
             ArrestScript.ClearPersistedDispatchState()
             ArrestScript.ClearDispatchState()
 
-            ; Clear every reference alias before escort re-fills them.
+            ; The escort re-fills the aliases.
             ArrestScript.ClearAllArrestAliases()
 
-            ; Apply/re-apply restraints for jail escort
             If prisoner != None
-                ; Equip cuffs (add if not already in inventory)
                 If ArrestScript.SeverActions_PrisonerCuffs
                     If !prisoner.GetItemCount(ArrestScript.SeverActions_PrisonerCuffs)
                         prisoner.AddItem(ArrestScript.SeverActions_PrisonerCuffs, 1, true)
@@ -421,16 +329,14 @@ Function EndJudgment(Bool released)
                     prisoner.EquipItem(ArrestScript.SeverActions_PrisonerCuffs, true, true)
                 EndIf
 
-                ; Play bound idle
                 If ArrestScript.OffsetBoundStandingStart
                     prisoner.PlayIdle(ArrestScript.OffsetBoundStandingStart)
                 EndIf
 
-                ; Break animation lock so follow package works
+                ; Break the animation lock so the follow package can run.
                 Debug.SendAnimationEvent(prisoner, "IdleForceDefaultState")
                 Utility.Wait(0.1)
 
-                ; Ensure prisoner is following the guard for escort
                 SeverActionsNative.LinkedRef_Set(prisoner, guard, ArrestScript.SeverActions_FollowTargetKW)
                 Utility.Wait(0.2)
                 If ArrestScript.SeverActions_FollowGuard_Prisoner
@@ -439,10 +345,16 @@ Function EndJudgment(Bool released)
                 EndIf
             EndIf
 
-            ; Start standard escort phase
-            ArrestScript.StartEscortPhase()
+            ; The slots are claimed only now: the waits above let a same-cell arrest start, and
+            ; its slots are then not ours to take.
+            If ArrestScript.IsSameCellArrestActive()
+                ArrestScript.JailPrisonerAt(guard, prisoner, jailMarker, jailName, false)
+            Else
+                ArrestScript.SetCurrentArrestSlots(guard, prisoner, jailMarker, jailName)
+                ArrestScript.StartEscortPhase()
+            EndIf
         Else
-            ; Fallback: release if we can't find jail
+            ; No jail marker, or the guard or prisoner is gone: release instead.
             ArrestScript.DebugMsg("ERROR: Could not determine jail for guard, releasing prisoner")
             If prisoner != None
                 ArrestScript.ReleasePrisoner(prisoner)
@@ -455,10 +367,9 @@ Function EndJudgment(Bool released)
                 guard.EvaluatePackage()
             EndIf
 
-            ; Clear every reference alias the arrest / dispatch FSM uses.
-            ArrestScript.ClearAllArrestAliases()
+            ArrestScript.ClearDispatchExitAliases()
 
-            ; See the release branch above.
+            ; Persisted context first (see the release branch).
             ArrestScript.ClearPersistedDispatchState()
             ArrestScript.ClearDispatchState()
         EndIf

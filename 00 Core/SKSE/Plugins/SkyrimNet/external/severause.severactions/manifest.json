@@ -1,0 +1,16 @@
+{
+  "type": "bundle",
+  "id": "severause.severactions",
+  "author": "severause",
+  "version": "4.0.0",
+  "min_skyrimnet_version": "0.24.0",
+  "title": "SeverActions",
+  "tagline": "Action, prompt and trigger pack for SkyrimNet NPCs",
+  "description": "SeverActions expands SkyrimNet with LLM-driven actions (companion control, outfits, arrest, economy and debt, crafting, travel, combat and brawl, enterprises, camping and more), context-awareness prompts (merchant, familiarity and reputation, survival, off-screen life), and event triggers. Actions are grouped into drill-down categories; prompts add situational context for NPC dialogue.",
+  "icon": "🌊",
+  "tags": ["actions", "prompts", "triggers", "npc"],
+  "nsfw": true,
+  "mods": [
+    { "name": "SeverActions", "file": "SeverActions.esp", "required": true }
+  ]
+}

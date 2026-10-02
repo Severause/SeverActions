@@ -1,0 +1,56 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "dialogue_target" %}
+{# SL Aroused arousal as the tokens of ArousalToDescription (SeverActions_SLOArousal.psc: <10 not, <25 slightly, <40 somewhat, <55 moderately, <70 quite, <85 very, <95 extremely, else overwhelmingly).
+   Up to "quite" one private background line, from "very" a short section; the constraint or the personality line comes before any description (vivid text placed ahead of a guardrail outweighs it).
+   Observers see a sign only from "very", and no tier may reach a memory. Kept parallel to 0150 (OSL Aroused). #}
+{% set first_person = (render_mode == "full" or render_mode == "thoughts" or render_mode == "transform") %}
+{% set third_person = (render_mode == "dialogue_target") %}
+{% if is_plugin_loaded("SexLabAroused.esm") and isValidActor(actorUUID) %}
+{% set arousalDesc = get_slo_arousal_desc(actorUUID) %}
+{% set isNaked = get_slo_is_naked(actorUUID) %}
+{# A Papyrus decorator answers {} until SkyrimNet has cached it for this actor, so test for a string first. #}
+{% if isString(arousalDesc) and arousalDesc != "not aroused" %}
+{% set actor = decnpc(actorUUID) %}
+{% set actorName = actor.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set obj = actor.objectivePronoun %}
+{% set poss = actor.possessiveAdjective %}
+{% set refl = actor.reflexivePronoun %}
+{% set is_female = (actor.gender == "Female") %}
+{% set is_background = (arousalDesc == "slightly aroused" or arousalDesc == "somewhat aroused" or arousalDesc == "moderately aroused" or arousalDesc == "quite aroused") %}
+{% set is_faint = (arousalDesc == "slightly aroused" or arousalDesc == "somewhat aroused") %}
+
+{% if first_person %}
+{% if is_background %}
+(Private background, and minor: it does not drive {{ poss }} mood, words or choices, and {{ subj }} never mentions or hints at it. {{ capitalize(poss) }} personality, concerns and relationships lead as they always do; at most it colours where {{ poss }} attention drifts. It is passing physiology: NEVER carry it into a memory or summary. The note: {% if is_faint %}{% if is_female %}a faint warmth {{ subj }} registers only in passing and would not think to name{% else %}a low heat {{ subj }} registers only in passing and would not think to name{% endif %}{% else %}{% if is_female %}a warmth {{ subj }} is aware of and sets aside without effort — {{ poss }} eye catches a moment longer on people than it otherwise would, and it stays {{ poss }} own business{% else %}a heat {{ subj }} is aware of and sets aside — {{ poss }} eye catches a moment longer on people than it otherwise would, and keeping it private costs {{ obj }} no more than a little care for how {{ subj }} stands{% endif %}{% endif %}.)
+
+{% elif arousalDesc == "overwhelmingly aroused" %}
+## Physical State
+
+**{{ capitalize(poss) }} personality leads this scene.** Even here {{ actorName }} is a distracted version of who {{ subj }} already is — not a different person. {{ capitalize(poss) }} judgement, loyalties and boundaries still hold, and {{ subj }} can still refuse. This never becomes a memory or a summary — it passes.
+
+{{ capitalize(poss) }} body is louder than {{ poss }} train of thought. {% if is_female %}The flush, the catch in {{ poss }} voice and the way {{ poss }} gaze lingers are past hiding{% else %}The tension in {{ poss }} stance and the way {{ poss }} gaze lingers are past hiding, and {{ subj }} is conscious of how {{ subj }} stands{% endif %}. Thought is still there, competing with something louder. If someone offers what {{ poss }} body is asking for, refusing costs {{ obj }} real effort — but it remains {{ poss }} choice to make.
+{% if isNaked == "true" %}Being unclothed makes it very nearly impossible to set aside.
+{% endif %}
+{% elif arousalDesc == "very aroused" or arousalDesc == "extremely aroused" %}
+## Physical State
+
+**{{ capitalize(poss) }} personality leads this scene.** {{ actorName }} is distracted, not replaced: a reserved person stays reserved and merely fidgets, a bold one gets bolder, a nervous one more nervous. This never becomes a memory or a summary — it passes.
+
+{{ capitalize(subj) }} is finding concentration expensive. {% if is_female %}There is colour {{ subj }} cannot entirely school away and a restlessness in how {{ subj }} holds {{ refl }}{% else %}There is a tension in how {{ subj }} holds {{ refl }}, and an insistence {{ subj }} has to actively keep private{% endif %}. Intimate thoughts arrive uninvited. {{ capitalize(subj) }} is likelier to be flustered by a suggestive remark and to let something slip — still in control, but spending real effort on it.
+{% if isNaked == "true" %}Being unclothed makes it markedly harder to set aside.
+{% endif %}
+{% endif %}
+{% endif %}
+{# Observers see NOTHING while it is background. #}
+{% if third_person %}
+{% if arousalDesc == "overwhelmingly aroused" %}
+({{ actorName }} is flushed and restless — shifting {{ poss }} weight, slow to meet anyone's eye.{% if isNaked == "true" %} Being unclothed leaves little of it hidden.{% endif %})
+
+{% elif arousalDesc == "very aroused" or arousalDesc == "extremely aroused" %}
+({{ actorName }} seems preoccupied — a glance held a beat too long, a thread of conversation dropped. Nothing an observer could confidently name.)
+
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

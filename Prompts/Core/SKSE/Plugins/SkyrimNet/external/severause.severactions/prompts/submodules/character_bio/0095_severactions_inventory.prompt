@@ -1,0 +1,33 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# What a non-player character carries besides gold and worn gear (get_inventory); the player's pack is 0096. #}
+{% if not is_player(actorUUID) %}
+{% set actor_inventory = get_inventory(actorUUID) %}
+{% set worn_equipment = get_worn_equipment(actorUUID) %}
+{% set worn_item_names = [] %}
+{% for slot, item_info in worn_equipment %}
+{% if item_info %}
+{% set worn_item_names = append(worn_item_names, item_info.name) %}
+{% endif %}
+{% endfor %}
+{# get_inventory answers {"error": ...} for an actor it cannot resolve: say nothing then, never "carries nothing". #}
+{% if length(actor_inventory) > 0 and not existsIn(actor_inventory, "error") %}
+{% set carried_ids = [] %}
+{% for item_id, item_info in actor_inventory %}
+{% if item_info.name and length(item_info.name) > 0 and item_info.type != "gold" and not (item_info.name in worn_item_names) %}
+{% set carried_ids = append(carried_ids, item_id) %}
+{% endif %}
+{% endfor %}
+{% if length(carried_ids) > 0 %}
+## {{ decnpc(actorUUID).name }}'s Inventory
+What {{ decnpc(actorUUID).name }} carries besides their gold and the gear they wear; they have nothing else on them.
+{% for item_id, item_info in actor_inventory %}
+{% if item_id in carried_ids %}
+- {{ item_info.name }}{% if item_info.count > 1 %} x{{ item_info.count }}{% endif %}
+{% endif %}
+{% endfor %}
+{% else %}
+{{ decnpc(actorUUID).name }} carries nothing besides their gold and the gear they wear.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

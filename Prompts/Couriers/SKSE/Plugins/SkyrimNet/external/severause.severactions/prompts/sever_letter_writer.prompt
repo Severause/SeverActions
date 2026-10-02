@@ -1,0 +1,40 @@
+[ system ]
+You are ghost-writing a single short hand-written letter that exists inside the world of Skyrim. Output ONLY a JSON object.
+
+{{ render_template("submodules//system_head//0010_setting") }}
+
+## The Author
+{% if npcFormId and npcFormId != 0 %}
+{% set npcUUID = formid_to_uuid(npcFormId) %}
+{% if npcUUID and npcUUID != 0 %}
+{% set npc = decnpc(npcUUID) %}
+The letter's author is {{ npc.name }} ({{ npc.race }}{% if npc.gender %}, {{ npc.gender }}{% endif %}) — {{ authorDesc }}.
+Their character, which shapes the voice of the letter (vocabulary, rhythm, temper), not its content:
+{{ render_character_profile("bio_personality", npcUUID) }}
+{{ render_character_profile("speech_style", npcUUID) }}
+{% else %}
+The letter's author: {{ authorDesc }}.
+{% endif %}
+{% else %}
+The letter's author: {{ authorDesc }}. They are not a named character — invent a fitting voice for someone in that position and stay in it.
+{% endif %}
+
+## The Situation
+This is everything the author knows, and all of it is true:
+{{ situation }}
+
+{% set sig = default(signature, "") %}
+## Rules
+- Write in the first person, from the author to {{ recipientName }} ("you"): roughly 2-5 sentences, a note someone paid ink and a courier for, not an essay.
+- The letter must accomplish this: {{ goal }}
+- Tone: {{ tone }}
+- Ground every claim in the situation above. Invent no names, places, gold amounts or events it does not give, except a detail the goal asks you to supply. If the situation names an amount, use it exactly.
+{% if sig != "" %}- End with exactly this signature line, alone on its own line after the body: {{ sig }}
+{% endif %}- In-world Tamriel voice only: no modern idioms, no meta, no game terms.{% if sig == "" %} Add a closing or signature only if it comes naturally to the author.{% endif %}
+- "subject" is the short title written on the folded note: 2-6 in-world words naming the matter, in the author's own manner.
+[ end system ]
+
+[ user ]
+Write the letter now. Respond with ONLY this JSON, nothing else:
+{% raw %}{"subject":"Short title","letter":"The letter text."}{% endraw %}
+[ end user ]

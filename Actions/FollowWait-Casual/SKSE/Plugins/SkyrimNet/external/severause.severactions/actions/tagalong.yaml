@@ -1,0 +1,14 @@
+customCategory: sa_tagalong
+name: TagAlong
+description: "Category: the speaker walks along behind the player for a while without joining as a companion, agreeing in this line to come along now (to the inn, the ruin, the next town); or stops tagging along and goes back to their own business. Only for what happens in this line; 'maybe later' is not. Joining for the long road is Companionship, and so is telling someone already tagging along to wait at this spot or follow again. Going ahead to a place to wait for the player is Journeys."
+enabled: true
+
+eligibilityRules:
+  - conditions:
+      # A bound captive cannot act (see the is_kidnap_victim bullet in CLAUDE.md).
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

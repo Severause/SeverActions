@@ -1,0 +1,100 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# The judgment hold (DispatchPhase 6, reached only by an arrest dispatch with a sender): for the sender, the
+   escorting guard (who gives the verdict when the player is the sender) and the accused. Yields to 0276. Action
+   rules render only where an action can be chosen (_actionsOffered: NPC dialogue and the drill-down). #}
+{% set _actionsOffered = render_mode == "action" or (render_mode == "full" and default(responseTarget.type, "none") != "none") %}
+{% if player and player.UUID and actorUUID != player.UUID %}
+{% set dispatchPhase = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchPhase") %}
+{% set _inPersuasionMode = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "InPersuasionMode") %}
+{% set _confrontingGuard = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "ConfrontingGuard") %}
+{% set _suppressForPersuasion = false %}
+{% if _inPersuasionMode and _confrontingGuard and _confrontingGuard.uuid and _confrontingGuard.uuid == actorUUID %}
+{% set _suppressForPersuasion = true %}
+{% endif %}
+{% if dispatchPhase == 6 and not _suppressForPersuasion %}
+{% set dispatchSender = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchSender") %}
+{% set dispatchTarget = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchTarget") %}
+{% set dispatchGuard = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchGuard") %}
+{% set isSender = false %}
+{% if dispatchSender and dispatchSender.uuid %}
+{% set isSender = (dispatchSender.uuid == actorUUID) %}
+{% endif %}
+{% set isAccused = false %}
+{% if dispatchTarget and dispatchTarget.uuid %}
+{% set isAccused = (dispatchTarget.uuid == actorUUID) %}
+{% endif %}
+{% set isDispatchGuard = false %}
+{% if dispatchGuard and dispatchGuard.uuid %}
+{% set isDispatchGuard = (dispatchGuard.uuid == actorUUID) %}
+{% endif %}
+{% set senderIsPlayer = false %}
+{% if dispatchSender and dispatchSender.uuid %}
+{% set senderIsPlayer = (dispatchSender.uuid == player.UUID) %}
+{% endif %}
+{% if isSender %}
+{% if actorUUID and actorUUID != 0 and dispatchTarget and dispatchTarget.uuid and dispatchTarget.uuid != 0 and dispatchGuard and dispatchGuard.uuid and dispatchGuard.uuid != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set accusedData = decnpc(dispatchTarget.uuid) %}
+{% set accusedName = accusedData.name %}
+{% set guardData = decnpc(dispatchGuard.uuid) %}
+{% set guardName = guardData.name %}
+{% set subj = actor.subjectivePronoun %}
+## Judgment of {{ accusedName }}
+{{ accusedName }} was arrested on {{ actor.name }}'s word. {{ guardName }} has tracked them down and brought them before {{ actor.name }} in restraints, and {{ accusedName }} has been given a chance to plead their case. No home was searched: the case rests on the original accusation and on what {{ accusedName }} says now.
+{% if is_guard_or_authority(actorUUID) != "" %}
+- {{ actor.name }} holds the power of judgment here: {{ subj }} hears {{ accusedName }} out, then decides their fate.
+{% if _actionsOffered %}
+- Once {{ subj }} has decided, select the **Arrest** action category, then **OrderRelease** to show mercy and set {{ accusedName }} free, or **OrderJailed** to have them taken to jail. While still listening, just talk; the verdict is not due on the first line.
+- Until the verdict, no other action category.
+- The line that gives the verdict explains the ruling, in character.
+{% endif %}
+
+**What weighs on the verdict:**
+- The plea: genuine remorse, a convincing defense, or excuses.
+- {{ actor.name }}'s own nature: known for justice, for mercy, or for severity.
+- {{ accusedName }}'s standing: a valued citizen or a troublemaker.
+- How serious the charge is, and whether mercy or harshness serves {{ actor.name }}'s authority and interests, especially before witnesses.
+{% else %}
+- {{ actor.name }} asked for this arrest but has no power to pass sentence: {{ subj }} may accuse, forgive or gloat, and when the hearing ends {{ guardName }} takes {{ accusedName }} to jail.
+{% endif %}
+{% endif %}
+{% elif isDispatchGuard and senderIsPlayer %}
+{% if actorUUID and actorUUID != 0 and dispatchTarget and dispatchTarget.uuid and dispatchTarget.uuid != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set accusedData = decnpc(dispatchTarget.uuid) %}
+{% set accusedName = accusedData.name %}
+{% set playerName = player.name %}
+## Judgment of {{ accusedName }}
+{{ actor.name }} arrested {{ accusedName }} on {{ playerName }}'s orders and has brought them before {{ playerName }} for judgment. {{ accusedName }} stands restrained, awaiting their fate.
+- {{ actor.name }} holds {{ accusedName }}, addresses {{ playerName }} with respect, and awaits {{ playerName }}'s word.
+{% if _actionsOffered %}
+- When {{ playerName }} has given their decision, select the **Arrest** action category, then **OrderRelease** if {{ playerName }} shows mercy, or **OrderJailed** if {{ playerName }} wants {{ accusedName }} punished.
+- Until then, no other action category.
+{% endif %}
+- {{ actor.name }} answers in character, acknowledging {{ playerName }}'s authority and carrying out the decision.
+{% endif %}
+{% elif isDispatchGuard %}
+{% if actorUUID and actorUUID != 0 and dispatchTarget and dispatchTarget.uuid and dispatchTarget.uuid != 0 and dispatchSender and dispatchSender.uuid and dispatchSender.uuid != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set accusedName = decnpc(dispatchTarget.uuid).name %}
+{% set senderName = decnpc(dispatchSender.uuid).name %}
+## Judgment of {{ accusedName }}
+{{ actor.name }} has brought {{ accusedName }} before {{ senderName }} in restraints and holds them while {{ senderName }} hears them out.
+- {{ actor.name }} keeps hold of the prisoner and carries out {{ senderName }}'s ruling; the verdict is not {{ actor.name }}'s to give{% if _actionsOffered %}, so no action category until it comes{% endif %}.
+{% endif %}
+{% elif isAccused %}
+{% if actorUUID and actorUUID != 0 and dispatchSender and dispatchSender.uuid and dispatchSender.uuid != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set senderData = decnpc(dispatchSender.uuid) %}
+{% set senderName = senderData.name %}
+{% set poss = actor.possessiveAdjective %}
+## Pleading for Freedom
+{{ actor.name }} has been seized by a guard on {{ senderName }}'s orders and is held in restraints. {{ senderName }} is giving {{ actor.name }} one chance to plead {{ poss }} case before deciding whether {{ actor.name }} goes to jail.
+- {{ actor.name }} speaks directly to {{ senderName }}, with respect or defiance as {{ poss }} nature dictates: humble, defiant, desperate or cunning.
+- Time is short; {{ actor.name }} makes {{ poss }} case clearly.
+- {{ actor.name }} can only speak now{% if _actionsOffered %}; no action category of any kind{% endif %}.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

@@ -1,0 +1,36 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" or render_mode == "dialogue_target" %}
+{# The Final Audit as the fifteen collectors know it: the state as facts only. Conduct comes from tax_audit_script, which gives the General, his two Legates and the twelve patrol soldiers different orders. #}
+{% if isValidActor(actorUUID) %}
+{% set is_collector = is_tax_collector(actorUUID) %}
+{% if is_collector != "" %}
+{% set audit_state = tax_audit_state(actorUUID) %}
+## The Final Audit
+{% if audit_state == "casebuilding" %}
+{% if contains(tax_audit_pending(actorUUID), "court") %}
+General Cassius Vero and his two Legates are quartered at Dragonsreach in Whiterun as guests of the Jarl of Whiterun's court until the detail removes to the Blue Palace in Solitude, building the Treasury's case against {{ player.name }}'s enterprises: interviewing stewards, copying ledgers, speaking with the court about the return of proper Imperial taxation. The twelve seconded soldiers patrol their holds. The writ is not yet served, and no figure has been named.
+{% else %}
+General Cassius Vero and his two Legates are quartered at the Blue Palace in Solitude as guests of the Jarl of Haafingar's court, building the Treasury's case against {{ player.name }}'s enterprises: interviewing stewards, copying ledgers, speaking with the court about the return of proper Imperial taxation. The twelve seconded soldiers patrol their holds. The writ is not yet served, and no figure has been named.
+{% endif %}
+{% elif audit_state == "approaching" %}
+The writ is sealed. General Cassius Vero is on his way to serve it on {{ player.name }} face to face.
+{% elif audit_state == "demanding" %}
+The writ has been served. The Imperial Treasury has assessed {{ tax_demand(actorUUID) }} septims in back-taxes against {{ player.name }}: 40% of the untaxed coin they carried when the case was opened. The assessment is entered in the ledger, and hiding the gold since changes nothing. The sum is due in full, now: no part payment, no instalments, no bargaining over the figure.
+{% elif audit_state == "paid" %}
+{{ player.name }} paid the Treasury's assessment in full. The debt is closed for good, and the Empire remembers compliance as reliably as it remembers debt.
+{% elif audit_state == "dead" %}
+General Cassius Vero is dead, killed rather than paid, and the writ died with him. What is left of the detail is no longer collecting, and it carries the loss of its commander as much as the failure of the audit.
+{% elif audit_state == "refused" %}
+{{ player.name }} refused the Emperor's due and the audit closed in blood. There is nothing left to collect or discuss: {{ player.name }} is an enemy of the Imperial Treasury.
+{% endif %}
+{% if render_mode != "dialogue_target" %}
+{% set audit_orders = tax_audit_script(actorUUID) %}
+{% if audit_orders != "" %}
+{{ audit_orders }}
+{% endif %}
+{% endif %}
+- Everything said in front of the detail goes into the record and may be quoted back, courteously, at the least convenient moment.
+- {{ decnpc(actorUUID).name }} serves the Empire alone: they never follow {{ player.name }}, join them or take orders from them.{% if audit_state != "dead" and audit_state != "refused" %}
+- The detail answers to General Cassius Vero and the Treasury behind him: the two Legates command under him, and the twelve seconded soldiers stand under the same writ.{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

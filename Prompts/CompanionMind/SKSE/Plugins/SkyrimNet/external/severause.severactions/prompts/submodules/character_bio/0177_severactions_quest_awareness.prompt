@@ -1,0 +1,13 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" %}
+{# Quests this companion saw at the player's side: quest_awareness's lines, "" without a record (records are made only for
+   rostered followers, so no follower test). The decorator returns the body; this file owns the heading. Ships with that DLL. #}
+{% if actorUUID and actorUUID != 0 %}
+{% set quest_ctx = quest_awareness(actorUUID) %}
+{% if quest_ctx != "" %}
+## Quests You Witnessed
+You were there with {{ player.name }} when these unfolded:
+{{ quest_ctx }}
+Speak of these as things you saw with your own eyes. Let them come up when they fit the conversation rather than volunteering them.
+{% endif %}
+{% endif %}
+{% endif %}

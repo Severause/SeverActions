@@ -1,0 +1,61 @@
+customCategory: sa_captives
+name: DemandRansom
+description: "Use when {{ player.name }} decides to ransom a held captive and wants the demand sent now. Word goes to the captive's home hold; within a day or two a courier brings the answer: gold for {{ player.name }}, or a refusal that sends armed searchers after the captive. Once per captivity, and only for someone abducted; a person held openly fetches no ransom. Not for idle talk of what they might be worth."
+questEditorId: SeverActions
+scriptName: SeverActions_Kidnap
+executionFunctionName: DemandRansom
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: the companion sending the demand
+  - type: dynamic
+    name: targetName
+    description: "the captive's name, approximate is fine; leave empty when only one captive is held"
+    optional: true
+    default: ""
+  - type: dynamic
+    name: gold
+    description: "gold to demand, only if the player named a figure; leave empty to let the captor set a fair price (asking far above it makes a refusal likelier)"
+    optional: true
+    default: 0
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      # Opt-in feature toggle. Custom decorator — STRING compare, never == true.
+      - decoratorName: "sever_kidnap_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_sever_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives (the self-release hole class).
+      # String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

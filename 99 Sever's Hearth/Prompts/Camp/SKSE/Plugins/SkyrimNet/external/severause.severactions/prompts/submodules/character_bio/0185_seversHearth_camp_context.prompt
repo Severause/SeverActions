@@ -1,0 +1,19 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" %}
+{# The player's camps, for their companions only: camp_base (the base; the first camp pitched becomes it) and current_camp (a
+   field camp), both from SeversHearthNative, "" when that camp is not up. The "x and" half of each test catches null (the
+   Hearth DLL not registering them); deploy this prompt with that DLL. #}
+{% if is_follower(actorUUID) or is_sever_follower(actorUUID) != "" %}
+{% set base_ctx = camp_base(actorUUID) %}
+{% set camp_ctx = current_camp(actorUUID) %}
+{% set has_base = base_ctx and base_ctx != "" %}
+{% set has_camp = camp_ctx and camp_ctx != "" %}
+{% if has_base or has_camp %}
+## Camp
+{% if has_base %}- {{ base_ctx }}
+{% endif %}
+{% if has_camp %}- {{ camp_ctx }}
+{% endif %}
+- You and {{ player.name }} share {% if has_base and has_camp %}these camps{% else %}this camp{% endif %}: somewhere to rest, eat and warm up by the fire. Keep to what anyone there could see; do not invent furnishings or who built what. Bring it up when it fits the conversation, not in every line.
+{% endif %}
+{% endif %}
+{% endif %}

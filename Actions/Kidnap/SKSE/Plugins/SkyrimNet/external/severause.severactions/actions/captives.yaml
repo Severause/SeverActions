@@ -1,0 +1,15 @@
+customCategory: sa_captives
+name: Captives
+description: "Category: seizing people and handling the captives the speaker's side holds, not a lawful arrest: bind someone here and lead them away; abduct a named person to a place; or, for a captive already held, free them, loosen their bonds, move them, tie them to furniture, question them, or send a ransom demand. Only when it happens now, on an order or the speaker's own decision in this line; threats, jokes and plans for later are talk. Arresting someone for the jail is Arrest."
+enabled: true
+
+# No kidnap/restrain toggle gate here: ReleaseCaptive must stay reachable while any captive is held.
+eligibilityRules:
+  - conditions:
+      # A bound captive cannot act (see the is_kidnap_victim bullet in CLAUDE.md).
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

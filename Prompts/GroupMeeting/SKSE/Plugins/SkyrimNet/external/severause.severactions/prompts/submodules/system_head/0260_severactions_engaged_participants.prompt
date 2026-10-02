@@ -1,0 +1,52 @@
+{# The speaker's traveling party, shown to a party member: player teammates (is_follower) and ENGAGED NPCs
+   (SkyrimNet_PlayerFollowPackage), the two tags SkyrimNet's speaker selector uses; anyone in a SexLab or
+   OStim scene is listed apart. Off while the dashboard's ENGAGED tag is off. #}
+{% if npc and npc.UUID %}
+{% set _myUUID = to_number(to_string(npc.UUID)) %}
+{% if _myUUID != 0 and (is_follower(_myUUID) or is_in_package(_myUUID, "SkyrimNet_PlayerFollowPackage")) %}
+{# A missing speaker-selector setting reads as on. #}
+{% set _ss = get_speaker_selector_settings() %}
+{% set _tagEngaged = (not _ss or not existsIn(_ss, "tagEngaged")) or _ss.tagEngaged %}
+{% if _tagEngaged %}
+{% set _nearby = get_nearby_npc_list(_myUUID) %}
+{% set _party = [] %}
+{% set _occupied = [] %}
+{% for _n in _nearby %}
+{% set _nUUID = to_number(to_string(_n.UUID)) %}
+{% if _nUUID != 0 and _nUUID != _myUUID and (is_follower(_nUUID) or is_in_package(_nUUID, "SkyrimNet_PlayerFollowPackage")) %}
+{% if sever_in_scene(_nUUID) != "" %}
+{% set _occupied = append(_occupied, _n.name) %}
+{% else %}
+{% set _party = append(_party, _n.name) %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% set _playerUUID = to_number(to_string(player.UUID)) %}
+{% set _playerOccupied = _playerUUID != 0 and sever_in_scene(_playerUUID) != "" %}
+{% if length(_party) > 0 or length(_occupied) > 0 or _playerOccupied %}
+## Traveling Party
+You are traveling with {{ player.name }}{% if length(_party) == 1 %} and {{ _party.0 }}.{% else %}{% if length(_party) >= 2 %} and:
+{% for _name in _party %}
+- {{ _name }}
+{% endfor %}{% else %}.
+{% endif %}{% endif %}
+{% if length(_occupied) > 0 %}
+These party members are busy with an intimate scene right now; do not address them or draw them into the conversation until they are free:
+{% for _name in _occupied %}
+- {{ _name }}
+{% endfor %}
+{% endif %}
+{% if _playerOccupied %}
+{{ player.name }} is busy with an intimate scene right now: you can still talk with the others, but leave {{ player.name }} be until they are free.
+{% endif %}
+{% if render_mode == "full" and default(responseTarget.type, "none") != "none" %}
+Everyone here who is not busy can hear you. Speak to whoever you are actually engaging with, and use a name only when it helps (answering someone, asking them something, reacting to what they said); a quip or a remark to the group needs none, and there is no need to go round the whole party. {{ player.name }} is one of the party, not an audience: include them when it fits.
+{% if length(_party) > 0 %}
+## Your Own Voice
+Companions who travel together can start to sound alike; do not let that happen to you. Keep your own vocabulary, cadence, temper and habits of speech, especially in group talk. Do not slip into the manner of whoever spoke last or borrow another companion's pet phrases; if a line would sound right coming from one of them, find the way you would say it. The blunt stay blunt, the bookish stay precise, the sly stay sly, even when everyone agrees.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

@@ -1,0 +1,57 @@
+customCategory: sa_furniture
+name: SitOrLayDown
+description: "Use when the speaker, in this line, sits down, lies down to sleep or kneels to pray at nearby furniture, or {{ player.name }} offers them a seat and they take it. Not for talk about resting, and not mid-argument, mid-fight or while introducing themselves. The furniture must be listed under Nearby Objects."
+questEditorId: SeverActions
+scriptName: SeverActions_Furniture
+executionFunctionName: UseFurniture_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor settling in
+  - type: dynamic
+    name: furniture
+    description: "the RefID of an entry under Nearby Objects, copied exactly; never a name, a distance or a guess"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "get_furniture"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_is_traveling"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

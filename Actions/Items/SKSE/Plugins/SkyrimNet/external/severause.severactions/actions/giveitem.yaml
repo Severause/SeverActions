@@ -1,0 +1,51 @@
+customCategory: items
+name: GiveItem
+description: "Use when the speaker hands an item from their own pack (or, for a merchant, their shop stock) to someone in this line, holding it out or agreeing to a request for it: a gift, a loan, a draught pressed into a friend's hand. Not for an offer or promise for later, 'I could give you…', or selling (Economy). A courier's letter is handed over by itself; no action. If the receiver owes the speaker on an open tab, the item's value is added to it."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: GiveItem_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor parting with the item
+  - type: dynamic
+    name: recipient
+    description: "who receives it: exact name as listed in Nearby Actors, or the player's name"
+  - type: dynamic
+    name: item
+    description: "the item as named in the speaker's inventory (e.g. 'Iron Sword', 'Health Potion', 'Sweet Roll')"
+  - type: dynamic
+    name: count
+    description: "how many, a whole number, 1 or more"
+    optional: true
+    default: 1
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

@@ -1,0 +1,56 @@
+customCategory: items
+name: LootContainer
+description: "Use when the speaker decides or agrees to take things from a chest, barrel, sack, drawer or strongbox nearby (see Nearby Objects), and does it now. If nobody knows what is inside yet, SearchContainer first: 'let's see what's in there' is a search, not a loot. A locked container gets one lockpick attempt. Taking from a container that belongs to someone else is theft; if seen, the speaker gets a bounty."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: LootContainer_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor reaching in to take
+  - type: dynamic
+    name: containerName
+    description: "the container as named nearby (e.g. 'Chest', 'Barrel', 'Sack', 'End Table')"
+  - type: dynamic
+    name: itemsToTake
+    description: "what to take: 'all', 'valuables', 'gold', a category (weapons, armor, jewelry, potions, food, ingredients, books, soul gems, ammo, scrolls, gems), or a comma-separated list of item names or categories ('Iron Sword, potions')"
+    optional: true
+    default: "all"
+enabled: true
+eligibilityRules:
+  - conditions:
+      # A traveler on the road: walking to the object would take them off it.
+      - decoratorName: "sever_is_traveling"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

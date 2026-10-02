@@ -1,0 +1,68 @@
+customCategory: sa_outlawcamp
+name: RecruitLeaderlessCamp
+description: "Use when the speaker, in a camp with nobody in charge, has just agreed in this conversation to throw in with {{ player.name }} themself. It records one voice: the camp comes over once three members have agreed separately (or everyone left, if fewer stand). Once per member. Not while they are grieving, undecided, or arguing about who should lead."
+questEditorId: SeverActions
+scriptName: SeverActions_Enterprises
+executionFunctionName: RecruitLeaderlessCamp
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the surviving camp member accepting that the camp will serve {{ player.name }}
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      # Feature gate. Disabling camp takeover empties this decorator, which
+      # removes the action from the eligible list entirely — rather than
+      # leaving it offered and silently refused by the native.
+      - decoratorName: "sever_camp_takeover"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # "leaderless" = NOBODY IS IN CHARGE - the chief was killed, OR the
+      # location never designated one. One member accepting is a VOTE: the
+      # native records it and swears the camp only on the third (or on the
+      # last living member, when fewer than three still stand).
+      - decoratorName: "sever_camp_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "leaderless"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+# NO eventString. SkyrimNet registers it on DISPATCH success, never on the
+# function's return (ActionLibrary.cpp gates on result.success, which
+# QuestScriptManager sets from the Papyrus status code) - so it fired on
+# votes 1 and 2 announcing a takeover that had not happened, contradicting
+# the camp_consent_given event Papyrus raises in the same breath. Both
+# outcomes are now narrated from Papyrus, which alone knows which happened.

@@ -1,0 +1,51 @@
+customCategory: arrest
+name: PayNpcBountyToGuard
+description: "Use when {{ player.name }} pays to clear another person's bounty in this hold (a follower, a fence, anyone on the hold's wanted list) and the speaker takes the coin now. The gold comes from {{ player.name }} and the charge is wiped; the wanted person need not be here. It does not free someone already in a cell (FreeFromJail). Not for an offer to pay later, or for {{ player.name }}'s own bounty (ArrestPlayer). A bounty is settled only this way, never through Economy."
+questEditorId: SeverActions
+scriptName: SeverActions_ArrestBounty
+executionFunctionName: PayNpcBountyToGuard_Internal
+parameterMapping:
+  - type: speaker
+    name: akGuard
+    description: the guard, jarl, steward, or housecarl taking the payment
+  - type: dynamic
+    name: offenderName
+    description: "full name of the wanted person whose bounty is being paid, as it appears on the hold's wanted list"
+enabled: true
+defaultPriority: 8
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_guard_or_authority"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "hold_wanted_npcs"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

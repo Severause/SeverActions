@@ -1,0 +1,78 @@
+customCategory: sa_captives
+name: RestrainNPC
+description: "Use when the speaker, in this line, is ordered by {{ player.name }} or someone with authority over them to seize someone who is here, or decides to do it themselves; also to pick back up a prisoner left standing bound or tied to furniture. The speaker binds their hands and leads them at their heel. Never {{ player.name }} or their companions; not for threats, 'hold still' or plans. To leave them tied, TieCaptiveToFurniture; to deliver someone elsewhere, KidnapNPC; for the jail, Arrest."
+questEditorId: SeverActions
+scriptName: SeverActions_Kidnap
+executionFunctionName: RestrainNPC
+parameterMapping:
+  - type: speaker
+    name: akRestrainer
+    description: the NPC carrying out the restraint (the speaker)
+  - type: dynamic
+    name: targetName
+    description: "exact name of the person to restrain, who must be here (e.g. 'Nazeem'); never the player or the player's companions"
+enabled: true
+defaultPriority: 8
+eligibilityRules:
+  - conditions:
+      # Feature toggle (MCM / PrismaUI Settings, default ON).
+      # Custom decorator — STRING compare, "" = disabled. Never `== true`.
+      - decoratorName: "sever_restrain_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  # Deliberately NO is_sever_follower gate: any NPC can be ordered to
+  # restrain someone — a guard by their commander, a housecarl by their
+  # jarl, a companion by the player. The description scopes the social
+  # legitimacy; characters with no cause will refuse in dialogue.
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives or take new ones (the
+      # self-release hole). String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Arrest in flight (either side), judgment, escort, spell cast — the
+      # SeverActions arrest path calls SetActorBusy("arrest") on BOTH the
+      # guard and the person being arrested. Users reported each of them
+      # kicking off a restraint mid-arrest; two FSMs then fight over the same
+      # actor's packages and captured AVs. Built-in decorator, real bool.
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Already leading a prisoner? Nothing left to ask for. The store allows
+      # one captive per captor, so this action could only ever refuse - and an
+      # LLM handed an action it cannot use calls it every dialogue round
+      # (owner report 2026-09-07). Deliberately the NARROW test: a captor
+      # whose prisoner is parked (standing bound, or chained to furniture)
+      # still sees this, because since LeashCaptive was retired this is the
+      # only way to pick a captive back up.
+      - decoratorName: "has_captive_in_hand"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

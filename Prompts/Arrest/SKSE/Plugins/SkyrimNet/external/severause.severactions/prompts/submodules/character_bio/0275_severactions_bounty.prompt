@@ -1,0 +1,101 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# Everyday law awareness: an NPC's own bounty, and for a hold authority (guard, jarl, housecarl, steward) the
+   hold's cells, its wanted NPCs, the player's bounty there and debt complaints. An actor 0276-0279 are drawing
+   gets none of it. Action rules render only where an action can be chosen (_actionsOffered: NPC dialogue and the drill-down). #}
+{% set _actionsOffered = render_mode == "action" or (render_mode == "full" and default(responseTarget.type, "none") != "none") %}
+{% if player and player.UUID and actorUUID != player.UUID %}
+{% set inPersuasionMode = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "InPersuasionMode") %}
+{% set confrontingGuard = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "ConfrontingGuard") %}
+{% set dispatchPhase = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchPhase") %}
+{% set arrestState = get_script_property("SeverActions", "SeverActions_Arrest", "ArrestState") %}
+{% set hasActiveMode = false %}
+{% if inPersuasionMode and confrontingGuard and confrontingGuard.uuid == actorUUID %}
+{% set hasActiveMode = true %}
+{% endif %}
+{% if dispatchPhase >= 1 and dispatchPhase <= 6 %}
+{% set dGuard = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchGuard") %}
+{% set dTarget = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchTarget") %}
+{% set dSender = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchSender") %}
+{% set dHome = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchIsHomeInvestigation") %}
+{% if dGuard and dGuard.uuid == actorUUID %}
+{% set hasActiveMode = true %}
+{% endif %}
+{% if dispatchPhase >= 5 and not dHome and dTarget and dTarget.uuid == actorUUID %}
+{% set hasActiveMode = true %}
+{% endif %}
+{% if dispatchPhase == 6 and dSender and dSender.uuid == actorUUID %}
+{% set hasActiveMode = true %}
+{% endif %}
+{% endif %}
+{% if arrestState >= 1 and arrestState <= 4 %}
+{% set cGuard = get_script_property("SeverActions", "SeverActions_Arrest", "CurrentGuard") %}
+{% set cPrisoner = get_script_property("SeverActions", "SeverActions_Arrest", "CurrentPrisoner") %}
+{% if (cGuard and cGuard.uuid == actorUUID) or (cPrisoner and cPrisoner.uuid == actorUUID) %}
+{% set hasActiveMode = true %}
+{% endif %}
+{% endif %}
+{% if not hasActiveMode %}
+{% set actor = decnpc(actorUUID) %}
+{% set subj = actor.subjectivePronoun %}
+{% set ownBounty = own_bounty(actorUUID) %}
+{% if ownBounty != "" %}
+## Wanted
+{{ actor.name }} is wanted by the law: {{ ownBounty }}. {{ actor.name }} knows it: any guard who recognizes them may demand the fine or make an arrest, so they have reason to be careful around the watch.
+{% endif %}
+{% set jailRoster = hold_jail_roster(actorUUID) %}
+{% if jailRoster != "" %}
+## The Hold's Cells
+{{ jailRoster }}.
+{{ actor.name }} knows of these prisoners and, as an authority of the hold, may speak of them, their crimes, and what should become of them.
+{% endif %}
+{# sever_hold_name is "" for anyone who is not a hold authority, which gates everything below. #}
+{% set holdName = sever_hold_name(actorUUID) %}
+{% if holdName != "" %}
+{% set playerName = player.name %}
+{% set wantedNpcs = hold_wanted_npcs(actorUUID) %}
+{% if wantedNpcs != "" %}
+## Bounties in {{ holdName }}
+{{ actor.name }} knows of standing bounties in {{ holdName }} on: {{ wantedNpcs }}.
+- If one of them stands before {{ actor.name }}, {{ subj }} may confront them about the crime: demand they answer for it, pay it off, or face arrest.
+{% if is_guard_or_authority(actorUUID) != "" %}
+- If {{ playerName }} offers to pay off any of these bounties on someone's behalf, {{ actor.name }} takes the coin and clears it with the law{% if _actionsOffered %}: select the **Arrest** action category, then **PayNpcBountyToGuard** (naming the wanted person){% endif %}.
+{% if _actionsOffered %}
+- Never use the Economy category for a bounty; it does not touch the law.
+{% endif %}
+{% else %}
+- Bounties are paid to a guard, the jarl or the housecarl, not to {{ actor.name }}; if {{ playerName }} offers the coin, {{ actor.name }} points them to one.
+{% endif %}
+{% endif %}
+{% set bounty = to_number(tracked_bounty(actorUUID)) %}
+{% if bounty > 0 %}
+## Known Criminal Activity
+{{ actor.name }} knows that {{ playerName }} has a bounty of {{ bounty }} gold in {{ holdName }}.
+{% if is_guard(actorUUID) != "" %}
+As a guard of {{ holdName }}, {{ subj }} has the authority to confront {{ playerName }} over it.
+{% elif is_hold_noble(actorUUID) != "" %}
+{{ subj | capitalize }} makes no arrests in person, but can order a guard to deal with {{ playerName }}.
+{% else %}
+{{ subj | capitalize }} is no guard, but can raise it with {{ playerName }} or send for one.
+{% endif %}
+{% if bounty >= 1000 %}
+This is a serious bounty. {{ actor.name }} considers {{ playerName }} a dangerous criminal who should be arrested immediately.
+{% elif bounty >= 300 %}
+This bounty is significant enough to warrant arrest. {{ actor.name }} should demand {{ playerName }} pay the fine or face imprisonment.
+{% elif bounty >= 40 %}
+This is a minor bounty. {{ actor.name }} may demand payment or give a stern warning.
+{% else %}
+This is a trivial bounty. {{ actor.name }} might mention it but is unlikely to make a fuss.
+{% endif %}
+{% endif %}
+{# debt_complaints is player-level (not per hold); an authority hears of every complaint. #}
+{% set debtComplaints = debt_complaints(actorUUID) %}
+{% if debtComplaints != "" %}
+## Outstanding Debt Complaints
+Citizens have filed the following complaints against {{ playerName }}:
+{{ debtComplaints }}
+{{ actor.name }} can confront {{ playerName }} about these unpaid debts: demand payment, or threaten arrest if {{ playerName }} refuses to cooperate.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

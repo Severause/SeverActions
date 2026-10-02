@@ -1,0 +1,40 @@
+customCategory: camp
+name: BreakCamp
+description: "Use when the party packs up tonight's camp right now to move on, agreed or ordered in this line. Takes down the tents, fire and bedrolls (the screen fades while it happens); the company's base, if any, is not touched. Not for 'we'll break camp at dawn' or other plans, and not for leaving the camp for a while."
+questEditorId: SeversHearth
+scriptName: SeversHearth_Camp
+executionFunctionName: BreakCamp
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The actor breaking down the camp (player or companion).
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+      # current_camp is a STRING decorator: non-empty = a camp stands. Without
+      # this gate BreakCamp was offered with no camp to break (P0-14).
+      - decoratorName: "current_camp"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

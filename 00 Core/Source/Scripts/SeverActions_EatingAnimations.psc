@@ -1,20 +1,17 @@
 Scriptname SeverActions_EatingAnimations Hidden
-;{Helper script for playing eating animations from TaberuAnimation.esp (Eating Animations and Sounds)}
-;{Optional dependency - gracefully skips if mod not installed}
-;{Note: Keywords like EASkey_* are distributed at runtime by Keyword Item Distributor}
+; Eating animations from TaberuAnimation.esp (Eating Animations and Sounds), a soft dependency:
+; PlayEatingAnimation returns false without it. Its EASkey_* / EASKID_All keywords are distributed
+; at run time by Keyword Item Distributor.
 
-; ESP name for the animation mod
 String Function GetESPName() Global
     return "TaberuAnimation.esp"
 EndFunction
 
-; Check if Eating Animations mod is installed
 Bool Function IsInstalled() Global
     return Game.GetModByName(GetESPName()) != 255
 EndFunction
 
-; Main function - plays appropriate eating animation for the food item
-; Returns true if animation was played, false if skipped
+; Casts the food's eating-animation spell on akActor; true if one played.
 Bool Function PlayEatingAnimation(Actor akActor, Form foodItem) Global
     if !akActor || !foodItem
         return false
@@ -28,16 +25,13 @@ Bool Function PlayEatingAnimation(Actor akActor, Form foodItem) Global
         return false
     endif
     
-    ; Check if item has the master keyword (distributed by KID at runtime)
     if !foodItem.HasKeywordString("EASKID_All")
         return false
     endif
     
-    ; Get the animation spell based on food keywords
     Spell animSpell = GetAnimationSpell(foodItem)
     
     if animSpell
-        ; Cast the animation spell on the actor
         animSpell.RemoteCast(akActor, None, None)
         return true
     endif
@@ -45,7 +39,7 @@ Bool Function PlayEatingAnimation(Actor akActor, Form foodItem) Global
     return false
 EndFunction
 
-; Check if item is a drink (for duration calculation)
+; Drinks get the shorter duration in GetAnimationDuration.
 Bool Function IsDrinkItem(Form foodItem) Global
     if foodItem.HasKeywordString("EASkey_Ale")
         return true
@@ -87,12 +81,10 @@ Bool Function IsDrinkItem(Form foodItem) Global
     return false
 EndFunction
 
-; Get the appropriate animation spell for a food item
-; Uses EASkey_* keywords which are distributed by Keyword Item Distributor at runtime
+; The animation spell (in TaberuAnimation.esp) for the food's EASkey_* keyword, or None.
 Spell Function GetAnimationSpell(Form foodItem) Global
     String esp = GetESPName()
     
-    ; ==================== GROUP 01 ====================
     if foodItem.HasKeywordString("EASkey_Ale")
         return Game.GetFormFromFile(0x02AD41E, esp) as Spell
     elseif foodItem.HasKeywordString("EASkey_AltoWine01")
@@ -114,7 +106,6 @@ Spell Function GetAnimationSpell(Form foodItem) Global
     elseif foodItem.HasKeywordString("EASkey_BeefStew")
         return Game.GetFormFromFile(0x02AD42F, esp) as Spell
     
-    ; ==================== GROUP 02 ====================
     elseif foodItem.HasKeywordString("EASkey_BlackBriarMead")
         return Game.GetFormFromFile(0x02AD431, esp) as Spell
     elseif foodItem.HasKeywordString("EASkey_BlackBriarMeadPrivateReserve")
@@ -136,7 +127,6 @@ Spell Function GetAnimationSpell(Form foodItem) Global
     elseif foodItem.HasKeywordString("EASkey_CabbagePotatoSoup")
         return Game.GetFormFromFile(0x02AD443, esp) as Spell
     
-    ; ==================== GROUP 03 ====================
     elseif foodItem.HasKeywordString("EASkey_CabbageSoup")
         return Game.GetFormFromFile(0x02AD445, esp) as Spell
     elseif foodItem.HasKeywordString("EASkey_Carrot")
@@ -158,7 +148,6 @@ Spell Function GetAnimationSpell(Form foodItem) Global
     elseif foodItem.HasKeywordString("EASkey_Dumpling")
         return Game.GetFormFromFile(0x02AD458, esp) as Spell
     
-    ; ==================== GROUP 04 ====================
     elseif foodItem.HasKeywordString("EASkey_EidarCheeseWedge")
         return Game.GetFormFromFile(0x02AD45B, esp) as Spell
     elseif foodItem.HasKeywordString("EASkey_EidarCheeseWheel")
@@ -180,7 +169,6 @@ Spell Function GetAnimationSpell(Form foodItem) Global
     elseif foodItem.HasKeywordString("EASkey_GreenApple")
         return Game.GetFormFromFile(0x02AD46D, esp) as Spell
     
-    ; ==================== GROUP 05 ====================
     elseif foodItem.HasKeywordString("EASkey_GrilledChickenBreast")
         return Game.GetFormFromFile(0x02AD46F, esp) as Spell
     elseif foodItem.HasKeywordString("EASkey_GrilledLeeks")
@@ -202,7 +190,6 @@ Spell Function GetAnimationSpell(Form foodItem) Global
     elseif foodItem.HasKeywordString("EASkey_HorseHaunch")
         return Game.GetFormFromFile(0x02AD481, esp) as Spell
     
-    ; ==================== GROUP 06 ====================
     elseif foodItem.HasKeywordString("EASkey_HorseMeat")
         return Game.GetFormFromFile(0x02AD483, esp) as Spell
     elseif foodItem.HasKeywordString("EASkey_JazbayCrostata")
@@ -224,7 +211,6 @@ Spell Function GetAnimationSpell(Form foodItem) Global
     elseif foodItem.HasKeywordString("EASkey_MammothSnout")
         return Game.GetFormFromFile(0x02AD495, esp) as Spell
     
-    ; ==================== GROUP 07 ====================
     elseif foodItem.HasKeywordString("EASkey_MammothSteak")
         return Game.GetFormFromFile(0x02AD497, esp) as Spell
     elseif foodItem.HasKeywordString("EASkey_Matze")
@@ -246,7 +232,6 @@ Spell Function GetAnimationSpell(Form foodItem) Global
     elseif foodItem.HasKeywordString("EASkey_RabbitHaunch")
         return Game.GetFormFromFile(0x02AD4A9, esp) as Spell
     
-    ; ==================== GROUP 08 ====================
     elseif foodItem.HasKeywordString("EASkey_RawBeef")
         return Game.GetFormFromFile(0x02AD4AB, esp) as Spell
     elseif foodItem.HasKeywordString("EASkey_RawRabbitLeg")
@@ -268,7 +253,6 @@ Spell Function GetAnimationSpell(Form foodItem) Global
     elseif foodItem.HasKeywordString("EASkey_SlicedEidarCheese")
         return Game.GetFormFromFile(0x02AD4BD, esp) as Spell
     
-    ; ==================== GROUP 09 ====================
     elseif foodItem.HasKeywordString("EASkey_SlicedGoatCheese")
         return Game.GetFormFromFile(0x02AD4BF, esp) as Spell
     elseif foodItem.HasKeywordString("EASkey_SnowberryCrostata")
@@ -288,7 +272,6 @@ Spell Function GetAnimationSpell(Form foodItem) Global
     elseif foodItem.HasKeywordString("EASkey_SweetRoll")
         return Game.GetFormFromFile(0x02AD4CD, esp) as Spell
     
-    ; ==================== GROUP 10 ====================
     elseif foodItem.HasKeywordString("EASkey_Tomato")
         return Game.GetFormFromFile(0x02AD4CF, esp) as Spell
     elseif foodItem.HasKeywordString("EASkey_TomatoSoup")
@@ -309,22 +292,18 @@ Spell Function GetAnimationSpell(Form foodItem) Global
         return Game.GetFormFromFile(0x02AD4DD, esp) as Spell
     endif
     
-    ; No matching animation found
     return None
 EndFunction
 
-; Get animation duration for proper timing
+; Seconds the caller should wait for the animation: drinks 4, soups and stews 6, the rest 5.
 Float Function GetAnimationDuration(Form foodItem) Global
-    ; Drinks are slightly shorter
     if IsDrinkItem(foodItem)
         return 4.0
     endif
-    ; Soups/stews take longer
     if foodItem.HasKeywordString("EASkey_BeefStew") || foodItem.HasKeywordString("EASkey_VenisonStew") || foodItem.HasKeywordString("EASkey_HorkerStew")
         return 6.0
     elseif foodItem.HasKeywordString("EASkey_CabbageSoup") || foodItem.HasKeywordString("EASkey_TomatoSoup") || foodItem.HasKeywordString("EASkey_PotatoSoup") || foodItem.HasKeywordString("EASkey_VegetableSoup")
         return 6.0
     endif
-    ; Default eating duration
     return 5.0
 EndFunction

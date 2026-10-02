@@ -1,0 +1,20 @@
+customCategory: employment
+name: Employment
+description: "Category: the speaker working for the player as a retainer or hold steward: hire the speaker to run a venture off-screen; appoint or relieve a hold steward; pay back-wages, grant a raise or settle on a compromise; grant, refuse or forgive a loan; hear out or brush off a work grievance; hand over earnings or the hold vault; or let a retainer go. Only when one of these is settled in this exchange; open offers and plans for later are words. Money between the player and their own worker is here, not Economy. Not the speaker's job for someone else, a traveling companion (Companionship), or a whole outlaw camp (OutlawCamp)."
+enabled: true
+
+eligibilityRules:
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

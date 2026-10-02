@@ -1,0 +1,47 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# A follower's hunger, fatigue and cold (0-100). The sever_* decorators report 0 for anyone SeverActions' survival does not track, so the >= 25 tests are the follower gate. #}
+{% if actorUUID and papyrus_util("GetIntValue", actorUUID, "SeverActions_Survival_Excluded", 0) == 0 %}
+{% set hunger = to_number(sever_hunger(actorUUID)) %}
+{% set fatigue = to_number(sever_fatigue(actorUUID)) %}
+{% set cold = to_number(sever_cold(actorUUID)) %}
+{% if hunger >= 25 or fatigue >= 25 or cold >= 25 %}
+{% if render_mode == "action" %}
+{% set surv_npc = decnpc(actorUUID) %}
+## Hunger, Fatigue & Cold
+{% if hunger >= 25 %}- {{ surv_npc.name }} is {% if hunger >= 75 %}starving{% elif hunger >= 50 %}hungry{% else %}a little hungry{% endif %}; food already in {{ surv_npc.possessiveAdjective }} pack comes before food bought or picked up.
+{% endif %}
+{% if fatigue >= 25 %}- {{ surv_npc.name }} is {% if fatigue >= 75 %}exhausted{% elif fatigue >= 50 %}tired{% else %}a little tired{% endif %}.
+{% endif %}
+{% if cold >= 25 %}- {{ surv_npc.name }} is {% if cold >= 75 %}dangerously cold{% elif cold >= 50 %}cold{% else %}chilled{% endif %}.
+{% endif %}
+{% else %}
+## How You Feel
+{% if hunger >= 75 %}
+Your stomach has been growling for hours. You're lightheaded and need to eat soon — it's getting hard to focus on anything else.
+{% elif hunger >= 50 %}
+You're getting hungry. A proper meal would do you a lot of good right now.
+{% elif hunger >= 25 %}
+You could eat. Nothing urgent, but your stomach is starting to notice.
+{% endif %}
+{% if fatigue >= 75 %}
+You're running on nothing. Your reactions are slow, your body aches, and you need sleep before you make a mistake that costs someone.
+{% elif fatigue >= 50 %}
+The tiredness is catching up with you. You keep stifling yawns and your limbs feel heavy.
+{% elif fatigue >= 25 %}
+You're a little tired. Rest would be welcome, but you can push through for now.
+{% endif %}
+{% if cold >= 75 %}
+The cold has seeped into your bones. Your hands are stiff, your breathing is shallow, and you need warmth before this gets dangerous.
+{% elif cold >= 50 %}
+You're properly cold now. Shivering, arms crossed tight, wishing for a fire or at least some shelter.
+{% elif cold >= 25 %}
+There's a chill in the air. Nothing you can't handle, but you notice it.
+{% endif %}
+{% if hunger >= 25 %}When hungry, eat food you already have in your inventory first. Only look for food elsewhere if you have nothing to eat on you.
+{% endif %}
+{% if hunger < 50 and fatigue < 50 and cold < 50 %}None of this is pressing yet: let it show now and then, when it fits, not in every line.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

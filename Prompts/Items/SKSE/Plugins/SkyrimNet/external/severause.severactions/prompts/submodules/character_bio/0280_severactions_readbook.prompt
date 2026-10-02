@@ -1,0 +1,53 @@
+{% if render_mode == "full" %}
+{# Book reading aloud, from SeverActions_Loot's StorageUtil keys: SeverActions_ReadingBook is 1 while the reader
+   recites the text word for word and 2 while they sum it up. Only the reader's own speaking profile needs the
+   rules and the text; the drill-down and the background prompts can do nothing with them. #}
+{% set isReading = papyrus_util("GetIntValue", actorUUID, "SeverActions_ReadingBook", 0) %}
+{% if isReading == 1 %}
+{% set bookTitle = papyrus_util("GetStringValue", actorUUID, "SeverActions_ReadingBookTitle", "") %}
+{% set bookText = papyrus_util("GetStringValue", actorUUID, "SeverActions_ReadingBookText", "") %}
+{% if bookText != "" %}
+{% set actor = decnpc(actorUUID) %}
+## Reading a Book Aloud
+
+{{ actor.name }} has opened "{{ bookTitle }}" and must now read it aloud.
+
+The book's complete text is between the markers below. Nothing you remember about this book from elsewhere applies.
+
+===BEGIN BOOK TEXT===
+{{ bookText }}
+===END BOOK TEXT===
+
+**Reading rules:**
+1. Read ONLY the exact text between the markers, word for word — never invent, add, or recall content from memory. Do not paraphrase or embellish.
+2. Read continuously — as much of the text as possible per response. Ignore any dialogue length limits.
+3. Do not repeat text already read; pick up where you left off. No title between sections, no commentary, no narrated actions (no clearing throats or turning pages), no closing remarks when stopping mid-text.
+4. When you have read every word, select the **Items** action category with intent "stop reading", then **StopReading**. Only after it may you share thoughts in character.
+
+{% endif %}
+{% endif %}
+{% if isReading == 2 %}
+{% set bookTitle = papyrus_util("GetStringValue", actorUUID, "SeverActions_ReadingBookTitle", "") %}
+{% set bookText = papyrus_util("GetStringValue", actorUUID, "SeverActions_ReadingBookText", "") %}
+{% if bookText != "" %}
+{% set actor = decnpc(actorUUID) %}
+## Summing Up a Book
+
+{{ actor.name }} has read "{{ bookTitle }}" and must now sum it up and share their thoughts on it.
+
+The book's complete text is between the markers below. Nothing you remember about this book from elsewhere applies.
+
+===BEGIN BOOK TEXT===
+{{ bookText }}
+===END BOOK TEXT===
+
+**Summary rules:**
+1. In {{ actor.name }}'s own voice, sum up what the book covers: its key points, themes or story. Say only what is written above; invent nothing.
+2. Then share {{ actor.name }}'s own view: whether they agree, what it reminds them of, how it touches their own life.
+3. You may quote a short passage that struck them, but do not recite the text.
+4. This is a conversation, not a book report. Ignore any dialogue length limits and take the space a real summary and reaction need.
+5. When you are done sharing your thoughts, select the **Items** action category with intent "stop reading", then **StopReading**.
+
+{% endif %}
+{% endif %}
+{% endif %}

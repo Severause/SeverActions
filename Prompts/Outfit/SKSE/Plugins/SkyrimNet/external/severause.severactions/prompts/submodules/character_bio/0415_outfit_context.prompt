@@ -1,0 +1,10 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# The actor's outfit presets and situation outfits (outfit_context: "" without any, or with the outfit system off). Any NPC can have them, as the Outfit actions allow. #}
+{% if actorUUID %}
+{% set outfit_ctx = outfit_context(actorUUID) %}
+{% if outfit_ctx != "" %}
+### Your Outfit
+{{ outfit_ctx }}
+{% endif %}
+{% endif %}
+{% endif %}

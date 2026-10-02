@@ -1,0 +1,32 @@
+customCategory: outfit
+name: Outfit
+description: "Category: the speaker's own clothes and gear, changed right now: put on or take off named pieces, strip down or dress again, save what they wear as a named outfit or change into one, and set or clear the outfit they change into by themselves in a situation (town, adventure, home, sleep, combat, rain, snow). Only when the speaker does it in this line; talk about clothes or changing later is words. Not giving, selling or trading items, or the player's own gear."
+enabled: true
+
+eligibilityRules:
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Outfit system master switch. Off removes the action from the eligible
+      # list entirely rather than letting the LLM offer a redress the Papyrus
+      # side then refuses (field report 2026-09-09: "is there a way to
+      # completely disable the outfit system"). Custom decorator, so a STRING
+      # compare - never expectedValue: true.
+      - decoratorName: "sever_outfit_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

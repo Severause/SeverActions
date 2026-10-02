@@ -1,0 +1,42 @@
+customCategory: sa_campchallenge
+name: RunThemOff
+description: "Only for the outlaw who stopped {{ player.name }} at their camp: the final verdict once the speaker has heard enough, when the answer is an insult, an evasion or a lie, or the speaker simply wants them gone. The speaker attacks and the whole camp joins in; it cannot be undone. Not while still sizing them up or trading words; one hard word is not yet this verdict."
+questEditorId: SeverActions
+scriptName: SeverActions_Combat
+executionFunctionName: RunThemOff_Execute
+parameterMapping:
+  - type: speaker
+    name: akSpeaker
+    description: the outlaw who challenged {{ player.name }}
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      - decoratorName: "camp_challenge_pending"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ actor.name }} rejects {{ player.name }}'s answer and the camp attacks"

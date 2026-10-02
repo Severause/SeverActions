@@ -1,0 +1,78 @@
+customCategory: combat
+name: AttackTarget
+description: "Use when the speaker attacks someone with weapons or magic in this very line: an ambush sprung, a sworn enemy met, a provocation answered with steel. Both sides fight for real; a companion who attacks {{ player.name }} or another companion leaves their service first. Not for readying a weapon, 'prepare to fight', a conditional 'if you…', threats of a fight to come, bluster or jokes, and not during a fist-fight. A non-lethal fist-fight is Brawl."
+questEditorId: SeverActions
+scriptName: SeverActions_Combat
+executionFunctionName: AttackTarget_Execute
+parameterMapping:
+  - type: speaker
+    name: akAttacker
+    description: the actor making the first move
+  - type: dynamic
+    name: target
+    description: "exact name of the person to attack, who must be present (as listed in Nearby Actors), or the player's name"
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A camp challenger's verdict goes through CampChallenge, never a bare attack.
+      - decoratorName: "camp_challenge_pending"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # An ambush-standoff member attacks through AmbushStandoff, once the player has answered.
+      - decoratorName: "is_ambush_thug"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # "[BRAWL ACTIVE]" is sever_brawl_state's marker text (SkyrimNetBridge.h);
+      # keep the two byte-identical.
+      - decoratorName: "sever_brawl_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "not_contains"
+        expectedValue: "BRAWL ACTIVE"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Off the table while the speaker is on the combat cooldown of a ceasefire,
+      # yield or brawl. Custom decorator: STRING compare, "" = no cooldown.
+      - decoratorName: "sever_combat_cooldown"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

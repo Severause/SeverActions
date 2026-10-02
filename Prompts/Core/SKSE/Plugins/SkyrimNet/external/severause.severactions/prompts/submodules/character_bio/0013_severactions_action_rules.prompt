@@ -1,0 +1,8 @@
+{% if render_mode == "action" %}
+{# The drill-down (the only render_mode "action" caller) sees no history; this is its commitment rule. #}
+{% set me = decnpc(actorUUID) %}
+## Acting Now, or Only Talking
+Where the Guidelines above treat a hint, a suggestion or a first step toward an action as enough to choose it, this rule takes precedence. Choose an action only if {{ me.name }} does it now, in their latest line (under Most Recent Exchange): agreeing to a request, obeying an order, or deciding to act this moment. If the line or the intent only talks about it, choose None: a plan or promise for later, a maybe, a suggestion, a question, a joke, a story, getting ready ("prepares to", "readies", "is about to"), or a threat or warning of what will happen later or "if" something else does. Carrying a threat out in the line itself (the attack, the order, the verdict) is acting. So is agreeing now to a deal whose pickup or payment comes later (an order, a tab, a loan, a raise): the agreement is settled in this line. Starting an interrogation now is acting too, though it is done by asking.
+Going somewhere together with {{ player.name }} is not a journey of {{ me.name }}'s own: someone following {{ player.name }} right now simply comes along, and agreeing now to come along, or being called along after a wait, is joining, tagging along or following again, not setting off.
+When unsure, choose None.
+{% endif %}

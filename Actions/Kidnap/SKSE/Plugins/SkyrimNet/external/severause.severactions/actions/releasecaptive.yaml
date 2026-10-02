@@ -1,0 +1,45 @@
+customCategory: sa_captives
+name: ReleaseCaptive
+description: "Use when {{ player.name }} orders a captive set free, or the speaker decides in this line to free one out of mercy, a bargain or a change of heart. Their bonds are cut and they return to their life, remembering who held them; a seizure still under way is called off. Only for someone the speaker's side holds, never the speaker themself. Not for 'maybe we let her go later'; to keep them but loosen their bonds, UntieCaptive."
+questEditorId: SeverActions
+scriptName: SeverActions_Kidnap
+executionFunctionName: ReleaseCaptive
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: whoever is untying the captive
+  - type: dynamic
+    name: targetName
+    description: "the captive's name, approximate is fine; leave empty when only one captive is held"
+    optional: true
+    default: ""
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  # NO toggle gate here (audit): the Papyrus body is deliberately ungated -
+  # an existing captive must ALWAYS be releasable, even if the player turned
+  # both feature toggles off mid-captivity. The is_kidnap_victim rule below
+  # still excludes bound speakers.
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives or take new ones (the
+      # self-release hole). String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

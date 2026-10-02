@@ -1,0 +1,71 @@
+customCategory: crafting
+name: CommissionItem
+description: "Use when a smith agrees in this line to make a named item for {{ player.name }} to pick up later because it can't be done on the spot. {{ player.name }} is asked to pay half the price now and the rest on pickup. Not while the job is still being discussed, priced or haggled over, not when refusing, and not for an order between other people. Work finished on the spot is CraftItem."
+questEditorId: SeverActions
+scriptName: SeverActions_Crafting
+executionFunctionName: CommissionItem_Internal
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the smith taking the order
+  - type: dynamic
+    name: itemName
+    description: "the item as the game names it ('Steel Sword', 'Dwarven Armor')"
+  - type: dynamic
+    name: etaText
+    description: "when it will be ready, in the smith's own words ('tomorrow', 'a few days'); leave empty for about two days"
+    optional: true
+    default: ""
+  - type: dynamic
+    name: itemCount
+    description: "how many; above 1 only when several were asked for"
+    optional: true
+    default: 1
+  - type: dynamic
+    name: quotedTotal
+    description: "the total price the smith named for the whole order, a whole number; leave empty only if no price was named"
+    optional: true
+    default: 0
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_faction"
+        arguments:
+          - currentActor
+          # JobBlacksmithFaction (Skyrim.esm 0x0005091D) by hex FormID — the
+          # VR-safe form (name lookup needs po3 "Keep EditorIDs", absent on
+          # VR, and failed closed: blacksmiths never matched). Mirrors the
+          # documented fix in craftitem.yaml.
+          - "0x0005091D"
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

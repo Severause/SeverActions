@@ -1,212 +1,143 @@
 ScriptName SeversHearth_Camp extends Quest
 {Sever's Hearth - core camp lifecycle. Member functions called by SkyrimNet actions.}
 
-; ============================================================================
-; Sandbox wiring (user-provided package, applied via PapyrusUtil's ActorUtil).
-;
-; To enable follower sandboxing while a camp is active:
-;
-;   1. Create a Package record in SeversHearth.esp:
-;      - Type: Sandbox
-;      - Target: Self (simplest — sandbox-around-actor; the actor stays in
-;        camp because we only apply the package while camp is up). If you'd
-;        rather sandbox-around-fire later, switch Target to a Reference Alias
-;        and we can add the matching alias on a future pass.
-;      - Radius: ~500-700u (camp footprint is ~440 × 400)
-;      - Sandbox flags: Sit / Sleep / Cook / Use Idle Markers as desired
-;      - No conditions needed — Papyrus owns lifecycle
-;      - Any EditorID — we reference the Form directly, not by name
-;
-;   2. Pick the package from CK's dropdown on this script's Properties tab:
-;      - CampSandboxPackage = your new Package
-;
-; Runtime: ActorUtil.AddPackageOverride / RemovePackageOverride (PapyrusUtil)
-; apply the package directly to each occupant. PapyrusUtil is a near-universal
-; soft dep (required by SexLab; bundled with many frameworks, incl. NFF). If the package isn't picked
-; or PapyrusUtil isn't loaded, the layer no-ops silently and the camp
-; lifecycle still works (followers fall back to their normal AI).
-;
-; Tracked actors are remembered in a fixed-capacity instance array so
-; BreakCamp can remove the override from each even if the camp spans a
-; save/reload.
-; ============================================================================
+; Camp occupants are parked with CampSandboxPackage (a Sandbox package in
+; SeversHearth.esp with no conditions: this script owns its lifetime), applied
+; through PapyrusUtil's ActorUtil package overrides. Occupants are kept in the
+; tracking arrays below so a break can remove every override, across a
+; save/reload too.
 
 Package Property CampSandboxPackage Auto
-{User-created Sandbox package, picked from CK's dropdown. None = layer disabled.
-
-Applied at runtime via PapyrusUtil's ActorUtil.AddPackageOverride.}
+{The camp sandbox package. None = no sandboxing.}
 
 Bool Property SandboxOnEstablish = True Auto
-{User preference: sandbox the establishing follower + nearby teammates when
- a camp goes up. Toggled from SeverActions' Settings page via the
- SeverActions_PrismaCampSandboxPref ModEvent; cosaved here (script property).
- Off = camps still work, followers just keep their normal AI until sent to
- camp explicitly (GoToCamp arrival sandboxing is a deliberate command and
- stays independent of this toggle).}
+{Sandbox the establishing follower and nearby teammates when a camp goes up.
+ Set from SA's Settings page (SeverActions_MagelightCampSandboxPref); saved
+ here. GoToCamp's arrival sandbox ignores it.}
 
-; ── IntelEngine "the camp" travel integration ────────────────────────────
-; User creates a BGSLocation record in CK:
-;   EditorID: SeversHearth_CampLocation
-;   FullName: "The Camp"   (or any name IntelEngine should fuzzy-match against)
-; and picks it on this Property in the script's Properties tab.
-;
-; At runtime, after the camp marker spawns, we point this Location's
-; worldLocMarker at the marker so IntelEngine's ResolveAnyDestination
-; resolves "the camp" → BGSLocation → worldLocMarker → our XMarkerHeading.
-; Cleared on BreakCamp so IntelEngine doesn't try to route to a stale ref.
-;
-; None = integration disabled (no Location bound); camp lifecycle still
-; works, NPCs just won't be able to travel to it via the "go to the camp"
-; intent. Querying the marker directly via Native_Camp_GetCenterMarker()
-; remains available regardless.
+; IntelEngine "the camp": this Location's worldLocMarker is pointed at the
+; camp marker while a camp stands and cleared on break. None = no binding.
 Location Property CampLocation Auto
-{User-created Location form. Bound at runtime to the camp marker so
- IntelEngine and other location-aware mods can find the camp by name.}
+{The camp's Location form. Bound to the camp marker so IntelEngine and other
+ location-aware mods can find the camp by name.}
 
-; ── Fast-travel map marker ────────────────────────────────────────────────
-; CK setup required:
-;   1. In SeversHearth.esp, navigate to a worldspace cell (any persistent
-;      cell, doesn't matter where — it'll be MoveTo'd at runtime).
-;   2. Place an XMarker.
-;   3. On the placement's MapMarker tab: enable, set type = Camp (icon 5),
-;      Name = "Camp", check Can Travel To, check Visible.
-;   4. Set the placement's flag: Initially Disabled.
-;   5. Save the ESP, open the SeversHearth quest, fill the
-;      CampMapMarker property with this placement.
-;
-; At runtime: MarkOnMap calls MoveTo(centerMarker) + Enable, UnmarkFromMap
-; calls Disable. The marker's worldspace updates automatically with MoveTo,
-; so one placement covers every possible camp location.
-;
-; None = feature disabled — Mark/Unmark functions no-op silently and the
-; button on PrismaUI's Survival page does nothing (state stays "unmarked").
+; Fast-travel map marker: one placed XMarker set up as a travelable map marker
+; and Initially Disabled (a runtime ExtraMapMarker needs lookups CommonLib-NG
+; does not expose). Marking MoveTo's it onto the camp and enables it;
+; unmarking disables it. None = no map marker.
 ObjectReference Property CampMapMarker Auto
-{User-created MapMarker placement (XMarker with MapMarkerData configured
- in CK). Initially disabled; MoveTo'd to the camp position on demand.}
+{The placed camp map marker. Initially disabled; MoveTo'd to the camp on demand.}
 
-; Tracking — sandboxed actors so we can unregister on BreakCamp. Fixed
-; capacity is 16 slots — vanilla follower cap is 2 but NFF / Nether's /
-; Ultimate Follower Overhaul push it to 8+, and party-management mods
-; routinely have 12+ tagalongs commanded by the player.
-;
-; MUST be declared as Auto Hidden Properties, not script-scope variables.
-; Papyrus's instance-variable type registration is unreliable for typed arrays:
-; assigning `new Actor[N]` to a non-Property Actor[] variable fails at runtime
-; with "Cannot create an array into a non-array variable" (verified empirically
-; against a Papyrus.0.log dump). Properties get proper type metadata baked into
-; the PEX header.
+; Sandboxed occupants, so a break can release each one. These MUST stay Auto
+; Hidden properties: assigning `new Actor[N]` to a script-scope Actor[]
+; variable failed at runtime ("Cannot create an array into a non-array
+; variable").
 Actor[] Property SandboxedActorTracking Auto Hidden
-{Internal — tracking array for sandboxed actors (cap 16). Do not set in CK.}
+{Internal - the field camp's sandboxed actors (cap 16). Do not set in CK.}
 
 Int Property SandboxedActorCount = 0 Auto Hidden
-{Internal — current count in SandboxedActorTracking.}
+{Internal - current count in SandboxedActorTracking.}
 
-; ── SeverActions integration tuning ──────────────────────────────────────
-; Per-tick restoration deltas applied to each camp occupant. NEGATIVE
-; values reduce the need (good — actor is being fed / rested / warmed).
-; Cold gets a bigger reduction than hunger/fatigue to make camping near
-; the fire feel meaningfully different from sleeping rough.
-;
-; Per-tick cadence is set by Native_Camp_SetTickIntervalSeconds (default
-; 60 real-seconds ≈ 20 game-minutes at vanilla 20:1 time scale).
+Actor[] Property BaseSandboxedActorTracking Auto Hidden
+{Internal - the base's sandboxed actors, kept apart from the field camp's so
+ breaking one camp never releases the other's. Cap 24. Do not set in CK.}
+
+Int Property BaseSandboxedActorCount = 0 Auto Hidden
+{Internal - current count in BaseSandboxedActorTracking.}
+
+; Per-tick survival deltas for each occupant (negative = the need drops). The
+; tick interval is Native_Camp_SetTickIntervalSeconds (default 60 real seconds,
+; ~20 game minutes at timescale 20).
 Float Property CampRestoreHungerDelta  = -2.0 Auto Hidden
-{Hunger restoration per camp tick (negative reduces need). Default -2.0.}
+{Hunger change per camp tick. Default -2.0.}
 
 Float Property CampRestoreFatigueDelta = -4.0 Auto Hidden
-{Fatigue restoration per camp tick. Higher than hunger — rest restores
- faster than a single meal would. Default -4.0.}
+{Fatigue change per camp tick. Default -4.0.}
 
 Float Property CampRestoreColdDelta    = -8.0 Auto Hidden
-{Cold reduction per camp tick. Highest of the three — the campfire is
- actively warming nearby actors. Default -8.0.}
+{Cold change per camp tick, the largest (the fire warms). Default -8.0.}
 
-; ── Camp footprint tuning ───────────────────────────────────────────────
-; Lateral tent offset from camp center (used by both _SpawnCampStructures
-; and the clearance check below). Hoisted to a property so the layout
-; geometry and the pre-camp blocked-position check stay in sync — change
-; this and both update.
+; Camp footprint.
 Float Property TentSideOffset = 200.0 Auto Hidden
-{Lateral distance from camp center to each tent's spawn position.
- Kept in sync with CampPlacement.h's spawn offsets — bumped from 180
- to 200 to give followers more lateral breathing room between tents
- and the central fire/seating zone.}
+{Unused: the layout (CampPlacement.h kPieces, from Hearth/Native/tools/camp_eval.py)
+ ignores it; it is passed through only to keep the native ABI.}
 
 Float Property TreeBlockRadius = 70.0 Auto Hidden
-{A tree within this radius of a tent's spawn point counts as "blocking"
- and the camp aborts. ~70u clears a 30u trunk + ~40u tent breathing room.}
+{Margin added to each tent's canvas half-extents: a tree inside that grown,
+ oriented, tent-scaled rectangle blocks the camp. Used by the clearance peek,
+ the base's tier fit and the upgrade pre-check; Native_Base_Upgrade's own
+ re-check uses 70.}
 
 Float Property FireBlockRadius = 50.0 Auto Hidden
-{A tree within this radius of the fire position blocks the camp.
- Smaller than tent radius — the fire footprint is tighter.}
+{A tree within this radius of the fire position blocks the camp
+ (Native_Base_Upgrade's re-check uses 50).}
 
-; ── Player-driven camp placement (live ghost preview) ───────────────────
-; Transient positioning state. Not meaningful across saves — the post-load
-; "postload" camp tick resets it (the native ghost refs don't survive a reload).
-Int PlacementMode = 0                ; 0 = idle, 1 = positioning the ghost
-Float PlacementRotateOffset = 0.0    ; Q/E rotation dialed on top of facing (deg)
+; Placement state, transient: the "postload" tick resets it (the native ghost
+; refs do not survive a reload).
+Int PlacementMode = 0                ; 0 idle, 1 field-camp ghost, 2 base ghost
+Float PlacementRotateOffset = 0.0    ; Q/E rotation on top of facing (deg)
 Int PlacementConfirmKey = 28         ; resolved Activate key, or Enter on collision
 Float PlacementBannerCooldown = 0.0  ; seconds until the next banner reminder
 
-; ── Lifecycle: register for the SeversHearth_CampTick ModEvent that
-; CampSurvivalTick.h fires from the InputEvent heartbeat. Without this
-; the heartbeat fires harmlessly and no restoration happens. ────────────
+; One upgrade at a time: the button, the LLM action and a second companion can
+; all call UpgradeBase during its ~5 s of fades and waits, and a second call
+; would pay the old tier's price for the next tier. Cleared by the postload tick.
+Bool _UpgradeInProgress = False
 
 Event OnInit()
     RegisterCampEvents()
 EndEvent
 
-; Load-time recovery: Quest scripts never receive OnPlayerLoadGame, so
-; SeversHearthNative fires a one-shot SeversHearth_CampTick with
-; strArg="postload" ~3s after kPostLoadGame; the "postload" branch at the top
-; of OnCampTickEvent below handles recovery. Reusing the already-registered
-; tick event means existing saves get the recovery without any new
-; RegisterForModEvent.
+; Load recovery: a Quest script gets no OnPlayerLoadGame, so the DLL fires
+; SeversHearth_CampTick with strArg "postload" ~3 s after kPostLoadGame and
+; re-fires it (at most 3 times, 20 s apart) until OnCampTickEvent acks with
+; Native_Camp_AckPostLoad (R24). It rides the already-registered tick event, so
+; old saves need no new registration.
 
 Function RegisterCampEvents()
-    {Idempotent — RegisterForModEvent is safe to call multiple times for
-     the same event/handler pair (later registrations replace earlier).}
+    {Idempotent (a re-registration replaces the old one).}
     RegisterForModEvent("SeversHearth_CampTick", "OnCampTickEvent")
-    ; SeverActions Survival page dispatches these when the player clicks the
-    ; camp action buttons. Safe to register even if SA isn't installed —
-    ; events that nobody dispatches just never fire.
-    RegisterForModEvent("SeverActions_PrismaBreakCamp",       "OnPrismaBreakCamp")
-    RegisterForModEvent("SeverActions_PrismaTravelToCamp",    "OnPrismaTravelToCamp")
-    RegisterForModEvent("SeverActions_PrismaToggleCampMarker","OnPrismaToggleCampMarker")
-    ; Player-driven placement: the Survival page buttons + the MCM hotkey both
-    ; fire these (the hotkey routes through SeverActions, decoupled from this ESP).
-    RegisterForModEvent("SeverActions_PrismaSetupCamp",       "OnPrismaSetupCamp")
-    RegisterForModEvent("SeverActions_PrismaRepositionCamp",  "OnPrismaRepositionCamp")
-    ; Player-directed follower commands (recruit / follow / wait) — release
-    ; the actor from the camp sandbox so they respond to the call instead
-    ; of staying pinned to the fire.
+    ; SA's Survival page buttons. Harmless without SA: nothing sends them.
+    RegisterForModEvent("SeverActions_MagelightBreakCamp",       "OnPrismaBreakCamp")
+    RegisterForModEvent("SeverActions_MagelightTravelToCamp",    "OnPrismaTravelToCamp")
+    RegisterForModEvent("SeverActions_MagelightToggleCampMarker","OnPrismaToggleCampMarker")
+    ; Placement: the Survival page buttons and SA's setup-camp hotkey.
+    RegisterForModEvent("SeverActions_MagelightSetupCamp",       "OnPrismaSetupCamp")
+    RegisterForModEvent("SeverActions_MagelightSetupSmallCamp",  "OnPrismaSetupSmallCamp")
+    RegisterForModEvent("SeverActions_MagelightRepositionCamp",  "OnPrismaRepositionCamp")
+    ; A player recruit / follow / wait / dismiss releases the actor from its camp
+    ; or base sandbox.
     RegisterForModEvent("SeverActions_FollowerCalledByPlayer", "OnFollowerCalledByPlayer")
-    ; SA's travel orchestrator fires on arrival — used to park GoToCamp-
-    ; dispatched followers (WaitingForPlayer=1) when they reach the fire,
-    ; so they don't engine-teleport with the player later.
+    ; Arrival of a GoToCamp / GoToBase journey parks the actor at the fire.
     RegisterForModEvent("SeverActions_TravelComplete", "OnTravelCompleteFromSA")
-    ; Settings-page toggle for sandbox-on-establish (SA fires, we own the
-    ; cosaved value). Registered on the trigger path per the ModEvent rule.
-    RegisterForModEvent("SeverActions_PrismaCampSandboxPref", "OnPrismaCampSandboxPref")
-    ; Mirror the current preference into SA's UI-facing native so the
-    ; Settings toggle shows the cosaved truth after every load.
-    SeverActionsNativeExt.PrismaUI_SetCampSandboxPref(SandboxOnEstablish)
-    Debug.Trace("[SeversHearth] Registered camp tick + PrismaUI button + follower lifecycle ModEvents")
+    ; Settings toggle for SandboxOnEstablish (SA sends, this script stores it).
+    RegisterForModEvent("SeverActions_MagelightCampSandboxPref", "OnPrismaCampSandboxPref")
+    ; The base's buttons and the tent-pattern setting.
+    RegisterForModEvent("SeverActions_MagelightSetupBase",        "OnPrismaSetupBase")
+    RegisterForModEvent("SeverActions_MagelightRepositionBase",   "OnPrismaRepositionBase")
+    RegisterForModEvent("SeverActions_MagelightBreakBase",        "OnPrismaBreakBase")
+    RegisterForModEvent("SeverActions_MagelightPromoteToBase",    "OnPrismaPromoteToBase")
+    RegisterForModEvent("SeverActions_MagelightTravelToBase",     "OnPrismaTravelToBase")
+    RegisterForModEvent("SeverActions_MagelightUpgradeBase",      "OnPrismaUpgradeBase")
+    RegisterForModEvent("SeverActions_MagelightCampFactionSkin",  "OnPrismaCampFactionSkin")
+    If _SeverActionsInstalled()
+        SeverActionsNativeExt2.Magelight_SetCampFactionSkin(Native_Camp_GetFactionSkin())
+    EndIf
+    ; Mirror the saved preference so SA's Settings toggle shows it after a load.
+    SeverActionsNativeExt.Magelight_SetCampSandboxPref(SandboxOnEstablish)
+    Debug.Trace("[SeversHearth] Registered camp tick + menu button + follower lifecycle ModEvents")
 EndFunction
 
 Event OnPrismaCampSandboxPref(string eventName, string strArg, float numArg, Form sender)
     {SeverActions Settings page toggled sandbox-on-establish.}
     SandboxOnEstablish = (strArg == "true")
-    SeverActionsNativeExt.PrismaUI_SetCampSandboxPref(SandboxOnEstablish)
+    SeverActionsNativeExt.Magelight_SetCampSandboxPref(SandboxOnEstablish)
     Debug.Trace("[SeversHearth] SandboxOnEstablish = " + SandboxOnEstablish)
 EndEvent
 
 Event OnFollowerCalledByPlayer(string eventName, string strArg, float numArg, Form sender)
-    {SeverActions fires this when the player issues a recruit/follow/wait
-     command on an actor. If the actor is in our camp sandbox tracking,
-     release them so they leave the fire.
-
-     Dismiss intentionally does NOT fire this — a dismissed follower is
-     supposed to stay where they are (often that IS the camp).}
+    {SeverActions sends this on a player recruit / follow / wait / dismiss
+     (strArg = the verb). Releases the actor from the camp or base sandbox.}
     Actor a = sender as Actor
     If !a
         Return
@@ -214,11 +145,13 @@ Event OnFollowerCalledByPlayer(string eventName, string strArg, float numArg, Fo
     If _IsAlreadySandboxed(a)
         Debug.Trace("[SeversHearth] OnFollowerCalledByPlayer: releasing " + a.GetDisplayName() + " (verb=" + strArg + ")")
         _ReleaseFromCampSandbox(a)
+    ElseIf _IsBaseSandboxed(a)
+        Debug.Trace("[SeversHearth] OnFollowerCalledByPlayer: releasing " + a.GetDisplayName() + " from the base (verb=" + strArg + ")")
+        _ReleaseFromBaseSandbox(a)
     ElseIf SkyrimNetApi.HasPackage(a, "CampSandbox")
-        ; Orphaned override — applied but missing from tracking (save/load
-        ; edge, travel-handoff race). The SkyrimNet registration is the
-        ; detector: it only exists when _ApplyCampSandbox ran. Release the
-        ; package so a player follow/recruit call always breaks the camp pin.
+        ; An override applied but missing from tracking (a save/load edge, a
+        ; travel hand-off race). The SkyrimNet registration exists only where
+        ; a camp sandbox was applied, so it is the detector.
         Debug.Trace("[SeversHearth] OnFollowerCalledByPlayer: releasing ORPHANED camp sandbox on " + a.GetDisplayName() + " (verb=" + strArg + ")")
         If CampSandboxPackage
             ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
@@ -232,17 +165,14 @@ Event OnFollowerCalledByPlayer(string eventName, string strArg, float numArg, Fo
 EndEvent
 
 Event OnPrismaToggleCampMarker(string eventName, string strArg, float numArg, Form sender)
-    {PrismaUI: "Mark / Unmark on Map" button. SA's PrismaUIActionHandler
-     prepends "<actorName-or-formID>|" to the strArg payload before sending,
-     so what arrives is "0|on" or "0|off" (no actor scope). We split on "|"
-     and read the trailing verb. Anything not literally "off" is treated as
-     a mark request.}
+    {The Mark / Unmark on Map button. SA's action handler prefixes every strArg
+     with "<actor>|", so this arrives as "0|on" or "0|off"; anything but "off"
+     marks.}
     Debug.Trace("[SeversHearth] OnPrismaToggleCampMarker fired: strArg='" + strArg + "'")
     If !Native_Camp_IsActive()
         Debug.Trace("[SeversHearth] OnPrismaToggleCampMarker: no active camp, ignoring")
         Return
     EndIf
-    ; Extract the verb after the trailing "|" (SA's encoding convention).
     String verb = strArg
     Int pipePos = StringUtil.Find(strArg, "|")
     If pipePos >= 0
@@ -256,9 +186,13 @@ Event OnPrismaToggleCampMarker(string eventName, string strArg, float numArg, Fo
 EndEvent
 
 Function MarkCampOnMap()
-    {Move the CK-placed CampMapMarker to the camp position, enable it, and
-     give it a location-aware name. No-op if CampMapMarker isn't filled
-     (CK setup pending) or no camp is active.}
+    {Move CampMapMarker onto the camp, enable it and name it after the
+     location. Does nothing without the property or a camp, or for a camp
+     indoors (the world map cannot show an interior).}
+    If Native_Camp_IsInterior()
+        Debug.Notification("A camp made indoors can't be marked on the map.")
+        Return
+    EndIf
     If !CampMapMarker
         Debug.Trace("[SeversHearth] MarkCampOnMap: CampMapMarker property unfilled - see script docs")
         Debug.Notification("Map marker unavailable: CampMapMarker not configured in CK")
@@ -282,8 +216,7 @@ Function MarkCampOnMap()
 EndFunction
 
 Function UnmarkCampOnMap()
-    {Disable the CampMapMarker so it no longer appears on the world map.
-     The placement stays alive (just hidden) for the next MarkOnMap.}
+    {Hide CampMapMarker from the world map (disabled, kept for the next mark).}
     If !CampMapMarker
         Return
     EndIf
@@ -294,25 +227,32 @@ Function UnmarkCampOnMap()
 EndFunction
 
 Function _PushCampMarkedToPrisma(Bool marked)
-    {Push the marker state to SA so the Survival page renders the right
-     button label ("Mark on Map" vs "Unmark from Map"). No-op without SA.}
+    {Push the marker state to SA's Survival page (the Mark / Unmark label).}
     If !_SeverActionsInstalled()
         Return
     EndIf
-    SeverActionsNativeExt.PrismaUI_SetCampMarked(marked)
+    SeverActionsNativeExt.Magelight_SetCampMarked(marked)
 EndFunction
 
 Event OnTravelCompleteFromSA(string eventName, string strArg, float numArg, Form sender)
-    {SA fires this when a travel session ends. For actors we tracked at
-     GoToCamp dispatch time, when they arrive at the fire, park them via
-     the WaitingForPlayer ActorValue so the engine's auto-pull on cell
-     change doesn't yank them back to the player. Keeps teammate flag
-     intact so everything downstream of it (SA's Survival page, NFF,
-     `is_follower` decorator, vanilla combat assistance) keeps working.
-
-     strArg format is "<tag>|<status>"; only act on status == "arrived".}
+    {A journey Hearth started to a camp. strArg is "<tag>|<status>". "waiting" (the
+     arrival wait began, in the journey's CampSandboxPackage): WaitingForPlayer so the
+     engine does not pull them to the player on a cell change. A journey that ends at
+     the fire ("arrived", "waitdone" = the player reached them, "waittimeout") leaves
+     them an occupant under Hearth's own sandbox until told to follow. One that ends away
+     from it (cancelled, stay ended, gave up) drops them from the lists. Every other
+     journey of a listed actor is ignored.}
     Actor a = sender as Actor
-    If !a || !_IsAlreadySandboxed(a)
+    If !a || (!_IsAlreadySandboxed(a) && !_IsBaseSandboxed(a))
+        Return
+    EndIf
+    If StorageUtil.GetIntValue(a, JOURNEY_TRACKED_KEY, 0) != 1
+        Return
+    EndIf
+    ; numArg is the journey's handle: another journey's event (an older one of this actor's)
+    ; is not ours.
+    Int mine = StorageUtil.GetIntValue(a, JOURNEY_HANDLE_KEY, 0)
+    If mine > 0 && (numArg as Int) != mine
         Return
     EndIf
     Int pipePos = StringUtil.Find(strArg, "|")
@@ -320,16 +260,56 @@ Event OnTravelCompleteFromSA(string eventName, string strArg, float numArg, Form
         Return
     EndIf
     String status = StringUtil.Substring(strArg, pipePos + 1, 0)
-    If status != "arrived"
+    If status == "waiting"
+        a.SetAV("WaitingForPlayer", 1)
+        Debug.Trace("[SeversHearth] OnTravelComplete: " + a.GetDisplayName() + " waiting at camp (wait=1)")
         Return
     EndIf
-    a.SetAV("WaitingForPlayer", 1)
-    Debug.Trace("[SeversHearth] OnTravelComplete: parked " + a.GetDisplayName() + " at camp (wait=1)")
+    ; Our journey ended at the fire with no newer one under way: an occupant. Anything else
+    ; (ended away, or replaced by another journey - say a trip elsewhere) drops them.
+    Bool atFire = status == "arrived" || status == "waitdone" || status == "waittimeout"
+    If atFire && SeverActionsNativeExt2.Travel_GetPhaseByActor(a) == 0
+        _ParkAfterJourney(a)
+    Else
+        a.SetAV("WaitingForPlayer", 0)   ; undo Hearth's park from the arrival wait
+        _ForgetTracked(a)
+        Debug.Trace("[SeversHearth] OnTravelComplete: " + a.GetDisplayName() + " " + status + " - no longer at camp")
+    EndIf
 EndEvent
 
+Function _ParkAfterJourney(Actor a)
+    {The journey ended at the fire: Hearth's own sandbox holds them as an occupant. The
+     travel core's teardown answers the same event and removes the journey's
+     CampSandboxPackage override (the same form), so park only once it is done.}
+    Int tries = 0
+    While SeverActionsNativeExt2.Native_GetTravelState(a) != "" && tries < 40
+        Utility.Wait(0.5)
+        tries += 1
+    EndWhile
+    If SeverActionsNativeExt2.Native_GetTravelState(a) != ""
+        ; The teardown has not run after 20 s (a VM backlog): park anyway, and say so, since a
+        ; late teardown would take this park's package off again.
+        Debug.Trace("[SeversHearth] _ParkAfterJourney: " + a.GetDisplayName() + " - travel teardown still pending, parking anyway")
+    EndIf
+    ; Released, re-sent or dropped while the teardown ran: not ours to park.
+    If StorageUtil.GetIntValue(a, JOURNEY_TRACKED_KEY, 0) != 1 || (!_IsAlreadySandboxed(a) && !_IsBaseSandboxed(a))
+        Return
+    EndIf
+    If SeverActionsNativeExt2.Travel_GetPhaseByActor(a) != 0
+        Return
+    EndIf
+    If CampSandboxPackage
+        ActorUtil.AddPackageOverride(a, CampSandboxPackage, 100, 0)
+    EndIf
+    SkyrimNetApi.RegisterPackage(a, "CampSandbox", 100, 0, false)
+    a.SetAV("WaitingForPlayer", 1)
+    a.EvaluatePackage()
+    _SetJourneyTracked(a, False)   ; Hearth's own sandbox now
+    Debug.Trace("[SeversHearth] OnTravelComplete: " + a.GetDisplayName() + " parked at camp as an occupant")
+EndFunction
+
 Event OnPrismaBreakCamp(string eventName, string strArg, float numArg, Form sender)
-    {PrismaUI: Break Camp button. Routes to the existing BreakCamp flow with
-     the player as the actor (mimicking a player-initiated breakdown).}
+    {The Break Camp button: BreakCamp as the player.}
     If !Native_Camp_IsActive()
         Return
     EndIf
@@ -340,21 +320,16 @@ Event OnPrismaBreakCamp(string eventName, string strArg, float numArg, Form send
 EndEvent
 
 Event OnPrismaTravelToCamp(string eventName, string strArg, float numArg, Form sender)
-    {PrismaUI: Travel to Camp button. Follower-only — routes either a single
-     follower (payload = formID hex) or every player teammate in the player's
-     cell (payload = "all"). Player-targeted travel doesn't fit the use case
-     ("send Lydia ahead while I finish here") so it's not supported here.
-
-     SA's PrismaUIActionHandler prepends "<actorName-or-formID>|" to every
-     strArg before sending (same encoding OnPrismaToggleCampMarker handles),
-     so what arrives is "0|all" or "0|A1B2C3". This handler used to compare
-     the RAW strArg — "all" never matched and HexToInt parsed the leading
-     "0", so BOTH branches silently no-opped on every click (2026-07 button
-     audit). Strip through the first "|" before dispatching.}
+    {The Travel to Camp button, followers only: "0|all" sends every teammate
+     near the player, "0|<hex formID>" one follower. The "<actor>|" prefix
+     (see OnPrismaToggleCampMarker) must be stripped before either test.}
     If !Native_Camp_IsActive()
         Return
     EndIf
-    ; Extract the payload after the "|" (SA's encoding convention).
+    If Native_Camp_IsInterior()
+        Debug.Notification("The camp is indoors - companions return to it with you.")
+        Return
+    EndIf
     String payload = strArg
     Int payloadPipe = StringUtil.Find(strArg, "|")
     If payloadPipe >= 0
@@ -365,9 +340,7 @@ Event OnPrismaTravelToCamp(string eventName, string strArg, float numArg, Form s
         If !PlayerRef
             Return
         EndIf
-        ; Use the same native-side cell scan that the establish-time fan-out
-        ; uses so we catch every follower framework's teammates. 1000u is a
-        ; loose "in the player's vicinity" radius.
+        ; The fan-out's teammate scan (every follower framework), 1000u.
         Actor[] teammates = Native_Camp_FindNearbyTeammates(1000.0)
         If !teammates
             Return
@@ -376,7 +349,7 @@ Event OnPrismaTravelToCamp(string eventName, string strArg, float numArg, Form s
         Int dispatched = 0
         While i < teammates.Length
             Actor candidate = teammates[i]
-            If candidate && candidate != PlayerRef
+            If candidate && candidate != PlayerRef && !_IsParkedAtCamp(candidate)
                 GoToCamp(candidate, 1)
                 dispatched += 1
             EndIf
@@ -384,10 +357,7 @@ Event OnPrismaTravelToCamp(string eventName, string strArg, float numArg, Form s
         EndWhile
         Debug.Notification("Sent " + dispatched + " follower" + PluralS(dispatched) + " to camp.")
     Else
-        ; Single follower: payload is the formID in hex string form.
-        ; Defer the parse to SA's native HexToInt — ~10000x faster than the
-        ; equivalent Papyrus character loop, and the result is bit-for-bit
-        ; identical to what the dispatcher encoded with snprintf("%X", fid).
+        ; One follower: the sender wrote the formID with "%X"; HexToInt reverses it.
         Int formID = SeverActionsNative.HexToInt(payload)
         If formID == 0
             Debug.Trace("[SeversHearth] OnPrismaTravelToCamp: invalid payload '" + strArg + "'")
@@ -401,11 +371,8 @@ Event OnPrismaTravelToCamp(string eventName, string strArg, float numArg, Form s
     EndIf
 EndEvent
 
-; ============================================================================
-; SkyrimNet action entry points (member functions).
-; CLAUDE.md rule: executionFunctionName MUST be a member function - SkyrimNet
-; calls instance.Function(args) on the quest. Globals never reach.
-; ============================================================================
+; SkyrimNet action entry points. They must stay MEMBER functions: SkyrimNet
+; calls instance.Function(args) and never reaches a Global.
 
 Function EstablishCamp(Actor akActor)
     If Native_Camp_IsActive()
@@ -413,38 +380,34 @@ Function EstablishCamp(Actor akActor)
         Return
     EndIf
 
-    ; Defensive: clear any stale sandbox state left over from a prior camp
-    ; that didn't tear down cleanly (crash, manual ref deletion, etc.).
+    ; Clear sandbox state a prior camp left behind.
     _ClearCampSandbox()
 
     Actor PlayerRef = Game.GetPlayer()
     Float angleZ = PlayerRef.GetAngleZ()
 
-    ; Wilderness camps only — refuse indoor placement. The clearance peek below
-    ; only tests for tree crowding and explicitly passes inside interiors, so
-    ; this guard has to come first.
+    ; Outdoors only. This must come first: the clearance peek passes in interiors.
     Cell playerCell = PlayerRef.GetParentCell()
     If playerCell && playerCell.IsInterior()
         If akActor != None && akActor != PlayerRef
-            String indoorNarration = "{{ npc.name }} glances around the enclosed space, " + \
-                                     "then shakes their head at {{ player.name }}. " + \
-                                     "'We can't make camp indoors - we'd need open ground outside.'"
+            String indoorNarration = akActor.GetDisplayName() + " glances around the enclosed space, " + \
+                                     "then shakes their head at " + PlayerRef.GetDisplayName() + \
+                                     ": there is no pitching the camp's tents in here. The party needs open ground outside, " + \
+                                     "unless " + PlayerRef.GetDisplayName() + " lays out a small camp of bedrolls by the fire."
             SkyrimNetApi.DirectNarration(indoorNarration, akActor, PlayerRef)
         Else
-            Debug.Notification("You can't pitch a camp indoors - find open ground outside.")
+            Debug.Notification("You can't pitch a full camp indoors - make a small camp, or find open ground outside.")
         EndIf
         Return
     EndIf
 
-    ; Pre-flight clearance peek — runs the same tree-iteration test the
-    ; spawn function uses, but does NOT touch cosave state. Lets us
-    ; narrate a rejection cleanly without rolling back an Establish.
+    ; Tree clearance before anything is established, so a refusal has nothing
+    ; to roll back.
     If !Native_Camp_IsClearForCamp(angleZ, FireBlockRadius, TreeBlockRadius, TentSideOffset)
         If akActor != None && akActor != PlayerRef
-            String narration = "{{ npc.name }} looks around at the trees pressing in, " + \
-                               "then shakes their head at {{ player.name }}. " + \
-                               "'Not here - the ground's too crowded for the tents. " + \
-                               "We'd best find more open ground.'"
+            String narration = akActor.GetDisplayName() + " looks around at the trees pressing in, " + \
+                               "then shakes their head at " + PlayerRef.GetDisplayName() + \
+                               ": the ground here is too crowded for the tents, and the party had best find more open ground."
             SkyrimNetApi.DirectNarration(narration, akActor, PlayerRef)
         Else
             Debug.Notification("Too crowded here - find a more open spot.")
@@ -452,36 +415,36 @@ Function EstablishCamp(Actor akActor)
         Return
     EndIf
 
+    ; The first camp IS the base; while a base stands this pitches the field camp.
+    If !Native_Base_IsActive()
+        _EstablishBaseFlow(akActor, PlayerRef)
+        Return
+    EndIf
     _EstablishCampFlow(akActor, PlayerRef)
 EndFunction
 
-; ============================================================================
-; GoToCamp — route an NPC to the active camp using SeverActions's travel
-; pipeline. Works without IntelEngine (or any other travel mod) so long as
-; SeverActions is installed. SA is already a soft dep for survival/PrismaUI;
-; without it, the action surfaces a notification and no-ops.
-;
-; Travel routes through SA's TravelNPCToReference (orchestrator-driven), which
-; inherits SA's slot management, anti-stuck recovery, alias plumbing, time-skip
-; catch-up, and speed control. The marker is resolved live via
-; Native_Camp_GetCenterMarker so we always route to the current camp's marker
-; (which can move between camps).
-; ============================================================================
+; GoToCamp / GoToBase travel through a STATIC call to
+; SeverActions_TravelCore.BeginJourney (D7): the travel core is in hearth's
+; install closure and the travel module is not, so never name
+; SeverActions_Travel here. The core runs the journey and its arrival wait and
+; applies CampSandboxPackage on arrival. The marker is read live, since it
+; moves with each camp.
 
-SeverActions_Travel Function _GetSATravelScript()
-    {Resolve SA's main quest and cast to its travel script. Returns None
-     if SA isn't installed or the cast fails.}
-    If !_SeverActionsInstalled()
-        Return None
+Function _DisengageForTravel(Actor akNPC, String asTag)
+    {Free the traveler from what would fight the travel package: the furniture use
+     package (FurnitureLib's Activate package, seated or on the way; in hearth's
+     closure through travelcore) and an in-flight crafting session.}
+    If SeverActions_FurnitureLib.CanStop(akNPC)
+        Debug.Trace("[SeversHearth] " + asTag + ": standing " + akNPC.GetDisplayName() + " up from furniture before travel")
+        SeverActions_FurnitureLib.Stop(akNPC)
     EndIf
-    Quest saQuest = Quest.GetQuest("SeverActions")
-    Return saQuest as SeverActions_Travel
+    If SeverActionsNativeExt2.Craft_CancelByActor(akNPC) > 0
+        Debug.Trace("[SeversHearth] " + asTag + ": cancelled in-flight crafting for " + akNPC.GetDisplayName() + " before travel")
+    EndIf
 EndFunction
 
 Function GoToCamp(Actor akNPC, Int speed = 1)
-    {SkyrimNet action entry point. The LLM triggers this for phrases like
-     "go back to camp" / "head to camp" / "return to the camp". Speed:
-     0 = walk, 1 = jog, 2 = run.}
+    {SkyrimNet action: send akNPC to the camp. Speed 0 walk, 1 jog, 2 run.}
     If !akNPC
         Return
     EndIf
@@ -494,25 +457,42 @@ Function GoToCamp(Actor akNPC, Int speed = 1)
         Debug.Trace("[SeversHearth] GoToCamp: marker missing despite active camp")
         Return
     EndIf
-
-    SeverActions_Travel travelScript = _GetSATravelScript()
-    If !travelScript
-        Debug.Notification("Travel requires SeverActions to be installed.")
-        Debug.Trace("[SeversHearth] GoToCamp: SA travel script unavailable")
+    ; An indoor camp is not a journey's end: a companion comes back to it with the player.
+    If Native_Camp_IsInterior()
+        Actor player = Game.GetPlayer()
+        If akNPC != player
+            SkyrimNetApi.DirectNarration(akNPC.GetDisplayName() + " stays with " + player.GetDisplayName() + \
+                                         ": the camp is made inside, and there is no going back to it alone.", akNPC, player)
+        EndIf
+        Debug.Notification("The camp is indoors - companions return to it with you.")
         Return
     EndIf
 
-    ; Pass our CampSandboxPackage as the post-arrival override so the
-    ; arrived follower joins the campfire crowd rather than falling into
-    ; SA's generic sandbox (which would just leave them standing on the
-    ; marker). SA applies the override in OnArrived; SA's ClearSlot
-    ; removes it on cancel/timeout/teardown.
-    travelScript.TravelNPCToReference(akNPC, marker, 0.0, false, speed, CampSandboxPackage)
-    ; Register the arriving follower in our sandbox tracking so BreakCamp's
-    ; _ClearCampSandbox sweeps them along with the rest. Tracking-only —
-    ; the package itself is applied by SA on arrival, not now.
-    _TrackForCleanup(akNPC)
-    Debug.Trace("[SeversHearth] GoToCamp: dispatched " + akNPC.GetDisplayName() + " (speed=" + speed + ")")
+    If !_SeverActionsInstalled()
+        Debug.Notification("Travel requires SeverActions to be installed.")
+        Debug.Trace("[SeversHearth] GoToCamp: SeverActions absent")
+        Return
+    EndIf
+
+    ; Already an occupant here: no journey (its teardown would take Hearth's package off).
+    If _IsParkedAtCamp(akNPC)
+        Debug.Trace("[SeversHearth] GoToCamp: " + akNPC.GetDisplayName() + " is already at the camp")
+        Return
+    EndIf
+    ; CampSandboxPackage replaces the core's default arrival sandbox (which
+    ; leaves them standing on the marker); the core applies it when the wait
+    ; begins and removes it when the journey ends, after which Hearth parks them
+    ; under its own (OnTravelCompleteFromSA). Default 48 h wait, still following,
+    ; and a meeting (the player is expected at the fire).
+    _DisengageForTravel(akNPC, "GoToCamp")
+    Bool started = SeverActions_TravelCore.BeginJourney(akNPC, marker, "the camp", 0.0, false, speed, true, CampSandboxPackage)
+    ; Track now (the package comes on arrival) so a break releases them too. Not a refused
+    ; journey: the actor never left, and a listed actor with no journey reads as parked.
+    If started
+        _TrackForCleanup(akNPC)
+        _SetJourneyTracked(akNPC, True)
+    EndIf
+    Debug.Trace("[SeversHearth] GoToCamp: dispatched " + akNPC.GetDisplayName() + " (speed=" + speed + ", started=" + started + ")")
 EndFunction
 
 Function BreakCamp(Actor akActor)
@@ -524,45 +504,51 @@ Function BreakCamp(Actor akActor)
     _BreakCampFlow(akActor, PlayerRef)
 EndFunction
 
-; ============================================================================
-; Player-driven camp placement — live ghost preview
-;
-; The player triggers setup (MCM hotkey or the PrismaUI Survival button). A
-; solid ghost of the WHOLE camp projects a few meters ahead of them and follows
-; their view; Q/E rotate the layout, Enter/Activate confirms (the ghost BECOMES
-; the camp — no re-spawn), Tab cancels. Reposition first tears the current camp
-; down (the stash chest + its loot are preserved) so the ghost replaces it.
-;
-; Driven entirely Papyrus-side: a RegisterForSingleUpdate tick calls the native
-; UpdatePreview; RegisterForKey feeds OnKeyDown; DisablePlayerControls blocks
-; menus/activate/fighting so the control keys don't double-fire while leaving
-; movement + looking on for aiming.
-; ============================================================================
+; Player-driven placement: a ghost of the whole camp follows the player's view;
+; Q/E rotate, Enter/Activate confirms, Tab cancels. Confirm deletes the ghost
+; and spawns the real camp where it stood (a moved static's collision does not
+; follow it). Reposition first tears the camp down, keeping the stash chest.
+; A 0.1 s update tick re-projects the ghost; DisablePlayerControls blocks
+; menus / activate / fighting so the keys do not double-fire, leaving movement
+; and looking on for aiming.
 
 Event OnPrismaSetupCamp(string eventName, string strArg, float numArg, Form sender)
     EnterPlacementMode(False)
+EndEvent
+
+Event OnPrismaSetupSmallCamp(string eventName, string strArg, float numArg, Form sender)
+    EnterPlacementMode(False, True)
 EndEvent
 
 Event OnPrismaRepositionCamp(string eventName, string strArg, float numArg, Form sender)
     EnterPlacementMode(True)
 EndEvent
 
-Function EnterPlacementMode(Bool reposition)
+Function EnterPlacementMode(Bool reposition, Bool smallCamp = False)
     {Begin positioning the camp ghost. reposition=true tears the current camp
-     down first (chest preserved); false requires no camp to already exist.}
+     down first (chest preserved) and keeps its kit; false requires no camp
+     yet. A fresh full camp while no base stands is placed as the base. A small
+     camp (smallCamp) is always a field camp, and the only one the player can
+     make indoors.}
     If PlacementMode != 0
         Return                       ; already positioning
+    EndIf
+    If reposition
+        smallCamp = Native_Camp_IsSmall()
+    EndIf
+    If !reposition && !smallCamp && !Native_Base_IsActive()
+        EnterBasePlacementMode(False)
+        Return
     EndIf
     Actor PlayerRef = Game.GetPlayer()
     If !PlayerRef
         Return
     EndIf
 
-    ; Wilderness camps only — block indoor placement (covers Set Up Camp and
-    ; Reposition, since both route through here).
+    ; A full camp outdoors only; a small one anywhere.
     Cell playerCell = PlayerRef.GetParentCell()
-    If playerCell && playerCell.IsInterior()
-        Debug.Notification("You can't pitch a camp indoors - find open ground outside.")
+    If !smallCamp && playerCell && playerCell.IsInterior()
+        Debug.Notification("You can't pitch a full camp indoors - make a small camp, or find open ground outside.")
         Return
     EndIf
 
@@ -579,7 +565,13 @@ Function EnterPlacementMode(Bool reposition)
 
     RegisterCampEvents()             ; refresh bindings on older saves
 
-    If !Native_Camp_StartPreview(TentSideOffset)
+    Bool started
+    If smallCamp
+        started = Native_Camp_StartSmallPreview()
+    Else
+        started = Native_Camp_StartPreview(TentSideOffset)
+    EndIf
+    If !started
         Debug.Notification("Can't start camp placement here.")
         Return
     EndIf
@@ -622,24 +614,58 @@ Event OnKeyDown(Int keyCode)
 EndEvent
 
 Function ConfirmPlacement()
+    ; The ghost was started against its slot (field or base), so the commit
+    ; lands there; only the Papyrus finish differs.
+    Bool forBase = (PlacementMode == 2)
     Int placed = Native_Camp_CommitPreview()
     _EndPlacementMode()
     If placed > 0
-        _FinishCommit(Game.GetPlayer())
-        Debug.Notification("Camp established (" + placed + " structure" + PluralS(placed) + ").")
+        If forBase
+            _FinishBaseCommit(Game.GetPlayer())
+            Debug.Notification("Base established (" + placed + " structure" + PluralS(placed) + ").")
+        Else
+            _FinishCommit(Game.GetPlayer())
+            If Native_Camp_IsSmall()
+                Debug.Notification("Small camp made (" + placed + " piece" + PluralS(placed) + ").")
+            Else
+                Debug.Notification("Camp established (" + placed + " structure" + PluralS(placed) + ").")
+            EndIf
+        EndIf
     Else
-        Debug.Notification("Camp placement failed.")
+        ; 0: the native established the slot, then spawned nothing - break it, or it stays
+        ; Building and blocks the next camp. -1: nothing was committed.
+        If placed == 0
+            If forBase
+                Native_Base_DespawnPlacedRefs()
+                Native_Base_BreakKeepTier()   ; a failed reposition keeps its tier
+            Else
+                Native_Camp_DespawnPlacedRefs()
+                Native_Camp_Break()
+                If Native_Base_IsActive()
+                    _PinBaseAsCamp()
+                EndIf
+            EndIf
+        EndIf
+        If forBase
+            Debug.Notification("Base placement failed.")
+        Else
+            Debug.Notification("Camp placement failed.")
+        EndIf
     EndIf
 EndFunction
 
 Function CancelPlacement()
+    Bool forBase = (PlacementMode == 2)
     Native_Camp_CancelPreview()
     _EndPlacementMode()
-    Debug.Notification("Camp placement cancelled.")
+    If forBase
+        Debug.Notification("Base placement cancelled.")
+    Else
+        Debug.Notification("Camp placement cancelled.")
+    EndIf
 EndFunction
 
-; Post-commit bookkeeping — mirrors the tail of _EstablishCampFlow (minus the
-; cinematic fade / single-follower sandbox; the fan-out covers all teammates).
+; The tail of _EstablishCampFlow, without the fade and the speaker's sandbox.
 Function _FinishCommit(Actor PlayerRef)
     If SandboxOnEstablish
         _FanOutSandboxToTeammates(PlayerRef, 1000.0)
@@ -647,29 +673,34 @@ Function _FinishCommit(Actor PlayerRef)
     Native_Camp_SetPhase(2)          ; CampPhase::Active
     _PinCampRestStop()
     Native_Camp_ForceTick()
-    MarkCampOnMap()
-    _BindCampLocationToMarker()
+    ; An indoor camp is neither on the map nor a travel destination (GoToCamp refuses it).
+    If !Native_Camp_IsInterior()
+        MarkCampOnMap()
+        _BindCampLocationToMarker()
+    EndIf
     Native_Camp_KickThreatScan()
 EndFunction
 
-; Quiet teardown used by reposition: stop the tick, clear the sandbox + map +
-; location binding, despawn the structures (native Break preserves the stash
-; chest), and clear the SA rest-stop — all with no fade/sound so the new ghost
-; replaces the old camp immediately.
+; Reposition's silent teardown (no fade or sound) so the ghost replaces the
+; camp at once. The native Break keeps the stash chest.
 Function _QuietBreakForReposition()
-    Native_Camp_SetPhase(3)          ; CampPhase::Breaking — stop the survival tick
+    Native_Camp_SetPhase(3)          ; CampPhase::Breaking - the tick skips the field half
     _ClearCampSandbox()
     UnmarkCampOnMap()
     _UnbindCampLocation()
     Native_Camp_DespawnPlacedRefs()
     Native_Camp_Break()
     _ClearCampRestStop()
+    ; After the clear, or it would wipe the base's label again. The base carries the surfaces
+    ; until a new field camp commits (a Tab cancel or a failed preview/commit leaves it so).
+    If Native_Base_IsActive()
+        _PinBaseAsCamp()
+    EndIf
 EndFunction
 
 Function _BeginPlacementInput()
-    ; Resolve the Activate key for confirm; fall back to Enter (28) when it
-    ; collides with a control key (Q/E/Tab) — which it does on the default
-    ; E binding. Enter is always a confirm regardless.
+    ; Activate also confirms, unless it collides with Q/E/Tab (the default E
+    ; does); then only Enter does.
     PlacementConfirmKey = Input.GetMappedKey("Activate")
     If PlacementConfirmKey == 16 || PlacementConfirmKey == 18 || PlacementConfirmKey == 15 || PlacementConfirmKey <= 0
         PlacementConfirmKey = 28
@@ -679,8 +710,8 @@ Function _BeginPlacementInput()
     RegisterForKey(15)               ; Tab — cancel
     RegisterForKey(28)               ; Enter — confirm
     RegisterForKey(PlacementConfirmKey)
-    ; movement=on, fighting=off, camSwitch=on, looking=on, sneaking=on,
-    ; menu=off, activate=off, journalTabs=off — aim freely, no menus/swings.
+    ; Disables fighting, menu, activate and journal tabs; movement, camera,
+    ; looking and sneaking stay on.
     Game.DisablePlayerControls(False, True, False, False, False, True, True, True)
 EndFunction
 
@@ -705,26 +736,15 @@ Function _ShowPlacementBanner()
     PlacementBannerCooldown = 3.0
 EndFunction
 
-; ============================================================================
-; Lifecycle — single function for establish, one for break. Phase argument
-; matters: a cinematic flow (follower-initiated) wraps the spawn in a
-; fade-to-black; a quick flow (player-initiated) doesn't.
-;
-; Phase transitions (driven here, observable via Native_Camp_GetPhase):
-;   Idle → Building → Active     (Establish)
-;   Active → Breaking → Idle     (Break)
-;
-; The Building / Breaking phases are the windows during which the
-; survival tick MUST NOT fire — `Native_Camp_IsTickable()` (= phase ==
-; Active) is what gates it on the native side.
-; ============================================================================
+; Establish / break flows. A follower-initiated ("cinematic") flow runs behind
+; a fade with narration; a player-initiated one does not.
+; Phases: Idle -> Building -> Active (establish), Active -> Breaking -> Idle
+; (break). The native survival tick fires while the field camp or the base is
+; Active (CampStore::IsTickable).
 
 Function _EstablishCampFlow(Actor follower, Actor PlayerRef)
-    ; Re-register event handlers every Establish. On a save made before a new
-    ; event handler existed, newly-added events (e.g. OnPrismaToggleCampMarker,
-    ; OnFollowerCalledByPlayer) never fire until re-registered. RegisterForModEvent
-    ; is idempotent, so refreshing the bindings each camp lifecycle is safe and
-    ; needs no new game.
+    ; Re-register every establish, so a save made before a handler existed
+    ; picks it up.
     RegisterCampEvents()
 
     Float angleZ = PlayerRef.GetAngleZ()
@@ -735,8 +755,8 @@ Function _EstablishCampFlow(Actor follower, Actor PlayerRef)
         Utility.Wait(1.0)            ; -> t≈1.0s
     EndIf
 
-    ; Establish first so AddPlacedRef registers each spawned ref. Phase
-    ; is set to Building by the native — tick is gated off until Active.
+    ; Establish first so the spawn can register each ref; the native sets
+    ; Building.
     If !Native_Camp_EstablishAtPlayer(angleZ)
         If cinematic
             _EndFadeToBlack()
@@ -763,8 +783,7 @@ Function _EstablishCampFlow(Actor follower, Actor PlayerRef)
         Return
     EndIf
 
-    ; AI sandbox transitions happen during the dim window so package
-    ; override + EvaluatePackage churn isn't visible.
+    ; Sandbox while the screen is dark, so the AI churn is not seen.
     If SandboxOnEstablish
         If cinematic
             _ApplyCampSandbox(follower)
@@ -772,8 +791,7 @@ Function _EstablishCampFlow(Actor follower, Actor PlayerRef)
         _FanOutSandboxToTeammates(PlayerRef, 1000.0)
     EndIf
 
-    ; Flip to Active so the survival tick can start firing.
-    Native_Camp_SetPhase(2)  ; CampPhase::Active
+    Native_Camp_SetPhase(2)  ; CampPhase::Active - the survival tick may fire
 
     If cinematic
         Utility.Wait(1.5)            ; -> t≈5.5s
@@ -784,20 +802,15 @@ Function _EstablishCampFlow(Actor follower, Actor PlayerRef)
     _PinCampRestStop()
     Native_Camp_ForceTick()
 
-    ; Auto-place the world-map marker on every Establish. Previously
-    ; required a manual Prisma click; the player almost always wants the
-    ; marker, so default to "on" and let them Unmark if they want a
-    ; stealth camp. No-op if CampMapMarker isn't configured.
+    ; Marked by default; the player can unmark it.
     MarkCampOnMap()
 
-    ; IntelEngine integration: point the camp's BGSLocation at the marker
-    ; so "go to the camp" resolves correctly. Soft dep — no-op if the
-    ; user hasn't picked a Location in CK or IntelEngine isn't installed.
+    ; So IntelEngine's "go to the camp" resolves.
     _BindCampLocationToMarker()
 
     If cinematic
-        String narration = "{{ npc.name }} clears a flat patch of ground near {{ player.name }}, " + \
-                           "raises two tents, drives in stakes, kindles a fire, and lays out bedrolls. " + \
+        String narration = follower.GetDisplayName() + " clears a flat patch of ground near " + PlayerRef.GetDisplayName() + ", " + \
+                           "raises the tents about the fire, drives in stakes, kindles it, and lays out bedrolls. " + \
                            "A cooking spit is set over the flames and the camp settles into a steady rhythm."
         SkyrimNetApi.DirectNarration(narration, follower, PlayerRef)
     EndIf
@@ -805,31 +818,20 @@ Function _EstablishCampFlow(Actor follower, Actor PlayerRef)
     Debug.Notification("Camp established (" + placed + " structure" + PluralS(placed) + ").")
 EndFunction
 
-; ============================================================================
-; Breakdown flows
-;
-; A black fade masks the multi-ref despawn — without it 7-9 structures pop
-; out of existence simultaneously, which looks like a script crash. Player
-; path is brief and silent; follower path is held longer with narration so
-; the LLM can reference the teardown afterwards.
-; ============================================================================
+; Breaking always fades: without it the structures vanish all at once, which
+; reads as a script crash. The follower path adds narration so the LLM can
+; refer to the teardown.
 
 Function _BreakCampFlow(Actor follower, Actor PlayerRef)
     Bool cinematic = (follower != None && follower != PlayerRef)
 
-    ; Flip to Breaking FIRST so the survival tick can't fire restoration
-    ; during the fade window (Native_Camp_IsTickable returns false for
-    ; non-Active phases). Sandbox + PrismaUI teardown also happens here
-    ; so package overrides clear before refs vanish — no beat where AI
-    ; points at a deleted bench.
+    ; Breaking first, so no survival tick lands during the fade, and the
+    ; sandbox comes off before the refs vanish (no AI aimed at a deleted bench).
     Native_Camp_SetPhase(3)  ; CampPhase::Breaking
     _ClearCampRestStop()
     _ClearCampSandbox()
-    ; Hide the map marker if the player had it enabled. Disables only —
-    ; the CK-placed placement stays alive for re-use by the next camp.
     UnmarkCampOnMap()
-    ; Unbind IntelEngine BEFORE the native Break() despawns the marker —
-    ; otherwise we'd race with Break clearing centerMarkerID.
+    ; Unbind before the native Break despawns the marker and clears its id.
     _UnbindCampLocation()
 
     _StartFadeToBlack()
@@ -844,12 +846,15 @@ Function _BreakCampFlow(Actor follower, Actor PlayerRef)
 
     Native_Camp_DespawnPlacedRefs()
     Native_Camp_Break()  ; Breaking -> Idle; clears cosave fields.
+    If Native_Base_IsActive()
+        _PinBaseAsCamp()             ; the base is the camp again
+    EndIf
 
     _EndFadeToBlack()
 
     If cinematic
         Utility.Wait(1.5)        ; -> t≈7.0s (screen fully clear)
-        String narration = "{{ npc.name }} dismantles the tent, scatters and snuffs the embers, " + \
+        String narration = follower.GetDisplayName() + " dismantles the tent, scatters and snuffs the embers, " + \
                            "rolls up the bedroll, packs the gear, and leaves only flattened grass " + \
                            "where the camp had stood."
         SkyrimNetApi.DirectNarration(narration, follower, PlayerRef)
@@ -858,14 +863,945 @@ Function _BreakCampFlow(Actor follower, Actor PlayerRef)
     Debug.Notification("Camp broken down.")
 EndFunction
 
-; ============================================================================
-; Sound helpers
-; ============================================================================
+; The BASE, the company's persistent command camp
+; (ai_docs/DESIGN_HearthCommandCamp.md). The field camp above is tonight's
+; bivouac; the base is a second, persistent slot followers can be sent to and
+; live at. The first camp pitched IS the base; one pitched while a base stands
+; is the field camp. The base has tiers 1-3 (see UpgradeBase). The one stash
+; chest belongs to the base whenever one stands (a native rule).
 
-; Plays vanilla NPCHumanWoodChop (Skyrim.esm 0x0006D1CA) at the player.
-; One-shot, non-blocking; safe to call multiple times in sequence to layer
-; "construction effort" audio during the black-screen window. Falls through
-; silently if the form can't resolve (e.g. wrong base game version).
+Function EstablishBase(Actor akActor)
+    {SkyrimNet action entry point. Pitch the company's base here.}
+    If Native_Base_IsActive()
+        Debug.Notification("You already have a base - reposition or break it first.")
+        Return
+    EndIf
+    Actor PlayerRef = Game.GetPlayer()
+    Float angleZ = PlayerRef.GetAngleZ()
+    Cell playerCell = PlayerRef.GetParentCell()
+    If playerCell && playerCell.IsInterior()
+        If akActor != None && akActor != PlayerRef
+            String indoorNarration = akActor.GetDisplayName() + " glances around the enclosed space, " + \
+                                     "then shakes their head at " + PlayerRef.GetDisplayName() + \
+                                     ": a base needs open ground, and there is no raising tents in here."
+            SkyrimNetApi.DirectNarration(indoorNarration, akActor, PlayerRef)
+        Else
+            Debug.Notification("You can't raise a base indoors - find open ground outside.")
+        EndIf
+        Return
+    EndIf
+    If !Native_Camp_IsClearForCamp(angleZ, FireBlockRadius, TreeBlockRadius, TentSideOffset)
+        If akActor != None && akActor != PlayerRef
+            String narration = akActor.GetDisplayName() + " looks around at the trees pressing in, " + \
+                               "then shakes their head at " + PlayerRef.GetDisplayName() + \
+                               ": a base needs more room than this, and the party had best find open ground."
+            SkyrimNetApi.DirectNarration(narration, akActor, PlayerRef)
+        Else
+            Debug.Notification("Too crowded here - find a more open spot for the base.")
+        EndIf
+        Return
+    EndIf
+    _EstablishBaseFlow(akActor, PlayerRef)
+EndFunction
+
+Function BreakBase(Actor akActor)
+    {SkyrimNet action entry point. Strike the base. The chest's contents are
+     kept (the chest is disabled, never deleted).}
+    If !Native_Base_IsActive()
+        Debug.Notification("There is no base to break down.")
+        Return
+    EndIf
+    Actor PlayerRef = Game.GetPlayer()
+    _BreakBaseFlow(akActor, PlayerRef)
+EndFunction
+
+Function PromoteCampToBase(Actor akActor)
+    {SkyrimNet action entry point. The standing field camp becomes the base in
+     place (the native moves refs, marker and position; the field slot
+     empties). No fade: nothing is rebuilt.}
+    If !Native_Camp_IsActive()
+        Debug.Notification("There is no camp to promote - pitch one first.")
+        Return
+    EndIf
+    If Native_Base_IsActive()
+        Debug.Notification("You already have a base. Break it before naming a new one.")
+        Return
+    EndIf
+    Actor PlayerRef = Game.GetPlayer()
+    If Native_Camp_IsSmall()
+        If akActor != None && akActor != PlayerRef
+            SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " looks over the bedrolls round the fire and shakes their head at " + \
+                                         PlayerRef.GetDisplayName() + ": a night's stop this small is no base. A full camp is needed for that.", \
+                                         akActor, PlayerRef)
+        EndIf
+        Debug.Notification("A small camp can't become the base - pitch a full camp for that.")
+        Return
+    EndIf
+    ; The native first: a promote that loses a race (a double click) returns before touching
+    ; the winner's marker and binding.
+    If !Native_Camp_PromoteFieldToBase()
+        Debug.Notification("Could not promote the camp.")
+        Return
+    EndIf
+    ; The field camp's bookkeeping stands down, and its occupants move to the base's list,
+    ; so a later BreakCamp cannot release them.
+    _ClearCampRestStop()
+    UnmarkCampOnMap()
+    _UnbindCampLocation()
+    _MoveFieldSandboxToBase()
+    _PinBaseStatus()
+    _PinBaseAsCamp()
+    If akActor != None && akActor != PlayerRef
+        String narration = akActor.GetDisplayName() + " walks the camp's edge with " + PlayerRef.GetDisplayName() + ", " + \
+                           "marking where the tents will stay. This is not a night's stop any more - " + \
+                           "it is where the company lives now."
+        SkyrimNetApi.DirectNarration(narration, akActor, PlayerRef)
+    EndIf
+    Debug.Notification("The camp is now your base.")
+EndFunction
+
+Function GoToBase(Actor akNPC, Int speed = 1)
+    {SkyrimNet action: GoToCamp aimed at the base. Speed 0 walk, 1 jog, 2 run.}
+    If !akNPC
+        Return
+    EndIf
+    If !Native_Base_IsActive()
+        Debug.Notification("There is no base to travel to.")
+        Return
+    EndIf
+    ObjectReference marker = Native_Base_GetCenterMarker()
+    If !marker
+        Debug.Trace("[SeversHearth] GoToBase: marker missing despite active base")
+        Return
+    EndIf
+    If !_SeverActionsInstalled()
+        Debug.Notification("Travel requires SeverActions to be installed.")
+        Return
+    EndIf
+    ; Already an occupant here: no journey (its teardown would take Hearth's package off).
+    If _IsParkedAtBase(akNPC)
+        Debug.Trace("[SeversHearth] GoToBase: " + akNPC.GetDisplayName() + " is already at the base")
+        Return
+    EndIf
+    ; A full base refuses before the journey: arriving untracked, no break would release them.
+    If !_IsBaseSandboxed(akNPC) && !_BaseHasRoom()
+        Debug.Notification("The base has no room for anyone else.")
+        Return
+    EndIf
+    ; The same journey as GoToCamp (see there).
+    _DisengageForTravel(akNPC, "GoToBase")
+    Bool started = SeverActions_TravelCore.BeginJourney(akNPC, marker, "the base", 0.0, false, speed, true, CampSandboxPackage)
+    If started   ; not a refused journey (see GoToCamp)
+        _TrackForBaseCleanup(akNPC)
+        _SetJourneyTracked(akNPC, True)
+    EndIf
+    Debug.Trace("[SeversHearth] GoToBase: dispatched " + akNPC.GetDisplayName() + " (speed=" + speed + ", started=" + started + ")")
+EndFunction
+
+; ── The Base card's buttons (SA's Survival page) ─────────────────────────
+
+Event OnPrismaSetupBase(string eventName, string strArg, float numArg, Form sender)
+    EnterBasePlacementMode(False)
+EndEvent
+
+Event OnPrismaRepositionBase(string eventName, string strArg, float numArg, Form sender)
+    EnterBasePlacementMode(True)
+EndEvent
+
+Event OnPrismaBreakBase(string eventName, string strArg, float numArg, Form sender)
+    If !Native_Base_IsActive()
+        Return
+    EndIf
+    Actor PlayerRef = Game.GetPlayer()
+    If PlayerRef
+        BreakBase(PlayerRef)
+    EndIf
+EndEvent
+
+Event OnPrismaPromoteToBase(string eventName, string strArg, float numArg, Form sender)
+    Actor PlayerRef = Game.GetPlayer()
+    If PlayerRef
+        PromoteCampToBase(PlayerRef)
+    EndIf
+EndEvent
+
+Event OnPrismaTravelToBase(string eventName, string strArg, float numArg, Form sender)
+    {Same payload shape as OnPrismaTravelToCamp: "0|all" or "0|<hex formID>".}
+    If !Native_Base_IsActive()
+        Return
+    EndIf
+    String payload = strArg
+    Int payloadPipe = StringUtil.Find(strArg, "|")
+    If payloadPipe >= 0
+        payload = StringUtil.Substring(strArg, payloadPipe + 1, 0)
+    EndIf
+    If payload == "all"
+        Actor PlayerRef = Game.GetPlayer()
+        If !PlayerRef
+            Return
+        EndIf
+        Actor[] teammates = Native_Camp_FindNearbyTeammates(1000.0)
+        If !teammates
+            Return
+        EndIf
+        Int i = 0
+        Int dispatched = 0
+        While i < teammates.Length
+            Actor candidate = teammates[i]
+            If candidate && candidate != PlayerRef && !_IsParkedAtBase(candidate)
+                GoToBase(candidate, 1)
+                dispatched += 1
+            EndIf
+            i += 1
+        EndWhile
+        Debug.Notification("Sent " + dispatched + " follower" + PluralS(dispatched) + " to the base.")
+    Else
+        Int formID = SeverActionsNative.HexToInt(payload)
+        If formID == 0
+            Return
+        EndIf
+        Actor target = Game.GetFormEx(formID) as Actor
+        If target
+            GoToBase(target, 1)
+        EndIf
+    EndIf
+EndEvent
+
+
+; ── Upgrading the base ───────────────────────────────────────────────────
+; Tier 1 bivouac -> 2 encampment -> 3 command camp (DESIGN §9). Paid in
+; materials, stash chest first, then the player's pack; the new tier's whole
+; kit goes up in place behind a fade.
+
+Int Function _UpgradeCostWood(Int newTier)
+    If newTier >= 3
+        Return 30
+    EndIf
+    Return 20
+EndFunction
+
+Int Function _UpgradeCostLeather(Int newTier)
+    If newTier >= 3
+        Return 15
+    EndIf
+    Return 10
+EndFunction
+
+Int Function _UpgradeCostIron(Int newTier)
+    If newTier >= 3
+        Return 10
+    EndIf
+    Return 5
+EndFunction
+
+String Function _TierName(Int tier)
+    If tier >= 3
+        Return "command camp"
+    ElseIf tier == 2
+        Return "encampment"
+    EndIf
+    Return "bivouac"
+EndFunction
+
+Int Function _CountMaterial(ObjectReference chest, Actor PlayerRef, Form item)
+    Int n = 0
+    If chest
+        n += chest.GetItemCount(item)
+    EndIf
+    If PlayerRef
+        n += PlayerRef.GetItemCount(item)
+    EndIf
+    Return n
+EndFunction
+
+Function _RefundMaterial(ObjectReference chest, Actor PlayerRef, Form item, Int count)
+    {Give back a refused build's materials: to the stash chest, or the
+     player's pack if the chest is gone.}
+    If count <= 0 || !item
+        Return
+    EndIf
+    If chest
+        chest.AddItem(item, count, true)
+    ElseIf PlayerRef
+        PlayerRef.AddItem(item, count, true)
+    EndIf
+EndFunction
+
+Function _TakeMaterial(ObjectReference chest, Actor PlayerRef, Form item, Int count)
+    {Chest first, then the player's pack. Removing by FormID is safe here:
+     firewood, leather and ingots are never player-enchanted pieces.}
+    If count <= 0 || !item
+        Return
+    EndIf
+    Int left = count
+    If chest
+        Int inChest = chest.GetItemCount(item)
+        If inChest > 0
+            Int take = inChest
+            If take > left
+                take = left
+            EndIf
+            chest.RemoveItem(item, take, true, None)
+            left -= take
+        EndIf
+    EndIf
+    If left > 0 && PlayerRef
+        PlayerRef.RemoveItem(item, left, true, None)
+    EndIf
+EndFunction
+
+Function UpgradeBase(Actor akActor)
+    {SkyrimNet action entry point and the Base card's Upgrade button. One
+     upgrade at a time: no external call sits between the check and the set,
+     so they run under the script's lock.}
+    If _UpgradeInProgress
+        Debug.Notification("The company is already building the base out.")
+        Return
+    EndIf
+    _UpgradeInProgress = True
+    _UpgradeBaseImpl(akActor)
+    _UpgradeInProgress = False
+EndFunction
+
+Function _UpgradeBaseImpl(Actor akActor)
+    If !Native_Base_IsActive()
+        Debug.Notification("There is no base to upgrade.")
+        Return
+    EndIf
+    Int tier = Native_Base_GetTier()
+    If tier >= 3
+        Debug.Notification("The base is already a command camp.")
+        Return
+    EndIf
+    Int newTier = tier + 1
+    Actor PlayerRef = Game.GetPlayer()
+    Bool cinematic = (akActor != None && akActor != PlayerRef)
+    ; The player must be at the base: the rebuild spawns at the player, and
+    ; the tree scan reads only cells loaded around them (and passes indoors).
+    ; Distance alone passes in a city worldspace or an interior overlapping
+    ; the base, hence IsPlayerAtBase; checked here so the refusal says why.
+    Float dist = Native_Base_DistanceFromPlayer()
+    If dist < 0.0 || dist > 2000.0 || !Native_Base_IsPlayerAtBase()
+        If cinematic
+            SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " shakes their head: the party would have to be at the base to build it out.", akActor, PlayerRef)
+        Else
+            Debug.Notification("You need to be at the base to upgrade it.")
+        EndIf
+        Return
+    EndIf
+    If !Native_Base_IsClearForUpgrade(FireBlockRadius, TreeBlockRadius, TentSideOffset)
+        If cinematic
+            SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " paces the ground around the base and comes back shaking their head: the trees stand too close for more tents, and the base would have to move to grow.", akActor, PlayerRef)
+        Else
+            Debug.Notification("No room here for a larger camp - reposition the base to more open ground first.")
+        EndIf
+        Return
+    EndIf
+    Form wood    = Game.GetFormFromFile(0x0006F993, "Skyrim.esm")   ; Firewood01
+    Form leather = Game.GetFormFromFile(0x000DB5D2, "Skyrim.esm")   ; Leather01
+    Form iron    = Game.GetFormFromFile(0x0005ACE4, "Skyrim.esm")   ; IngotIron
+    ObjectReference chest = Native_Camp_GetChest()
+    Int needWood    = _UpgradeCostWood(newTier)
+    Int needLeather = _UpgradeCostLeather(newTier)
+    Int needIron    = _UpgradeCostIron(newTier)
+    ; A tier already built once (the earned tier) is rebuilt for free.
+    Bool rebuild = newTier <= Native_Base_GetEarnedTier()
+    If rebuild
+        needWood = 0
+        needLeather = 0
+        needIron = 0
+    EndIf
+    Int haveWood    = _CountMaterial(chest, PlayerRef, wood)
+    Int haveLeather = _CountMaterial(chest, PlayerRef, leather)
+    Int haveIron    = _CountMaterial(chest, PlayerRef, iron)
+    If haveWood < needWood || haveLeather < needLeather || haveIron < needIron
+        String short = ""
+        If haveWood < needWood
+            short += (needWood - haveWood) + " firewood"
+        EndIf
+        If haveLeather < needLeather
+            If short != ""
+                short += ", "
+            EndIf
+            short += (needLeather - haveLeather) + " leather"
+        EndIf
+        If haveIron < needIron
+            If short != ""
+                short += ", "
+            EndIf
+            short += (needIron - haveIron) + " iron"
+        EndIf
+        If cinematic
+            SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " checks the stash and shakes their head at " + PlayerRef.GetDisplayName() + ": not enough to build with yet - still short " + short + ".", akActor, PlayerRef)
+        Else
+            Debug.Notification("Short " + short + " for the upgrade (chest or pack).")
+        EndIf
+        Return
+    EndIf
+    _TakeMaterial(chest, PlayerRef, wood, needWood)
+    _TakeMaterial(chest, PlayerRef, leather, needLeather)
+    _TakeMaterial(chest, PlayerRef, iron, needIron)
+    ; Occupants keep their sandbox (the package is on them, not the refs).
+    _StartFadeToBlack()
+    Utility.Wait(1.0)
+    _PlayConstructionSound()
+    Utility.Wait(1.5)
+    _PlayConstructionSound()
+    Utility.Wait(1.5)
+    _PlayConstructionSound()
+    Int placed = Native_Base_Upgrade(TentSideOffset)
+    Utility.Wait(1.0)
+    _EndFadeToBlack()
+    If placed <= 0
+        ; A negative result returns before anything comes down: the base stands
+        ; as it was, so refund. 0 means the kit's forms failed to resolve after
+        ; the teardown (the native logs which) with the tier already raised: no
+        ; refund.
+        Debug.Trace("[SeversHearth] UpgradeBase: native returned " + placed)
+        If placed < 0
+            _RefundMaterial(chest, PlayerRef, wood, needWood)
+            _RefundMaterial(chest, PlayerRef, leather, needLeather)
+            _RefundMaterial(chest, PlayerRef, iron, needIron)
+            Debug.Notification("The upgrade could not be built here - the materials are back in the stash.")
+        Else
+            Debug.Notification("The upgrade could not be built here.")
+        EndIf
+        _PinBaseStatus()
+        Return
+    EndIf
+    _PinBaseStatus()
+    _PinBaseAsCamp()                 ; the marker was respawned by the native
+    If cinematic
+        Utility.Wait(1.0)
+        String narration = ""
+        If newTier == 2
+            narration = akActor.GetDisplayName() + " and the company strike the two small tents and raise a barracks tent on each flank, plant a banner at the door of " + PlayerRef.GetDisplayName() + "'s tent, set up a mess table with its provisions and a big woodpile, and roll another barrel over to the stores - the base is an encampment now, room for the whole company."
+        Else
+            narration = akActor.GetDisplayName() + " and the company raise a war tent beside " + PlayerRef.GetDisplayName() + "'s, lay its plank floor and carry the war table in, map spread and weighted under a lit candle, pitch a small tent in the far corner and a hunter's lean-to with its hay at the edge, raise the second banner and the flags at the way in, and set up a smithy - an anvil and grindstone by the fire, an armor bench by the stores. The base is a command camp now."
+        EndIf
+        SkyrimNetApi.DirectNarration(narration, akActor, PlayerRef)
+    EndIf
+    If rebuild
+        Debug.Notification("Base rebuilt as " + _TierName(newTier) + " - no materials needed (" + placed + " structure" + PluralS(placed) + ").")
+    Else
+        Debug.Notification("Base upgraded to " + _TierName(newTier) + " (" + placed + " structure" + PluralS(placed) + ").")
+    EndIf
+EndFunction
+
+Event OnPrismaUpgradeBase(string eventName, string strArg, float numArg, Form sender)
+    Actor PlayerRef = Game.GetPlayer()
+    If PlayerRef
+        UpgradeBase(PlayerRef)
+    EndIf
+EndEvent
+
+Event OnPrismaCampFactionSkin(string eventName, string strArg, float numArg, Form sender)
+    {Settings page tent pattern: 0 auto (follows the civil war), 1 Nord,
+     2 Imperial. Applies from the next build; standing tents keep theirs. SA's
+     settings handler sends the bare value; an "<actor>|" prefix is tolerated.}
+    String payload = strArg
+    Int pipePos = StringUtil.Find(strArg, "|")
+    If pipePos >= 0
+        payload = StringUtil.Substring(strArg, pipePos + 1, 0)
+    EndIf
+    Int skin = payload as Int
+    If skin < 0 || skin > 2
+        skin = 0
+    EndIf
+    Native_Camp_SetFactionSkin(skin)
+    If _SeverActionsInstalled()
+        SeverActionsNativeExt2.Magelight_SetCampFactionSkin(skin)
+    EndIf
+    Debug.Trace("[SeversHearth] CampFactionSkin = " + skin)
+EndEvent
+
+; ── Placement (the same ghost, committed to the base slot) ───────────────
+
+Function EnterBasePlacementMode(Bool reposition)
+    {Begin positioning the base ghost. reposition=true strikes the current
+     base first (chest preserved); false requires no base to exist yet.}
+    If PlacementMode != 0
+        Return
+    EndIf
+    Actor PlayerRef = Game.GetPlayer()
+    If !PlayerRef
+        Return
+    EndIf
+    Cell playerCell = PlayerRef.GetParentCell()
+    If playerCell && playerCell.IsInterior()
+        Debug.Notification("You can't raise a base indoors - find open ground outside.")
+        Return
+    EndIf
+    If reposition
+        If !Native_Base_IsActive()
+            Debug.Notification("No base to reposition. Establish one first.")
+            Return
+        EndIf
+        _QuietBreakBaseForReposition()
+    ElseIf Native_Base_IsActive()
+        Debug.Notification("You already have a base - reposition or break it.")
+        Return
+    EndIf
+    RegisterCampEvents()
+    If !Native_Base_StartPreview(TentSideOffset)
+        Debug.Notification("Can't start base placement here.")
+        Return
+    EndIf
+    PlacementMode = 2
+    PlacementRotateOffset = 0.0
+    PlacementBannerCooldown = 0.0
+    _BeginPlacementInput()
+    _ShowPlacementBanner()
+    RegisterForSingleUpdate(0.1)
+EndFunction
+
+Function _FinishBaseCommit(Actor PlayerRef)
+    If SandboxOnEstablish
+        _FanOutBaseSandboxToTeammates(PlayerRef, 1000.0)
+    EndIf
+    Native_Base_SetPhase(2)          ; CampPhase::Active
+    _PinBaseStatus()
+    _PinBaseAsCamp()
+EndFunction
+
+Function _QuietBreakBaseForReposition()
+    Native_Base_SetPhase(3)          ; CampPhase::Breaking
+    _ClearBaseSandbox()
+    _ReleaseBaseAsCamp()
+    Native_Base_DespawnPlacedRefs()
+    Native_Base_BreakKeepTier()      ; the tier survives the move
+    _ClearBaseStatus()
+EndFunction
+
+; ── The base as THE camp ─────────────────────────────────────────────────
+; While no field camp stands the base carries the camp surfaces: the dashboard
+; rest-stop label, the one CampMapMarker and the CampLocation binding. A field
+; camp takes them over when pitched and hands them back when broken.
+
+Function _PinBaseAsCamp()
+    {Give the base the rest stop, map marker and location binding. No-op while
+     a field camp stands.}
+    If Native_Camp_IsActive()
+        Return
+    EndIf
+    _PinBaseRestStop()
+    _MarkBaseOnMap()
+    _BindBaseLocationToMarker()
+EndFunction
+
+Function _ReleaseBaseAsCamp()
+    {The base stops carrying the camp surfaces - on break and reposition.
+     No-op while a field camp stands (it owns them).}
+    If Native_Camp_IsActive()
+        Return
+    EndIf
+    If _SeverActionsInstalled()
+        SeverActionsNative.Magelight_SetPinnedRestStop("")
+    EndIf
+    If CampMapMarker
+        CampMapMarker.Disable()
+    EndIf
+    _UnbindCampLocation()
+EndFunction
+
+Function _PinBaseRestStop()
+    If !_SeverActionsInstalled() || Native_Camp_IsActive()
+        Return
+    EndIf
+    String loc = Native_Base_GetLocationName()
+    If loc != ""
+        SeverActionsNative.Magelight_SetPinnedRestStop("Base near " + loc)
+    Else
+        SeverActionsNative.Magelight_SetPinnedRestStop("Wilderness base")
+    EndIf
+EndFunction
+
+Function _MarkBaseOnMap()
+    {The one CampMapMarker shows the field camp when one stands, else the
+     base. The Camp card's Mark / Unmark toggle stays the field camp's.}
+    If !CampMapMarker || Native_Camp_IsActive()
+        Return
+    EndIf
+    ObjectReference center = Native_Base_GetCenterMarker()
+    If !center
+        Return
+    EndIf
+    String locName = Native_Base_GetLocationName()
+    String displayName = "Base"
+    If locName != ""
+        displayName = "Base near " + locName
+    EndIf
+    CampMapMarker.MoveTo(center)
+    CampMapMarker.Enable()
+    CampMapMarker.SetDisplayName(displayName, True)
+EndFunction
+
+Function _BindBaseLocationToMarker()
+    If !CampLocation || Native_Camp_IsActive()
+        Return
+    EndIf
+    ObjectReference marker = Native_Base_GetCenterMarker()
+    If !marker
+        Return
+    EndIf
+    If Native_Camp_BindLocationToMarker(CampLocation, marker)
+        If _IntelEngineInstalled()
+            IntelEngine.RebuildLocationIndex()
+        EndIf
+        Debug.Trace("[SeversHearth] CampLocation bound to the base's marker")
+    EndIf
+EndFunction
+
+; ── Flows (mirror the field camp's, against the base slot) ───────────────
+
+Function _EstablishBaseFlow(Actor follower, Actor PlayerRef)
+    RegisterCampEvents()
+    Float angleZ = PlayerRef.GetAngleZ()
+    Bool cinematic = (follower != None && follower != PlayerRef)
+    If cinematic
+        _StartFadeToBlack()
+        Utility.Wait(1.0)
+    EndIf
+    If !Native_Base_EstablishAtPlayer(angleZ)
+        If cinematic
+            _EndFadeToBlack()
+        EndIf
+        Debug.Notification("Failed to establish the base.")
+        Return
+    EndIf
+    If cinematic
+        _PlayConstructionSound()
+        Utility.Wait(1.5)
+        _PlayConstructionSound()
+        Utility.Wait(1.5)
+        _PlayConstructionSound()
+    EndIf
+    Int placed = Native_Base_SpawnStructures(angleZ, FireBlockRadius, TreeBlockRadius, TentSideOffset)
+    If placed <= 0
+        Native_Base_Break()
+        If cinematic
+            _EndFadeToBlack()
+        EndIf
+        Debug.Notification("Failed to raise the base.")
+        Return
+    EndIf
+    If SandboxOnEstablish
+        If cinematic
+            _ApplyBaseSandbox(follower)
+        EndIf
+        _FanOutBaseSandboxToTeammates(PlayerRef, 1000.0)
+    EndIf
+    Native_Base_SetPhase(2)
+    If cinematic
+        Utility.Wait(1.5)
+        _EndFadeToBlack()
+        Utility.Wait(1.5)
+    EndIf
+    _PinBaseStatus()
+    _PinBaseAsCamp()
+    If cinematic
+        String narration = follower.GetDisplayName() + " paces out the ground with " + PlayerRef.GetDisplayName() + " and the company " + \
+                           "raises the tents about the fire - " + PlayerRef.GetDisplayName() + "'s own at the head " + \
+                           "of the camp with a proper bed and the stash chest inside - drives in stakes " + \
+                           "and kindles the fire. This one is meant to stand - a base to come back to."
+        SkyrimNetApi.DirectNarration(narration, follower, PlayerRef)
+    EndIf
+    Debug.Notification("Base established (" + placed + " structure" + PluralS(placed) + ").")
+    If Native_Base_GetTier() < Native_Base_GetEarnedTier()
+        Debug.Notification("Not enough open ground here for the " + _TierName(Native_Base_GetEarnedTier()) + " - raised the " + _TierName(Native_Base_GetTier()) + " instead. Upgrading back costs nothing.")
+    EndIf
+EndFunction
+
+Function _BreakBaseFlow(Actor follower, Actor PlayerRef)
+    Bool cinematic = (follower != None && follower != PlayerRef)
+    Native_Base_SetPhase(3)
+    _ClearBaseStatus()
+    _ClearBaseSandbox()
+    _StartFadeToBlack()
+    Utility.Wait(1.0)
+    _PlayConstructionSound()
+    Utility.Wait(1.5)
+    _PlayConstructionSound()
+    Utility.Wait(1.5)
+    _PlayConstructionSound()
+    Utility.Wait(1.5)
+    _ReleaseBaseAsCamp()
+    Native_Base_DespawnPlacedRefs()
+    Native_Base_Break()
+    _EndFadeToBlack()
+    If cinematic
+        Utility.Wait(1.5)
+        String narration = follower.GetDisplayName() + " and the company strike the base - tents down, fire out, " + \
+                           "stakes pulled. The stash is packed with care; the ground keeps only the " + \
+                           "flattened grass where the company lived."
+        SkyrimNetApi.DirectNarration(narration, follower, PlayerRef)
+    EndIf
+    Debug.Notification("Base broken down.")
+EndFunction
+
+; ── Base sandbox tracking (separate list; same package) ──────────────────
+
+Function _ApplyBaseSandbox(Actor occupant)
+    If !occupant || !CampSandboxPackage
+        Return
+    EndIf
+    If _IsBaseSandboxed(occupant)
+        Return
+    EndIf
+    ; Before the release: at the cap a field-camp occupant stays in the field camp's sandbox.
+    If !_BaseHasRoom()
+        Debug.Trace("[SeversHearth] Base sandbox capacity reached (" + BaseSandboxedActorCount + ") - skipping " + occupant)
+        Return
+    EndIf
+    If _IsAlreadySandboxed(occupant)
+        _ReleaseFromCampSandbox(occupant)   ; moving from the field camp to the base
+    EndIf
+    occupant.SetAV("WaitingForPlayer", 1)
+    ActorUtil.AddPackageOverride(occupant, CampSandboxPackage, 100, 0)
+    occupant.EvaluatePackage()
+    SkyrimNetApi.RegisterPackage(occupant, "CampSandbox", 100, 0, false)
+    BaseSandboxedActorTracking[BaseSandboxedActorCount] = occupant
+    BaseSandboxedActorCount += 1
+    _SetJourneyTracked(occupant, False)   ; Hearth's own sandbox now
+EndFunction
+
+Function _ReleaseFromBaseSandbox(Actor a)
+    If !a
+        Return
+    EndIf
+    If CampSandboxPackage
+        ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
+    EndIf
+    SkyrimNetApi.UnregisterPackage(a, "CampSandbox")
+    a.SetAV("WaitingForPlayer", 0)
+    a.EvaluatePackage()
+    BaseSandboxedActorCount = _RemoveFromList(BaseSandboxedActorTracking, BaseSandboxedActorCount, a)
+    _SetJourneyTracked(a, False)
+EndFunction
+
+; Per actor: 1 = listed while on a journey Hearth started (that journey's teardown owns the
+; CampSandboxPackage override until it ends), unset = parked under Hearth's own sandbox, or not
+; listed. Only the first answers a travel event.
+String Property JOURNEY_TRACKED_KEY = "SeversHearth_JourneyTracked" AutoReadOnly
+; The journey's orchestrator handle (the travel core's SeverTravel_Handle), matched against
+; each travel event's numArg.
+String Property JOURNEY_HANDLE_KEY = "SeversHearth_JourneyHandle" AutoReadOnly
+
+Function _SetJourneyTracked(Actor a, Bool tracked)
+    If !a
+        Return
+    EndIf
+    If tracked
+        StorageUtil.SetIntValue(a, JOURNEY_TRACKED_KEY, 1)
+        StorageUtil.SetIntValue(a, JOURNEY_HANDLE_KEY, StorageUtil.GetIntValue(a, "SeverTravel_Handle", 0))
+    Else
+        StorageUtil.UnsetIntValue(a, JOURNEY_TRACKED_KEY)
+        StorageUtil.UnsetIntValue(a, JOURNEY_HANDLE_KEY)
+    EndIf
+EndFunction
+
+Bool Function _IsParkedAtCamp(Actor a)
+    {On the field camp's list under Hearth's own sandbox (not on a journey there).}
+    Return _IsAlreadySandboxed(a) && StorageUtil.GetIntValue(a, JOURNEY_TRACKED_KEY, 0) != 1
+EndFunction
+
+Bool Function _IsParkedAtBase(Actor a)
+    {On the base's list under Hearth's own sandbox (not on a journey there).}
+    Return _IsBaseSandboxed(a) && StorageUtil.GetIntValue(a, JOURNEY_TRACKED_KEY, 0) != 1
+EndFunction
+
+Function _TrackForBaseCleanup(Actor a)
+    {Register an actor as a base occupant without applying the package -
+     the travel core applies CampSandboxPackage on arrival.}
+    If !a || _IsBaseSandboxed(a)
+        Return
+    EndIf
+    ; Before the release, like _ApplyBaseSandbox (GoToBase already refused a full base).
+    If !_BaseHasRoom()
+        Debug.Trace("[SeversHearth] _TrackForBaseCleanup: cap reached, skipping " + a)
+        Return
+    EndIf
+    If _IsAlreadySandboxed(a)
+        _ReleaseFromCampSandbox(a)
+    EndIf
+    BaseSandboxedActorTracking[BaseSandboxedActorCount] = a
+    BaseSandboxedActorCount += 1
+EndFunction
+
+Bool Function _BaseHasRoom()
+    {Allocate the base list if needed, drop empty and dead entries, and report a free slot.}
+    If !BaseSandboxedActorTracking
+        BaseSandboxedActorTracking = new Actor[24]
+        BaseSandboxedActorCount = 0
+    EndIf
+    _PruneBaseList()
+    Return BaseSandboxedActorCount < BaseSandboxedActorTracking.Length
+EndFunction
+
+Int Function _RemoveFromList(Actor[] list, Int count, Actor a)
+    {Remove every a from the first count slots of list, keeping order and emptying the tail;
+     returns the new count. Arrays are references, so the caller's list changes.}
+    If !list
+        Return count
+    EndIf
+    Int w = 0
+    Int r = 0
+    While r < count
+        If list[r] != a
+            list[w] = list[r]
+            w += 1
+        EndIf
+        r += 1
+    EndWhile
+    Int kept = w
+    While w < count
+        list[w] = None
+        w += 1
+    EndWhile
+    Return kept
+EndFunction
+
+Function _PruneBaseList()
+    {Drop empty and dead entries from the base list, keeping its order.}
+    If !BaseSandboxedActorTracking
+        Return
+    EndIf
+    Int w = 0
+    Int r = 0
+    While r < BaseSandboxedActorCount
+        Actor e = BaseSandboxedActorTracking[r]
+        If e && !e.IsDead()
+            BaseSandboxedActorTracking[w] = e
+            w += 1
+        EndIf
+        r += 1
+    EndWhile
+    Int k = w
+    While k < BaseSandboxedActorCount
+        BaseSandboxedActorTracking[k] = None
+        k += 1
+    EndWhile
+    BaseSandboxedActorCount = w
+EndFunction
+
+Function _ForgetTracked(Actor a)
+    {Drop a from both camps' lists with no package change: the travel core already tore its
+     journey down (the caller undoes Hearth's own WaitingForPlayer). Order kept.}
+    BaseSandboxedActorCount = _RemoveFromList(BaseSandboxedActorTracking, BaseSandboxedActorCount, a)
+    SandboxedActorCount = _RemoveFromList(SandboxedActorTracking, SandboxedActorCount, a)
+    _SetJourneyTracked(a, False)
+EndFunction
+
+Bool Function _IsBaseSandboxed(Actor a)
+    If !BaseSandboxedActorTracking || BaseSandboxedActorCount == 0
+        Return False
+    EndIf
+    Int i = 0
+    While i < BaseSandboxedActorCount
+        If BaseSandboxedActorTracking[i] == a
+            Return True
+        EndIf
+        i += 1
+    EndWhile
+    Return False
+EndFunction
+
+Function _FanOutBaseSandboxToTeammates(Actor playerRef, Float maxDistance)
+    If !playerRef || !CampSandboxPackage
+        Return
+    EndIf
+    Actor[] teammates = Native_Camp_FindNearbyTeammates(maxDistance)
+    If !teammates || teammates.Length == 0
+        Return
+    EndIf
+    Int i = 0
+    While i < teammates.Length
+        Actor candidate = teammates[i]
+        If candidate && candidate != playerRef
+            _ApplyBaseSandbox(candidate)
+        EndIf
+        i += 1
+    EndWhile
+EndFunction
+
+Function _ClearBaseSandbox()
+    If !BaseSandboxedActorTracking || BaseSandboxedActorCount == 0
+        Return
+    EndIf
+    Int i = 0
+    While i < BaseSandboxedActorCount
+        Actor a = BaseSandboxedActorTracking[i]
+        If a
+            If CampSandboxPackage
+                ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
+            EndIf
+            SkyrimNetApi.UnregisterPackage(a, "CampSandbox")
+            a.SetAV("WaitingForPlayer", 0)
+            If _SeverActionsInstalled()
+                SeverActionsNativeExt.Travel_CancelByActor(a)
+            EndIf
+            a.EvaluatePackage()
+            _SetJourneyTracked(a, False)
+            BaseSandboxedActorTracking[i] = None
+        EndIf
+        i += 1
+    EndWhile
+    BaseSandboxedActorCount = 0
+EndFunction
+
+Function _MoveFieldSandboxToBase()
+    {On promotion the field camp's occupants become the base's. Packages
+     stay on; only the bookkeeping list changes.}
+    If !SandboxedActorTracking || SandboxedActorCount == 0
+        Return
+    EndIf
+    If !BaseSandboxedActorTracking
+        BaseSandboxedActorTracking = new Actor[24]
+        BaseSandboxedActorCount = 0
+    EndIf
+    Int i = 0
+    While i < SandboxedActorCount
+        Actor a = SandboxedActorTracking[i]
+        If a && BaseSandboxedActorCount < BaseSandboxedActorTracking.Length
+            BaseSandboxedActorTracking[BaseSandboxedActorCount] = a
+            BaseSandboxedActorCount += 1
+        EndIf
+        SandboxedActorTracking[i] = None
+        i += 1
+    EndWhile
+    SandboxedActorCount = 0
+EndFunction
+
+; ── Base status on SA's Survival page ────────────────────────────────────
+
+Function _PinBaseStatus(Bool pushMeta = true)
+    If !_SeverActionsInstalled()
+        Return
+    EndIf
+    String loc = Native_Base_GetLocationName()
+    SeverActionsNativeExt2.Magelight_SetBaseStatus(true, loc, Native_Base_GetTier(), BaseSandboxedActorCount)
+    SeverActionsNativeExt2.Magelight_SetBaseBeds(Native_Base_GetBedrolls())
+    If pushMeta
+        _PushBaseMetaToPrisma()
+    EndIf
+EndFunction
+
+Function _ClearBaseStatus()
+    If !_SeverActionsInstalled()
+        Return
+    EndIf
+    SeverActionsNativeExt2.Magelight_SetBaseStatus(false, "", 0, 0)
+EndFunction
+
+Function _PushBaseMetaToPrisma()
+    If !_SeverActionsInstalled()
+        Return
+    EndIf
+    SeverActionsNativeExt2.Magelight_SetBaseMeta(Native_Base_HoursSinceEstablished(), Native_Base_DistanceFromPlayer())
+EndFunction
+
+; Vanilla NPCHumanWoodChop (Skyrim.esm 0x0006D1CA) at the player, one-shot;
+; the flows layer three of them behind the fade.
 Function _PlayConstructionSound()
     Sound chop = Game.GetFormFromFile(0x0006D1CA, "Skyrim.esm") as Sound
     If chop
@@ -873,49 +1809,22 @@ Function _PlayConstructionSound()
     EndIf
 EndFunction
 
-; ============================================================================
-; Fade-to-black (Game.FadeOutGame path — Community-Shaders compatible).
-;
-; The vanilla three-IMOD stack (0x000F756D/E/F) is broken under Community
-; Shaders' replacement post-process pipeline — the Apply calls fire but
-; never reach the final tonemap. FadeOutGame uses different machinery
-; (the loading-screen blackout path) that CS lets through.
-;
-; Trade-off: FadeOutGame locks player controls during the transition.
-; For camp construction this is correct — the player shouldn't wander
-; mid-build.
-; ============================================================================
+; Fade-to-black via Game.FadeOutGame. The vanilla fade IMODs (0x000F756D/E/F)
+; never reach the final tonemap under Community Shaders; FadeOutGame does. It
+; also locks player controls during the build, which is wanted.
 
 Bool Property UseFadeToBlack = True Auto Hidden
-{If True, the establish/break flows fade the screen to black while structures
- spawn/despawn. Toggle off via MCM (future) or script for cinematic-free
- testing. Defaults True to preserve the camera-cut UX.}
+{If True, the establish / break / upgrade flows fade to black while
+ structures spawn or despawn. Off for fade-free testing.}
 
-; Fade-duration tuning.
-;
-; FadeOutSeconds is the fade-OUT ANIMATION duration. FadeOutGame doesn't
-; naturally hold black after its animation completes (it releases under
-; Community Shaders; vanilla behaviour is also inconsistent). The trick:
-; make the animation long enough to span the whole camp setup sequence
-; (~5.5s — initial 1.0s wait + three 1.5s sound spacings). While the
-; animation is in-flight, the screen is held in its current interpolated
-; state — never reaching "completion" and never releasing.
-;
-; Visual: the screen darkens progressively over the duration rather than
-; snapping at 1s. The early construction is dimly visible (~30% dark at
-; t=2s, ~70% at t=4s) and effectively hidden by t=5s. Plays as a
-; "twilight closes over the camp" effect rather than a hard cut. Tune
-; via the property below if a snappier vs slower transition is desired.
-;
-; Do not re-apply FadeOutGame on an OnUpdate refresh loop to keep the fade
-; snappy — each call re-animates rather than holding, which flickers the
-; screen on every refresh.
+; FadeOutGame does not hold black after its animation ends, so FadeOutSeconds
+; is set to outlast the whole build sequence (~5.5 s): the screen darkens
+; gradually and never "completes". Do not re-apply it from an update loop -
+; each call restarts the animation and the screen flickers.
 Float Property FadeOutSeconds = 6.0 Auto Hidden
 Float Property FadeInSeconds  = 1.5 Auto Hidden
 
-; Start the fade. Locks player controls and animates the screen to black
-; over FadeOutSeconds. _EndFadeToBlack interrupts the in-flight
-; animation when the camp setup completes.
+; Animate to black over FadeOutSeconds; _EndFadeToBlack interrupts it.
 Function _StartFadeToBlack()
     If !UseFadeToBlack
         Return
@@ -924,10 +1833,7 @@ Function _StartFadeToBlack()
     Game.FadeOutGame(true, true, 0.0, FadeOutSeconds)
 EndFunction
 
-; Interrupt the in-flight fade-out animation and transition back to
-; clear over FadeInSeconds. bFadingOut=false reverses direction
-; regardless of where the previous fade was in its animation, so
-; calling this at any point during the camp setup works cleanly.
+; Fade back in over FadeInSeconds from wherever the fade-out has reached.
 Function _EndFadeToBlack()
     If !UseFadeToBlack
         Return
@@ -936,84 +1842,53 @@ Function _EndFadeToBlack()
     Game.FadeOutGame(false, true, 0.0, FadeInSeconds)
 EndFunction
 
-; ============================================================================
-; Sandbox helpers
-;
-; PapyrusUtil's ActorUtil exposes AddPackageOverride/RemovePackageOverride as
-; globals taking (Actor, Package, ...) — fills the gap left by vanilla, which
-; has no Papyrus surface for runtime package overrides. We pass the Package
-; Form directly; no EditorID string lookup, no SkyrimNet round-trip.
-;
-; EvaluatePackage forces immediate AI re-evaluation so the transition happens
-; during the fade, not on the next vanilla tick (which can be many seconds).
-;
-; Both helpers no-op silently if CampSandboxPackage is None or PapyrusUtil
-; isn't loaded — camp lifecycle stays robust regardless.
-; ============================================================================
+; Sandbox helpers. The package goes on through PapyrusUtil's ActorUtil
+; override; EvaluatePackage makes the switch happen during the fade rather
+; than on the next AI tick.
 
 Function _ApplyCampSandbox(Actor occupant)
     If !occupant || !CampSandboxPackage
-        ; Silent at the per-actor level — _FanOutSandboxToTeammates and the
-        ; cinematic call site hoist the diagnostic so the player sees one
-        ; notification per camp, not one per follower.
+        ; Silent here: the fan-out reports a missing package once per camp.
         Return
     EndIf
-    ; Idempotent — don't double-add the same actor (the speaker often appears
-    ; in the commanded-actors set too, so the fan-out path would re-add).
+    ; The speaker is usually among the fanned-out teammates too.
     If _IsAlreadySandboxed(occupant)
         Return
     EndIf
 
-    ; Lazy-init the tracking array. Cap chosen large enough for NFF/UFO/etc.
-    ; Truthiness check (`If !arr`) is the safe idiom for typed-array None
-    ; tests in Papyrus — explicit `== None` against a typed array property
-    ; throws "Cannot cast from None to Actor[]" at runtime when loaded
-    ; from a save that pre-dates the property's existence.
+    ; Test a typed array with `If !arr`, never `== None` (a runtime cast error).
     If !SandboxedActorTracking
         SandboxedActorTracking = new Actor[16]
         SandboxedActorCount = 0
     EndIf
 
-    ; Refuse-past-cap: do NOT apply an override we can't unregister later.
-    ; The prior version applied the override before the capacity check, so
-    ; over-cap followers got a permanent stuck package on BreakCamp.
+    ; Check the cap BEFORE applying: an untracked override is never removed.
     If SandboxedActorCount >= SandboxedActorTracking.Length
         Debug.Trace("[SeversHearth] Sandbox capacity reached (" + SandboxedActorCount + ") - skipping " + occupant)
         Return
     EndIf
 
-    ; Park the actor via the vanilla WaitingForPlayer ActorValue — same
-    ; mechanism SA's CompanionWait uses, same mechanism Skyrim's own
-    ; DialogueFollower "Wait here" dialog uses. Engine sees this flag and
-    ; skips the auto-pull on cell change without us touching teammate
-    ; status. That preserves combat assistance, follower-count globals,
-    ; `is_follower` decorator behavior, NFF framework detection, and SA's
-    ; own follower-store identification — none of which we'd want to
-    ; collateral-damage just to keep someone at the fire.
+    ; Park with WaitingForPlayer (vanilla "wait here"): the engine stops pulling
+    ; them along on cell changes while they stay a teammate, so combat help,
+    ; follower frameworks and SA's follower tracking are untouched.
     occupant.SetAV("WaitingForPlayer", 1)
 
     ActorUtil.AddPackageOverride(occupant, CampSandboxPackage, 100, 0)
     occupant.EvaluatePackage()
-    ; Mirror into SkyrimNet so the camp sandbox is visible in its webui /
-    ; in-game package UI — same dual-apply pattern SA's furniture action uses
-    ; (SeverActions_UseFurniture). The PO3 override above stays authoritative
-    ; for timing; SkyrimNet queues its own application asynchronously. Key =
-    ; EditorID 'CampSandboxPackage' minus the 'Package' suffix. Not persistent:
-    ; camp state is per-session. It also doubles as the orphan detector in
-    ; OnFollowerCalledByPlayer.
+    ; Also registered with SkyrimNet (shows in its package UI) under
+    ; "CampSandbox", the EditorID less its "Package" suffix; the ActorUtil
+    ; override stays authoritative. Not persistent. OnFollowerCalledByPlayer
+    ; uses it to find orphaned overrides.
     SkyrimNetApi.RegisterPackage(occupant, "CampSandbox", 100, 0, false)
     SandboxedActorTracking[SandboxedActorCount] = occupant
     SandboxedActorCount += 1
+    _SetJourneyTracked(occupant, False)   ; Hearth's own sandbox now
 EndFunction
 
 Function _ReleaseFromCampSandbox(Actor a)
-    {Release a single actor from the camp sandbox without breaking the whole
-     camp. Removes the package override, restores their prior teammate state,
-     and removes them from the tracking array.
-
-     Called from OnFollowerCalledByPlayer when SA fires the recruit/follow/wait
-     handshake — lets the player take one follower along while leaving the rest
-     at the fire.}
+    {Release one actor from the field camp's sandbox (package off,
+     WaitingForPlayer cleared, dropped from tracking) and leave the rest. Used
+     by OnFollowerCalledByPlayer and when an actor moves to the base.}
     If !a
         Return
     EndIf
@@ -1021,35 +1896,15 @@ Function _ReleaseFromCampSandbox(Actor a)
         ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
     EndIf
     SkyrimNetApi.UnregisterPackage(a, "CampSandbox")
-    ; Clear the wait flag — symmetric with the WaitingForPlayer=1 we set in
-    ; _ApplyCampSandbox. Resume vanilla follower behavior.
     a.SetAV("WaitingForPlayer", 0)
     a.EvaluatePackage()
-
-    ; Compact the tracking array: shift later entries down, drop count.
-    Int i = 0
-    Bool found = False
-    While i < SandboxedActorCount
-        If !found && SandboxedActorTracking[i] == a
-            found = True
-        EndIf
-        If found && i + 1 < SandboxedActorCount
-            SandboxedActorTracking[i] = SandboxedActorTracking[i + 1]
-        EndIf
-        i += 1
-    EndWhile
-    If found
-        SandboxedActorTracking[SandboxedActorCount - 1] = None
-        SandboxedActorCount -= 1
-    EndIf
+    SandboxedActorCount = _RemoveFromList(SandboxedActorTracking, SandboxedActorCount, a)
+    _SetJourneyTracked(a, False)
 EndFunction
 
 Function _TrackForCleanup(Actor a)
-    {Register an actor in SandboxedActorTracking without applying any
-     package override. Used when SA's travel orchestrator will apply the
-     CampSandboxPackage on arrival (via the TravelNPCToReference override
-     param) — we still need to track the actor so _ClearCampSandbox sweeps
-     them on BreakCamp.}
+    {Track an actor without applying the package (the travel core applies it
+     on arrival), so a break still releases them.}
     If !a || _IsAlreadySandboxed(a)
         Return
     EndIf
@@ -1079,23 +1934,15 @@ Bool Function _IsAlreadySandboxed(Actor a)
     Return False
 EndFunction
 
-; Fan the sandbox out to every nearby player-teammate. Uses the native
-; cell-scan in CampPlacement.h which finds every IsPlayerTeammate() actor
-; within radius — works across vanilla / NFF / AFT / UFO / Inigo / Lucien
-; without needing per-framework integration, because IsPlayerTeammate is
-; the canonical flag every framework respects. PO3's GetCommandedActors is
-; not used: it returns only vanilla-commanded actors and misses NFF-managed
-; followers.
-;
-; Called by both establish flows so player-driven camps also populate.
+; Sandbox every player teammate near the player. The native scan keys on
+; IsPlayerTeammate, which every follower framework sets; PO3's
+; GetCommandedActors would miss NFF-managed followers.
 Function _FanOutSandboxToTeammates(Actor playerRef, Float maxDistance)
     If !playerRef
         Return
     EndIf
 
-    ; Loud diagnostic for the common "followers don't sandbox" symptom — the
-    ; root cause is almost always an unfilled CampSandboxPackage property in
-    ; the SeversHearth quest. Surfaces ONCE per fan-out (not per follower).
+    ; Report an unfilled CampSandboxPackage once per fan-out.
     If !CampSandboxPackage
         Debug.Trace("[SeversHearth] ERROR: CampSandboxPackage property is None - fix the SeversHearth quest in CK")
         Debug.Notification("Camp sandbox unavailable: CampSandboxPackage missing")
@@ -1112,7 +1959,8 @@ Function _FanOutSandboxToTeammates(Actor playerRef, Float maxDistance)
     Int i = 0
     While i < teammates.Length
         Actor candidate = teammates[i]
-        If candidate && candidate != playerRef
+        ; A teammate on an SA journey keeps walking: the camp's hold would outrank the walk.
+        If candidate && candidate != playerRef && SeverActionsNativeExt2.Travel_GetPhaseByActor(candidate) == 0
             _ApplyCampSandbox(candidate)
             applied += 1
         EndIf
@@ -1134,19 +1982,15 @@ Function _ClearCampSandbox()
                 ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
             EndIf
             SkyrimNetApi.UnregisterPackage(a, "CampSandbox")
-            ; Clear the wait flag — they should resume normal follower
-            ; behavior now that the camp is breaking down.
             a.SetAV("WaitingForPlayer", 0)
 
-            ; Cancel any in-flight SA travel for this actor. Catches the
-            ; case where BreakCamp fires while a GoToCamp dispatch is still
-            ; traveling — SA's CancelByActor also tears down the per-slot
-            ; sandbox override on its side. Safe-call: no-op if SA isn't
-            ; installed or the actor has no active travel.
+            ; A GoToCamp journey still under way: cancelling it also removes
+            ; the travel core's arrival sandbox override. No-op without one.
             If _SeverActionsInstalled()
                 SeverActionsNativeExt.Travel_CancelByActor(a)
             EndIf
             a.EvaluatePackage()
+            _SetJourneyTracked(a, False)
             SandboxedActorTracking[i] = None
         EndIf
         i += 1
@@ -1154,40 +1998,26 @@ Function _ClearCampSandbox()
     SandboxedActorCount = 0
 EndFunction
 
-; ============================================================================
-; SeverActions integration — survival restoration tick + rest stop pin.
-;
-; CampSurvivalTick.h (native InputEvent heartbeat) fires the
-; SeversHearth_CampTick ModEvent every ~60 real-seconds while a camp is
-; active. The handler below iterates every tracked sandboxed actor and
-; calls SeverActions's Native_Survival_AdjustNeeds with the per-tick
-; deltas (CampRestoreHungerDelta / FatigueDelta / ColdDelta).
-;
-; The whole integration is gated on SeverActions actually being
-; installed — if `Game.GetModByName("SeverActions.esp") == 255` the
-; calls never fire and SeversHearth runs in pure-camp mode (no
-; restoration, but the sandbox / lifecycle still works).
-;
-; The rest-stop pin sets the dashboard's "Pinned rest stop" label so the
-; Hearth Ledger surface shows "Camp near <location>" while the camp is
-; up. Cleared on BreakCamp.
-; ============================================================================
+; SeverActions integration: the survival tick and the rest-stop pin.
+; CampSurvivalTick.h's worker thread fires SeversHearth_CampTick every
+; interval (default 60 s) while the field camp or the base is Active; the handler
+; below applies the per-tick deltas to every occupant at each camp through
+; Native_Survival_AdjustNeeds. The rest-stop pin is the dashboard's "Camp near
+; <location>" label. SA calls check _SeverActionsInstalled first.
 
 Bool Function _SeverActionsInstalled()
-    {Cached enough — Game.GetModByName is a hash lookup, fast.}
+    {True when SeverActions.esp is loaded (a cheap lookup).}
     Return Game.GetModByName("SeverActions.esp") != 255
 EndFunction
 
 Bool Function _IntelEngineInstalled()
-    {Same pattern as SeverActions install check.}
+    {True when IntelEngine.esp is loaded.}
     Return Game.GetModByName("IntelEngine.esp") != 255
 EndFunction
 
-; Wire / unwire the runtime location → marker association that lets
-; IntelEngine resolve "go to the camp". No-op if the user hasn't bound a
-; CampLocation in CK, OR if there's no live marker, OR if IntelEngine
-; isn't installed (the last gate covers only the RebuildLocationIndex
-; call — the worldLocMarker write is harmless regardless).
+; Bind / unbind CampLocation to the camp marker so IntelEngine resolves "go to
+; the camp". The worldLocMarker write is harmless without IntelEngine; only the
+; index rebuild needs it.
 Function _BindCampLocationToMarker()
     If !CampLocation
         Debug.Trace("[SeversHearth] CampLocation property not bound; IntelEngine integration skipped")
@@ -1219,50 +2049,67 @@ Function _UnbindCampLocation()
     Debug.Trace("[SeversHearth] CampLocation unbound from marker")
 EndFunction
 
-; Maximum distance (units) from the camp center an actor can be while still
-; counting as "at camp" for the restoration tick. ~700u is loosely the camp
-; footprint (440x400) plus a generous margin for furniture interaction.
+; Never read: an Auto property keeps its saved value (700, too short for the layout's beds).
+; Declared so an existing save's value loads without a skipped-variable warning.
 Float Property CampOccupantMaxDistance = 700.0 Auto Hidden
-{Actors farther than this from the camp center don't get tick restoration.}
+
+; Measured from the fire (the camp's position), horizontally within a height band: the layout's
+; beds stand up to ~850u out (CampPlacement.h kPieces). The occupant count behind the
+; camp_occupant_count decorator (CampStore.h CountOccupants, kOccupantRadius) uses the same
+; radius and test.
+Float Property CAMP_OCCUPANT_RADIUS = 1000.0 AutoReadOnly
+{Horizontal units from the camp center within which an actor counts as at camp for the
+ survival tick.}
 
 Event OnCampTickEvent(string eventName, string strArg, float numArg, Form sender)
-    ; One-shot post-load recovery fired by the native at kPostLoadGame.
-    ; Does what the old (dead) OnPlayerLoadGame handler intended: refresh
-    ; ModEvent bindings, re-pin the SA camp badge/rest-stop (the SA-side
-    ; CampStatus singleton is session-transient — without this the Survival
-    ; page showed no camp and no Break Camp button after a game restart),
-    ; and tear down stale mid-placement state. Skips the needs-restoration
-    ; pulse below so loading at camp doesn't grant free warmth.
+    ; Post-load recovery (see RegisterCampEvents): refresh the registrations,
+    ; re-pin SA's camp and base cards (SA's CampStatus is per-session) and drop
+    ; stale placement state. No survival pulse, so loading at camp grants none.
     If strArg == "postload"
+        ; The ack comes LAST so a recovery that dies midway is re-fired; every
+        ; step is idempotent, so a duplicate delivery only re-pins.
         RegisterCampEvents()
+        _UpgradeInProgress = False
         If Native_Camp_IsActive()
             _PinCampRestStop(False)
             Debug.Trace("[SeversHearth] Post-load repin: restored camp badge")
         EndIf
-        ; A save taken mid-placement loads back with the transient ghost gone
-        ; (native preview state resets on reload). Tear down the dangling
-        ; Papyrus side so controls/keys/update don't stay stuck.
+        If Native_Base_IsActive()
+            _PinBaseStatus()
+            _PinBaseAsCamp()
+            Debug.Trace("[SeversHearth] Post-load repin: restored base card")
+        EndIf
+        ; A save made mid-placement loads without its ghost; release the
+        ; controls, keys and update loop.
         If PlacementMode != 0
             PlacementMode = 0
             _EndPlacementInput()
             UnregisterForUpdate()
         EndIf
+        Native_Camp_AckPostLoad()
         Return
     EndIf
 
-    If !Native_Camp_IsActive() || !_SeverActionsInstalled()
+    If !_SeverActionsInstalled()
+        Return
+    EndIf
+    ; The tick fires while either slot is Active; each half runs only while its
+    ; own slot is (2 = CampPhase::Active), never during a Building / Breaking fade.
+    If Native_Base_GetPhase() == 2
+        _TickBase()
+    EndIf
+    If Native_Camp_GetPhase() != 2
         Return
     EndIf
 
     Float cx = Native_Camp_GetPosX()
     Float cy = Native_Camp_GetPosY()
     Float cz = Native_Camp_GetPosZ()
-    Float maxDist = CampOccupantMaxDistance
+    Float maxDist = CAMP_OCCUPANT_RADIUS
 
     Int restored = 0
 
-    ; Player first — gated by distance to the stored camp center so the
-    ; player can't wander off and still be "resting".
+    ; The player and the occupants count only within range of the camp center.
     Actor PlayerRef = Game.GetPlayer()
     If PlayerRef && _IsActorAtCamp(PlayerRef, cx, cy, cz, maxDist)
         SeverActionsNative.Native_Survival_AdjustNeeds(PlayerRef, \
@@ -1270,8 +2117,6 @@ Event OnCampTickEvent(string eventName, string strArg, float numArg, Form sender
         restored += 1
     EndIf
 
-    ; Sandboxed followers — same distance gate; a follower lagging behind
-    ; on a horse shouldn't get restoration.
     If SandboxedActorTracking && SandboxedActorCount > 0
         Int i = 0
         While i < SandboxedActorCount
@@ -1287,69 +2132,102 @@ Event OnCampTickEvent(string eventName, string strArg, float numArg, Form sender
 
     Debug.Trace("[SeversHearth] CampTick: restored " + restored + " occupants at camp")
 
-    ; Re-pin the full camp UI state (badge + rest-stop + meta) every tick —
-    ; not just the meta. Safe to call repeatedly — SA stores it all in a
-    ; mutex-guarded singleton; cleared when SetCampStatus(false) fires on
-    ; break. Doubles as a self-heal if the one-shot post-load repin ever
-    ; races Papyrus event-registration restore and gets lost. False = skip
-    ; the threat-scan kick (CampThreatWatch drives threats natively).
+    ; Re-pin the whole camp card every tick (idempotent): it also heals a lost
+    ; post-load re-pin. False = no threat-scan kick (CampThreatWatch has it).
     _PinCampRestStop(False)
 EndEvent
 
-Function _PushCampMetaToPrisma()
-    {Push live meta (hours since established, player-to-camp distance) to
-     SeverActions's Survival page. No-op if SA isn't installed. Called from
-     the camp tick and after EstablishCamp.
+Function _TickBase()
+    Float bx = Native_Base_GetPosX()
+    Float by = Native_Base_GetPosY()
+    Float bz = Native_Base_GetPosZ()
+    Float maxDist = CAMP_OCCUPANT_RADIUS
+    Int restored = 0
+    Actor PlayerRef = Game.GetPlayer()
+    If PlayerRef && _IsActorAtCamp(PlayerRef, bx, by, bz, maxDist, True)
+        SeverActionsNative.Native_Survival_AdjustNeeds(PlayerRef, \
+            CampRestoreHungerDelta, CampRestoreFatigueDelta, CampRestoreColdDelta)
+        restored += 1
+    EndIf
+    If BaseSandboxedActorTracking && BaseSandboxedActorCount > 0
+        Int i = 0
+        While i < BaseSandboxedActorCount
+            Actor occupant = BaseSandboxedActorTracking[i]
+            If occupant && _IsActorAtCamp(occupant, bx, by, bz, maxDist, True)
+                SeverActionsNative.Native_Survival_AdjustNeeds(occupant, \
+                    CampRestoreHungerDelta, CampRestoreFatigueDelta, CampRestoreColdDelta)
+                restored += 1
+            EndIf
+            i += 1
+        EndWhile
+    EndIf
+    _PinBaseStatus()
+    _PinBaseRestStop()               ; self-heals like the field camp's pin
+EndFunction
 
-     Threats are NOT pushed from here — CampThreatWatch.h drives those
-     natively from TESCombatEvent + TESCellAttachDetachEvent, so the banner
-     reacts the moment hostiles spawn or engage rather than waiting for the
-     next ~60s tick. Avoids the polling overhead entirely.}
+Function _PushCampMetaToPrisma()
+    {Push hours since established and the player's distance to SA's Survival
+     page. Threats are not pushed here: CampThreatWatch.h pushes them natively
+     on combat and cell-attach events.}
     If !_SeverActionsInstalled()
         Return
     EndIf
     Float hours = Native_Camp_HoursSinceEstablished()
     Float distance = Native_Camp_DistanceFromPlayer()
-    SeverActionsNativeExt.PrismaUI_SetCampMeta(hours, distance)
+    SeverActionsNativeExt.Magelight_SetCampMeta(hours, distance)
 EndFunction
 
-Bool Function _IsActorAtCamp(Actor a, Float cx, Float cy, Float cz, Float maxDist)
+Bool Function _IsActorAtCamp(Actor a, Float cx, Float cy, Float cz, Float maxDist, Bool abBase = False)
+    {Horizontal distance, like the occupant decorator, so a slope does not shrink the camp; a
+     loose height bound keeps a different floor or a cliff top out. Only where the camp's (abBase:
+     the base's) coordinates apply: interiors overlap one another.}
+    If !Native_Camp_IsActorInCampSpace(a, abBase)
+        Return False
+    EndIf
+    Float dz = a.GetPositionZ() - cz
+    If dz > 512.0 || dz < -512.0
+        Return False
+    EndIf
     Float dx = a.GetPositionX() - cx
     Float dy = a.GetPositionY() - cy
-    Float dz = a.GetPositionZ() - cz
-    Return (dx * dx + dy * dy + dz * dz) <= (maxDist * maxDist)
+    Return (dx * dx + dy * dy) <= (maxDist * maxDist)
 EndFunction
 
 Function _PinCampRestStop(Bool kickThreatScan = true)
-    {Set the dashboard rest-stop label AND the Survival page camp badge.
-     Called after a successful EstablishCamp (kickThreatScan=true) and from
-     the camp tick / post-load repin (False — CampThreatWatch drives threats
-     natively, no need to re-scan every 60s). No-op if SeverActions
-     isn't installed.}
+    {Set the dashboard rest-stop label, the Survival page camp badge and its
+     meta. kickThreatScan on establish; the tick and post-load pass False.}
     If !_SeverActionsInstalled()
         Return
     EndIf
     String loc = Native_Camp_GetLocationName()
     String label
-    If loc != ""
+    If Native_Camp_IsInterior()
+        label = "Small camp"
+        If loc != ""
+            label = "Small camp in " + loc
+        EndIf
+    ElseIf loc != ""
         label = "Camp near " + loc
     Else
         label = "Wilderness camp"
     EndIf
-    SeverActionsNative.PrismaUI_SetPinnedRestStop(label)
+    SeverActionsNative.Magelight_SetPinnedRestStop(label)
 
-    ; Survival-page badge — the occupant count is (sandboxed followers + 1
-    ; for the player). Location uses the bare location name (no "Camp near"
-    ; prefix) so the badge reads "At Camp - N resting - Whiterun".
+    ; The badge takes the bare location name and occupants + 1 (the player).
     Int occupants = SandboxedActorCount + 1
-    SeverActionsNative.PrismaUI_SetCampStatus(true, loc, occupants)
-    ; Seed meta immediately so the Survival page detail section has real
-    ; data on first render, not 60s later on the first tick.
+    SeverActionsNative.Magelight_SetCampStatus(true, loc, occupants)
+    ; 0 a full camp, 1 small, 2 small and indoors: the card's label and which buttons it offers.
+    Int kit = 0
+    If Native_Camp_IsSmall()
+        kit = 1
+        If Native_Camp_IsInterior()
+            kit = 2
+        EndIf
+    EndIf
+    SeverActionsNativeExt2.Magelight_SetCampKit(kit)
     _PushCampMetaToPrisma()
     If kickThreatScan
-        ; Kick a fresh threat scan — CampThreatWatch otherwise waits for the
-        ; next combat / cell-attach event, which won't fire for latent hostiles
-        ; that were already nearby when the camp was pitched.
+        ; Hostiles already nearby raise no combat / cell-attach event.
         Native_Camp_KickThreatScan()
     EndIf
 
@@ -1357,19 +2235,14 @@ Function _PinCampRestStop(Bool kickThreatScan = true)
 EndFunction
 
 Function _ClearCampRestStop()
-    {Clear the dashboard rest-stop label AND the Survival page camp
-     badge. Called from BreakCamp.}
+    {Clear the dashboard rest-stop label and the Survival page camp badge.}
     If !_SeverActionsInstalled()
         Return
     EndIf
-    SeverActionsNative.PrismaUI_SetPinnedRestStop("")
-    SeverActionsNative.PrismaUI_SetCampStatus(false, "", 0)
+    SeverActionsNative.Magelight_SetPinnedRestStop("")
+    SeverActionsNative.Magelight_SetCampStatus(false, "", 0)
     Debug.Trace("[SeversHearth] Cleared rest stop pin + camp badge")
 EndFunction
-
-; ============================================================================
-; Helpers
-; ============================================================================
 
 String Function PluralS(Int n)
     If n == 1
@@ -1378,16 +2251,13 @@ String Function PluralS(Int n)
     Return "s"
 EndFunction
 
-; ============================================================================
-; Native bindings (registered by SeversHearthNative.dll).
-; ============================================================================
+; Native bindings (SeversHearthNative.dll).
 
 Bool Function Native_Camp_EstablishAtPlayer(Float angleZ) Global Native
 Function Native_Camp_Break() Global Native
 Bool Function Native_Camp_IsActive() Global Native
-; Phase: 0=Idle, 1=Building, 2=Active, 3=Breaking. Native sets Building
-; on Establish; Papyrus side flips to Active once spawn completes, then
-; to Breaking at top of teardown so the survival tick stops firing.
+; Phase: 0 Idle, 1 Building (set by Establish), 2 Active, 3 Breaking; this
+; script sets Active after the spawn and Breaking at the start of a teardown.
 Int  Function Native_Camp_GetPhase() Global Native
 Function Native_Camp_SetPhase(Int phase) Global Native
 Float Function Native_Camp_GetPosX() Global Native
@@ -1402,73 +2272,102 @@ Function Native_Camp_DespawnPlacedRefs() Global Native
 Int Function Native_Camp_GetPlacedRefCount() Global Native
 Float Function Native_Camp_GetTerrainZ(Float x, Float y, Float fallbackZ) Global Native
 
-; Returns the short narrative threats tag — mirrors the SkyrimNet
-; camp_threats_nearby decorator. Empty when no camp / no hostiles.
-; Kept as a query API; the actual Survival-page push is event-driven
-; via CampThreatWatch (see Native_Camp_KickThreatScan).
+; The camp_threats_nearby decorator's text; empty with no camp or hostiles.
+; A query only: the Survival page gets threats from CampThreatWatch.
 String Function Native_Camp_GetThreatsText() Global Native
 
-; Immediately re-run the threat scan and push the result to SA. Called
-; after EstablishCamp so an already-hostile camp neighborhood shows on
-; the banner without waiting for the next TESCombatEvent. CampThreatWatch
-; otherwise drives this from combat + cell-attach events natively.
+; Re-run the threat scan now and push the result to SA.
 Function Native_Camp_KickThreatScan() Global Native
 
-; (Map marker is handled via the CampMapMarker property + MoveTo/Enable/Disable.
-;  The runtime ExtraMapMarker attachment route requires SKSE address-library
-;  lookups that CommonLib-NG doesn't expose by default — not worth the depth
-;  for a one-marker feature when a CK-placed marker MoveTo'd around works.)
-
-; Returns the per-camp XMarkerHeading at the fire position. Use this as the
-; target of an AI Travel package (or pass to other plugins) to route NPCs to
-; the camp. Returns None when no camp is active.
-;
-; Companion ModEvents fired by the native side:
-;   SeversHearth_CampEstablished  (sender: marker ref)  - on Establish
-;   SeversHearth_CampBroken       (sender: marker ref)  - on Break (sender
-;     is valid for the listener's first frame, then despawned)
+; The camp's XMarkerHeading at the fire, a travel target; None with no camp.
+; The native also fires SeversHearth_CampEstablished / _CampBroken with this
+; marker as sender (on a break it is valid only for the listener's first frame).
 ObjectReference Function Native_Camp_GetCenterMarker() Global Native
 
-; Sets BGSLocation::worldLocMarker on a runtime Location so IntelEngine
-; (and any other location-aware plugin) can resolve "the camp" to the
-; marker. Returns false if the cast fails or args are None.
+; Point a Location's worldLocMarker at the marker ("the camp" for IntelEngine
+; and other location-aware mods). False on a failed cast or a None argument.
 Bool Function Native_Camp_BindLocationToMarker(Form locForm, ObjectReference markerRef) Global Native
 
-; Clears worldLocMarker so callers don't resolve a stale/deleted ref
-; between camps.
+; Clear worldLocMarker so nothing resolves a deleted marker between camps.
 Function Native_Camp_UnbindLocation(Form locForm) Global Native
 
-; Survival-tick bindings — CampSurvivalTick.h worker thread.
+; The survival tick (CampSurvivalTick.h worker thread).
 Function Native_Camp_ForceTick() Global Native
+Function Native_Camp_AckPostLoad() Global Native
 Function Native_Camp_SetTickIntervalSeconds(Int seconds) Global Native
 Function Native_Camp_SetTickEnabled(Bool enabled) Global Native
 
-; CampPlacement.h — spawn pipeline. Caller must Native_Camp_EstablishAtPlayer
-; first so AddPlacedRef registers each ref. fireBlockRadius/treeBlockRadius
-; are kept in the signature for binding ABI stability but are unused by
-; the spawn (only by the clearance peek below).
+; Spawn the field camp (call Native_Camp_EstablishAtPlayer first). Returns the
+; structure count, -1 with no player. The two block radii are unused, kept for the ABI.
 Int Function Native_Camp_SpawnStructures(Float angleZ, Float fireBlockRadius, Float treeBlockRadius, Float tentSideOffset) Global Native
 
-; Pre-flight clearance peek — no side effects. Returns false if a tree
-; blocks the planned fire or tent positions. Cheaper than running the
-; spawn-and-rollback path.
+; No side effects: false when a tree blocks the tier-1 footprint here.
 Bool Function Native_Camp_IsClearForCamp(Float angleZ, Float fireBlockRadius, Float treeBlockRadius, Float tentSideOffset) Global Native
 
-; Returns every IsPlayerTeammate() actor within `radius` of the player.
-; Excludes the player and dead/disabled refs. Used by the sandbox
-; fan-out to populate every nearby follower regardless of which follower
-; framework (NFF / AFT / UFO / vanilla) manages them.
+; Every living, enabled IsPlayerTeammate() actor within `radius` of the
+; player, the player excluded; covers every follower framework. Searches the
+; loaded area, so a follower across a cell border counts.
 Actor[] Function Native_Camp_FindNearbyTeammates(Float radius) Global Native
 
-; ── Player-driven placement preview (CampPlacement.h) ──────────────────
-; StartPreview spawns the full camp as a live, solid ghost projected ahead of
-; the player; UpdatePreview re-projects + re-ground-snaps it each tick (the
-; rotateOffset is the player's Q/E rotation on top of their facing);
-; CommitPreview ADOPTS those exact refs as the camp (no re-spawn), preserving
-; the stash chest, and returns the structure count; CancelPreview deletes the
-; ghost; IsPreviewing reports whether one is currently up.
+; ── Placement preview (CampPlacement.h) ────────────────────────────────
+; StartPreview spawns the ghost ahead of the player; UpdatePreview re-projects
+; and ground-snaps it (rotateOffsetDeg = the Q/E rotation on top of facing);
+; CommitPreview deletes the ghost, spawns the real camp at its last transform
+; (keeping the stash chest) and returns the structure count; CancelPreview
+; deletes the ghost.
 Bool Function Native_Camp_StartPreview(Float tentSideOffset) Global Native
 Function Native_Camp_UpdatePreview(Float rotateOffsetDeg) Global Native
 Int Function Native_Camp_CommitPreview() Global Native
 Function Native_Camp_CancelPreview() Global Native
 Bool Function Native_Camp_IsPreviewing() Global Native
+; The small field camp's ghost (indoors without its tent); the commit records the kit.
+Bool Function Native_Camp_StartSmallPreview() Global Native
+; The field camp is a small one / stands in an interior cell (False with no camp).
+Bool Function Native_Camp_IsSmall() Global Native
+Bool Function Native_Camp_IsInterior() Global Native
+; The actor stands where the field camp's (abBase: the base's) coordinates apply.
+Bool Function Native_Camp_IsActorInCampSpace(Actor akActor, Bool abBase) Global Native
+
+; ── The base slot (CampStore.h / CampPlacement.h) ────────────────────────
+; Same shapes as their Native_Camp_* twins, pointed at the persistent base.
+Bool Function Native_Base_EstablishAtPlayer(Float angleZ) Global Native
+Function Native_Base_Break() Global Native
+Bool Function Native_Base_IsActive() Global Native
+Int Function Native_Base_GetPhase() Global Native
+Function Native_Base_SetPhase(Int phase) Global Native
+ObjectReference Function Native_Base_GetCenterMarker() Global Native
+Float Function Native_Base_GetPosX() Global Native
+Float Function Native_Base_GetPosY() Global Native
+Float Function Native_Base_GetPosZ() Global Native
+Float Function Native_Base_HoursSinceEstablished() Global Native
+Float Function Native_Base_DistanceFromPlayer() Global Native
+String Function Native_Base_GetLocationName() Global Native
+Function Native_Base_DespawnPlacedRefs() Global Native
+Int Function Native_Base_GetPlacedRefCount() Global Native
+; 0 none, 1 bivouac, 2 encampment, 3 command camp.
+Int Function Native_Base_GetTier() Global Native
+; The highest tier ever built; it survives a break, so a new base goes up at
+; it (or the largest tier that fits) and upgrading back to it is free.
+Int Function Native_Base_GetEarnedTier() Global Native
+; Unlike the field spawn, uses the block radii: steps down from the earned
+; tier to the largest one whose footprint is clear.
+Int Function Native_Base_SpawnStructures(Float angleZ, Float fireBlockRadius, Float treeBlockRadius, Float tentSideOffset) Global Native
+Bool Function Native_Base_StartPreview(Float tentSideOffset) Global Native
+; The field camp becomes the base in place (refs, marker, mask, chest).
+Bool Function Native_Camp_PromoteFieldToBase() Global Native
+; Tent/banner pattern: 0 auto (follows the civil war), 1 Nord, 2 Imperial.
+Int Function Native_Camp_GetFactionSkin() Global Native
+Function Native_Camp_SetFactionSkin(Int skin) Global Native
+Int Function Native_Camp_ResolveFactionSkin() Global Native
+; In order: a break that keeps the tier (reposition); the bedroll count of the
+; last base build; the one stash chest; the upgrade's footprint check.
+Function Native_Base_BreakKeepTier() Global Native
+Int Function Native_Base_GetBedrolls() Global Native
+ObjectReference Function Native_Camp_GetChest() Global Native
+Bool Function Native_Base_IsClearForUpgrade(Float fireBlockRadius, Float treeBlockRadius, Float tentSideOffset) Global Native
+; Returns the structure count; -1 no base / already tier 3; -2 not at the base
+; (an interior or another worldspace) or footprint blocked. Both negatives
+; come back before anything is torn down.
+Int Function Native_Base_Upgrade(Float tentSideOffset) Global Native
+; Outside, in the base's own worldspace (false with no base).
+Bool Function Native_Base_IsPlayerAtBase() Global Native

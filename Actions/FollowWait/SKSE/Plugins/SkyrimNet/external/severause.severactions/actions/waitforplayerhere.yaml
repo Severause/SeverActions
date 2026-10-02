@@ -1,0 +1,89 @@
+customCategory: sa_companionship
+name: WaitForPlayerHere
+description: "Use when {{ player.name }} tells the speaker, who is walking with them as a companion or tagging along, to wait, stay or hold here, or the speaker decides now to stay behind: they stay around this spot until {{ player.name }} calls them to follow again (ResumeFollowing). Not for telling {{ player.name }} to wait, going ahead to wait somewhere else (Journeys), or parting ways (DismissFollower; a tag-along leaving for their own business is TagAlong)."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: CompanionWait
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the companion staying put
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  # FOLLOWERS ONLY (field report 2026-09-04: Irileth dropped the march to the
+  # Western Watchtower and started sandboxing mid-quest). Wait applies a
+  # priority-100 package override, which outranks a quest's own alias package
+  # — so it must never reach an NPC SeverActions does not own. Two ways to
+  # be "ours", OR'd:
+  #   is_follower        — a player TEAMMATE. SkyrimNet's decorator reads
+  #                        IsPlayerTeammate at any distance, NOT a faction
+  #                        (covers NFF/EFF/DLC).
+  #   sever_follow_state — SA's OWN follow state, FormID-resolved from the
+  #                        native FollowerDataStore: "following" (SA drives
+  #                        the follow, or the actor is on the roster) /
+  #                        "waiting" (parked by SA) / "" (not ours). This is
+  #                        what covers a CASUAL follower — StartFollowing sets
+  #                        neither teammate nor the roster flag. The earlier
+  #                        is_in_faction("SeverActions_ActivelyFollowing")
+  #                        arm resolved by EditorID, which is empty on VR /
+  #                        without po3 Tweaks, so the action silently left
+  #                        eligibility for every casual follower there.
+  # Custom decorators are STRING-compared: gate on != "" (CLAUDE.md).
+  # The wheel / PrismaUI Actions page keep working on any target — those are
+  # deliberate player choices on someone in front of them, not the LLM
+  # deciding a quest NPC should relax.
+  - conditions:
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+      - decoratorName: "sever_follow_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "OR"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Not already parked. The safe-interior relax reads "waiting" too (it sets
+      # isSandboxing), but a wait over it is real: the wait takes over the relax,
+      # so the follower stays when the player leaves. SeverActions_Follow writes
+      # the relax flag and clears it when a wait takes over.
+      - decoratorName: "sever_follow_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: "waiting"
+      - decoratorName: "papyrus_util"
+        arguments: ["GetIntValue", "currentActor", "SeverActions_InSafeInteriorSandbox", 0]
+        comparisonOperator: "=="
+        expectedValue: 1
+    logicalOperator: "OR"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

@@ -1,0 +1,63 @@
+customCategory: sa_captives
+name: InterrogateCaptive
+description: "Use when {{ player.name }} tells the speaker to question a held captive (make them talk, get the truth out of them) and the questioning starts now. From then on the captive breaks under pressure and gives up true secrets, names and hidden valuables when asked; the questions and answers happen in conversation. Needed once per captivity. Not for planning an interrogation."
+questEditorId: SeverActions
+scriptName: SeverActions_Kidnap
+executionFunctionName: InterrogateCaptive
+parameterMapping:
+  - type: speaker
+    name: akInterrogator
+    description: the companion doing the interrogating
+  - type: dynamic
+    name: targetName
+    description: "the captive's name, approximate is fine; leave empty when only one captive is held"
+    optional: true
+    default: ""
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      # Opt-in feature toggle. Custom decorator — STRING compare, never == true.
+      - decoratorName: "sever_kidnap_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+      # OR the restrain opt-in: restraint is default-ON while kidnap is
+      # default-OFF, and a restrained captive must be manageable under
+      # default settings.
+      - decoratorName: "sever_restrain_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "OR"
+    required: true
+  - conditions:
+      - decoratorName: "is_sever_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives or take new ones (the
+      # self-release hole). String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

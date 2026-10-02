@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SeverActions Quick Wheel</title>
+<style>
+  :root {
+    /* Palette synced to the main menu's design tokens v2 ("The Ledger,
+       Illuminated") — this file stays standalone by design, so the values
+       are copied, not imported. */
+    --bg-panel: #1f1913;
+    --bg-sector: rgba(31, 25, 19, 0.92);
+    --bg-sector-hot: rgba(201, 164, 92, 0.28);
+    --brass: #c9a45c;
+    --border: rgba(201, 164, 92, 0.22);
+    --border-accent: rgba(201, 164, 92, 0.55);
+    --text: #cfc1a5;
+    --text-dim: #948871;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: transparent; overflow: hidden;
+    font-family: "Sitka Text", "Cambria", "Times New Roman", Georgia, serif; color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+  /* Sizing is rem-based so the popupScale setting (root font-size, set by
+     the bridge at open time) scales the whole wheel crisply. */
+  #overlay {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 140ms ease;
+  }
+  #overlay.show { opacity: 1; }
+  /* 40rem: the VR field test read 27rem as "rather small" on the popup
+     panel; the SVG scales its text with it. popupScale still applies. */
+  #wheel { width: 40rem; height: 40rem; display: block; }
+  .sector { fill: var(--bg-sector); stroke: var(--border); stroke-width: 1.5; cursor: pointer;
+            transition: fill 90ms ease; }
+  .sector.hot { fill: var(--bg-sector-hot); stroke: var(--border-accent); }
+  /* A slot whose module is not installed (Modular): greyed, never picked. After .hot, so a
+     keyboard-hot greyed slot keeps the plain fill and shows only the accent stroke. */
+  .sector.dis { fill: var(--bg-sector); opacity: .45; cursor: default; }
+  .txt { fill: var(--text); font-size: 15px; text-anchor: middle; pointer-events: none;
+         letter-spacing: 0.3px; }
+  .lbl { fill: var(--text-dim); font-size: 10.5px; text-anchor: middle; pointer-events: none;
+         text-transform: uppercase; letter-spacing: 1.2px; }
+  .txt.dis, .lbl.dis { opacity: .45; }
+  .hot ~ .txt { fill: #f0e4c8; }
+  #hub { fill: var(--bg-panel); stroke: var(--border-accent); stroke-width: 1.5; cursor: pointer; }
+  #hub-name { fill: var(--brass); font-size: 13px; text-anchor: middle; pointer-events: none;
+              letter-spacing: 1px; text-transform: uppercase; }
+  #hub-hint { fill: var(--text-dim); font-size: 10px; text-anchor: middle; pointer-events: none;
+              font-style: italic; }
+</style>
+</head>
+<body>
+  <div id="overlay" data-ml-sound="cancel">
+    <svg id="wheel" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" aria-label="Quick actions"></svg>
+  </div>
+
+<script>
+  // Quick wheel frontend — the host draws it, the DLL drives it.
+  //  IN  -- window.receiveWheelData({ targetFid, targetName, options:[{text,label,disabled?,note?} x0..SLOT_COUNT] })
+  //         the player's non-empty slots in slot order, drawn from the top, clockwise
+  //         window.resetWheel()   a close the page did not post: nothing drawn stays pickable
+  //  OUT -- window.wheelChoice(JSON.stringify({ choice:"select", index }))   pick
+  //         window.wheelChoice(JSON.stringify({ choice:"dismiss" }))         cancel
+  // index is the drawn option, not a slot number: the bridge maps it through the list it
+  // drew at open (QuickWheelBridge, QuickWheelCore.h). SLOT_COUNT is the most sectors the
+  // page draws; check 23 (f) holds it to QuickWheelCore::kSlotCount and the WheelSlot rows.
+  // disabled/note come only on a slot whose module a Modular install lacks: it is
+  // greyed and never posts - hovering, clicking or Enter shows the note in the hub.
+  (function () {
+    var SLOT_COUNT = 8;
+    var NS = 'http://www.w3.org/2000/svg';
+    var overlay = document.getElementById('overlay');
+    var svg = document.getElementById('wheel');
+    var CX = 200, CY = 200, R_OUT = 192, R_IN = 74, R_TXT = 138;
+    var sectors = [];
+    var curOpts = [];
+    var hintEl = null;
+    var hot = -1;
+    var posted = false;
+
+    function post(payload) {
+      if (posted) return;
+      posted = true;
+      try { if (window.wheelChoice) window.wheelChoice(JSON.stringify(payload)); } catch (e) {}
+    }
+    function pick(i) { post({ choice: 'select', index: i }); }
+    function dismiss() { post({ choice: 'dismiss' }); }
+
+    function polar(r, deg) {
+      var a = (deg - 90) * Math.PI / 180;
+      return [CX + r * Math.cos(a), CY + r * Math.sin(a)];
+    }
+    function sectorPath(i, n) {
+      var gap = 1.6;                       // degrees of breathing room between slots
+      var a0 = i * 360 / n - 180 / n + gap;
+      var a1 = (i + 1) * 360 / n - 180 / n - gap;
+      var o0 = polar(R_OUT, a0), o1 = polar(R_OUT, a1);
+      var i0 = polar(R_IN, a0),  i1 = polar(R_IN, a1);
+      var big = (a1 - a0) > 180 ? 1 : 0;   // SVG large-arc flag: only a lone sector spans more than half the ring
+      return 'M' + o0[0] + ',' + o0[1] +
+             ' A' + R_OUT + ',' + R_OUT + ' 0 ' + big + ' 1 ' + o1[0] + ',' + o1[1] +
+             ' L' + i1[0] + ',' + i1[1] +
+             ' A' + R_IN + ',' + R_IN + ' 0 ' + big + ' 0 ' + i0[0] + ',' + i0[1] + ' Z';
+    }
+    function el(tag, attrs, cls) {
+      var e = document.createElementNS(NS, tag);
+      for (var k in attrs) e.setAttribute(k, attrs[k]);
+      if (cls) e.setAttribute('class', cls);
+      return e;
+    }
+    function isDisabled(i) { return !!(curOpts[i] && curOpts[i].disabled); }
+    function noteOf(i) { return (curOpts[i] && curOpts[i].note) || ''; }
+    // The hub's second line: 'cancel', or a greyed slot's note, squeezed to the hub like a long
+    // name. Measured where the host can (CJK runs twice as wide per character), else counted.
+    function setHint(txt) {
+      if (!hintEl || hintEl.textContent === txt) return;
+      hintEl.textContent = txt;
+      hintEl.removeAttribute('textLength');
+      hintEl.removeAttribute('lengthAdjust');
+      var max = (R_IN - 8) * 2 - 18, w = 0;
+      try { w = hintEl.getComputedTextLength(); } catch (e) {}
+      if (w ? w > max : txt.length > 24) {
+        hintEl.setAttribute('textLength', String(max));
+        hintEl.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+      }
+    }
+    function restoreHint() { setHint(hot >= 0 && isDisabled(hot) ? noteOf(hot) : 'cancel'); }
+    function setHot(i) {
+      if (hot >= 0 && sectors[hot]) sectors[hot].classList.remove('hot');
+      hot = i;
+      if (hot >= 0 && sectors[hot]) sectors[hot].classList.add('hot');
+      restoreHint();
+    }
+
+    function render(data) {
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+      sectors = [];
+      hintEl = null;
+      hot = -1;
+      var opts = data.options || [];
+      curOpts = opts;
+      var n = Math.min(opts.length, SLOT_COUNT);   // no options: only the hub, nothing to pick
+      for (var i = 0; i < n; i++) {
+        (function (idx) {
+          var o = opts[idx] || {};
+          var dis = !!o.disabled;
+          var s;
+          if (dis) {
+            // The host's refusal sound, not the pick's click.
+            s = el('path', { d: sectorPath(idx, n), 'data-ml-sound': 'inactive' }, 'sector dis');
+            s.addEventListener('mouseenter', function () { setHint(o.note || ''); });
+            s.addEventListener('mouseleave', function () { restoreHint(); });
+            s.addEventListener('click', function (ev) { ev.stopPropagation(); setHint(o.note || ''); });
+          } else {
+            s = el('path', { d: sectorPath(idx, n), 'data-ml-sound': 'click', 'data-ml-sound-hover': 'focus' }, 'sector');   // host-played (Magelight 0.29.0)
+            s.addEventListener('mouseenter', function () { setHot(idx); });
+            s.addEventListener('mouseleave', function () { if (hot === idx) setHot(-1); });
+            s.addEventListener('click', function (ev) { ev.stopPropagation(); pick(idx); });
+          }
+          svg.appendChild(s);
+          sectors.push(s);
+          var mid = idx * 360 / n;
+          var p = polar(R_TXT, mid);
+          var t = el('text', { x: p[0], y: p[1] + 2 }, dis ? 'txt dis' : 'txt');
+          t.textContent = o.text || '';
+          svg.appendChild(t);
+          var l = el('text', { x: p[0], y: p[1] + 18 }, dis ? 'lbl dis' : 'lbl');
+          l.textContent = o.label || '';
+          svg.appendChild(l);
+        })(i);
+      }
+      var hub = el('circle', { id: 'hub', cx: CX, cy: CY, r: R_IN - 8, 'data-ml-sound': 'cancel' });
+      hub.addEventListener('click', function (ev) { ev.stopPropagation(); dismiss(); });
+      svg.appendChild(hub);
+      var name = el('text', { id: 'hub-name', x: CX, y: CY - 2 });
+      var nm = (data.targetName || 'No target');
+      name.textContent = nm;
+      // A long name (two-word NPCs) must stay inside the hub: squeeze the
+      // glyphs to the hub's width rather than spilling into the slots.
+      if (nm.length > 11) {
+        name.setAttribute('textLength', String((R_IN - 8) * 2 - 18));
+        name.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+      }
+      svg.appendChild(name);
+      var hint = el('text', { id: 'hub-hint', x: CX, y: CY + 16 });
+      hint.textContent = 'cancel';
+      svg.appendChild(hint);
+      hintEl = hint;
+    }
+
+    // Anywhere outside a slot (the page background) dismisses — the same
+    // "click outside" the UIExtensions wheel had.
+    overlay.addEventListener('click', function () { dismiss(); });
+    document.addEventListener('contextmenu', function (e) { e.preventDefault(); dismiss(); });
+
+    // Keyboard / gamepad (the native GamepadUIBridge turns A→Enter, B→Escape,
+    // d-pad/stick→arrows): arrows walk the ring, Enter picks, Escape cancels.
+    document.addEventListener('keydown', function (e) {
+      var k = e.key;
+      if (k === 'Escape') { e.preventDefault(); dismiss(); return; }
+      if (k === 'Enter' || k === ' ') {
+        e.preventDefault();
+        if (hot >= 0) { if (isDisabled(hot)) setHint(noteOf(hot)); else pick(hot); }
+        return;
+      }
+      var n = sectors.length;
+      if (!n) return;
+      if (k === 'ArrowRight' || k === 'ArrowDown') { e.preventDefault(); setHot(hot < 0 ? 0 : (hot + 1) % n); }
+      else if (k === 'ArrowLeft' || k === 'ArrowUp') { e.preventDefault(); setHot(hot < 0 ? n - 1 : (hot - 1 + n) % n); }
+    });
+
+    window.receiveWheelData = function (data) {
+      data = data || {};
+      posted = false;
+      render(data);
+      overlay.classList.add('show');
+    };
+    // The bridge's silent close: the hidden page keeps no sectors and posts nothing, so a click
+    // before the next receiveWheelData cannot pick an option of a wheel that is no longer open.
+    window.resetWheel = function () {
+      posted = true;
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+      sectors = [];
+      curOpts = [];
+      hintEl = null;
+      hot = -1;
+    };
+
+    if (window.wheelReady) window.wheelReady('');
+  })();
+</script>
+</body>
+</html>

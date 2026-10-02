@@ -1,0 +1,53 @@
+customCategory: combat
+name: CeaseFighting
+description: "Use when the speaker, in a real fight, wants it stopped and calls it off in this line: a misunderstanding, or someone they will not kill. The speaker and the opponent they name stand down, with allies fighting nearby, and stay down unless attacked. Never to keep fighting or to attack; demanding that the other side surrender is words. Ending a fist-fight is Brawl."
+questEditorId: SeverActions
+scriptName: SeverActions_Combat
+executionFunctionName: CeaseFire_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor1
+    description: the actor calling the truce
+  - type: dynamic
+    name: opponent
+    description: "who the speaker is fighting: exact name as listed in Nearby Actors, or the player's name"
+enabled: true
+defaultPriority: 8
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # "[BRAWL ACTIVE]" is sever_brawl_state's marker text (SkyrimNetBridge.h);
+      # keep the two byte-identical.
+      - decoratorName: "sever_brawl_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "not_contains"
+        expectedValue: "BRAWL ACTIVE"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

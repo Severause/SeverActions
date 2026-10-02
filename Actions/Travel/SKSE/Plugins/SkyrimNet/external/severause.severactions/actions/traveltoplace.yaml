@@ -1,0 +1,104 @@
+customCategory: sa_journeys
+name: TravelToPlace
+description: "Use only when the speaker sets off for a place in this very line, going ahead of {{ player.name }} or without them: {{ player.name }} sends them on ('go to…', 'meet me at…', 'wait for me at…'), the speaker goes ahead to wait there for {{ player.name }}, or the speaker takes their leave now on business of their own. Not for plans or possibilities ('we could', 'maybe', 'someday', 'tomorrow'), questions, or a place just being mentioned. Not for going together: someone already walking with {{ player.name }} simply comes along, and agreeing now to come along is TagAlong or Companionship. {{ player.name }}'s camp or base is Camping; a nearby spot (upstairs, outside, the bar) is fine."
+questEditorId: SeverActions
+scriptName: SeverActions_Travel
+executionFunctionName: TravelToPlace
+parameterMapping:
+  - type: speaker
+    name: akNPC
+    description: the actor heading off
+  - type: dynamic
+    name: destination
+    description: "the place's proper name, e.g. 'The Bannered Mare' or 'College of Winterhold'; add the town when names repeat ('Hall of the Dead, Whiterun'). A nearby spot also works (upstairs, outside, the bar); prefix 'outside ' to stop at a place's entrance. Never a phrase like 'back to the college'"
+  - type: static
+    value: 24
+    name: WaitHours
+    description: how long (in hours) they'll wait at the destination before drifting back to whatever they were doing
+  - type: static
+    value: true
+    name: stopFollowing
+    description: whether to drop their following job while they make this trip
+  - type: static
+    value: 0
+    name: Speed
+    description: travel pace (0 = default natural speed)
+  - type: dynamic
+    name: waitForPlayer
+    description: "true = the speaker waits at the destination to meet the player there; false = the speaker goes about business of their own there and afterwards returns to their routine"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Mid-encounter setup (NSFW pairing owns this NPC's movement). Custom
+      # decorator - STRING compared; scene-bound actors return non-empty, so we
+      # gate on == "" (free actors pass). Empty for everyone when
+      # the NSFW add-on isn't installed, so this is a no-op without it.
+      - decoratorName: "sever_scene_bound"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # sever_travel_allowed: "1" for someone SeverActions neither rosters, walks
+      # nor parks; for anyone it does (a companion, a tag-along, someone told to
+      # wait), "1" only while Followers Can Travel is on (ships off). String
+      # decorator, so gate on != "". Deploy this YAML with the DLL that registers it.
+      - decoratorName: "sever_travel_allowed"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_tax_collector"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Guards in the middle of an SA arrest or dispatch. is_busy covers a live
+      # one; this also covers the time after a load, when the task stands and
+      # busy is not set again. Custom decorator, read by FormID: "" = free.
+      - decoratorName: "sever_is_dispatched"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

@@ -1,0 +1,43 @@
+customCategory: employment
+name: ForgiveLoan
+description: "Use when {{ player.name }} writes off the loan the speaker still owes, in this exchange: keep it, call it square, forget the rest. Clears the whole remaining balance, defaulted or not, and buys real loyalty. Not for granting more time or reminding them to pay. Back-wages {{ player.name }} owes the speaker are PayArrears."
+questEditorId: SeverActions
+scriptName: SeverActions_Enterprises
+executionFunctionName: ForgiveLoan
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the retainer whose outstanding loan is being written off
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # has_loan_debt returns the outstanding balance; "" when they owe nothing.
+      - decoratorName: "has_loan_debt"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+eventString: "{{ player.name }} forgave the loan {{ actor.name }} still owed"

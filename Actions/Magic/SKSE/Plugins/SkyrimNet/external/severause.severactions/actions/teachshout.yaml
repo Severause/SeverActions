@@ -1,0 +1,51 @@
+customCategory: magic
+name: TeachShout
+description: "Use only when {{ player.name }} asks a master of the Voice to teach them and the speaker consents in this line, or the speaker offers and {{ player.name }} accepts: the next word of a Shout the speaker knows is spoken now and understood at once, no dragon soul needed; the game teaches whichever word {{ player.name }} still lacks. One word per request: after a lesson, the next waits until {{ player.name }} asks again. Not for talk of the Voice, a trial still to be passed, or a promise for later. Shouts the speaker can teach: {{ can_teach_shouts(npc.UUID) }}."
+questEditorId: SeverActions
+scriptName: SeverActions_SpellTeach
+executionFunctionName: TeachShout
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the master of the Voice passing the word on
+  - type: dynamic
+    name: shoutName
+    description: "the Shout being taught, one of those listed as teachable (e.g. 'Unrelenting Force', 'Whirlwind Sprint', 'Fire Breath')"
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "can_teach_shouts"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

@@ -1,0 +1,20 @@
+customCategory: crafting
+name: Crafting
+description: "Category: the speaker makes something for a person who asked: a smith forging a weapon or armor piece now or taking an order to collect later, cooking a meal, brewing a potion, or a smith handing over a finished order. Only when the speaker commits in this line to making a specific item for someone, or hands over a finished order being collected now; work already under way, offering services, and discussing or refusing a job are words. Drinks and other goods already made are sold (Economy) or given (Items). In the intent, name the item and who it is for."
+enabled: true
+
+eligibilityRules:
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

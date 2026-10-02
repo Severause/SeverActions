@@ -1,0 +1,75 @@
+customCategory: arrest
+name: AddBountyToPlayer
+description: "Use when the speaker charges {{ player.name }} with a crime they saw them commit here and now (assault, theft, trespass, pickpocketing, murder), adding gold to their bounty in this hold; or for contempt, when {{ player.name }} openly defies or threatens the speaker after a warning. Not for crimes only mentioned, joked about, told as a past story or merely suspected, and not for ordinary rudeness. The charge stops no one: confronting {{ player.name }} over it is ArrestPlayer, in a later line."
+questEditorId: SeverActions
+scriptName: SeverActions_ArrestBounty
+executionFunctionName: AddBountyToPlayer_Internal
+parameterMapping:
+  - type: speaker
+    name: akGuard
+    description: the guard writing the charge into the books
+  - type: dynamic
+    name: bountyAmount
+    description: "gold to add for the charge: assault 40-200, theft 75-300, murder 1000-3000, trespass 75-150, pickpocket 25-175, contempt 25-100, abuse_of_power 50-250"
+  - type: dynamic
+    name: crimeType
+    description: "the charge, one of: assault, theft, murder, trespass, pickpocket, contempt (open defiance of the speaker), abuse_of_power"
+enabled: true
+defaultPriority: 7
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  # Replaced an 11-condition OR ladder (9 GuardFactionX + JobJarlFaction
+  # + JobHousecarlFaction) with the single native is_guard_or_authority
+  # decorator. Same semantics — see SkyrimNetBridge.h for the cached
+  # faction-pointer set, plus mod-added holds via HoldResolver.
+  - conditions:
+      - decoratorName: "is_guard_or_authority"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Not a guard in the middle of an SA arrest or dispatch. sever_is_dispatched
+      # reads the arrest store by FormID (the dispatch faction named by EditorID
+      # never resolves on VR). Custom decorator, so a STRING compare: "" = free.
+      - decoratorName: "sever_is_dispatched"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

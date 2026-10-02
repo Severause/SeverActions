@@ -3,10 +3,6 @@ Scriptname SeverActions_SpellCast extends Quest
 per-slot caster alias, and hands off to SeverActions_SpellCastAlias which
 drives the animated cast through a usemagic AI package.}
 
-; =============================================================================
-; PROPERTIES
-; =============================================================================
-
 ReferenceAlias Property SpellCastCaster00 Auto
 ReferenceAlias Property SpellCastCaster01 Auto
 ReferenceAlias Property SpellCastCaster02 Auto
@@ -18,19 +14,12 @@ Static Property XMarkerBase Auto
 Int Property MaxAimDistance = 120 AutoReadOnly
 {How far in front of the caster the aim marker is placed, in game units.}
 
-; =============================================================================
-; SINGLETON
-; =============================================================================
-
 SeverActions_SpellCast Function GetInstance() Global
     Quest kQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
     Return kQuest as SeverActions_SpellCast
 EndFunction
 
-; =============================================================================
-; MAIN ENTRY
-; =============================================================================
-
+; The CastSpell action's entry (castspell.yaml).
 Function CastSpell_Execute(Actor akCaster, String spellName, String targetName, Bool bDualCasting, Bool bHealToFull, Bool bUseMagicka)
     SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] CastSpell_Execute ENTRY caster=" + akCaster + " spellName='" + spellName + "' target='" + targetName + "'")
     If !akCaster || akCaster.IsDead()
@@ -43,8 +32,7 @@ Function CastSpell_Execute(Actor akCaster, String spellName, String targetName, 
         Return
     EndIf
 
-    ; Spell must be known by the caster — prevents the LLM from summoning
-    ; spells the NPC doesn't actually have.
+    ; Only a spell the caster knows, so the LLM cannot invent one.
     Spell spellToCast = SeverActionsNative.FindSpellOnActor(akCaster, spellName) as Spell
     If !spellToCast
         SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] " + akCaster.GetDisplayName() + " doesn't know spell '" + spellName + "'")
@@ -66,38 +54,18 @@ Function CastSpell_Execute(Actor akCaster, String spellName, String targetName, 
     EndIf
     SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] target=" + targetRef + " markerPlaced=" + markerPlaced)
 
-    ; The cast is visible in-game (animation + projectile + sound), so we
-    ; deliberately DON'T register a SkyrimNet event here. Doing so would
-    ; pollute the LLM context with a redundant "X casts Y" line for every
-    ; cast — the engine's own anim graph already tells the LLM something
-    ; happened via the action invocation. Failure paths still narrate via
-    ; DirectNarration so the player knows WHY a cast didn't happen.
+    ; No SkyrimNet event for a cast: it is visible in game and the action call already reached the LLM,
+    ; so an event would only add a redundant line. Failures narrate so the player learns why.
     _DispatchOneCast(akCaster, spellToCast, targetRef, bDualCasting, bUseMagicka, bHealToFull, markerPlaced)
 EndFunction
 
-; =============================================================================
-; SLOT DISPATCH
-; =============================================================================
+; === Slot dispatch ===
 
-; Returns true if the cast actually started (alias filled, package bound,
-; injection succeeded, polling armed). Returns false on full slots or any
-; precondition failure.
-;
-; CRITICAL ORDER (mirrors bosn's clonePackageSpell pattern, comment in his
-; _bosnCustomActions_CastSpell.psc:39 — "Need to change package before
-; filling the alias"):
-;   1. Magicka pre-check
-;   2. Resolve the live SlotPackage and bind it to the alias property
-;   3. Inject the spell into the package
-;   4. Fill the target alias
-;   5. ONLY THEN fill the caster alias (ForceRefTo)
-;   6. Hand off to StartCast for polling-state init
-;
-; Filling the caster alias triggers the engine's package re-evaluation
-; immediately. If the package still has the placeholder Healing spell at
-; that moment, the UseMagic procedure starts with the wrong data and the
-; cast silently aborts. Same for the target alias — must be filled before
-; the engine evaluates so it has a valid target.
+; Starts one cast on a free slot: TRUE once the alias is armed, FALSE when all slots are busy or a
+; precondition fails. ORDER MATTERS (bosn's clonePackageSpell pattern): bind the package and inject the
+; spell, fill the target alias, and only then fill the caster alias. The caster fill re-evaluates packages
+; at once; if the package still holds its placeholder spell or the target alias is empty, UseMagic starts
+; with the wrong data and the cast silently aborts.
 Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference akTarget, Bool bDualCasting, Bool bUseMagicka, Bool bHealToFull, Bool bMarkerIsTarget)
     ReferenceAlias slot = FindFreeSlot()
     If !slot
@@ -108,9 +76,7 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
     EndIf
     SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] _DispatchOneCast: assigned slot " + slot + " to " + akCaster.GetDisplayName())
 
-    ; (1) Magicka pre-check — abort early if we can't pay the cost. Done
-    ; here (instead of inside StartCast) so we don't pollute alias state
-    ; with a half-set-up cast.
+    ; (1) Magicka pre-check, before any alias state is touched.
     If bUseMagicka
         Int spellCost = SeverActionsNativeExt.Native_GetEffectiveMagickaCost(akCaster, akSpell, bDualCasting)
         If spellCost > akCaster.GetActorValue("Magicka")
@@ -121,9 +87,7 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
         EndIf
     EndIf
 
-    ; (2) Bind the live SlotPackage on the alias property. Reads the LIVE
-    ; ESP every time so this is robust to package FormKey churn across
-    ; regenerations (Papyrus alias properties get baked into the save).
+    ; (2) Rebind the alias's SlotPackage to the live package (see GetPackageForSlot).
     SeverActions_SpellCastAlias slotAlias = slot as SeverActions_SpellCastAlias
     Package livePackage = GetPackageForSlot(slot)
     If !livePackage
@@ -134,13 +98,9 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
     slotAlias.SlotPackage = livePackage
     SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] rebound SlotPackage -> " + livePackage)
 
-    ; (3) Clone the spell into a fresh runtime form, then inject the clone
-    ; into the package. The original Requiem-distributed spell carries state
-    ; (perk gates, hand-locked equipSlot, possibly engine-cached "won't cast"
-    ; decisions) that prevents the UseMagic procedure from dispatching to
-    ; MagicCaster::CastSpell — the procedure runs silently and the magic
-    ; casters stay in state=0. The clone has the casting perk dropped and
-    ; equipSlot set to EitherHand, mirroring bosn's clonePackageSpell.
+    ; (3) Inject a runtime clone, not the original: a distributed spell's (e.g. Requiem's) casting perk or
+    ; hand-locked equip slot can stop UseMagic from ever reaching MagicCaster::CastSpell (it runs silently,
+    ; the casters stay in state 0). The clone drops the perk and uses the EitherHand slot.
     Spell castSpell = SeverActionsNativeExt.Native_CloneSpellForCast(akCaster, akSpell, bDualCasting)
     Bool usedClone = (castSpell != None)
     If !castSpell
@@ -150,10 +110,8 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
         SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] cloned spell: " + castSpell)
     EndIf
 
-    ; Record clone-vs-original for CleanupCast. RemoveSpell there must fire
-    ; ONLY for a runtime clone -- on the fallback-to-original path it would
-    ; permanently delete the NPC's real spell. Set/unset here (exactly once
-    ; per cast) so a stale flag from an earlier cast can never leak in.
+    ; Tell SpellCastAlias.CleanupCast whether this is a clone: its RemoveSpell on the original would delete
+    ; the NPC's real spell. Set or unset once per cast so no stale flag leaks in.
     If usedClone
         StorageUtil.SetIntValue(akCaster, "SeverSpellCast_WasCloned", 1)
     Else
@@ -174,9 +132,8 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
     ; Drop dialogue packages so the cast package can take precedence.
     SkyrimNetApi.UnregisterPackage(akCaster, "TalkToPlayer")
 
-    ; (4) Fill target alias BEFORE caster fill — engine looks up alias 120
-    ; for UID 4 (Target) at evaluation time, which happens the moment we
-    ; fill the caster alias next.
+    ; (4) Target alias first: the package's Target (UID 4) resolves through the slot's target alias
+    ; (ids 120-123) when the caster fill below triggers evaluation.
     If slotAlias.TargetAlias
         slotAlias.TargetAlias.ForceRefTo(akTarget)
         SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] target alias filled with " + akTarget)
@@ -184,33 +141,23 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
         SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] WARNING TargetAlias not bound on slot")
     EndIf
 
-    ; (5) NOW fill the caster alias. Engine re-evaluates packages
-    ; immediately and the UseMagic procedure has the correct spell + target
-    ; from the start.
+    ; (5) Now the caster alias.
     slot.ForceRefTo(akCaster)
     SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] caster alias filled - engine should pick up package")
+    ; The schedule quests (priority 101) outrank this caster alias: a caster the schedule holds comes off it, and the
+    ; reconcile keeps her off while she holds the slot.
+    SeverActions_ModuleBase.CallBool("followers", "leaveSchedule", akCaster)
 
-    ; Force an explicit package re-evaluation. ForceRefTo is supposed to
-    ; trigger this automatically, but in practice (especially on registered
-    ; companions whose FollowPlayer alias package is competing for the same
-    ; quest's package list) the engine sometimes sticks on the previous
-    ; package until the next AI tick. EvaluatePackage forces the switch
-    ; right now so the UseMagic procedure on the cast package starts
-    ; running on this frame instead of whenever the AI ticker decides to
-    ; look. Belt-and-suspenders — harmless when ForceRefTo already worked.
+    ; ForceRefTo should re-evaluate by itself, but on a registered companion (whose follow alias package
+    ; competes) the engine can keep the old package until the next AI tick. Harmless when it already switched.
     akCaster.EvaluatePackage()
 
-    ; (6) Hand off to alias for polling-state init. Pass the CLONED spell
-    ; so heal-to-full and other downstream logic uses the same form the
-    ; engine sees in the package.
+    ; (6) Hand off to the alias for polling, with the spell the package holds.
     Return slotAlias.StartCastTracking(castSpell, akTarget, bDualCasting, bUseMagicka, bHealToFull, bMarkerIsTarget)
 EndFunction
 
-; Failure cleanup for _DispatchOneCast early returns. Before StartCastTracking
-; arms the alias, nothing else owns the resources we created, so an early
-; abort must release them here: delete the aim marker we placed (otherwise
-; every failed untargeted cast leaks a persistent XMarker in the cell) and
-; pull the runtime spell clone back off the caster if one was already added.
+; Early-return cleanup for _DispatchOneCast: until StartCastTracking arms the alias nothing else owns what
+; we created, so delete our aim marker (a persistent XMarker would leak per failed cast) and remove the clone.
 Function _AbortCastCleanup(Actor akCaster, ObjectReference akTarget, Bool bMarkerIsTarget, Spell akClone)
     If bMarkerIsTarget && akTarget
         akTarget.Disable()
@@ -222,10 +169,8 @@ Function _AbortCastCleanup(Actor akCaster, ObjectReference akTarget, Bool bMarke
     EndIf
 EndFunction
 
-; Returns the live Package record for the given slot alias. Hard-codes the
-; cast package FormIDs for SeverActions.esp — these are stable post-2.2.4.
-; If they ever change again, update this map (or move to GetFormFromFile by
-; EditorID via a native helper).
+; The slot's cast package, read from the ESP by FormID on every cast: the alias's SlotPackage property is
+; baked into the save and goes stale if the packages are regenerated. Update this map if their FormIDs move.
 Package Function GetPackageForSlot(ReferenceAlias slot)
     If slot == SpellCastCaster00
         return Game.GetFormFromFile(0x00156039, "SeverActions.esp") as Package
@@ -239,9 +184,8 @@ Package Function GetPackageForSlot(ReferenceAlias slot)
     return None
 EndFunction
 
-; Called by the alias when a heal-to-full cycle finishes and conditions are
-; still right for another pass. Allocates a fresh slot since the completing
-; alias just cleared itself.
+; SpellCastAlias calls this for the next heal-to-full pass. Takes any free slot: the finishing alias has
+; already cleared itself.
 Function RecastSameSlot(Actor akCaster, Spell akSpell, ObjectReference akTarget, Bool bDualCasting, Bool bUseMagicka, Bool bHealToFull)
     If !akCaster || !akSpell || !akTarget
         Return
@@ -265,21 +209,17 @@ ReferenceAlias Function FindFreeSlot()
     return None
 EndFunction
 
-; =============================================================================
-; TARGET RESOLUTION
-; =============================================================================
+; === Target resolution ===
 
 ObjectReference Function ResolveTarget(Actor akCaster, Spell spellToCast, String targetName)
-    ; Self-delivered spells ignore targetName entirely
+    ; Self-delivered spells ignore targetName.
     If SeverActionsNativeExt.Native_IsSelfDeliveredSpell(spellToCast)
         return akCaster as ObjectReference
     EndIf
 
     String trimmed = SeverActionsNative.TrimString(targetName)
 
-    ; "self" or the caster's own display name => target is the caster.
-    ; Previously "self" was lumped with "" and "none" and fell through to the
-    ; aim-marker path, so "cast Healing on self" fired forward into space.
+    ; "self" or the caster's own name => the caster (not the aim-marker path below).
     If SeverActionsNative.StringEquals(trimmed, "self") || SeverActionsNative.StringEquals(trimmed, akCaster.GetDisplayName())
         return akCaster as ObjectReference
     EndIf
@@ -289,15 +229,13 @@ ObjectReference Function ResolveTarget(Actor akCaster, Spell spellToCast, String
         return None
     EndIf
 
-    ; Try actor lookup first — ActorFinder handles nearby + NND + fuzzy
+    ; FindActorByName covers nearby actors, NND names and fuzzy matches.
     Actor asActor = SeverActionsNative.FindActorByName(trimmed)
     If asActor
         return asActor as ObjectReference
     EndIf
 
-    ; No named match. Caller will place an aim marker, which lets the caster
-    ; fire an aimed spell at whatever they're looking at (including training
-    ; dummies, corpses, etc. directly in front of them).
+    ; No match: the caller places an aim marker, so the spell fires at whatever is in front of the caster.
     return None
 EndFunction
 
@@ -312,9 +250,7 @@ ObjectReference Function PlaceAimMarker(Actor akCaster)
     If !marker
         return None
     EndIf
-    ; Papyrus Math.Sin/Math.Cos take DEGREES, not radians -- pass GetAngleZ
-    ; straight through. (Converting to radians first made Sin~0/Cos~1, so
-    ; every untargeted cast fired due north regardless of facing.)
+    ; Math.Sin/Cos take DEGREES, as GetAngleZ returns: no radians conversion.
     Float angle = akCaster.GetAngleZ()
     Float dx = MaxAimDistance * Math.Sin(angle)
     Float dy = MaxAimDistance * Math.Cos(angle)

@@ -1,0 +1,45 @@
+customCategory: arrest
+name: AppealDuringEscort
+description: "Only for a prisoner being marched to jail: the speaker calls on the escorting guard to stop and hear a plea (innocence, a bribe, mercy). The march halts while the guard listens, then the guard frees them or marches on. One chance per arrest: use it in the line where the speaker starts that plea, not for protests, curses or complaints along the way."
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: AppealDuringEscort_Internal
+parameterMapping:
+  - type: speaker
+    name: akPrisoner
+    description: the prisoner mid-escort making their case
+enabled: true
+defaultPriority: 8
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "busy_reason"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "arrest"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Only the prisoner a guard is marching to jail (ArrestState 3, the one
+      # state AppealDuringEscort_Internal accepts; a jailed prisoner is not),
+      # read by FormID: the Arrested / Jailed factions resolve by EditorID only
+      # with po3's retention (none on VR). Custom decorator: a STRING compare.
+      - decoratorName: "sever_is_escorted_prisoner"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

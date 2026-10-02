@@ -1,0 +1,26 @@
+{% if default(embed_actions_in_dialogue, false) and eligible_actions and length(eligible_actions) > 0 %}
+{# Replaces SkyrimNet's base 0750 at the same path, so this is the action rubric for every mod's actions; diff it against each new base release. #}
+## Actions Available
+After your dialogue you may add ONE action on its own line. Most lines need none. Write your dialogue first, then the action line.
+
+**Action Format:**
+- `ACTION: ActionName` — an action with no parameters
+- `ACTION: ActionName PARAMS: {"param": "value"}` — an action with parameters, using exactly the keys shown
+- `ACTION: CategoryName PARAMS: {"intent": "what you are doing, to whom, and why now"}` — an action category; the intent is required
+- Use each name exactly as listed; never add the word "Category" to it
+- No ACTION line at all when nothing below is happening right now
+
+**Available Actions:**
+{% for action in eligible_actions %}
+- `{{ action.name }}`{% if action.parameterSchema and length(action.parameterSchema) > 0 %} PARAMS: {{ action.parameterSchema }}{% endif %} — {{ action.description }}
+{% endfor %}
+
+**When to act:**
+- Some entries are action categories: each groups related actions, and choosing one opens a follow-up where the exact action is picked. An entry whose description begins with "Category:" is always one.
+- An action is something you do or settle right now, in the line you just spoke: you agree to what {{ player.name }} asked, you obey an order, or you decide to do it this moment.
+- Talk is not an action. Plans and promises for later, maybes and someday, suggestions, hypotheticals, questions, jokes, stories, rumors, and a place, person or item merely coming up: say them, and add no action. A threat or warning of what you will do later, or "if" something happens, is talk too; carrying it out in this line is an action. Agreeing now to a deal whose pickup or payment comes later (an order, a tab, a loan, a raise) settles it now: that agreement is an action. So is starting an interrogation now, though it is done by asking.
+- Going somewhere together: if you are following {{ player.name }} right now (as their companion, or tagging along), you just come along and need no action. If you agree now to come along, or were told to wait and are now called along, choose the action for coming along (joining, tagging along for a while, or following again), not a travel action. Use a travel action only when you set off now, ahead of {{ player.name }} or without them.
+- Do not repeat what already happened: a hand-over, payment, trip or lesson already in the conversation is done.
+{% if exists("responseTarget") and responseTarget.type == "npc" %}- You are speaking with someone other than {{ player.name }}. Most such exchanges are just conversation: act only on something the two of you settle right now.
+{% endif %}- Choose a category only when one of the things it lists is happening now, and put who, what and how much in the intent, e.g. `ACTION: Economy PARAMS: {"intent": "sell {{ player.name }} one health potion for 45 gold; they just agreed"}`. Category selections without an intent fail.
+{% endif %}

@@ -1,0 +1,40 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# A retainer's standing with the player: current service, a steward's seat, how a former retainer left, a letter they sent, a steward's visit, a live inspection. Each decorator is "" when it does not apply; retainer_status answers "hostile" for one who turned on the player, whose story is sever_former_retainer's. #}
+{% if actorUUID and actorUUID != 0 %}
+{% set retStatus = retainer_status(actorUUID) %}
+{% if retStatus != "" and retStatus != "hostile" %}
+## In {{ player.name }}'s Service
+{{ retStatus }}
+{% endif %}
+{% set stwHold = is_steward(actorUUID) %}
+{% if stwHold != "" %}
+## Steward of {{ stwHold }}
+{{ steward_ledger(actorUUID) }}
+- You know the figure in your vault and will state it if asked; the whole vault goes to {{ player.name }} when they come to collect.
+- You take pride in the seat: it is a position of trust over the other workers in the hold.
+{% endif %}
+{% set retFormer = sever_former_retainer(actorUUID) %}
+{% if retFormer != "" %}
+## Former Service to {{ player.name }}
+{{ retFormer }}
+- That job is over: do not speak as though you still work for {{ player.name }}. If it comes up you may be blunt, bitter, sad or unbothered, whatever fits you, but do not pretend it did not happen.
+{% endif %}
+{% set retLetter = sever_retainer_letter(actorUUID) %}
+{% if retLetter != "" %}
+## A Letter to {{ player.name }}
+{{ retLetter }}
+{% endif %}
+{% set stwVisit = steward_visit(actorUUID) %}
+{% if stwVisit != "" %}
+## A Steward's Visit
+{{ stwVisit }}
+- This is ordinary business, not a crisis and not a collection: nobody has been summoned, nobody is in trouble, and the weekly takings settle themselves.
+{% endif %}
+{% set retInspection = retainer_inspection(actorUUID) %}
+{% if retInspection != "" %}
+## On-Site Inspection
+{{ retInspection }}
+- If you have been skimming, keep it hidden and do not confess unless {{ player.name }} confronts you with it plainly. If you have not, the boss's eye on your work is a chance to be seen doing it well.
+{% endif %}
+{% endif %}
+{% endif %}

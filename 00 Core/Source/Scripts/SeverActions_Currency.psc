@@ -1,9 +1,6 @@
 Scriptname SeverActions_Currency extends Quest
-{Currency/gold action handlers for SkyrimNet integration - by Severause}
-
-; =============================================================================
-; PROPERTIES
-; =============================================================================
+{Economy module: the gold and item-trade actions, the player's payment/trade prompts, and the
+ economy verb dispatcher (OnVerb_Economy) - by Severause}
 
 MiscObject Property Gold001 Auto
 {Gold coin - set to Gold001 (0x0000000F) in CK, or leave empty for auto-lookup}
@@ -26,16 +23,12 @@ Bool Property UseThreatenAnimation = True Auto
 Bool Property UseGoldSound = True Auto
 Float Property AnimDelay = 0.6 Auto
 
-; Conjured Gold - allows NPCs to give gold they don't have.
-; Ships OFF as of dev141 (user decision: with retainers, camps, stewards and
-; the NPC labor economy all minting real coin, defaulting the money printer
-; on no longer makes sense). Existing saves keep whatever the player chose -
-; this default only governs new games / fresh installs.
+; Conjured gold (NPCs may give gold they don't carry). Legacy host of the Settings Authority
+; row allowConjuredGold, read once by its migration; every read goes through Settings_GetBool.
+; The False default only seeds a fresh save; an older save may hold True and keeps it.
 Bool Property AllowConjuredGold = False Auto
 
-; =============================================================================
-; INITIALIZATION
-; =============================================================================
+; ===== INITIALIZATION =====
 
 Event OnInit()
     Debug.Trace("[SeverActions_Currency] Initialized")
@@ -52,410 +45,75 @@ Function Maintenance()
         endif
     endif
 
-    ; CollectPayment now prefers a non-pausing PrismaUI overlay over
-    ; SkyMessage when PrismaUI is available; the bridge posts the player's
-    ; choice back via SeverActions_CollectPaymentChoice. Register on every
-    ; Maintenance pass — RegisterForModEvent is idempotent and the script
-    ; instance can lose its registration across save/load on edge cases.
+    ; Maintenance is the economy load function (OnInit, and the economy provider's stage 1 on
+    ; every load and new game), so both registrations are re-made on every load (DR16).
+    ; The Magelight payment prompt posts the player's choice here.
     RegisterForModEvent("SeverActions_CollectPaymentChoice", "OnCollectPaymentChoice")
-    ; The Final Audit / Levy listeners are registered in ONE place - OnGameLoaded,
-    ; which RunLoadRecovery calls on both new games and loads. Do not add a
-    ; partial copy here: an incomplete duplicate list is how a new listener ends
-    ; up bound in only one place and silently never fires.
+    ; Currency, trade, crafting and debt verbs (M-V); the enterprises verbs run natively.
+    RegisterForModEvent("SeverActions_Verb_Economy", "OnVerb_Economy")
 EndFunction
 
 Function OnGameLoaded()
-    {Load recovery (SeverActions_Init.RunLoadRecovery). Maintenance() is only
-     ever called from OnInit, which never re-fires on an existing save, so the
-     Final Audit listeners registered there were DEAD for every current player
-     - the native side logged its deploy and Papyrus never heard it. Register
-     here, and re-apply the court package directly so the detail's AI never
-     depends on an event landing at all.}
-    RegisterForModEvent("SeverActions_FinalAuditArrived", "OnFinalAuditArrived")
-    RegisterForModEvent("SeverActions_FinalAuditDeployed", "OnFinalAuditDeployed")
-    RegisterForModEvent("SeverActions_FinalAuditApproach", "OnFinalAuditApproach")
-    RegisterForModEvent("SeverActions_FinalAuditStandDown", "OnFinalAuditStandDown")
-    RegisterForModEvent("SeverActions_FinalAuditEscortMode", "OnFinalAuditEscortMode")
-    RegisterForModEvent("SeverActions_LevySquadDwell", "OnLevySquadDwell")
-    String auditState = SeverActionsNativeExt2.Venture_Audit_State()
-    If auditState == "casebuilding"
-        ApplyFinalAuditCourtPackage()
-    ElseIf auditState == "approaching" || auditState == "demanding"
-        ; Mid-approach or mid-standoff across a save boundary: put the march
-        ; packages back, not the court sandbox.
-        ;
-        ; UNLESS HE IS STILL WALKING. The approach is a real orchestrator
-        ; journey now, and it survives a save: the follow package sits at
-        ; priority 110 while the Traveler_NN pool alias is 106, so applying
-        ; the march here would outrank the travel package and stop the walk
-        ; dead a hold away from the player. Native answers from ground truth
-        ; (does the General have a live travel session), not a cosaved flag,
-        ; and fires SeverActions_FinalAuditApproach itself when he arrives.
-        If !SeverActionsNativeExt2.Venture_Audit_IsTraveling()
-            ApplyFinalAuditApproachPackages()
-        Else
-            Debug.Trace("[SeverActions] Final Audit: the General is still on the road - march packages held back")
-        EndIf
-    ElseIf auditState == "paid"
-        ; Paid is terminal, so the native tick stops looking at the detail
-        ; entirely - if the stand-down event was ever dropped they would keep
-        ; the priority-110 march overrides and drawn weapons FOREVER. Re-run
-        ; the stand-down on every load; it is idempotent.
-        StandDownFinalAudit()
-    EndIf
+    {Safe-exit forwarder to Maintenance for an older provider pex. The Final Audit half moved
+     to SeverActions_Enterprises.Maintenance (P9-02).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): the Final Audit half moved to SeverActions_Enterprises; forwards to Maintenance
+    Maintenance()
 EndFunction
 
 Function ApplyFinalAuditCourtPackage()
-    {Give the GENERAL the court sandbox as a package override, and post the
-     escort on him via EnsureFinalAuditEscort
-     (priority 100, the home-sandbox tier). An override is REQUIRED: their
-     TPLT template makes the engine ignore the base record's own package list
-     and serve the chain's DefaultStayAtEditorLocationSkipFallout instead.
-     Idempotent - PO3 cosaves overrides and re-adding the same package is
-     harmless, so both the load path and the deploy event may call this.}
-    Package courtPkg = Game.GetFormFromFile(0x00165676, "SeverActions.esp") as Package
-    If !courtPkg
-        Debug.Trace("[SeverActions] Final Audit: court package 0x165676 missing")
-        Return
-    EndIf
-    ; THE GENERAL ONLY. The court sandbox used to go on all three, and that is
-    ; what left the two Legates standing in the road after a payment: their
-    ; formation LinkedRef anchors to CASSIUS, not to the court marker, so the
-    ; work sandbox told them to mill about wherever Cassius happened to be
-    ; standing at the instant it was applied - and a sandbox does not chase a
-    ; moving anchor, so when he walked off to Dragonsreach they simply stayed.
-    ; The escort keeps the Follow package instead (see EnsureFinalAuditEscort).
-    Actor general = SeverActionsNativeExt2.Venture_Audit_Collector(0)
-    If general && !general.IsDead()
-        ActorUtil.AddPackageOverride(general, courtPkg, 100, 1)
-        general.EvaluatePackage()
-    EndIf
-    EnsureFinalAuditEscort()
-    PostFinalAuditGarrisons()
-    Debug.Trace("[SeverActions] Final Audit: court package on the General, escort following him, garrisons posted")
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
 EndFunction
 
 Int Function FinalAuditEscortSize() Global
-    {How far the ESCORT loops run over Venture_Audit_Collector: the trio only.
-     0 is the General (escorted, not escorting), 1-2 are the Legates.
-
-     The twelve seconded soldiers are indices 3-14 and are deliberately NOT in
-     these loops - they garrison five holds and never march, draw, or follow.
-     Their orders are PostFinalAuditGarrisons().}
-    Return 3
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return 0
 EndFunction
 
 Int Function FinalAuditGarrisonFirst() Global
-    {First Venture_Audit_Collector index of the twelve.}
-    Return 3
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return 0
 EndFunction
 
 Int Function FinalAuditGarrisonLast() Global
-    {One past the last garrison index.}
-    Return 15
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return 0
 EndFunction
 
 Function PostFinalAuditGarrisons()
-    {Hand the twelve over to their PATROL ALIASES by clearing the standing
-     overrides off them.
-
-     They are templated (Traits) with NO package list of their own, so the
-     engine would otherwise serve the template chain's
-     DefaultStayAtEditorLocationSkipFallout and they would stand where they were
-     put forever. That used to be answered with a work-sandbox override; it is
-     now answered by alias packages on SeverActions_LevyPatrolQuest (16AC46) -
-     the five leaders carry their city's patrol package, the other seven a
-     follow package aimed at their leader, and native seats them in the pool.
-
-     WHY THE OVERRIDE HAS TO GO, not just change: alias-package precedence comes
-     from the owning quest's DNAM priority, which is 95 here. A priority-100
-     override outranks it, so leaving 16AC45 applied would mean the patrols
-     never run and the twelve would look exactly as they did before - the most
-     confusing possible failure, because every log line would say the pool was
-     seated correctly.
-
-     The dwell is the same mechanism in reverse: native re-applies 16AC45's
-     sibling (16AC4B, same r4096 sandbox retargeted at the patrol quest) at
-     priority 100 for a couple of game hours, which outranks the patrol on
-     purpose, then removes it and the squad moves off again. See
-     OnLevySquadDwell.
-
-     Idempotent - PO3 cosaves overrides, so the load path and the deploy event
-     may both call this.}
-    ; Both historical overrides come off: 165676 (the r1200 court sandbox the
-    ; first garrison build handed them) and 16AC45 (the r4096 replacement).
-    ; RemovePackageOverride on an absent package is a no-op, so this is safe on
-    ; a save that never had either.
-    Package courtPkg = Game.GetFormFromFile(0x00165676, "SeverActions.esp") as Package
-    Package workPkg = Game.GetFormFromFile(0x0016AC45, "SeverActions.esp") as Package
-    Int i = FinalAuditGarrisonFirst()
-    Int last = FinalAuditGarrisonLast()
-    Int posted = 0
-    While i < last
-        Actor s = SeverActionsNativeExt2.Venture_Audit_Collector(i)
-        If s && !s.IsDead()
-            If courtPkg
-                ActorUtil.RemovePackageOverride(s, courtPkg)
-            EndIf
-            If workPkg
-                ActorUtil.RemovePackageOverride(s, workPkg)
-            EndIf
-            s.EvaluatePackage()
-            posted += 1
-        EndIf
-        i += 1
-    EndWhile
-    Debug.Trace("[SeverActions] Levy garrison: " + posted + " soldiers released to their patrol aliases")
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
 EndFunction
-
-Event OnLevySquadDwell(String eventName, String strArg, Float numArg, Form sender)
-    {A squad settles for a couple of game hours, or moves off again. One event
-     per soldier, sender being that soldier - native decides who is in which
-     squad and this handler never re-derives it, so the two sides cannot drift
-     on that rule.
-
-     The dwell package is 16AC4B, the same r4096 work sandbox as 16AC45 but with
-     its QNAM on the patrol quest. Applied at priority 100 it outranks the
-     alias patrol (quest priority 95), which is exactly the point; removing it
-     drops the soldier straight back onto their patrol or follow package with no
-     second call needed. Native moves the squad's hold anchor onto the leader
-     first, so they mill around wherever the patrol actually stopped rather than
-     being pulled back to the city's map marker.}
-    Actor s = sender as Actor
-    If !s || s.IsDead()
-        Return
-    EndIf
-    Package dwellPkg = Game.GetFormFromFile(0x0016AC4B, "SeverActions.esp") as Package
-    If !dwellPkg
-        Debug.Trace("[SeverActions] Levy dwell: package 0x16AC4B missing")
-        Return
-    EndIf
-    If strArg == "dwell"
-        ActorUtil.AddPackageOverride(s, dwellPkg, 100, 1)
-    Else
-        ActorUtil.RemovePackageOverride(s, dwellPkg)
-    EndIf
-    s.EvaluatePackage()
-EndEvent
 
 Function EnsureFinalAuditEscort()
-    {THE TWO LEGATES ONLY. They follow Cassius always - marching, standing,
-     holding court, walking home. There is no state in which his personal
-     escort should be somewhere other than where their General is.
-
-     THE TWELVE SECONDED SOLDIERS ARE NOT IN THIS FUNCTION and must not be
-     added to it. They garrison five holds and patrol their own cities from
-     alias packages on SeverActions_LevyPatrolQuest; see
-     PostFinalAuditGarrisons and OnLevySquadDwell. The loop below bounds on
-     FinalAuditEscortSize() (3) precisely to exclude them - the twelve are
-     indices 3-14 and are reached through FinalAuditGarrisonFirst/Last instead.
-
-     Do not "fix" that bound to match a comment. Anchoring the twelve to
-     Cassius was the first design and it was wrong: the work sandbox mills an
-     actor around whatever it is linked to, so linking all twelve to the
-     General collapsed the entire garrison into whichever room he settled in,
-     which is the opposite of the point of having them.
-
-     The package is the vanilla Follow template (SeverActions_GuardBodyguard,
-     0x165677 -> Skyrim.esm 0x019B2C), which already behaves the way a follower
-     does: close the distance when the target moves off, mill about near them
-     when the target stops. That is the follow/sandbox split by itself, from
-     the engine, with nothing for us to tick - the user asked for NFF's
-     follow-then-sandbox feel and this template IS that behaviour.
-
-     Idempotent: PO3 cosaves overrides, so re-adding the same package is a
-     no-op and every audit path may call this.}
-    Package guardPkg = Game.GetFormFromFile(0x00165677, "SeverActions.esp") as Package
-    Keyword followKw = Game.GetFormFromFile(0x00030155, "SeverActions.esp") as Keyword
-    Actor cassius    = SeverActionsNativeExt2.Venture_Audit_Collector(0)
-    If !guardPkg || !followKw || !cassius
-        Debug.Trace("[SeverActions] Final Audit: escort package/keyword/General missing")
-        Return
-    EndIf
-    ; Do not post an escort on a corpse. If the General fell, the Follow package
-    ; has nothing to close on and the audit is over anyway - leave whatever is
-    ; left of the detail to the "dead" branch of their orders.
-    If cassius.IsDead()
-        Debug.Trace("[SeverActions] Final Audit: General is dead - escort left as-is")
-        Return
-    EndIf
-    Int i = 1
-    Int detail = FinalAuditEscortSize()
-    While i < detail
-        Actor escort = SeverActionsNativeExt2.Venture_Audit_Collector(i)
-        If escort && !escort.IsDead()
-            SeverActionsNativeExt.LinkedRef_SetPermanent(escort, cassius, followKw)
-            ActorUtil.AddPackageOverride(escort, guardPkg, 110, 1)
-            escort.EvaluatePackage()
-        EndIf
-        i += 1
-    EndWhile
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
 EndFunction
-
-Event OnFinalAuditEscortMode(String eventName, String strArg, Float numArg, Form sender)
-    {The General started moving, or has settled. strArg = "follow" | "sandbox".
-     Native watches his position and fires this only on a CHANGE, so this does
-     not re-apply overrides every second.}
-    SetFinalAuditEscortSandbox(strArg == "sandbox")
-EndEvent
 
 Function SetFinalAuditEscortSandbox(Bool abSandbox)
-    {Swap the escort between marching and standing easy.
-
-     Vanilla's Follow template does NOT sandbox when its target stops - a
-     vanilla follower just stands there, which is exactly how the two Legates
-     ended up at attention in front of a seated Cassius. So the idle half is a
-     package swap rather than something the Follow package gives us.
-
-     The sandbox needs no new record. The escort's formation LinkedRef already
-     anchors them to CASSIUS under the work-anchor keyword, so the court
-     WorkSandbox makes them mill about HIM wherever he happens to be. That same
-     anchoring is why it cannot simply be left on: a sandbox does not chase a
-     moving anchor, which is what stranded them in the road when he walked home.
-
-     One override must be REMOVED for the other to win - both would otherwise
-     stack and the higher priority (Follow, 110) would always take it.}
-    Package courtPkg = Game.GetFormFromFile(0x00165676, "SeverActions.esp") as Package
-    Package guardPkg = Game.GetFormFromFile(0x00165677, "SeverActions.esp") as Package
-    Actor cassius    = SeverActionsNativeExt2.Venture_Audit_Collector(0)
-    If !courtPkg || !guardPkg || !cassius || cassius.IsDead()
-        Return
-    EndIf
-    Int i = 1
-    Int detail = FinalAuditEscortSize()
-    While i < detail
-        Actor escort = SeverActionsNativeExt2.Venture_Audit_Collector(i)
-        If escort && !escort.IsDead()
-            If abSandbox
-                ActorUtil.RemovePackageOverride(escort, guardPkg)
-                ActorUtil.AddPackageOverride(escort, courtPkg, 100, 1)
-            Else
-                ActorUtil.RemovePackageOverride(escort, courtPkg)
-                ActorUtil.AddPackageOverride(escort, guardPkg, 110, 1)
-            EndIf
-            escort.EvaluatePackage()
-        EndIf
-        i += 1
-    EndWhile
-    If abSandbox
-        Debug.Trace("[SeverActions] Final Audit escort standing easy - sandboxing around the General")
-    Else
-        Debug.Trace("[SeverActions] Final Audit escort marching - following the General")
-    EndIf
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
 EndFunction
-
-Event OnFinalAuditDeployed(String eventName, String strArg, Float numArg, Form sender)
-    {The detail just deployed mid-session (case opened). Same application the
-     load path uses.}
-    ApplyFinalAuditCourtPackage()
-EndEvent
 
 Function ApplyFinalAuditApproachPackages()
-    {The march: Cassius takes the close-follow package on the player and walks
-     them down; the two Legates take the bodyguard package linked to Cassius,
-     so the formation holds on its own and only ONE actor is ever steered.
-     Priority 110 outranks the court sandbox (100) - the sandbox override is
-     also removed so nothing competes.}
-    Package courtPkg  = Game.GetFormFromFile(0x00165676, "SeverActions.esp") as Package
-    Package followPkg = Game.GetFormFromFile(0x0016567C, "SeverActions.esp") as Package
-    Package guardPkg  = Game.GetFormFromFile(0x00165677, "SeverActions.esp") as Package
-    Keyword followKw  = Game.GetFormFromFile(0x00030155, "SeverActions.esp") as Keyword
-    If !followPkg || !guardPkg || !followKw
-        Debug.Trace("[SeverActions] Final Audit: approach packages/keyword missing")
-        Return
-    EndIf
-    Actor cassius = SeverActionsNativeExt2.Venture_Audit_Collector(0)
-    If cassius && !cassius.IsDead()
-        If courtPkg
-            ActorUtil.RemovePackageOverride(cassius, courtPkg)
-        EndIf
-        ActorUtil.AddPackageOverride(cassius, followPkg, 110, 1)
-        cassius.EvaluatePackage()
-    EndIf
-    ; The escort needs no state change - they already follow him, and the
-    ; formation holds because only ONE actor is ever steered. Strip any court
-    ; sandbox left on them by an older save, then re-assert the Follow package.
-    Int i = 1
-    Int detail = FinalAuditEscortSize()
-    While i < detail
-        Actor escort = SeverActionsNativeExt2.Venture_Audit_Collector(i)
-        If escort && !escort.IsDead() && courtPkg
-            ActorUtil.RemovePackageOverride(escort, courtPkg)
-        EndIf
-        i += 1
-    EndWhile
-    EnsureFinalAuditEscort()
-    Debug.Trace("[SeverActions] Final Audit approach packages applied - the detail is marching")
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
 EndFunction
-
-Event OnFinalAuditApproach(String eventName, String strArg, Float numArg, Form sender)
-    {Grace lapsed - they set out for the player.}
-    ApplyFinalAuditApproachPackages()
-EndEvent
-
-Event OnFinalAuditStandDown(String eventName, String strArg, Float numArg, Form sender)
-    {Paid, or the audit withdrew unresolved. Hand the detail back to the court.}
-    StandDownFinalAudit()
-EndEvent
 
 Function StandDownFinalAudit()
-    {Sheathe, drop the march packages, and restore the court sandbox so the
-     detail walks home to Dragonsreach. Idempotent - both the stand-down event
-     and the load path call it.}
-    Package followPkg = Game.GetFormFromFile(0x0016567C, "SeverActions.esp") as Package
-    ; No guardPkg here any more - the escort KEEPS its Follow package through
-    ; stand-down, so there is nothing to strip and nothing to resolve.
-    Int i = 0
-    Int detail = FinalAuditEscortSize()
-    While i < detail
-        Actor c = SeverActionsNativeExt2.Venture_Audit_Collector(i)
-        If c && !c.IsDead()
-            c.SheatheWeapon()
-            ; Only the GENERAL gives up his march package. Stripping the escort's
-            ; Follow here is what stranded them: it left the two Legates with no
-            ; package of their own at the exact moment Cassius set off walking.
-            If i == 0 && followPkg
-                ActorUtil.RemovePackageOverride(c, followPkg)
-            EndIf
-        EndIf
-        i += 1
-    EndWhile
-    ApplyFinalAuditCourtPackage()
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
 EndFunction
 
-Event OnFinalAuditArrived(String eventName, String strArg, Float numArg, Form sender)
-    {The detail has closed on the player. strArg = the assessed demand.
-     Weapons come out (the standoff posture - unaggressive, but armed) and
-     the General OPENS the conversation: DirectNarration forces an immediate
-     LLM response, where RegisterEvent only files context and leaves him
-     standing there until spoken to.}
-    Actor player = Game.GetPlayer()
-    Actor cassius = SeverActionsNativeExt2.Venture_Audit_Collector(0)
-    Int i = 0
-    Int detail = FinalAuditEscortSize()
-    While i < detail
-        Actor c = SeverActionsNativeExt2.Venture_Audit_Collector(i)
-        If c && !c.IsDead()
-            c.DrawWeapon()
-        EndIf
-        i += 1
-    EndWhile
-    If !cassius || cassius.IsDead()
-        Return
-    EndIf
-    ; Tell the player WHO this is before the General opens his mouth.
-    ; DirectNarration forces an LLM response, and that round trip is seconds
-    ; long - so this notification used to land AFTER it, leaving the player
-    ; staring at an armed stranger with no idea why he had stopped them. The
-    ; drawn weapons above and this line are the two instant cues; his actual
-    ; words follow when the model returns.
-    Debug.Notification("The Imperial Final Audit has found you")
-    SkyrimNetApi.DirectNarration(         "General Cassius Vero of the Imperial Treasury steps into " + player.GetDisplayName() + "'s path and stops them, his two Legates fanning out at his shoulders with weapons drawn and spells banked. He has tracked them down deliberately. He states the Treasury's business without preamble: the Empire has assessed " + strArg + " septims in back-taxes against " + player.GetDisplayName() + "'s enterprises - untaxed coin the ledgers never saw - and he has come to collect the full sum here and now. He is courteous, unhurried, and absolutely certain, and he does not intend to ask twice.",         cassius, player)
-EndEvent
+Function DisbandFinalAudit()
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+EndFunction
 
-; =============================================================================
-; HELPER FUNCTIONS
-; =============================================================================
+; ===== HELPERS =====
 
 Function PlayGiveAnimation(Actor akActor)
     if akActor && UseGiveAnimation && IdleGive
@@ -484,16 +142,8 @@ Function PlayGoldSound(Actor akActor)
     endif
 EndFunction
 
-; =============================================================================
-; HELPER: _LogToLedger — Ledger expansion Phase 2 (gold-flow ingest)
-; =============================================================================
-; Invoked from each currency action's success path. Only logs when the
-; player is one of the two parties — NPC↔NPC transactions are atmospheric
-; and don't belong in the player's ledger. Direction follows the player's
-; gold flow (True = gold flowed away from player). Native_Ledger_RecordEvent
-; itself drops empty source / non-positive amount, so the inner guards
-; there protect against malformed calls.
-
+; Records a currency action's gold in the player's ledger, only when the player is a party
+; (NPC-to-NPC trades stay out). isOut follows the player's gold: True = it left the player.
 Function _LogToLedger(Actor akSender, Actor akReceiver, Int aiAmount, String asSource, String asReason = "")
     If aiAmount <= 0 || !akSender || !akReceiver
         Return
@@ -506,6 +156,8 @@ Function _LogToLedger(Actor akSender, Actor akReceiver, Int aiAmount, String asS
     EndIf
 EndFunction
 
+; Moves up to aiAmount of akFrom's gold to akTo and returns what moved. With abAllowConjure and
+; allowConjuredGold on, it mints the whole sum for akTo WITHOUT debiting akFrom.
 Int Function TransferGold(Actor akFrom, Actor akTo, Int aiAmount, Bool abAllowConjure = False)
     if !akFrom || !akTo || aiAmount <= 0 || !Gold001
         return 0
@@ -517,7 +169,7 @@ Int Function TransferGold(Actor akFrom, Actor akTo, Int aiAmount, Bool abAllowCo
     Int available = akFrom.GetItemCount(Gold001)
     Int moved = aiAmount
     
-    if abAllowConjure && AllowConjuredGold
+    if abAllowConjure && SeverActionsNativeExt2.Settings_GetBool("allowConjuredGold")
         akTo.AddItem(Gold001, moved, False)
         PlayGoldSound(akTo)
         return moved
@@ -551,7 +203,7 @@ Bool Function GiveGold_IsEligible(Actor akGiver, Actor akRecipient, Int aiAmount
         return False
     endif
     
-    if AllowConjuredGold
+    if SeverActionsNativeExt2.Settings_GetBool("allowConjuredGold")
         return True
     endif
     
@@ -582,15 +234,9 @@ Function GiveGold_Execute(Actor akGiver, Actor akRecipient, Int aiAmount)
 EndFunction
 
 ; =============================================================================
-; ACTION: RepayDebt - the DEBTOR pays back what they owe (debtor-initiated)
-; The direction-symmetric partner of CollectPayment (creditor-initiated).
-; Added from the LLM text audit (sec.7-19): a debtor saying "here's what I
-; owe you" had no action whose description matched - GiveGold says "nothing
-; expected in return" and CollectPayment is for the party who is OWED. The
-; machinery already existed (GiveGold auto-reduces via ReduceDebtByPayment);
-; this is the semantically-correct front door. Amount is CLAMPED to the sum
-; actually owed so a hallucinated figure can never overpay the books;
-; 0/omitted means "pay everything owed".
+; ACTION: RepayDebt - the DEBTOR pays back what they owe (CollectPayment is the
+; creditor-initiated twin). The amount is clamped to the sum owed so a
+; hallucinated figure can't overpay; 0 or omitted pays everything owed.
 ; =============================================================================
 
 Function RepayDebt_Execute(Actor akDebtor, Actor akCreditor, Int aiAmount)
@@ -607,7 +253,6 @@ Function RepayDebt_Execute(Actor akDebtor, Actor akCreditor, Int aiAmount)
         return
     endif
 
-    ; 0/negative = pay it all; clamp so the payment never exceeds the debt.
     if aiAmount <= 0 || aiAmount > owed
         aiAmount = owed
     endif
@@ -615,8 +260,7 @@ Function RepayDebt_Execute(Actor akDebtor, Actor akCreditor, Int aiAmount)
     Debug.Trace("[SeverActions_Currency] RepayDebt: " + akDebtor.GetDisplayName() + " paying " + aiAmount + " of " + owed + " gold owed to " + akCreditor.GetDisplayName())
 
     PlayGiveAnimation(akDebtor)
-    ; Same conjure policy as GiveGold - the global toggle governs whether an
-    ; NPC debtor short on carried coin can still pay.
+    ; Conjure allowed, as for GiveGold (with allowConjuredGold on, the sum is minted; see TransferGold).
     Int moved = TransferGold(akDebtor, akCreditor, aiAmount, True)
 
     if moved > 0
@@ -632,10 +276,9 @@ Function RepayDebt_Execute(Actor akDebtor, Actor akCreditor, Int aiAmount)
 EndFunction
 
 ; =============================================================================
-; ACTION: CollectPayment - NPC receives gold owed to them
-; Use for: receiving payment after sales, services, trades, settling debts
-; The PAYER (target) gives gold to the COLLECTOR (actor)
-; If payer is the player, shows a confirmation popup
+; ACTION: CollectPayment - the COLLECTOR (speaker) receives gold owed by the PAYER
+; Use for: payment after sales, services, trades, settling debts
+; A player payer gets a confirmation prompt first.
 ; =============================================================================
 
 Bool Function CollectPayment_IsEligible(Actor akCollector, Actor akPayer, Int aiAmount)
@@ -648,8 +291,7 @@ Bool Function CollectPayment_IsEligible(Actor akCollector, Actor akPayer, Int ai
     if akCollector.IsDead() || akPayer.IsDead()
         return False
     endif
-    
-    ; Payer needs to have gold
+
     return (akPayer.GetItemCount(Gold001) > 0)
 EndFunction
 
@@ -658,59 +300,45 @@ Function CollectPayment_Execute(Actor akCollector, Actor akPayer, Int aiAmount)
         return
     endif
 
-    ; FINAL AUDIT REDIRECT. The LLM reaches for CollectPayment when a tax
-    ; collector takes tax money, and it is not wrong to: it is an Economy
-    ; action named exactly what is happening. Fighting that with prompt text
-    ; loses, so the action is wired to the assessment instead (user call,
-    ; 2026-08-11 - "can we just make it so CollectPayment also works").
-    ;
-    ; It routes to CollectAuthorizedTaxes rather than paying aiAmount, because
-    ; the assessed sum is NOT the LLM's to choose - it is 40% of the purse,
-    ; fixed when the case opened, and the whole point is that it is not
-    ; negotiable. Letting a hallucinated figure through here would be a
-    ; back door around the one rule the encounter has.
-    if SeverActionsNativeExt2.Venture_Audit_IsCollector(akCollector) && \
+    ; Final Audit: the LLM uses CollectPayment for the tax collector's demand, so route it to
+    ; the assessment. aiAmount is ignored: the sum (40% of the purse) was fixed when the case
+    ; opened and is not negotiable. Module_IsUsable first: without Enterprises (Modular) the
+    ; collector test still reads the cosaved audit refs, and an unbound CallBool would
+    ; swallow the payment.
+    if SeverActionsNativeExt2.Module_IsUsable("enterprises") && \
+       SeverActionsNativeExt2.Venture_Audit_IsCollector(akCollector) && \
        SeverActionsNativeExt2.Venture_Audit_State() == "demanding" && \
        akPayer == Game.GetPlayer()
         Debug.Trace("[SeverActions_Currency] CollectPayment on a Final Audit collector -> routing to the assessment (LLM asked for " + aiAmount + ")")
-        CollectAuthorizedTaxes(akCollector)
+        ; The enterprises provider's service: SeverActions_Enterprises.CollectAuthorizedTaxes.
+        SeverActions_ModuleBase.CallBool("enterprises", "collectAuthorizedTaxes", akCollector)
         return
     endif
 
-    ; Lazy ModEvent registration. Maintenance() only fires from OnInit on
-    ; fresh install — players updating from a save that predates the
-    ; CollectPaymentChoice handler would otherwise never bind it, and the
-    ; bridge's ModEvent would fall on the floor (silent "Pay" click).
-    ; RegisterForModEvent is deduped by SKSE so calling on every dispatch
-    ; is cheap; the registration then persists across save/load.
+    ; Belt over Maintenance's registration (SKSE dedups it): without the handler the
+    ; prompt's choice is dropped silently.
     RegisterForModEvent("SeverActions_CollectPaymentChoice", "OnCollectPaymentChoice")
 
     Debug.Trace("[SeverActions_Currency] CollectPayment: " + akCollector.GetDisplayName() + " collecting " + aiAmount + " gold from " + akPayer.GetDisplayName())
     
-    ; If payer is the player, prefer the non-pausing PrismaUI overlay
-    ; over SkyMessage. The bridge posts the choice back via
-    ; SeverActions_CollectPaymentChoice (handled by OnCollectPaymentChoice
-    ; below). When PrismaUI isn't available OR another prompt is in flight,
-    ; fall through to the legacy SkyMessage modal so the action still works
-    ; out-of-the-box for users without PrismaUI installed.
+    ; A player payer gets the non-pausing Magelight prompt (its choice arrives in
+    ; OnCollectPaymentChoice), or the SkyMessage modal when it is unavailable or already open.
     Actor player = Game.GetPlayer()
     if akPayer == player
         String collectorName = akCollector.GetDisplayName()
 
-        if SeverActionsNative.PrismaUI_IsPaymentPromptAvailable() && \
-           !SeverActionsNative.PrismaUI_IsPaymentPromptOpen()
-            if SeverActionsNative.PrismaUI_OpenPaymentPrompt(akCollector, aiAmount, collectorName, 20000)
+        if SeverActionsNative.Magelight_IsPaymentPromptAvailable() && \
+           !SeverActionsNative.Magelight_IsPaymentPromptOpen()
+            if SeverActionsNative.Magelight_OpenPaymentPrompt(akCollector, aiAmount, collectorName, 20000)
                 ; Choice arrives asynchronously via OnCollectPaymentChoice.
                 return
             endif
         endif
 
-        ; Legacy / fallback path — modal SkyMessage. Same three-option UX.
         _CollectPaymentPlayerModal(akCollector, aiAmount, collectorName)
         return
     endif
 
-    ; Non-player payer - proceed as normal
     PlayTakeAnimation(akCollector)
     Int moved = TransferGold(akPayer, akCollector, aiAmount, False)
 
@@ -731,15 +359,9 @@ Function CollectPayment_Execute(Actor akCollector, Actor akPayer, Int aiAmount)
     endif
 EndFunction
 
-; =============================================================================
-; CollectPayment — choice dispatch
-; -----------------------------------------------------------------------------
-; Shared by both prompt paths (PrismaUI overlay → OnCollectPaymentChoice;
-; legacy modal → _CollectPaymentPlayerModal) so the transaction/narration/
-; ledger/debt logic lives in exactly one place. The choice strings match
-; the JS payload from PromptPanel ("accept" / "deny" / "denySilent").
-; =============================================================================
-
+; The player's CollectPayment choice, from both prompt paths (Magelight -> OnCollectPaymentChoice,
+; SkyMessage -> _CollectPaymentPlayerModal). asChoice: "accept" / "deny" / "denySilent", the
+; strings PromptPanel posts.
 Function _ApplyCollectPaymentChoice(Actor akCollector, Actor akPayer, Int aiAmount, String asChoice, String asCollectorName)
     if asChoice == "accept"
         PlayTakeAnimation(akCollector)
@@ -761,11 +383,11 @@ Function _ApplyCollectPaymentChoice(Actor akCollector, Actor akPayer, Int aiAmou
         endif
 
     elseif asChoice == "deny"
-        ; Player refuses — narrate so NPC reacts.
+        ; Narrate so the NPC reacts.
         SkyrimNetApi.DirectNarration(akPayer.GetDisplayName() + " refused to pay " + asCollectorName, akCollector)
 
     elseif asChoice == "denySilent"
-        ; Silent decline — no event, no narration. Matches legacy "No (Silent)".
+        ; No event, no narration.
         Debug.Trace("[SeverActions_Currency] CollectPayment: Player silently declined payment to " + asCollectorName)
 
     else
@@ -773,14 +395,14 @@ Function _ApplyCollectPaymentChoice(Actor akCollector, Actor akPayer, Int aiAmou
     endif
 EndFunction
 
-; Legacy modal path — used when PrismaUI is unavailable or another prompt
-; is already open. Preserves the exact original UX so users without
-; PrismaUI installed (or anyone hitting the fallback for any reason) see
-; the same three-option SkyMessage they always did.
+; Fallback when the Magelight prompt is unavailable or already open: a SkyMessage modal with the
+; same three options. Without SkyMessage the result is empty and the payment silently declined.
 Function _CollectPaymentPlayerModal(Actor akCollector, Int aiAmount, String asCollectorName)
     String promptText = asCollectorName + " is requesting " + aiAmount + " gold. Pay them?"
-    String result = SkyMessage.Show(promptText, "Yes", "No", "No (Silent)")
-
+    String result = ""
+    If SeverActionsNativeExt2.Native_IsSkyMessageInstalled()
+        result = SeverActions_SkyMessageLib.Show(promptText, "Yes", "No", "No (Silent)")
+    EndIf
     String choice = "denySilent"
     if result == "Yes"
         choice = "accept"
@@ -791,11 +413,8 @@ Function _CollectPaymentPlayerModal(Actor akCollector, Int aiAmount, String asCo
     _ApplyCollectPaymentChoice(akCollector, Game.GetPlayer(), aiAmount, choice, asCollectorName)
 EndFunction
 
-; ModEvent handler — fired by PrismaUICollectPaymentBridge when the player
-; clicks a button or the auto-accept timer expires. strArg carries the
-; choice ("accept" / "deny" / "denySilent"); numArg carries the original
-; amount (round-tripped from the bridge so we don't depend on cached
-; script state); sender is the collector actor.
+; From MagelightCollectPaymentBridge on a click or when its timer auto-accepts. strArg = the
+; choice, numArg = the amount (round-tripped, so no pending state is kept), sender = collector.
 Event OnCollectPaymentChoice(String asEventName, String asChoice, Float afAmount, Form akSender)
     Actor akCollector = akSender as Actor
     if !akCollector
@@ -827,8 +446,7 @@ Bool Function ExtortGold_IsEligible(Actor akExtorter, Actor akVictim, Int aiAmou
     if akExtorter.IsDead() || akVictim.IsDead()
         return False
     endif
-    
-    ; Victim needs to have gold to extort
+
     return (akVictim.GetItemCount(Gold001) > 0)
 EndFunction
 
@@ -839,7 +457,6 @@ Function ExtortGold_Execute(Actor akExtorter, Actor akVictim, Int aiAmount)
     
     Debug.Trace("[SeverActions_Currency] ExtortGold: " + akExtorter.GetDisplayName() + " extorting " + aiAmount + " gold from " + akVictim.GetDisplayName())
     
-    ; Threaten first, then take
     PlayThreatenAnimation(akExtorter)
     PlayTakeAnimation(akExtorter)
     Int moved = TransferGold(akVictim, akExtorter, aiAmount, False)
@@ -857,25 +474,107 @@ Function ExtortGold_Execute(Actor akExtorter, Actor akVictim, Int aiAmount)
 EndFunction
 
 ; =============================================================================
-; ACTIONS: BuyItem / SellItem - atomic item-for-gold transactions
-;
-; Patches the UX gap where the LLM would fire GiveGold but then need a second
-; prompt to fire GiveItem (or vice versa), leaving the player with the gold
-; gone but no goods (or the reverse). BuyItem / SellItem package both halves
-; into a single action call.
-;
-; BuyItem  — the SPEAKER is the buyer (pays gold, receives item).
-; SellItem — the SPEAKER is the seller (gives item, receives gold).
-;
-; Both delegate to the same internal _DoItemTransaction so the actual logic
-; lives in one place. Deliberately does NOT call SeverActions_Debt — a
-; purchase is not the same as settling an outstanding tab, even if one
-; happens to exist between these two actors. Use CollectPayment / GiveGold
-; explicitly when you want to interact with the debt ledger.
+; ACTIONS: BuyItem / SellItem - one atomic item-for-gold action, so the gold and
+; the goods can't be split across two LLM calls (GiveGold + GiveItem).
+; BuyItem: the SPEAKER buys. SellItem: the SPEAKER sells.
+; Deliberately never touches SeverActions_Debt: a purchase is not settling a tab.
 ; =============================================================================
 
-SeverActions_Loot Function _GetLootScript()
-    Return Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_Loot
+; Transaction helpers: the item half (moved from SeverActions_Loot, which keeps safe-exit
+; stubs). Unlike Loot's GiveItem: no debt growth and no item_given event (the caller fires
+; item_purchased). The walk is WalkLib's (walklib is in economy's requires closure).
+
+Form Function ResolveItemForTransaction(Actor akSeller, String itemName)
+    {Returns the Form for itemName in akSeller's personal inventory, else their merchant
+     chest, else None. No side effects.}
+    If !akSeller || itemName == ""
+        Return None
+    EndIf
+    Form itemForm = SeverActionsNative.FindItemByName(akSeller, itemName)
+    If itemForm && akSeller.GetItemCount(itemForm) > 0
+        Return itemForm
+    EndIf
+    ; The vendor chest, or None (never the actor itself).
+    ObjectReference merchantChest = SeverActionsNative.GetMerchantContainer(akSeller)
+    If merchantChest
+        itemForm = SeverActionsNative.FindItemInContainer(merchantChest, itemName)
+        If itemForm && merchantChest.GetItemCount(itemForm) > 0
+            Return itemForm
+        EndIf
+    EndIf
+    Return None
+EndFunction
+
+Int Function GetTransactionAvailableQty(Actor akSeller, Form akItemForm)
+    {How many of akItemForm akSeller can actually sell - the max of their
+     personal count and (if any) the merchant chest count, so the caller can
+     fail early on insufficient stock before any walk or animation.}
+    If !akSeller || !akItemForm
+        Return 0
+    EndIf
+    Int personal = akSeller.GetItemCount(akItemForm)
+    Int chest = 0
+    ObjectReference merchantChest = SeverActionsNative.GetMerchantContainer(akSeller)
+    If merchantChest
+        chest = merchantChest.GetItemCount(akItemForm)
+    EndIf
+    If personal >= chest
+        Return personal
+    EndIf
+    Return chest
+EndFunction
+
+Int Function TransferItemForTransaction(Actor akSeller, Actor akBuyer, Form akItemForm, Int aiCount = 1)
+    {Walks the seller to the buyer, plays IdleGive, then moves up to aiCount of akItemForm from
+     the seller's personal inventory OR merchant chest to the buyer. Returns the count moved
+     (0 = none); the caller owns the gold half and the event.}
+    If !akSeller || !akBuyer || !akItemForm || aiCount < 1
+        Return 0
+    EndIf
+    If !SeverActions_WalkLib.WalkToReference(akSeller, akBuyer)
+        Return 0
+    EndIf
+    ; Skyrim.esm IdleForceDefaultState, by FormID rather than an ESP-filled property (FID-FORM).
+    Idle reset = Game.GetForm(0x00086840) as Idle
+    If IdleGive
+        If reset
+            akSeller.PlayIdle(reset)
+            Utility.Wait(0.2)
+        EndIf
+        akSeller.PlayIdle(IdleGive)
+        Utility.Wait(2.0)
+    EndIf
+    ; The source with the most stock, matching GetTransactionAvailableQty's MAX(personal, chest).
+    Int personal = akSeller.GetItemCount(akItemForm)
+    Int chest = 0
+    ObjectReference merchantChest = SeverActionsNative.GetMerchantContainer(akSeller)
+    If merchantChest
+        chest = merchantChest.GetItemCount(akItemForm)
+    EndIf
+    Int transferred = 0
+    If personal >= chest && personal > 0
+        Int toMove = aiCount
+        If toMove > personal
+            toMove = personal
+        EndIf
+        If toMove > 0
+            akSeller.RemoveItem(akItemForm, toMove, false, akBuyer)
+            transferred = toMove
+        EndIf
+    ElseIf chest > 0
+        Int toMove = aiCount
+        If toMove > chest
+            toMove = chest
+        EndIf
+        If toMove > 0
+            merchantChest.RemoveItem(akItemForm, toMove, false, akBuyer)
+            transferred = toMove
+        EndIf
+    EndIf
+    If reset
+        akSeller.PlayIdle(reset)
+    EndIf
+    Return transferred
 EndFunction
 
 Bool Function BuyItem_IsEligible(Actor akBuyer, Actor akSeller, String asItemName, Int aiQuantity, Int aiTotalGold)
@@ -895,12 +594,10 @@ Function SellItem_Execute(Actor akSeller, Actor akBuyer, String asItemName, Int 
 EndFunction
 
 ; =============================================================================
-; Trade confirmation (dev141) - when the PLAYER is a party to a BuyItem/
-; SellItem, a non-pausing PrismaUI popup shows exactly what changes hands
-; (item, count, gold) with Accept / Refuse / Refuse silently - the same UX
-; as CollectPayment/Arrest. Auto-timeout REFUSES (never move the player's
-; gold or goods without a click). NPC-to-NPC trades commit directly.
-; One pending trade at a time - matches the bridge's one-in-flight rule.
+; Trade confirmation: when the PLAYER is a party, a non-pausing Magelight prompt shows what
+; changes hands (Accept / Refuse / Refuse silently); its timer REFUSES, never auto-moving the
+; player's gold or goods. NPC-to-NPC trades commit directly. The PendingTrade* slot belongs to
+; the one open card; the SkyMessage fallback resolves its own trade from locals.
 ; =============================================================================
 
 Actor PendingTradeSeller
@@ -910,32 +607,23 @@ Int PendingTradeQty
 Int PendingTradeGold
 
 Function _BeginItemTransaction(Actor akSeller, Actor akBuyer, String asItemName, Int aiQuantity, Int aiTotalGold)
-    ; Same-actor guard (public issue #16): the LLM sometimes fills both
-    ; parties with the speaker ("Balgruuf buys dragon bones from Balgruuf").
-    ; Fail loudly with a correction the model can act on next round instead
-    ; of falling into the generic invalid-parameters event downstream.
+    ; The LLM sometimes names the speaker as both parties: fail with a correction it can act
+    ; on, not the generic failure event.
     If akSeller && akBuyer && akSeller == akBuyer
         SkyrimNetApi.RegisterEvent("item_purchase_failed", \
-            akBuyer.GetDisplayName() + " cannot trade with themselves - the buyer and the seller must be two different people (was the other party meant to be the player?)", \
+            akBuyer.GetDisplayName() + " cannot trade with themselves - the buyer and the seller must be two different people (was the other party meant to be " + Game.GetPlayer().GetDisplayName() + "?)", \
             akSeller, akBuyer)
         Return
     EndIf
 
     Actor player = Game.GetPlayer()
     If akSeller != player && akBuyer != player
-        ; NPC-to-NPC - nothing of the player's moves; commit directly.
         _DoItemTransaction(akSeller, akBuyer, asItemName, aiQuantity, aiTotalGold)
         Return
     EndIf
 
-    ; Lazy ModEvent registration - same rationale as CollectPayment's.
+    ; OnTradeChoice's only registration, made lazily here (SKSE dedups a repeat).
     RegisterForModEvent("SeverActions_TradeChoice", "OnTradeChoice")
-
-    PendingTradeSeller = akSeller
-    PendingTradeBuyer = akBuyer
-    PendingTradeItem = asItemName
-    PendingTradeQty = aiQuantity
-    PendingTradeGold = aiTotalGold
 
     Bool playerBuys = (akBuyer == player)
     Actor counterparty = akSeller
@@ -944,15 +632,22 @@ Function _BeginItemTransaction(Actor akSeller, Actor akBuyer, String asItemName,
     EndIf
     String counterpartyName = counterparty.GetDisplayName()
 
-    If SeverActionsNativeExt.PrismaUI_IsTradePromptAvailable() && \
-       !SeverActionsNativeExt.PrismaUI_IsTradePromptOpen()
-        If SeverActionsNativeExt.PrismaUI_OpenTradePrompt(counterparty, aiTotalGold, counterpartyName, asItemName, aiQuantity, playerBuys, 20000)
+    If SeverActionsNativeExt.Magelight_IsTradePromptAvailable() && \
+       !SeverActionsNativeExt.Magelight_IsTradePromptOpen()
+        ; The slot is written only for the card: a second trade while it is open takes the
+        ; fallback below and never overwrites it.
+        PendingTradeSeller = akSeller
+        PendingTradeBuyer = akBuyer
+        PendingTradeItem = asItemName
+        PendingTradeQty = aiQuantity
+        PendingTradeGold = aiTotalGold
+        If SeverActionsNativeExt.Magelight_OpenTradePrompt(counterparty, aiTotalGold, counterpartyName, asItemName, aiQuantity, playerBuys, 20000)
             ; Choice arrives asynchronously via OnTradeChoice.
             Return
         EndIf
     EndIf
 
-    ; Legacy / fallback path - modal SkyMessage, same three options.
+    ; Fallback: the SkyMessage modal (no SkyMessage = a silent refusal).
     String qtyStr = ""
     If aiQuantity > 1
         qtyStr = aiQuantity + "x "
@@ -963,21 +658,35 @@ Function _BeginItemTransaction(Actor akSeller, Actor akBuyer, String asItemName,
     Else
         promptText = counterpartyName + " offers " + aiTotalGold + " gold for your " + qtyStr + asItemName + ". Sell?"
     EndIf
-    String result = SkyMessage.Show(promptText, "Yes", "No", "No (Silent)")
+    String result = ""
+    If SeverActionsNativeExt2.Native_IsSkyMessageInstalled()
+        result = SeverActions_SkyMessageLib.Show(promptText, "Yes", "No", "No (Silent)")
+    EndIf
     String choice = "denySilent"
     If result == "Yes"
         choice = "accept"
     ElseIf result == "No"
         choice = "deny"
     EndIf
-    _ApplyTradeChoice(choice)
+    _ResolveTrade(choice, akSeller, akBuyer, asItemName, aiQuantity, aiTotalGold)
 EndFunction
 
 Event OnTradeChoice(String asEventName, String asChoice, Float afAmount, Form akSender)
+    ; The card's own counterparty and gold must match the slot, or the answer is for a trade
+    ; the slot no longer holds (dropped, keeping the slot for its own card).
+    Actor counterparty = PendingTradeSeller
+    If PendingTradeSeller == Game.GetPlayer()
+        counterparty = PendingTradeBuyer
+    EndIf
+    If !counterparty || (akSender as Actor) != counterparty || (afAmount as Int) != PendingTradeGold
+        Debug.Trace("[SeverActions_Currency] Trade choice '" + asChoice + "' does not match the pending trade - dropped")
+        Return
+    EndIf
     _ApplyTradeChoice(asChoice)
 EndEvent
 
 Function _ApplyTradeChoice(String asChoice)
+    {The open card's answer: takes the PendingTrade* slot and resolves it.}
     Actor tSeller = PendingTradeSeller
     Actor tBuyer = PendingTradeBuyer
     String tItem = PendingTradeItem
@@ -989,7 +698,11 @@ Function _ApplyTradeChoice(String asChoice)
     PendingTradeItem = ""
     PendingTradeQty = 0
     PendingTradeGold = 0
+    _ResolveTrade(asChoice, tSeller, tBuyer, tItem, tQty, tGold)
+EndFunction
 
+Function _ResolveTrade(String asChoice, Actor tSeller, Actor tBuyer, String tItem, Int tQty, Int tGold)
+    {Commits, refuses aloud or refuses silently one player trade.}
     If !tSeller || !tBuyer
         Return
     EndIf
@@ -997,16 +710,13 @@ Function _ApplyTradeChoice(String asChoice)
     If asChoice == "accept"
         _DoItemTransaction(tSeller, tBuyer, tItem, tQty, tGold)
     ElseIf asChoice == "deny"
-        ; Player refuses out loud - narrate so the NPC reacts.
+        ; Narrate so the NPC reacts.
         Actor player = Game.GetPlayer()
         Actor counterparty = tSeller
         If tSeller == player
             counterparty = tBuyer
         EndIf
         SkyrimNetApi.DirectNarration(player.GetDisplayName() + " declined the trade of " + tItem + " with " + counterparty.GetDisplayName(), counterparty)
-        SkyrimNetApi.RegisterEvent("item_purchase_failed", \
-            player.GetDisplayName() + " declined to trade " + tItem + " with " + counterparty.GetDisplayName(), \
-            tSeller, tBuyer)
     EndIf
     ; denySilent / dismiss - nothing happens, nothing is said.
 EndFunction
@@ -1025,15 +735,9 @@ Bool Function _Transaction_IsEligible(Actor akSeller, Actor akBuyer, String asIt
     If !Gold001
         Return False
     EndIf
-    ; PR #103 review fix, refined dev141: the PLAYER-buyer ALWAYS pays from
-    ; real coin — a player-buyer with 0 gold could otherwise BuyItem for free
-    ; (the conjure path in TransferGold just AddItems to the seller without
-    ; debiting the buyer). An NPC buyer, though, may come up short when
-    ; buying FROM the player: with AllowConjuredGold on, the shortfall is
-    ; minted so the sale still goes through — the trade popup showed the
-    ; player the real amount, and refusing an NPC's coin because their
-    ; pockets are light is exactly what conjured gold exists to smooth over.
-    If akBuyer == Game.GetPlayer() || !AllowConjuredGold
+    ; The player buyer always pays real coin (conjuring would make the purchase free). An NPC
+    ; buyer may come up short when allowConjuredGold is on: _DoItemTransaction mints the shortfall.
+    If akBuyer == Game.GetPlayer() || !SeverActionsNativeExt2.Settings_GetBool("allowConjuredGold")
         If akBuyer.GetItemCount(Gold001) < aiTotalGold
             Return False
         EndIf
@@ -1042,52 +746,43 @@ Bool Function _Transaction_IsEligible(Actor akSeller, Actor akBuyer, String asIt
 EndFunction
 
 Function _DoItemTransaction(Actor akSeller, Actor akBuyer, String asItemName, Int aiQuantity, Int aiTotalGold)
-    {Atomic item-for-gold transaction. Resolves the item, pre-checks stock + gold,
-     walks the seller to the buyer, swaps the items + the gold, then fires a
-     single item_purchased event. On any failure path, fires item_purchase_failed
-     with a reason string and returns without mutating either inventory.}
+    {Atomic item-for-gold trade: resolves the item, checks stock and gold, moves the gold, then
+     the item, and fires one item_purchased event. A failure fires item_purchase_failed with a
+     reason; one after the gold moved refunds it.}
 
     If !_Transaction_IsEligible(akSeller, akBuyer, asItemName, aiQuantity, aiTotalGold)
-        ; Null-guard: when eligibility fails because an actor is None, don't
-        ; build a malformed " could not buy X from " event — just log.
+        ; No actor to name in an event: just log.
         If !akSeller || !akBuyer
             Debug.Trace("[SeverActions_Currency] _DoItemTransaction: missing actor - skipping")
             Return
         EndIf
+        String why = " - the deal could not be struck"
+        If Gold001 && (akBuyer == Game.GetPlayer() || !SeverActionsNativeExt2.Settings_GetBool("allowConjuredGold")) && akBuyer.GetItemCount(Gold001) < aiTotalGold
+            why = " - " + akBuyer.GetDisplayName() + " does not have " + aiTotalGold + " gold"
+        EndIf
         SkyrimNetApi.RegisterEvent("item_purchase_failed", \
-            akBuyer.GetDisplayName() + " could not complete the purchase of " + asItemName + " from " + akSeller.GetDisplayName() + " (invalid parameters or insufficient gold)", \
+            akBuyer.GetDisplayName() + " could not complete the purchase of " + asItemName + " from " + akSeller.GetDisplayName() + why, \
             akSeller, akBuyer)
         Return
     EndIf
 
-    SeverActions_Loot lootSys = _GetLootScript()
-    If !lootSys
-        Debug.Trace("[SeverActions_Currency] BuyItem/SellItem: SeverActions_Loot quest unavailable")
-        Return
-    EndIf
-
-    ; Resolve the item (personal inventory or merchant chest).
-    Form itemForm = SeverActions_Loot.ResolveItemForTransaction(akSeller, asItemName)
+    Form itemForm = ResolveItemForTransaction(akSeller, asItemName)
     If !itemForm
-        ; Self-correction hint (public issue #16): on localized games the LLM
-        ; often passes the English canonical name while the inventory holds
-        ; the localized one - echo the seller's closest-matching item names so
-        ; the model can retry with a name that actually resolves. Only fuzzy
-        ; MATCHES are listed; a total miss keeps the guidance textual.
+        ; On localized games the LLM often passes the English name: list the seller's closest
+        ; item names so it can retry with one that resolves.
         String closeNames = SeverActionsNativeExt2.Native_ClosestInventoryNames(akSeller, asItemName, 5)
         String failText = akSeller.GetDisplayName() + " doesn't have any '" + asItemName + "' to sell to " + akBuyer.GetDisplayName()
         If closeNames != ""
-            failText += " - they do carry: " + closeNames + ". Retry with the item's exact in-game name."
+            failText += " - they do carry: " + closeNames + "."
         Else
-            failText += " - no similar item in their inventory. Use the item's exact in-game (localized) name as it appears in the inventory."
+            failText += " - they carry nothing called that; it may go by another name in their pack."
         EndIf
         SkyrimNetApi.RegisterEvent("item_purchase_failed", failText, akSeller, akBuyer)
         Return
     EndIf
 
-    ; Pre-check stock so we don't walk the seller and play the give animation
-    ; just to discover they only had 1 of the 5 requested.
-    Int available = SeverActions_Loot.GetTransactionAvailableQty(akSeller, itemForm)
+    ; Check stock before the walk and the animation.
+    Int available = GetTransactionAvailableQty(akSeller, itemForm)
     If available < aiQuantity
         SkyrimNetApi.RegisterEvent("item_purchase_failed", \
             akSeller.GetDisplayName() + " only has " + available + " " + itemForm.GetName() + " - not enough for " + akBuyer.GetDisplayName() + "'s " + aiQuantity, \
@@ -1095,62 +790,69 @@ Function _DoItemTransaction(Actor akSeller, Actor akBuyer, String asItemName, In
         Return
     EndIf
 
-    ; PR #103 review fix: gold-first ordering. The item transfer involves a
-    ; walk + animation (up to ~15s) where a save/load/crash/cell-unload could
-    ; orphan the gold half if we did it last. Move the gold first (instant);
-    ; if the subsequent item transfer fails, refund the gold. Worst case is
-    ; one fallible step (refund) instead of two with no rollback.
-    ; dev141: an NPC buyer pays every REAL coin they have first, and only
-    ; the shortfall is minted (TransferGold's own conjure path mints the
-    ; whole sum without debiting the payer - right for gifts, wrong for a
-    ; trade). The player-buyer always pays real coin in full (PR #103).
-    Bool conjureOK = (akBuyer != Game.GetPlayer()) && AllowConjuredGold
+    ; Gold first: the item half walks and animates (up to ~15 s), where a save, crash or unload
+    ; would orphan a gold-last payment; a failed item half refunds instead. An NPC buyer pays
+    ; every real coin first and only the shortfall is minted (TransferGold's conjure path would
+    ; not debit them at all); the player always pays in full.
+    Bool conjureOK = (akBuyer != Game.GetPlayer()) && SeverActionsNativeExt2.Settings_GetBool("allowConjuredGold")
     Int paid = TransferGold(akBuyer, akSeller, aiTotalGold, False)
+    ; The minted part never becomes the buyer's: a refund destroys it first and returns only real coin.
+    Int minted = 0
     If paid < aiTotalGold && conjureOK
-        akSeller.AddItem(Gold001, aiTotalGold - paid, False)
-        Debug.Trace("[SeverActions_Currency] Trade: conjured " + (aiTotalGold - paid) + "g shortfall for " + akBuyer.GetDisplayName())
+        minted = aiTotalGold - paid
+        akSeller.AddItem(Gold001, minted, False)
+        Debug.Trace("[SeverActions_Currency] Trade: conjured " + minted + "g shortfall for " + akBuyer.GetDisplayName())
         paid = aiTotalGold
     EndIf
     If paid != aiTotalGold
-        ; Eligibility already verified the buyer has the gold, so a partial
-        ; transfer here means something raced us between the check and the
-        ; move. Bail without firing the item half.
+        ; Eligibility checked the gold, so a short transfer means a race: hand back what moved and
+        ; stop before the item half.
+        String shortNote = " - the gold never changed hands"
+        If paid > 0
+            TransferGold(akSeller, akBuyer, paid, False)
+            shortNote = " - only " + paid + " of the " + aiTotalGold + " gold changed hands, and it was handed back"
+        EndIf
         SkyrimNetApi.RegisterEvent("item_purchase_failed", \
-            akBuyer.GetDisplayName() + " could not finish paying " + akSeller.GetDisplayName() + " for " + asItemName + " (only " + paid + " of " + aiTotalGold + " gold moved)", \
+            akBuyer.GetDisplayName() + " could not finish paying " + akSeller.GetDisplayName() + " for " + asItemName + shortNote, \
             akSeller, akBuyer)
         Return
     EndIf
 
-    ; Item half. TransferItemForTransaction handles the walk + animation + the
-    ; personal-vs-merchant-chest source selection.
-    Int transferred = lootSys.TransferItemForTransaction(akSeller, akBuyer, itemForm, aiQuantity)
+    Int transferred = TransferItemForTransaction(akSeller, akBuyer, itemForm, aiQuantity)
     If transferred <= 0
-        ; Refund the gold the buyer just paid. Seller has at least aiTotalGold
-        ; right now (we just gave it to them), so this transfer is safe.
-        TransferGold(akSeller, akBuyer, aiTotalGold, False)
+        ; Refund; the seller holds at least aiTotalGold (just paid).
+        If minted > 0
+            akSeller.RemoveItem(Gold001, minted, True)
+        EndIf
+        TransferGold(akSeller, akBuyer, aiTotalGold - minted, False)
         SkyrimNetApi.RegisterEvent("item_purchase_failed", \
-            akSeller.GetDisplayName() + " could not hand over " + asItemName + " to " + akBuyer.GetDisplayName() + " - " + aiTotalGold + " gold refunded", \
+            akSeller.GetDisplayName() + " could not hand over " + asItemName + " to " + akBuyer.GetDisplayName() + " - " + (aiTotalGold - minted) + " gold refunded", \
             akSeller, akBuyer)
         Return
     EndIf
 
-    ; PR #175 review fix (M3): a race between the stock pre-check and the
-    ; transfer can leave `transferred` short of aiQuantity (the items already
-    ; moved to the buyer, so we don't claw them back). Refund the unfilled
-    ; remainder pro-rata so the buyer is charged only for what they received,
-    ; never the full price for partial goods. Full transfers keep the exact
-    ; agreed total (no rounding drift from the per-unit split).
+    ; A race after the stock check can leave transferred short: keep the moved items and refund
+    ; the unfilled part pro-rata. A full transfer keeps the exact agreed total.
     Int chargedGold = aiTotalGold
     If transferred < aiQuantity
         Int pricePerUnit = aiTotalGold / aiQuantity
         Int refund = aiTotalGold - (pricePerUnit * transferred)
         If refund > 0
-            TransferGold(akSeller, akBuyer, refund, False)
+            ; Minted coin is cancelled first; the rest goes back as real coin.
+            Int burn = refund
+            If burn > minted
+                burn = minted
+            EndIf
+            If burn > 0
+                akSeller.RemoveItem(Gold001, burn, True)
+            EndIf
+            If refund > burn
+                TransferGold(akSeller, akBuyer, refund - burn, False)
+            EndIf
             chargedGold = aiTotalGold - refund
         EndIf
     EndIf
 
-    ; Build the unified transaction event.
     String itemLabel = itemForm.GetName()
     If transferred > 1
         itemLabel = transferred + " " + itemLabel
@@ -1158,12 +860,10 @@ Function _DoItemTransaction(Actor akSeller, Actor akBuyer, String asItemName, In
     String eventMsg = akBuyer.GetDisplayName() + " bought " + itemLabel + " from " + akSeller.GetDisplayName() + " for " + chargedGold + " gold"
     SkyrimNetApi.RegisterEvent("item_purchased", eventMsg, akSeller, akBuyer)
 
-    ; Ledger: source key depends on which side the player is on. _LogToLedger
-    ; only fires when the player is involved; for NPC↔NPC item swaps it
-    ; silently no-ops. The item label rides along as the row's `reason`
-    ; so the recent-transactions view can show "bought 3 Iron Ingot".
+    ; Ledger source by the player's side (NPC-to-NPC logs nothing); the item label is the
+    ; row's reason, shown in the recent-transactions view.
     Actor player = Game.GetPlayer()
-    String src = "buy_item"   ; default when neither side is player (no-op anyway)
+    String src = "buy_item"   ; the player buys (or NPC-to-NPC, which logs nothing)
     If akSeller == player
         src = "sell_item"
     EndIf
@@ -1171,424 +871,306 @@ Function _DoItemTransaction(Actor akSeller, Actor akBuyer, String asItemName, In
 EndFunction
 
 ; =============================================================================
-; ENTERPRISES — SkyrimNet dialogue actions (Phase 4)
-; The retainer economy lives natively (VentureMonitor / VentureStore); these
-; thin member functions are the LLM-callable entry points. Hosted here (the
-; economy script) rather than a dedicated quest-attached script to avoid a
-; Mutagen re-serialize of the 27-script SeverActions quest.
+; ENTERPRISES - safe-exit stubs: the retainer economy's 24 LLM entry points moved to
+; SeverActions_Enterprises (P9-02). Each name stays (F7): a save's suspended frame
+; resumes the saved bytecode and must find something here that exits.
 ; =============================================================================
 
 Bool Function HireRetainer(Actor akActor, String job, String arrangement)
-    {The speaker agrees to work for the player as a retainer. Opens the assign-
-     retainer popup (prefilled with the agreed job/arrangement + the workplace
-     autocomplete) so the player finalizes where they work and the terms, then
-     the popup commits the hire. Falls back to a direct hire (job + arrangement
-     as agreed) if PrismaUI is unavailable. Returns false if already a retainer.}
-    If !akActor
-        Return false
-    EndIf
-    If SeverActionsNativeExt2.Venture_IsRetainer(akActor)
-        Return false
-    EndIf
-    ; Preferred: open the popup, prefilled from the agreed terms. HireRetainer is
-    ; LLM-driven in conversation (no menu open), so the non-pausing popup shows.
-    If SeverActionsNativeExt.PrismaUI_IsRetainerAssignPromptAvailable() \
-        && SeverActionsNativeExt.PrismaUI_OpenRetainerAssignPrompt(akActor, "", job, arrangement, 90000)
-        Return true
-    EndIf
-    ; Fallback (PrismaUI absent / suppressed): hire directly with the agreed terms.
-    Return SeverActionsNativeExt2.Venture_Hire(akActor, job, arrangement)
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
-; ─── Camp takeover (Phase 4) ────────────────────────────────────────────────
-; Two ways an outlaw camp ends up working for the player, and one way to let it
-; go. The natives own every guard - Camp_Swear refuses a non-leader on the
-; agree route and refuses a camp whose chief is still breathing on the recruit
-; route - so these stay thin. The YAML eligibility gates mirror the same rules
-; so the action never surfaces when it would only be refused.
-
 Bool Function SwearCampToPlayer(Actor akActor)
-    {Route B: the camp's LEADER agrees to serve the player, and their word binds
-     the whole camp. Enrolls every member on the Enterprises board as one
-     holding under Partnership terms. Refused by the native if the speaker does
-     not actually lead the camp.}
-    If !akActor
-        Return false
-    EndIf
-    Bool ok = SeverActionsNativeExt2.Camp_Swear(akActor, true)
-    If ok
-        Debug.Notification("The camp has sworn to you.")
-    EndIf
-    Return ok
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function RecruitLeaderlessCamp(Actor akActor)
-    {Route A: nobody is in charge - the chief was killed, or the location never
-     designated one - and the members throw in one at a time. Same end state as
-     SwearCampToPlayer, harsher terms (Vassalage).
-
-     THREE OUTCOMES, and false is the ordinary one:
-       true             - the vote carried and the camp is sworn.
-       false + a tally  - this member's agreement was recorded; more needed.
-       false + no tally - refused (chief alive, already sworn, takeover off).}
-    If !akActor
-        Return false
-    EndIf
-    Bool ok = SeverActionsNativeExt2.Camp_Swear(akActor, false)
-    If ok
-        ; The vote carried. This event replaces the action's old eventString,
-        ; which fired on EVERY call and announced the takeover on votes that
-        ; had not settled anything.
-        SkyrimNetApi.RegisterEvent("camp_sworn_by_consensus",         akActor.GetDisplayName() + " gives the last word needed - with nobody in charge to speak for them, enough of the camp has now agreed that it is settled. They answer to " + Game.GetPlayer().GetDisplayName() + " from here.",         akActor, Game.GetPlayer())
-        Debug.Notification("What is left of the camp answers to you.")
-        Return true
-    EndIf
-
-    ; NOT a failure - a leaderless camp is won a person at a time, and this was
-    ; one voice of several. Nobody without a chief can hand over a camp they do
-    ; not command, so the native records the agreement and only swears the camp
-    ; when enough of them have said yes. Narrate the vote so the player can see
-    ; it moving, and so the REST of the crew hears who just broke ranks - that
-    ; is the whole point of deciding it together.
-    String tally = SeverActionsNativeExt2.Camp_ConsentTally(akActor)
-    If tally != ""
-        SkyrimNetApi.RegisterEvent("camp_consent_given",             akActor.GetDisplayName() + " gives their word to " + Game.GetPlayer().GetDisplayName() +             " - but with nobody in charge here, one voice does not settle it. That is " + tally +             " of the camp agreed. The others heard exactly who said yes, and what they think of " +             akActor.GetDisplayName() + " colours what they do next.", akActor, Game.GetPlayer())
-        Debug.Notification("They agree - " + tally + " of the camp.")
-    EndIf
-    Return false
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function ReleaseCampFromService(Actor akActor)
-    {Let a sworn camp go: drops every venture belonging to it and thaws the
-     respawn freeze, so the location behaves like an ordinary camp again.}
-    If !akActor
-        Return false
-    EndIf
-    Bool ok = SeverActionsNativeExt2.Camp_Release(akActor)
-    If ok
-        Debug.Notification("You release the camp from your service.")
-    EndIf
-    Return ok
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function RenounceCampOath(Actor akActor)
-    {The CHIEF breaks the camp's oath to the player: every venture closes,
-     the camp reverts to an ordinary outlaw camp, and the whole crew turns
-     hostile together (the truce layer's group break). The native refuses
-     anyone who is not the camp's leader, so a mistaken LLM call from a
-     lackey does nothing.}
-    If !akActor
-        Return false
-    EndIf
-    Bool ok = SeverActionsNativeExt2.Camp_Renounce(akActor)
-    If ok
-        Debug.Notification(akActor.GetDisplayName() + "'s camp has turned on you!")
-    EndIf
-    Return ok
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function MusterCamp(Actor akActor)
-    {The CHIEF rallies their sworn camp to the player's side as a war band -
-     every living member seats in the follow pool, turns teammate, and comes
-     to the player at once. The YAML gates this to the sworn camp's leader;
-     the store refuses non-sworn camps as the backstop. The seating itself
-     runs in SeverActions_Follow (the pool's owner) via the same path the
-     UI button uses.}
-    If !akActor
-        Return false
-    EndIf
-    Int campId = SeverActionsNativeExt2.Camp_CampIdOf(akActor)
-    If campId == 0
-        Return false
-    EndIf
-    If !SeverActionsNativeExt2.Camp_SetMustered(campId, true)
-        Return false
-    EndIf
-    SeverActions_Follow f = (Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest) as SeverActions_Follow
-    If f
-        f.MusterCampById(campId)
-    EndIf
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function SendCampHome(Actor akActor)
-    {The CHIEF dismisses the war band - seating clears and everyone returns
-     to the camp. Counterpart of MusterCamp, same routing.}
-    If !akActor
-        Return false
-    EndIf
-    Int campId = SeverActionsNativeExt2.Camp_CampIdOf(akActor)
-    If campId == 0
-        Return false
-    EndIf
-    SeverActionsNativeExt2.Camp_SetMustered(campId, false)
-    SeverActions_Follow f = (Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest) as SeverActions_Follow
-    If f
-        f.SendCampHomeById(campId)
-    EndIf
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function CollectFromRetainer(Actor akActor)
-    {Collect the speaker-retainer's pending payout (gold + goods) for the player.
-     In-person path: this is spoken face to face, so it also reaches a DEFIANT
-     Tribute retainer's withheld coin (the board's Collect button cannot) and
-     breaks the standoff - they back down and hand it over. If this retainer is
-     also a hold steward, the hold vault they keep hands over in the same
-     conversation - no second ask.}
-    If !akActor
-        Return false
-    EndIf
-    SeverActionsNativeExt2.Venture_CollectInPerson(akActor)
-    If SeverActionsNativeExt2.Steward_HoldNameOf(akActor) != ""
-        Int vault = SeverActionsNativeExt2.Steward_Collect(akActor)
-        If vault > 0
-            Debug.Notification(akActor.GetDisplayName() + " hands over the hold vault: " + vault + " gold.")
-        EndIf
-    EndIf
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function HireSteward(Actor akActor, Int aiWeeklyWage = 100)
-    {Appoint the speaker-retainer as steward of their hold. From the next
-     settlement on, every retainer in that hold pays their take into the
-     steward's vault instead of holding it themselves - one stop to collect a
-     whole hold. The steward draws their own weekly wage FROM that vault (an
-     empty vault means an unpaid, increasingly bitter steward). One steward
-     per hold; fails if the seat is taken or the speaker is not a retainer.}
-    If !akActor
-        Return false
-    EndIf
-    If aiWeeklyWage <= 0
-        aiWeeklyWage = 100
-    EndIf
-    String holdName = SeverActionsNativeExt2.Steward_Appoint(akActor, aiWeeklyWage)
-    If holdName == ""
-        Return false
-    EndIf
-    Debug.Notification(akActor.GetDisplayName() + " now stewards " + holdName + " (" + aiWeeklyWage + " gold/week).")
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function DismissSteward(Actor akActor)
-    {Relieve the speaker of their stewardship. Whatever sits in the hold vault
-     is handed back to the player on the spot; the hold's retainers go back to
-     holding their own takings until a new steward is appointed. They stay a
-     retainer - only the stewardship ends.}
-    If !akActor
-        Return false
-    EndIf
-    String holdName = SeverActionsNativeExt2.Steward_HoldNameOf(akActor)
-    If holdName == ""
-        Return false
-    EndIf
-    Int remainder = SeverActionsNativeExt2.Steward_Dismiss(akActor)
-    If remainder > 0
-        Debug.Notification(akActor.GetDisplayName() + " steps down as steward of " + holdName + " and hands back " + remainder + " gold.")
-    Else
-        Debug.Notification(akActor.GetDisplayName() + " steps down as steward of " + holdName + ".")
-    EndIf
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function CollectFromSteward(Actor akActor)
-    {Collect the hold vault from the speaker-steward: every gold piece their
-     hold's retainers have paid in since the last collection, in one handover.
-     Their own pending retainer payout (if any) is separate - CollectFromRetainer
-     covers both at once.}
-    If !akActor
-        Return false
-    EndIf
-    String holdName = SeverActionsNativeExt2.Steward_HoldNameOf(akActor)
-    If holdName == ""
-        Return false
-    EndIf
-    Int vault = SeverActionsNativeExt2.Steward_Collect(akActor)
-    If vault > 0
-        Debug.Notification(akActor.GetDisplayName() + " hands over " + holdName + "'s takings: " + vault + " gold.")
-    Else
-        Debug.Notification(holdName + "'s vault is empty this week.")
-    EndIf
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function PayArrears(Actor akActor)
-    {Pay the back-wages the player owes this retainer, from the player's gold.}
-    If !akActor
-        Return false
-    EndIf
-    SeverActionsNativeExt2.Venture_PayArrears(akActor)
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function DismissRetainer(Actor akActor)
-    {End the speaker-retainer's service amicably.}
-    If !akActor
-        Return false
-    EndIf
-    Return SeverActionsNativeExt2.Venture_Dismiss(akActor)
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function GrantLoan(Actor akActor)
-    {The player agrees in conversation to lend this retainer the coin they asked
-     for. Real money: it leaves the player's purse now, a DebtStore entry backs
-     it, and repayment is garnished from the retainer's OWN weekly take - never
-     from the player's cut. Silently no-ops if the ask has already been answered
-     or the player cannot cover it.}
-    If !akActor
-        Return false
-    EndIf
-    SeverActionsNativeExt2.Venture_GrantLoan(akActor)
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function RefuseLoan(Actor akActor)
-    {The player turns down this retainer's request for a loan. Costs loyalty and
-     puts the ask on a cooldown - they will not come back to it for a good while.}
-    If !akActor
-        Return false
-    EndIf
-    SeverActionsNativeExt2.Venture_RefuseLoan(akActor)
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function ForgiveLoan(Actor akActor)
-    {The player writes off what this retainer still owes on a loan. Clears the
-     balance and the backing DebtStore entry (so the debt pipeline stops pursuing
-     them) and buys real loyalty. Works on a defaulted loan too - that is the
-     point of it.}
-    If !akActor
-        Return false
-    EndIf
-    SeverActionsNativeExt2.Venture_ForgiveLoan(akActor)
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function ReassureRetainer(Actor akActor)
-    {Temper hearing SUCCESS - the retainer was genuinely heard out, face to
-     face. Consensual terms: real morale lift, withdraws a standing notice.
-     Coerced terms: cows them for exactly one settle - fear management, no
-     morale repair. Resolves an armed Send-Word meeting; also callable
-     organically in conversation (native cooldown stops wage-substitute spam).}
-    If !akActor
-        Return false
-    EndIf
-    SeverActionsNativeExt2.Venture_Reassure(akActor)
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function GrantTaxRelief(Actor akActor)
-    {Hold taxes (P1): the jarl, persuaded in person, eases their hold's
-     enterprise tax by 5 points (accumulated adjust clamped natively).}
-    If !akActor
-        Return false
-    EndIf
-    Int newRate = SeverActionsNativeExt2.Venture_AdjustHoldTaxForJarl(akActor, -5)
-    If newRate < 0
-        Return false
-    EndIf
-    Debug.Notification(akActor.GetDisplayName() + " eases the hold's enterprise tax (~" + newRate + "%)")
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function RaiseHoldTaxes(Actor akActor)
-    {Hold taxes (P1): the jarl, angered or unimpressed, raises their hold's
-     enterprise tax by 5 points.}
-    If !akActor
-        Return false
-    EndIf
-    Int newRate = SeverActionsNativeExt2.Venture_AdjustHoldTaxForJarl(akActor, 5)
-    If newRate < 0
-        Return false
-    EndIf
-    Debug.Notification(akActor.GetDisplayName() + " raises the hold's enterprise tax (~" + newRate + "%)")
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function CollectAuthorizedTaxes(Actor akActor)
-    {Final Audit (P2): the player agreed to pay. The full assessed sum leaves
-     their purse, the audit latches PAID (terminal), and the detail's anchor
-     returns to Dragonsreach - the formation walks itself home.}
-    If !akActor || !SeverActionsNativeExt2.Venture_Audit_IsCollector(akActor)
-        Return false
-    EndIf
-    Int demand = SeverActionsNativeExt2.Venture_Audit_Demand()
-    Actor player = Game.GetPlayer()
-    If player.GetGoldAmount() < demand
-        SkyrimNetApi.RegisterEvent("final_audit_short",             player.GetDisplayName() + " agreed to pay but cannot produce the full " + demand + " septims the Treasury has assessed. " + akActor.GetDisplayName() + " notes the shortfall without surprise - the demand stands, in full, and the detail is not leaving.",             akActor, None)
-        Return false
-    EndIf
-    If !SeverActionsNativeExt2.Venture_Audit_Collect()
-        Return false
-    EndIf
-    If !Gold001
-        Debug.Trace("[SeverActions] Final Audit: Gold001 unresolved - payment aborted")
-        Return false
-    EndIf
-    player.RemoveItem(Gold001, demand, false)
-    SkyrimNetApi.RegisterEvent("final_audit_paid",         player.GetDisplayName() + " paid the Imperial Treasury " + demand + " septims in back-taxes. " + akActor.GetDisplayName() + " records the sum, thanks them for their compliance, and the Final Audit withdraws toward Dragonsreach - the ledger balanced, the debt closed for good.",         akActor, None)
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function PressTheDemand(Actor akActor)
-    {Final Audit (P2): refusal. The audit latches REFUSED (terminal) and the
-     detail attacks. Papyrus starts the fights so the engine books a normal
-     combat - three real actors versus the player, no scripting beyond this.
-     The twelve are garrisoned in other holds and take no part.}
-    If !akActor || !SeverActionsNativeExt2.Venture_Audit_IsCollector(akActor)
-        Return false
-    EndIf
-    If !SeverActionsNativeExt2.Venture_Audit_Refuse()
-        Return false
-    EndIf
-    Actor player = Game.GetPlayer()
-    Int i = 0
-    Int detail = FinalAuditEscortSize()
-    While i < detail
-        Actor collector = SeverActionsNativeExt2.Venture_Audit_Collector(i)
-        If collector && !collector.IsDead()
-            collector.StartCombat(player)
-        EndIf
-        i += 1
-    EndWhile
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function BrushOffRetainer(Actor akActor)
-    {Temper hearing FAILURE - the player dismissed the retainer's grievance to
-     their face. Worse than never coming: morale drops hard, an aggrieved
-     consensual retainer gives notice on the spot, a Tribute retainer turns
-     openly defiant. Resolves the armed meeting.}
-    If !akActor
-        Return false
-    EndIf
-    SeverActionsNativeExt2.Venture_BrushOff(akActor)
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function NegotiateTerms(Actor akActor)
-    {The player haggles a pending raise ask down the middle instead of granting
-     it outright or refusing it. Splits the difference on wage or share, gives
-     a smaller loyalty/morale bump than a full grant, and clears the ask so
-     they stop pressing. No-op when nothing is pending. Consumes an armed
-     hearing the same way GrantRetainerRaise does.}
-    If !akActor
-        Return false
-    EndIf
-    SeverActionsNativeExt2.Venture_NegotiateRaise(akActor)
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
 
 Bool Function GrantRetainerRaise(Actor akActor)
-    {The player agrees in conversation to raise this retainer's pay (or ease
-     coerced terms). Actually moves the terms - not just words: grants the
-     pending ask, re-grants refused terms, or applies a standard raise; skim
-     stops, refusals clear, morale up, notice withdrawn. Consumes an armed
-     hearing. Not for Enslaved (no wage or cut to move - change the
-     arrangement instead).}
-    If !akActor
-        Return false
-    EndIf
-    SeverActionsNativeExt2.Venture_GrantRaiseInPerson(akActor)
-    Return true
+    {Safe-exit stub: the body moved to SeverActions_Enterprises (P9-02, plan B21).}
+    ; M-I-STUB 3.9.14-beta25 (P9-02): moved to SeverActions_Enterprises
+    Return False
 EndFunction
+
+; ============================================================================
+; M-V VERB DISPATCHER (DR10)
+; ============================================================================
+; The economy's UI verbs (Native/data/verb_table.json) arrive as SeverActions_Verb_Economy
+; with the Actions page's 8 pipe fields. This is the ONE script defining OnVerb_Economy (a
+; shared callback name runs on every script of the form, F4); Maintenance registers it (DR16).
+Event OnVerb_Economy(String eventName, String strArg, Float numArg, Form sender)
+    String actionId = SeverActions_ModuleBase.VerbField(strArg, 0)
+    String targetName = SeverActions_ModuleBase.VerbField(strArg, 1)
+    String target2Name = SeverActions_ModuleBase.VerbField(strArg, 2)
+    String strParam = SeverActions_ModuleBase.VerbField(strArg, 3)
+    Int intParam = SeverActions_ModuleBase.VerbField(strArg, 4) as Int
+    String str2Param = SeverActions_ModuleBase.VerbField(strArg, 5)
+    Int targetFid = SeverActions_ModuleBase.VerbField(strArg, 6) as Int
+    Int target2Fid = SeverActions_ModuleBase.VerbField(strArg, 7) as Int
+    Debug.Trace("[SeverActions_Currency] OnVerb_Economy: " + actionId + " target=" + targetName + " target2=" + target2Name \
+        + " str=" + strParam + " int=" + intParam + " str2=" + str2Param + " fid=" + targetFid + " fid2=" + target2Fid)
+
+    ; Exact identity first (the picker's sender, then the encoded FormID), the fuzzy name
+    ; last; names are then re-canonicalized to display names.
+    Actor target = SeverActions_ModuleBase.VerbActor(sender, targetFid, targetName)
+    If !target
+        Debug.Trace("[SeverActions_Currency] OnVerb_Economy: could not resolve target '" + targetName + "' for " + actionId)
+        Return
+    EndIf
+    targetName = target.GetDisplayName()
+    Actor target2 = SeverActions_ModuleBase.VerbActor(None, target2Fid, target2Name)
+    If target2
+        target2Name = target2.GetDisplayName()
+    ElseIf target2Name != ""
+        Debug.Trace("[SeverActions_Currency] OnVerb_Economy: target2 name '" + target2Name + "' did not resolve to an actor (action=" + actionId + ")")
+    EndIf
+
+    ; -- Currency (own code) --
+    If actionId == "giveGold"
+        ; The picker always supplies target2 as an Actor; there is no name fallback.
+        If target2
+            GiveGold_Execute(target, target2, intParam)
+        EndIf
+
+    ElseIf actionId == "collectPayment"
+        ; target = Collector, target2 = Payer (matches YAML: akCollector, akPayer);
+        ; no payer chosen = collect from the player
+        If target2
+            CollectPayment_Execute(target, target2, intParam)
+        Else
+            CollectPayment_Execute(target, Game.GetPlayer(), intParam)
+        EndIf
+
+    ElseIf actionId == "extortGold"
+        ; target = Extorter, target2 = Victim (matches YAML: akExtorter, akVictim);
+        ; no victim chosen = extort the player
+        If target2
+            ExtortGold_Execute(target, target2, intParam)
+        Else
+            ExtortGold_Execute(target, Game.GetPlayer(), intParam)
+        EndIf
+
+    ; -- Trade (buy/sell). str2Param ('detail') carries the total gold as text
+    ;    (the single int slot already holds quantity). --
+    ElseIf actionId == "sellItem"
+        If target2
+            SellItem_Execute(target, target2, strParam, intParam, str2Param as Int)
+        EndIf
+
+    ElseIf actionId == "buyItem"
+        If target2
+            BuyItem_Execute(target, target2, strParam, intParam, str2Param as Int)
+        EndIf
+
+    ; -- Crafting (sibling script). strParam = the thing made; target2 = optional
+    ;    recipient; intParam = count (the page seeds 1). --
+    ElseIf actionId == "cookMeal"
+        SeverActions_Crafting craftCook = (Self as Quest) as SeverActions_Crafting
+        If craftCook
+            craftCook.CookMeal_Internal(target, strParam, target2, intParam)
+        EndIf
+
+    ElseIf actionId == "brewPotion"
+        SeverActions_Crafting craftBrew = (Self as Quest) as SeverActions_Crafting
+        If craftBrew
+            craftBrew.BrewPotion_Internal(target, strParam, target2, intParam)
+        EndIf
+
+    ElseIf actionId == "craftItem"
+        SeverActions_Crafting craftMake = (Self as Quest) as SeverActions_Crafting
+        If craftMake
+            craftMake.CraftItem_Internal(target, strParam, target2, intParam)
+        EndIf
+
+    ElseIf actionId == "commissionItem"
+        ; str2Param ('detail') = ETA text; quotedTotal 0 = the smith quotes it.
+        SeverActions_Crafting craftOrder = (Self as Quest) as SeverActions_Crafting
+        If craftOrder
+            craftOrder.CommissionItem_Internal(target, strParam, str2Param, intParam, 0)
+        EndIf
+
+    ElseIf actionId == "collectCommission"
+        SeverActions_Crafting craftCollect = (Self as Quest) as SeverActions_Crafting
+        If craftCollect
+            craftCollect.CollectCommission_Internal(target)
+        EndIf
+
+    ; -- Debt (sibling script) --
+    ElseIf actionId == "createDebt"
+        ; target = creditor, target2 = debtor, intParam = amount, strParam = reason
+        SeverActions_Debt debtCreate = (Self as Quest) as SeverActions_Debt
+        If debtCreate && target2
+            String reason = strParam
+            If reason == ""
+                reason = "debt"
+            EndIf
+            debtCreate.CreateDebt_Execute(target, target, target2, intParam, reason, 0, 0)
+        EndIf
+
+    ElseIf actionId == "addToDebt"
+        ; target = creditor, target2 = debtor, intParam = amount
+        SeverActions_Debt debtAdd = (Self as Quest) as SeverActions_Debt
+        If debtAdd && target2
+            debtAdd.AddToDebt_Execute(target, target2, intParam, "additional charges")
+        EndIf
+
+    ElseIf actionId == "forgiveDebt"
+        ; target = creditor, target2 = debtor
+        SeverActions_Debt debtForgive = (Self as Quest) as SeverActions_Debt
+        If debtForgive && target2
+            debtForgive.ForgiveDebt_Execute(target, target2)
+        EndIf
+
+    ElseIf actionId == "createRecurringDebt"
+        ; target = creditor (also the speaker), target2 = debtor, intParam = amount per
+        ; cycle, strParam = reason, str2Param = interval in days as text (default 7)
+        SeverActions_Debt debtRecur = (Self as Quest) as SeverActions_Debt
+        If debtRecur && target2
+            String rdReason = strParam
+            If rdReason == ""
+                rdReason = "recurring debt"
+            EndIf
+            Int rdInterval = str2Param as Int
+            If rdInterval <= 0
+                rdInterval = 7
+            EndIf
+            debtRecur.CreateRecurringDebt_Execute(target, target, target2, intParam, rdReason, rdInterval, 0)
+        EndIf
+
+    Else
+        Debug.Trace("[SeverActions_Currency] OnVerb_Economy: unknown actionId '" + actionId + "' (not a row this dispatcher carries)")
+    EndIf
+
+    ; Refresh again now the forwarded call has returned: the DLL's refresh one frame after
+    ; routing runs before most verbs have changed their stores.
+    SeverActionsNative.Magelight_RefreshPage("world")
+    SeverActionsNative.Magelight_RefreshPage("enterprises")
+EndEvent

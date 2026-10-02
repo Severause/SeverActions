@@ -1,0 +1,22 @@
+customCategory: sa_campchallenge
+name: CampChallenge
+description: "Category: only for the outlaw who stopped the player at their camp and demanded their business: the speaker's verdict once they have heard enough, letting the player through for this visit or turning the whole camp on them. While still questioning, no action."
+enabled: true
+
+eligibilityRules:
+  - conditions:
+      # The one challenger waiting on the player's answer; "" for everyone else.
+      - decoratorName: "camp_challenge_pending"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot act (see the is_kidnap_victim bullet in CLAUDE.md).
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

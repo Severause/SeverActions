@@ -1,0 +1,70 @@
+customCategory: brawl
+name: ChallengeBrawl
+description: "Use when the speaker, in this line, squares up and dares someone present to settle it with fists now (a tavern grudge, an insult, a test of mettle) and waits for the answer: {{ player.name }}, if dared, is asked to accept or refuse; the speaker tails anyone else until they answer. Not for teasing, boasts, or a fight proposed for later. Accepting someone else's dare is AcceptBrawl; fighting with weapons is Combat."
+questEditorId: SeverActions
+scriptName: SeverActions_Brawl
+executionFunctionName: ChallengeBrawl_Execute
+parameterMapping:
+  - type: speaker
+    name: akChallenger
+    description: the actor throwing down the gauntlet
+  - type: dynamic
+    name: target
+    description: "exact name of the person being dared (as listed in Nearby Actors), or the player's name"
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      # A challenger on the road cannot trail anyone to await an answer.
+      - decoratorName: "sever_is_traveling"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Off the table while the speaker is on the combat cooldown of a ceasefire,
+      # yield or brawl. Custom decorator: STRING compare, "" = no cooldown.
+      - decoratorName: "sever_combat_cooldown"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # "[BRAWL ACTIVE]" is sever_brawl_state's marker text (SkyrimNetBridge.h);
+      # keep the two byte-identical.
+      - decoratorName: "sever_brawl_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "not_contains"
+        expectedValue: "BRAWL ACTIVE"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

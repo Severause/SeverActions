@@ -1,0 +1,55 @@
+customCategory: outfit
+name: SaveOutfitPreset
+description: "Use when the speaker is asked, or decides, in this line to keep what they are wearing right now as a named outfit to change back into later. Saves every piece of clothing and armor they have on under a short name; reusing a name replaces that outfit. Not for merely liking or praising an outfit, and not for changing clothes."
+questEditorId: SeverActions
+scriptName: SeverActions_Outfit
+executionFunctionName: SaveOutfitPreset_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor naming the outfit they're wearing
+  - type: dynamic
+    name: presetName
+    description: "a short name to recall it by, one or two words (e.g. 'home', 'combat', 'formal')"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Outfit system master switch. Off removes the action from the eligible
+      # list entirely rather than letting the LLM offer a redress the Papyrus
+      # side then refuses (field report 2026-09-09: "is there a way to
+      # completely disable the outfit system"). Custom decorator, so a STRING
+      # compare - never expectedValue: true.
+      - decoratorName: "sever_outfit_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

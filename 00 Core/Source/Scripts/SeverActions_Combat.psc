@@ -1,159 +1,119 @@
 Scriptname SeverActions_Combat extends Quest
 {Combat actions for SkyrimNet - handles attack commands, yield/surrender with faction conversion, and combat state tracking via StorageUtil}
 
-; ============================================================================
-; PROPERTIES
-; ============================================================================
+; === PROPERTIES ===
 
-; Vanilla follower faction - used for reference only now
+; Neither follower faction is read by this script.
 Faction Property CurrentFollowerFaction Auto
 {Set to CurrentFollowerFaction from Skyrim.esm}
 
-; SkyrimNet follower faction (optional)
 Faction Property SkyrimNetFollowerFaction Auto
 {Set to SkyrimNet_FollowingPlayerFaction from SkyrimNet.esp if using SkyrimNet followers}
 
-; Attack/Target factions — added to actors during AttackTarget so the AIO flee
-; patch can suppress flee packages for NPCs actively engaged in forced combat.
-; Removed when combat ends via RestoreOriginalValues.
+; Held during AttackTarget so the AIO flee patch suppresses flee packages;
+; removed by RestoreOriginalValues and FullCleanup.
 Faction Property SeverActions_AttackFaction Auto
 {Added to the attacker during AttackTarget. Suppresses AIO flee.}
 
 Faction Property SeverActions_TargetFaction Auto
 {Added to the target during AttackTarget. Suppresses AIO flee.}
 
-; Cooldown duration in seconds
 Float Property CombatCooldownDuration = 30.0 Auto
-{How long before actors can be forced into combat again}
+{Real seconds an actor stays on cooldown after a ceasefire or yield; while it runs AttackTarget and a
+ brawl challenge involving them are refused. The quest VMAD fills 100, so 100 is the runtime value (DR18).}
 
-; ============================================================================
-; SURRENDER FACTION SYSTEM
-; ============================================================================
+; === SURRENDER FACTION SYSTEM ===
 
-; Faction for surrendered enemies - set up in CK with player-friendly relations
 Faction Property SeverSurrenderedFaction Auto
 {Faction for NPCs who have surrendered. Set as Ally to PlayerFaction in CK.}
 
-; FormList of hostile factions to replace when surrendering
-; This allows adding/removing factions without recompiling
+; Has no VMAD fill: the natives fall back to TruceEligibility's hardcoded list
+; (see PushCeasefireConfigToNative).
 FormList Property SeverHostileFactions Auto
 
 {FormList containing factions that should be replaced on surrender (Bandit, Forsworn, etc.)}
-; =============================================================================
-; TRUCE SETTINGS (Phase 2)
-; =============================================================================
+; === TRUCE SETTINGS ===
 Bool Property TruceEnabled = False Auto
-{Master toggle for the Truce layer: bandits (and any opted-in factions) do not
-attack on sight, and turn hostile only when provoked. Ships OFF - it is
-game-changing (non-hostile bandits), so players opt in knowingly via Settings.
-Existing saves keep whatever value they hold and are never re-migrated. Turning
-it off restores every pacified actor immediately and STICKS.}
+{Master toggle for the Truce layer: bandits (and opted-in factions) hold fire
+until provoked. Ships OFF (game-changing, so an opt-in); never migrated.
+Turning it off restores every pacified actor at once.}
 
 Bool Property TruceLeaders = True Auto
-{Include named camp leaders / bosses in the truce. ON by default - being able
-to negotiate with the chief is the point. Quest-critical, essential, frenzied
-and quest-faction NPCs are still excluded regardless of this.}
+{Include named camp leaders / bosses, so the chief can be negotiated with.
+Quest-critical, essential, frenzied and quest-faction NPCs stay excluded.}
 
 Bool Property TruceQuestNPCs = True Auto
-{Include outlaws a RUNNING quest is using. ON by default - camp chiefs are often
-radiant quest targets, and excluding them meant the chief charged while his camp
-stood calm. Attacking still breaks the truce for the whole camp, so kill/clear
-objectives behave as vanilla. Turn OFF if a quest needing an NPC to strike first
-ever stalls.}
+{Include outlaws a RUNNING quest is using (camp chiefs are often radiant
+targets). Attacking still breaks the truce camp-wide, so kill/clear objectives
+work. Turn OFF if a quest needing an NPC to strike first stalls.}
 
 Bool Property TruceDungeons = False Auto
-{Include outlaws HOLDING a dungeon - a barrow, a crypt, a Dwemer ruin - as
-opposed to living in a camp. OFF by default (user call, 2026-08-12, after
-Bleak Falls Barrow stood down inside and out): a place you delve should still
-be a fight, while camps, forts and the open road stay negotiable.
-
-The cost of OFF, stated plainly: those bandits go back to shoot-on-sight, so
-SkyrimNet dialogue with them is unreachable again - which is the whole reason
-the truce exists. Turn it ON to be able to talk to anyone, anywhere.
-
-A CAMP IS NOT A DUNGEON here even though the game tags most camps as both:
-Silent Moons and Halted Stream carry LocTypeDungeon alongside LocTypeBanditCamp,
-exactly as Bleak Falls does, so the lair keyword is what separates them and it
-is always checked first. Sworn camps can never be broken by this setting.}
+{Include outlaws HOLDING a dungeon (barrow, crypt, Dwemer ruin) rather than a
+camp. OFF by default: a place you delve stays a fight, at the cost of SkyrimNet
+dialogue with those outlaws. Most camps also carry LocTypeDungeon, so the lair
+keyword is checked first; sworn camps are never broken by this setting.}
 
 Bool Property TruceNecromancers = True Auto
-{Include NecromancerFaction in the Truce scope. Note their raised thralls are a
-separate faction and still fight - summon inheritance is not built yet.}
+{Include NecromancerFaction. Their raised thralls are a separate faction and
+still fight (no summon inheritance).}
 
 Bool Property TruceForsworn = True Auto
 {Include ForswornFaction. Quest-scoped Forsworn (the Markarth chain's MS01/MS02
 factions) are excluded automatically by the eligibility gates.}
 
 Bool Property TruceVampires = True Auto
-{Include VampireFaction - but ONLY while the player is a vampire themselves.
-Set it when you are not one and nothing happens.}
+{Include VampireFaction - ONLY while the player is a vampire themselves.}
 
 Float Property TruceRadius = 8000.0 Auto
 {How far from the player the Truce sweep reaches, in units. 512-12000.
-Must comfortably exceed the range at which bandits NOTICE you and start
-closing - at 4000 a fort garrison was pacified one bandit at a time as you
-walked in, and the ones not yet reached charged first.}
+Must exceed the range at which bandits notice you and close, or a garrison is
+pacified one at a time as you walk in and the rest charge.}
 
-; ---------------------------------------------------------------------------
-; CAMP CHALLENGE - "what's your business in here?"
-; ---------------------------------------------------------------------------
+; --- CAMP CHALLENGE ---
 ; Native CampChallenge decides WHEN a challenge is owed and WHO issues it;
 ; this script owns the walk over, the card, and the parley clock.
 
 Bool Property CampChallengeEnabled = True Auto
-{Master switch for the camp challenge encounter. Native-side gate lives in
- CampChallenge::SetEnabled - re-pushed on every init/load like the truce ones.}
+{Master switch for the camp challenge encounter (native CampChallenge::SetEnabled,
+ re-pushed on every load).}
 
 Float Property ChallengeApproachDistance = 220.0 Auto
 {How close the challenger walks before speaking. Wider than the arrest's
  approach: they are asking a question, not making an arrest.}
 
 Bool Property CampChallengeCardEnabled = False Auto
-{Show the PrismaUI card when the challenger arrives. OFF by default: the
- intended feel is an outlaw walking up and asking, answered in dialogue like
- anyone else. The card is the clarity option for players who want the choice
- spelled out, not the default experience.}
+{Show the Magelight card when the challenger arrives. OFF by default: the
+ challenge is meant to be answered in dialogue; the card is an opt-in.}
 
 Float Property ChallengeParleySeconds = 120.0 Auto
 {How long the player has to talk once the parley opens. Running out is a
- refusal - a question asked to your face does not expire politely. Two minutes
- is enough for a real conversation without letting the standoff become
- furniture.}
+ refusal.}
 
 Float Property ChallengeParleyDistance = 1400.0 Auto
 {Walk further than this from the challenger mid-parley and it counts as
- walking away. Generous enough to back up and talk, not to leave the room.}
+ walking away.}
 
-; The challenge in flight, if any. Papyrus-side mirror of the native pending
-; slot - kept so the arrival/choice handlers can reject a stale event without
-; a native round-trip.
+; A cache of the native pending slot, not the authority: both handlers confirm
+; against Camp_ChallengeIsPending.
 Actor CurrentChallenger = None
 
 Bool Property CampTakeoverEnabled = True Auto
-{Allow outlaw camps to be taken over - the chief agreeing, or the survivors
-throwing in after you kill them. Turning this off leaves the Truce standoff
-intact but removes the takeover actions entirely.}
+{Allow outlaw camps to be taken over (the chief agreeing, or the survivors
+throwing in). Off keeps the Truce standoff but removes the takeover actions.}
 
 Bool Property CampFreezeRespawn = True Auto
 {When a camp swears to you, freeze its encounter zone so it stops repopulating
-with fresh hostiles. On by default - without it a camp you took refills within
-a couple of in-game weeks and the takeover reads as broken.}
+with fresh hostiles.}
 
-; TRUCE PROBE (Phase 1) - read-only verification surface
-; =============================================================================
-; A MEMBER function on purpose: the underlying natives are Globals on
-; SeverActionsNativeExt, which isn't attached to the quest, so nothing could
-; call them in-game. SkyrimNet's execute_quest_function dispatches to quest
-; script MEMBERS, so this wrapper is what makes the gate library testable
-; without a hotkey, a button, or a console command.
-;
-; Mutates NOTHING. Reports which nearby NPCs the Truce layer would pacify and,
-; for each one it wouldn't, which of the five gates refused them. Full detail
-; goes to the Papyrus/SKSE log; the summary comes back as the return value and
-; on screen.
+; === TRUCE PROBE (read-only test hooks) ===
+; MEMBER functions on purpose: the natives are Globals on the unattached
+; SeverActionsNativeExt, and SkyrimNet's execute_quest_function only calls quest
+; script members.
+; TruceProbe mutates nothing: it reports which nearby NPCs the Truce layer would
+; pacify and which gate refused the rest (full detail in the SKSE log).
 String Function TruceProbe(Float afRadius = 3000.0, Bool abNecromancers = false, Bool abForsworn = false, Bool abVampires = false)
     String result = SeverActionsNativeExt.Native_Truce_ExplainNearby(afRadius, abNecromancers, abForsworn, abVampires)
-    Debug.Notification("Truce probe: " + result)
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("combat.truceProbe", ("" + result)))
     Debug.Trace("[SeverActions_Combat] Truce probe: " + result)
     Return result
 EndFunction
@@ -161,23 +121,29 @@ EndFunction
 String Function CampProbe()
     {Read-only: list every camp discovered so far with its leader and state.}
     String result = SeverActionsNativeExt.Native_Camp_Probe()
-    Debug.Notification("Camps: " + result)
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("combat.camps", ("" + result)))
     Return result
 EndFunction
 
 String Function CampFreezeHere()
-    {Freeze respawn for the camp you are standing in - the Phase 1 claim that
-     has to be proven before takeover is built on it.}
+    {Test hook: freeze respawn for the camp you are standing in.}
     String result = SeverActionsNativeExt.Native_Camp_FreezeHere()
     Debug.Notification(result)
     Return result
 EndFunction
 
 String Function CampSwearHere(Bool abViaLeader = true)
-    {Phase 2 test hook: make the camp you are standing in swear to you. Picks
-     any living member as the speaker for the leaderless route; for the leader
-     route it uses the camp's actual leader, so the native's own guard is
-     exercised rather than bypassed.}
+    {Test hook: make the camp you are standing in swear to you. The leader route
+     uses the camp's actual leader, so the native's own guard is exercised; the
+     leaderless route picks any living member.}
+    ; Swearing enrolls the camp as an Enterprises Tribute venture (papyrus.cpp EnrollCamp):
+    ; without that module the camp would be sworn with no venture behind it (C17).
+    If !SeverActionsNativeExt2.Module_IsUsable("enterprises")
+        ; Name from the manifest: the Papyrus string table folds case, so a literal
+        ; "Enterprises" would print as the lowercase id interned just above.
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hud.moduleNotInstalled", "Swearing a camp", SeverActionsNativeExt2.Module_Name("enterprises")))
+        Return "enterprises module not installed"
+    EndIf
     Actor speaker = None
     If abViaLeader
         speaker = SeverActionsNativeExt2.Camp_LeaderAtPlayer()
@@ -185,15 +151,15 @@ String Function CampSwearHere(Bool abViaLeader = true)
         speaker = SeverActionsNativeExt2.Camp_AnyMemberAtPlayer()
     EndIf
     If !speaker
-        Debug.Notification("No camp member found here")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("combat.noCampMemberFound"))
         Return "no camp member here"
     EndIf
     Bool ok = SeverActionsNativeExt2.Camp_Swear(speaker, abViaLeader)
     If ok
-        Debug.Notification("The camp has sworn to you")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("combat.theCampHasSworn"))
         Return "sworn"
     EndIf
-    Debug.Notification("Camp refused to swear - see log")
+    Debug.Notification(SeverActionsNativeExt2.Native_L10n("combat.campRefusedToSwear"))
     Return "refused"
 EndFunction
 
@@ -204,8 +170,7 @@ String Function CampThawHere()
     Return result
 EndFunction
 
-; Single-target flavour - whoever is under the crosshair. Handy for checking
-; one specific NPC (a named boss, a quest forsworn) rather than a whole camp.
+; TruceProbe for the actor under the crosshair.
 String Function TruceProbeTarget(Bool abNecromancers = false, Bool abForsworn = false, Bool abVampires = false)
     String result = SeverActionsNativeExt.Native_Truce_ExplainTarget(abNecromancers, abForsworn, abVampires)
     Debug.Notification(result)
@@ -214,86 +179,51 @@ String Function TruceProbeTarget(Bool abNecromancers = false, Bool abForsworn = 
 EndFunction
 
 
-; ============================================================================
-; YIELD PERSISTENCE ALIASES
-; ============================================================================
+; === YIELD PERSISTENCE ALIASES ===
 
 ReferenceAlias[] Property YieldSlots Auto
-{Array of 5 ReferenceAlias slots for yielded generic NPC persistence.
- When a hostile NPC (bandit, necromancer, etc.) surrenders, they're placed
- into a YieldSlot to prevent the engine from recycling them across cells.
- Each slot has SeverActions_YieldAlias attached for OnDeath cleanup.
- Fill in CK: Optional, Allow Reuse, Initially Cleared.}
+{5 ReferenceAlias slots (SeverActions_YieldAlias attached, for OnDeath cleanup)
+ holding surrendered generic hostiles so the engine does not recycle them
+ across cells. Optional, Allow Reuse, Initially Cleared.}
 
 Bool Property YieldPersistenceEnabled = true Auto
 {Enable/disable yield alias persistence. When disabled, yielded generic NPCs
  may be recycled by the engine when crossing cells. Default: true.}
 
-; ============================================================================
-; STORAGEUTIL KEYS
-; ============================================================================
-; SeverCombat_CeasefireTime - Float (gameTimeNumeric when ceasefire occurred, auto-expires)
-; SeverCombat_YieldTime - Float (gameTimeNumeric when yield occurred, auto-expires)
+; === STORAGEUTIL KEYS (per actor) ===
+; SeverCombat_CeasefireTime - Float (game hours x 3631 at the ceasefire, not gameTimeNumeric; 0160 expires it)
+; SeverCombat_YieldTime - Float (game hours x 3631 at the yield, not gameTimeNumeric; 0160 expires it)
 ; SeverCombat_YieldedTo - Form (who this actor yielded to)
 ; SeverCombat_ReceivedYieldFrom - Form (who yielded to this actor)
 ; SeverCombat_InForcedCombat - Int (1 = currently in forced combat)
 ; SeverCombat_OriginalConfidence - Float (stored confidence value)
-; SeverCombat_OriginalAggression - Float (stored aggression value for followers)
+; SeverCombat_OriginalAggression - Float (stored aggression value)
 ; SeverCombat_OriginalRelationship - Int
 ; SeverCombat_CombatTarget - Form (who they're fighting)
-; SeverCombat_CooldownEnd - Float (superseded by the native CombatCooldownStore; no longer written)
+; SeverCombat_CooldownEnd - RETIRED (native CombatCooldownStore)
 ; SeverCombat_WasSurrendered - Int (1 = this actor has surrendered)
-; SeverCombat_WasNormallyHostile - Int (1 = at yield/ceasefire time they were
-;     in a SeverHostileFactions member. Drives prompt-side guidance for
-;     post-truce behaviour — bandits fall back to base hostility, guards/
-;     housecarls/civilians get explicit "resolved conflict" stand-down.)
-; SeverCombat_OriginalFaction - Form (the hostile faction they were removed from)
-; SeverCombat_RemovedFactions - FormList (hostile factions removed during ConvertToSurrendered)
-; SeverCombat_CeasefireRemovedFactions - FormList (hostile factions removed during ceasefire)
-; SeverCombat_CeasefireFactionSwapped - Int (1 = faction swap occurred, restore on break)
-; SeverCombat_NeedsAggroRestore - Int (1 = aggression was zeroed, needs delayed restore)
-; SeverCombat_CeasefirePartner - Form (the other actor in the ceasefire pair)
+; SeverCombat_WasNormallyHostile - Int (1 = held a hostile faction at yield/ceasefire
+;     time; the prompt lets bandits fall back to hostility while guards/civilians stand down)
+; SeverCombat_OriginalFaction - RETIRED, nothing writes it; the Unset calls only clear legacy saves
+; SeverCombat_RemovedFactions - FormList, legacy (pre-native yield saves)
+; SeverCombat_CeasefireRemovedFactions - FormList, legacy (pre-native ceasefire saves)
+; SeverCombat_CeasefireFactionSwapped - Int, legacy (1 = restore the list above on break)
+; SeverCombat_NeedsAggroRestore - RETIRED, nothing writes it
+; SeverCombat_CeasefirePartner - RETIRED, nothing writes it
 ; SeverCombat_YieldBroken - Int (1 = surrender was broken, set by OnYieldBroken)
-;
-; YIELD PERSISTENCE KEYS (stored on None via StorageUtil):
-; SeverCombat_YieldedGenericActors - FormList (all yielded generic NPCs needing persistence)
-
-; ============================================================================
-; SINGLETON
-; ============================================================================
+; SeverCombat_YieldBrokenTime - Float (game hours x 3631 at the break; 0160 shows the betrayal for a game day)
+; On None: SeverCombat_YieldedGenericActors - FormList (yielded generics needing a slot)
 
 SeverActions_Combat Function GetInstance() Global
     Quest kQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
     Return kQuest as SeverActions_Combat
 EndFunction
 
-; ============================================================================
-; INITIALIZATION
-; ============================================================================
+; === INITIALIZATION ===
 
 Event OnInit()
-    RegisterForModEvent("SeverActionsNative_YieldBroken", "OnYieldBroken")
-    RegisterForModEvent("SeverActionsNative_CeasefireBroken", "OnCeasefireBroken")
-    RegisterForModEvent("SeverActions_ForcedCombatEnded", "OnForcedCombatEnded")
-    RegisterForModEvent("SeverActions_CampChallenge", "OnCampChallenge")
-    RegisterForModEvent("SeverActions_CampChallengeChoice", "OnCampChallengeChoice")
-    ; NOT registered for SeverActions_PersuasionFailed — deliberate, do not re-add.
-    ; SKSE keys ModEvent registrations per (form, event), and every Quest-extending
-    ; SeverActions script shares quest 0x000D62. SeverActions_ArrestPlayer and
-    ; SeverActions_Travel both register that event under the SAME callback name
-    ; (OnPersuasionFailedEvent) so name-dispatch reaches both handlers; registering
-    ; it here under a DIFFERENT name could only ever take the slot from them.
-    ; The camp-challenge refusal is routed natively instead — PersuasionMonitor
-    ; calls CampChallenge_OnPersuasionFailed directly, which fires
-    ; SeverActions_CampChallengeCleanup (registered below under its own name).
-    RegisterForModEvent("SeverActions_CampChallengeCleanup", "OnCampChallengeCleanup")
-    RegisterForModEvent("SeverActions_CampHoardPlundered", "OnCampHoardPlundered")
-
-    ; Phase 5 — hand the configured factions to native CeasefireMonitor so
-    ; it can do the full apply/restore cycle without Papyrus round-trips.
-    ; Both are persisted in the C++ cosave, but we re-set on every init/load
-    ; to cover fresh-game/reorder/upgrade cases.
-    PushCeasefireConfigToNative()
+    ; The same entry the provider's stage 0 uses on every load (C11).
+    RegisterEvents()
 EndEvent
 
 Function PushCeasefireConfigToNative()
@@ -305,61 +235,46 @@ Function PushCeasefireConfigToNative()
         SeverActionsNativeExt.Ceasefire_SetHostileFactionsList(SeverHostileFactions)
         SeverActionsNativeExt.Yield_SetHostileFactionsList(SeverHostileFactions)
     Else
-        ; AUDIT (Phase 1 of the Truce work): this property is DECLARED here but
-        ; never bound in the ESP - the quest's VMAD carries 17 properties for
-        ; this script and SeverHostileFactions is not among them. So the
-        ; ceasefire/yield hostile-faction stripping has never actually run; both
-        ; systems rely on the aggression zero and the surrendered-faction add.
-        ; Logged rather than silently skipped so it stops being invisible.
-        Debug.Trace("[SeverActions_Combat] SeverHostileFactions is unbound - ceasefire/yield will not strip hostile factions")
+        ; The ESP never fills this property; CeasefireMonitor and YieldMonitor then use
+        ; TruceEligibility's hardcoded list. Logged so a reader of either side finds the other.
+        Debug.Trace("[SeverActions_Combat] SeverHostileFactions is unbound (never filled in the ESP) - the native fallback list does the stripping")
     EndIf
     PushTruceConfigToNative()
 EndFunction
 
 Function PushTruceConfigToNative()
-    {Boot-sync the Truce layer. C++ defaults to OFF with bandits-only scope;
-     push the player's saved choices so a reload doesn't silently re-arm or
-     disarm the feature. Order matters: scope and radius first, so the very
-     first sweep after SetEnabled already uses the right settings.}
-    ; One-shot: raise the old 4000 default to 8000. Auto properties persist in
-    ; the save, so changing the default in this script does NOTHING for anyone
-    ; already playing - and 4000 is the value that let a fort garrison charge
-    ; before the sweep reached them. Only the exact old default is moved, so a
-    ; radius the player chose themselves is left alone.
-    ; One-shot: necromancers, Forsworn and vampires now default ON. Auto
-    ; properties persist in the save, so a changed default reaches nobody who
-    ; is already playing without this. Vampires stays gated on the player being
-    ; one themselves, so turning it on cannot surprise a non-vampire.
-    ;
-    ; NOTE: this DOES overwrite a deliberate off for anyone who had turned them
-    ; off before the change - a bool cannot distinguish untouched from chosen.
-    ; It runs exactly once; re-disable in Settings and it will stick.
-    If StorageUtil.GetIntValue(None, "SeverActions_TruceScopeMigDone", 0) < 1
-        StorageUtil.SetIntValue(None, "SeverActions_TruceScopeMigDone", 1)
+    {Push the saved Truce and camp settings into the natives (C++ defaults to OFF,
+     bandits-only). Scope and radius go before SetEnabled so the first sweep
+     already uses them.}
+    ; One-shot: necromancers, Forsworn and vampires default ON now, and auto
+    ; properties keep their saved value, so existing saves need this. It also
+    ; overrides an earlier deliberate off (a bool cannot tell untouched from chosen).
+    ; Ledger claim (rule 15): a sentinel gate alone re-runs wherever StorageUtil drops
+    ; values (R14); the sentinel stays as the adopted done signal, still written for an older pex.
+    String scopeMig = "TruceScopeDefaultOn"
+    Bool scopeSentinel = StorageUtil.GetIntValue(None, "SeverActions_TruceScopeMigDone", 0) >= 1
+    If !SeverActionsNativeExt2.Migration_AdoptSentinel(scopeMig, 1, scopeSentinel) && SeverActionsNativeExt2.Migration_TryClaim(scopeMig, 1)
         TruceNecromancers = True
         TruceForsworn     = True
         TruceVampires     = True
         Debug.Trace("[SeverActions] Truce scope migrated - nec/forsworn/vampires default ON")
+        StorageUtil.SetIntValue(None, "SeverActions_TruceScopeMigDone", 1)
+        SeverActionsNativeExt2.Migration_MarkDone(scopeMig, 1)
     EndIf
-    If StorageUtil.GetIntValue(None, "SeverActions_TruceRadiusMigDone", 0) < 1
-        StorageUtil.SetIntValue(None, "SeverActions_TruceRadiusMigDone", 1)
+    ; One-shot: move the old 4000 default to 8000 (too short: garrisons charged
+    ; before the sweep reached them). A radius the player chose is left alone,
+    ; except a chosen 4000, which reads as the old default.
+    String radiusMig = "TruceRadius8000"
+    Bool radiusSentinel = StorageUtil.GetIntValue(None, "SeverActions_TruceRadiusMigDone", 0) >= 1
+    If !SeverActionsNativeExt2.Migration_AdoptSentinel(radiusMig, 1, radiusSentinel) && SeverActionsNativeExt2.Migration_TryClaim(radiusMig, 1)
         If TruceRadius > 3999.0 && TruceRadius < 4001.0
             TruceRadius = 8000.0
             Debug.Trace("[SeverActions] Truce radius migrated 4000 -> 8000")
         EndIf
+        StorageUtil.SetIntValue(None, "SeverActions_TruceRadiusMigDone", 1)
+        SeverActionsNativeExt2.Migration_MarkDone(radiusMig, 1)
     EndIf
-    ; One-shot: camp cut retune (dev149, user call) - Partnership 40 -> 20,
-    ; Vassalage 60 -> 40. The native only touches ventures still at the exact
-    ; old defaults; renegotiated deals stay. Required because kCampFairCutPct
-    ; moved with the defaults - without this an existing AGREED camp at the
-    ; old 40 would suddenly read as coerced and grind unhappy.
-    If StorageUtil.GetIntValue(None, "SeverActions_CampCutMigDone", 0) < 1
-        StorageUtil.SetIntValue(None, "SeverActions_CampCutMigDone", 1)
-        Int cutsMoved = SeverActionsNativeExt2.Venture_MigrateCampCuts()
-        If cutsMoved > 0
-            Debug.Trace("[SeverActions] Camp cuts migrated to 20/40 for " + cutsMoved + " venture(s)")
-        EndIf
-    EndIf
+    ; The camp-cut migration lives in SeverActions_Enterprises (C17).
     SeverActionsNativeExt.Native_Truce_SetScope(TruceNecromancers, TruceForsworn, TruceVampires)
     SeverActionsNativeExt.Native_Truce_SetIncludeLeaders(TruceLeaders)
     SeverActionsNativeExt.Native_Truce_SetIncludeQuestNPCs(TruceQuestNPCs)
@@ -373,31 +288,19 @@ Function PushTruceConfigToNative()
     SeverActionsNativeExt2.Camp_ChallengeSetSeconds(ChallengeParleySeconds)
 EndFunction
 
-; ============================================================================
-; FORCED COMBAT END HOOK
-; ============================================================================
-; Native ForcedCombatMonitor (Native/src/ForcedCombatMonitor.h) sinks
-; TESCombatEvent and fires this ModEvent when an actor flagged as
-; InForcedCombat exits combat (target killed, escaped, scripted disengage,
-; etc.). Without this hook, AttackTarget left stale state on the actor:
-; Confidence=3, AttackFaction membership, InForcedCombat flag, stored
-; relationship rank — and dismissed followers would walk off and re-engage
-; other NPCs because the AIO patch and combat AI both still saw them as
-; "in attack mode". FullCleanup is the existing nuclear-option restore that
-; Yield and Ceasefire flows already call.
+; === FORCED COMBAT END HOOK ===
+; ForcedCombatMonitor (TESCombatEvent sink) clears the native InForcedCombat flag
+; and fires this when a flagged actor leaves combat. FullCleanup restores the
+; Confidence, Aggression, ranks and factions AttackTarget changed.
 
 Event OnForcedCombatEnded(String eventName, String strArg, Float numArg, Form sender)
     Actor a = sender as Actor
     If !a
         Return
     EndIf
-    ; Defense-in-depth: an actor whose fight just resolved via Yield or
-    ; CeaseFire must NOT be FullCleanup'd here — that would re-add their
-    ; hostile factions and wipe WasSurrendered moments after the surrender
-    ; ("bandit yields, then stands back up hostile"). Yield/CeaseFire now
-    ; clear the native inForcedCombat flag BEFORE stopping combat so this
-    ; event normally never fires for them; this guard covers older saves
-    ; and racy interleavings where the combat-end beat the flag clear.
+    ; Never FullCleanup an actor that just yielded or ceasefired: it would re-add
+    ; their hostile factions. Yield/CeaseFire clear the forced flag before
+    ; stopping combat; this guard covers a combat-end that beat the flag clear.
     If StorageUtil.GetIntValue(a, "SeverCombat_WasSurrendered", 0) == 1 || SeverActionsNative.IsYieldMonitored(a) || SeverActionsNative.Ceasefire_IsMonitored(a)
         Debug.Trace("[SeverCombat] ForcedCombatEnded for " + a.GetDisplayName() + " - skipped (yield/ceasefire owns this actor's state)")
         Return
@@ -406,12 +309,71 @@ Event OnForcedCombatEnded(String eventName, String strArg, Float numArg, Form se
     FullCleanup(a)
 EndEvent
 
-; ============================================================================
-; MAIN ATTACK FUNCTION
-; ============================================================================
+; === MAIN ATTACK FUNCTION ===
 
 Function AttackTarget_Execute(Actor akAttacker, Actor akTarget)
-{Forces akAttacker to attack akTarget. Also makes akTarget fight back.}
+{The AttackTarget action: a companion who attacks the player or another companion leaves the
+ player's service first (LeaveServiceToAttack), then _AttackTarget.}
+    _AttackTarget(akAttacker, akTarget, True)
+EndFunction
+
+Function _AttackTarget(Actor akAttacker, Actor akTarget, Bool abLeaveService)
+{ForceAttack, refused while the cooldown of a ceasefire, yield or brawl holds either party
+ (AttackOnCooldown). The Actions-page verb passes abLeaveService False: an attack the player
+ orders keeps the attacker in their service.}
+    If !akAttacker || !akTarget
+        Debug.Trace("[SeverCombat] AttackTarget: Invalid actor(s)")
+        Return
+    EndIf
+    If AttackOnCooldown(akAttacker, akTarget)
+        Debug.Trace("[SeverCombat] AttackTarget REFUSED: " + akAttacker.GetDisplayName() + " -> " + akTarget.GetDisplayName() + " - cooldown active")
+        ; The cooldown is per actor: name whoever holds it, not a truce between the two.
+        String refusal = akAttacker.GetDisplayName() + " is in no state to start another fight so soon."
+        If !IsActorInCooldown(akAttacker)
+            refusal = akTarget.GetDisplayName() + " has only just come out of a fight, and " + akAttacker.GetDisplayName() + " holds back."
+        EndIf
+        SkyrimNetApi.RegisterEvent("attack_refused", refusal, akAttacker, akTarget)
+        Return
+    EndIf
+    If abLeaveService
+        LeaveServiceToAttack(akAttacker, akTarget)
+    EndIf
+    ForceAttack(akAttacker, akTarget)
+EndFunction
+
+Function LeaveServiceToAttack(Actor akAttacker, Actor akTarget)
+{A rostered companion attacking the player or another companion leaves the player's service
+ (the followers module's "leaveToAttack"), so the friendly-fire guard lets the fight happen.
+ NFF tears its seat down asynchronously: settle before combat starts, as the brawl does.}
+    Actor player = Game.GetPlayer()
+    ; ForceAttack's own refusals first: nobody leaves for an attack that will not happen.
+    If akAttacker == akTarget || akAttacker.IsDead() || akTarget.IsDead()
+        Return
+    EndIf
+    If akAttacker == player || !SeverActionsNativeExt.Native_GetIsFollower(akAttacker)
+        Return
+    EndIf
+    If akTarget != player && !SeverActionsNativeExt2.FriendlyFire_IsProtected(akTarget)
+        Return
+    EndIf
+    Bool wasNFF = SeverActionsNativeExt2.Native_IsNFFManaged(akAttacker)
+    If SeverActions_ModuleBase.CallBool("followers", "leaveToAttack", akAttacker, akTarget) && wasNFF
+        Utility.Wait(2.0)
+    EndIf
+EndFunction
+
+Bool Function AttackOnCooldown(Actor akAttacker, Actor akTarget)
+{True while the attacker, or a target other than the player, is on cooldown. The player's own
+ cooldown does not protect them: every yield or ceasefire made with them sets it.}
+    If IsActorInCooldown(akAttacker)
+        Return True
+    EndIf
+    Return akTarget && akTarget != Game.GetPlayer() && IsActorInCooldown(akTarget)
+EndFunction
+
+Function ForceAttack(Actor akAttacker, Actor akTarget)
+{Forces akAttacker to attack akTarget, and akTarget to fight back. No cooldown check: a brawl
+ that broke into real combat is handed here right after its cooldown is set.}
     
     If !akAttacker || !akTarget
         Debug.Trace("[SeverCombat] AttackTarget: Invalid actor(s)")
@@ -430,54 +392,44 @@ Function AttackTarget_Execute(Actor akAttacker, Actor akTarget)
     
     Debug.Trace("[SeverCombat] AttackTarget: " + akAttacker.GetDisplayName() + " -> " + akTarget.GetDisplayName())
 
-    ; ── Camp oath auto-break ─────────────────────────────────────────
-    ; The chief ordering an attack on the player (or the player's
-    ; follower) IS renouncing the oath — the LLM sometimes reaches for
-    ; AttackTarget instead of RenounceCampOath, and the intent is
-    ; unambiguous either way. Route through the same cascade as the
-    ; explicit action (ventures disband, camp released, group truce
-    ; break) so the whole crew turns hostile together instead of the
-    ; chief fighting alone beside pacified kin. Camp_Renounce natively
-    ; refuses non-leaders; the sworn-state gate (2 = sworn) keeps wild
-    ; camps on the normal truce rules — their hostility is
-    ; TruceMonitor's business, not an oath's.
+    ; Camp oath auto-break: a sworn chief attacking the player or a teammate
+    ; renounces the oath (the LLM may pick AttackTarget over RenounceCampOath),
+    ; through the same cascade, so the whole crew turns together. Camp_State
+    ; 2 = sworn; wild camps stay on the truce rules.
     If akTarget == Game.GetPlayer() || akTarget.IsPlayerTeammate()
         If SeverActionsNativeExt2.Camp_State(akAttacker) == 2 && SeverActionsNativeExt2.Camp_IsLeader(akAttacker)
             If SeverActionsNativeExt2.Camp_Renounce(akAttacker)
                 Debug.Trace("[SeverCombat] AttackTarget: sworn chief " + akAttacker.GetDisplayName() + " turned on the player - oath renounced, camp hostile")
-                Debug.Notification(akAttacker.GetDisplayName() + "'s camp has turned on you!")
-                SkyrimNetApi.RegisterEvent("camp_oath_broken", akAttacker.GetDisplayName() + " turned on " + akTarget.GetDisplayName() + " - the camp's oath to the player is broken and the whole crew turns hostile", akAttacker, akTarget)
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("combat.campHasTurnedOn", ("" + akAttacker.GetDisplayName())))
+                SkyrimNetApi.RegisterEvent("camp_oath_broken", akAttacker.GetDisplayName() + " turned on " + akTarget.GetDisplayName() + " - the camp's oath to " + Game.GetPlayer().GetDisplayName() + " is broken and the whole crew turns hostile", akAttacker, akTarget)
             EndIf
         EndIf
     EndIf
 
-    ; ── Camp challenge answered with steel ───────────────────────────
-    ; Same shape as the oath block above: the LLM sometimes reaches for
-    ; AttackTarget instead of RunThemOff during a live challenge, and the
-    ; intent is unambiguous - attacking the person you are questioning IS
-    ; the verdict. Native NoteAttack refuses the challenge (breaking the
-    ; WHOLE camp by roster, both sides of the door) when the attacker is
-    ; the pending challenger or any member of the questioned camp; the
-    ; attack itself then proceeds normally. Field case 2026-08-03: the
-    ; challenger attacked, the player killed him, walked outside past a
-    ; camp that never found out.
+    ; Camp challenge answered with steel: attacking during a live challenge is
+    ; the refusal verdict (the LLM may pick AttackTarget over RunThemOff).
+    ; NoteAttack breaks the whole camp by roster when the attacker is the
+    ; challenger or a member of the questioned camp; the attack then proceeds.
     If akTarget == Game.GetPlayer() || akTarget.IsPlayerTeammate()
         If SeverActionsNativeExt2.Camp_ChallengeNoteAttack(akAttacker)
             Debug.Trace("[SeverCombat] AttackTarget: during a live challenge - verdict is refusal, camp broken")
-            Debug.Notification(akAttacker.GetDisplayName() + "'s camp turns on you!")
-            If CurrentChallenger == akAttacker
-                CurrentChallenger = None
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("combat.campTurnsOnYou", ("" + akAttacker.GetDisplayName())))
+            ; The parley clock is the challenger's (the attacker may be another member).
+            Actor challenger = CurrentChallenger
+            If challenger == None
+                challenger = akAttacker
             EndIf
-            SeverActionsNative.Native_Persuasion_End()
-            CleanUpChallengeWalk(akAttacker)
+            ; NoteAttack refused the challenge, so the slot is spent whoever swung; the walk is
+            ; the challenger's.
+            CurrentChallenger = None
+            SeverActionsNativeExt2.Native_Persuasion_EndFor(challenger)
+            CleanUpChallengeWalk(challenger)
         EndIf
     EndIf
 
-    ; If either actor is currently surrendered or ceasefire'd, fully reset
-    ; them first. Without this, we'd add them to the attack/target faction
-    ; while they're still in SeverSurrenderedFaction and tracked by the yield
-    ; or ceasefire monitor — the next incidental hit would fire YieldBroken/
-    ; CeasefireBroken mid-scripted-combat and leave dual-faction state.
+    ; Fully reset a surrendered or ceasefired actor first, or the monitor still
+    ; tracking them fires YieldBroken/CeasefireBroken mid-fight and leaves
+    ; dual-faction state.
     If StorageUtil.GetIntValue(akAttacker, "SeverCombat_WasSurrendered", 0) == 1 || SeverActionsNative.Ceasefire_IsMonitored(akAttacker) || SeverActionsNative.IsYieldMonitored(akAttacker)
         Debug.Trace("[SeverCombat] AttackTarget: attacker " + akAttacker.GetDisplayName() + " was surrendered/ceasefire'd - running FullCleanup first")
         FullCleanup(akAttacker)
@@ -497,13 +449,12 @@ Function AttackTarget_Execute(Actor akAttacker, Actor akTarget)
     StorageUtil.UnsetFormValue(akAttacker, "SeverCombat_ReceivedYieldFrom")
     StorageUtil.UnsetFormValue(akTarget, "SeverCombat_ReceivedYieldFrom")
 
-    ; Store original values for attacker (confidence only)
+    ; Both actors: FullCleanup restores whichever one ForcedCombatMonitor sees leave combat.
     StoreOriginalValues(akAttacker)
+    StoreOriginalValues(akTarget)
 
-    ; Store original relationship ranks (both directions) — but never
-    ; overwrite mid-fight: a repeat AttackTarget on an actor already in
-    ; forced combat would snapshot the forced -4 as "original" and the
-    ; eventual restore would bake the hostility in permanently.
+    ; Snapshot the original ranks, never mid-fight: a repeat AttackTarget would
+    ; store the forced -4 as the original and make the hostility permanent.
     If StorageUtil.GetIntValue(akAttacker, "SeverCombat_InForcedCombat", 0) == 0
         StorageUtil.SetIntValue(akAttacker, "SeverCombat_OriginalRelationship", akAttacker.GetRelationshipRank(akTarget))
     EndIf
@@ -511,15 +462,17 @@ Function AttackTarget_Execute(Actor akAttacker, Actor akTarget)
         StorageUtil.SetIntValue(akTarget, "SeverCombat_OriginalRelationship", akTarget.GetRelationshipRank(akAttacker))
     EndIf
 
-    ; Store combat target references
     StorageUtil.SetFormValue(akAttacker, "SeverCombat_CombatTarget", akTarget)
     StorageUtil.SetFormValue(akTarget, "SeverCombat_CombatTarget", akAttacker)
     StorageUtil.SetIntValue(akAttacker, "SeverCombat_InForcedCombat", 1)
     StorageUtil.SetIntValue(akTarget, "SeverCombat_InForcedCombat", 1)
     SeverActionsNative.Native_SetInForcedCombat(akAttacker, true)
     SeverActionsNative.Native_SetInForcedCombat(akTarget, true)
+    ; The friendly-fire guard exempts this pair only (IsDeliberate).
+    SeverActionsNativeExt2.Native_SetForcedCombatPartner(akAttacker, akTarget)
+    SeverActionsNativeExt2.Native_SetForcedCombatPartner(akTarget, akAttacker)
 
-    ; Add to attack/target factions so AIO flee patch can suppress flee packages
+    ; The AIO flee-suppression factions.
     If SeverActions_AttackFaction
         akAttacker.AddToFaction(SeverActions_AttackFaction)
     EndIf
@@ -530,15 +483,11 @@ Function AttackTarget_Execute(Actor akAttacker, Actor akTarget)
     ; Prepare attacker for combat (confidence boost only)
     PrepareForCombat(akAttacker)
     
-    ; Make them personal enemies - this is sufficient for combat
-    ; Factions are deliberately NOT manipulated here — doing so made other
-    ; actors (especially followers) go hostile to unintended targets.
-    ; StartCombat() + relationship rank is enough to force combat between
-    ; these two specific actors without affecting anyone else.
+    ; Relationship rank + StartCombat only: changing factions here turned
+    ; bystanders (followers especially) hostile.
     akAttacker.SetRelationshipRank(akTarget, -4)
     akTarget.SetRelationshipRank(akAttacker, -4)
     
-    ; Start combat - attacker initiates
     akAttacker.StartCombat(akTarget)
     
     ; Make victim fight back
@@ -558,26 +507,15 @@ Bool Function AttackTarget_IsEligible(Actor akAttacker, Actor akTarget)
     If akAttacker == akTarget
         Return False
     EndIf
-    If IsActorInCooldown(akAttacker)
-        Return False
-    EndIf
-    Return True
+    Return !AttackOnCooldown(akAttacker, akTarget)
 EndFunction
 
-; ============================================================================
-; CEASEFIRE FUNCTION
-; ============================================================================
+; === CEASEFIRE FUNCTION ===
 
 Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
-{Forces two actors to stop fighting and propagates ceasefire to all nearby faction allies.
- Ceasefire is INDEFINITE — aggression stays at 0 until the player attacks them (monitored
- by native CeasefireMonitor) or an NPC calls AttackTarget (which clears ceasefire state).
-
- Phase 5: the per-actor faction-swap / aggression-zero / combat-stop /
- relationship-rank / monitor-registration sequence — previously ~80 lines
- of Papyrus repeated per affected actor — now lives in native
- CeasefireMonitor::PropagateGroup. We keep only the Papyrus-side timestamp
- bookkeeping the prompt template reads.}
+{Stop two actors fighting and extend the ceasefire to nearby faction allies
+ (native CeasefireMonitor::PropagateGroup does the per-actor work). Indefinite:
+ aggression stays 0 until the player attacks them or an NPC calls AttackTarget.}
 
     If !akActor1
         Debug.Trace("[SeverCombat] CeaseFire: Actor1 is None")
@@ -592,11 +530,8 @@ Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
         akStoredTarget = StorageUtil.GetFormValue(akActor1, "SeverCombat_CombatTarget") as Actor
     EndIf
 
-    ; Clear the forced-combat flag BEFORE the native combat stop below —
-    ; PropagateGroup stops combat, and if ForcedCombatMonitor sees the
-    ; combat-end with the flag still set it fires ForcedCombatEnded →
-    ; FullCleanup force-breaks the ceasefire we're in the middle of
-    ; negotiating.
+    ; Clear the forced-combat flag BEFORE PropagateGroup stops combat, or
+    ; ForcedCombatEnded -> FullCleanup breaks the ceasefire being made.
     SeverActionsNative.Native_SetInForcedCombat(akActor1, false)
     StorageUtil.UnsetIntValue(akActor1, "SeverCombat_InForcedCombat")
     If akStoredTarget
@@ -604,13 +539,10 @@ Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
         StorageUtil.UnsetIntValue(akStoredTarget, "SeverCombat_InForcedCombat")
     EndIf
 
-    ; Single native call does the lot: apply to initiator + partner + nearby
-    ; combat-active faction allies, returning the list of affected actors.
+    ; Initiator + partner + nearby combat-active faction allies; returns the affected actors.
     Actor[] affected = SeverActionsNativeExt.Ceasefire_PropagateGroup(akActor1, akStoredTarget, 4096.0)
 
-    ; Mirror per-actor prompt state into StorageUtil — the prompt template
-    ; reads SeverCombat_CeasefireTime and SeverCombat_WasNormallyHostile
-    ; directly via papyrus_util(), so they have to live on the Papyrus side.
+    ; The prompt reads these two keys through papyrus_util(), so they live in StorageUtil.
     Float ceasefireTime = Utility.GetCurrentGameTime() * 24 * 3631
     If affected
         Int i = 0
@@ -618,6 +550,7 @@ Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
             Actor a = affected[i]
             If a
                 StorageUtil.SetFloatValue(a, "SeverCombat_CeasefireTime", ceasefireTime)
+                StorageUtil.UnsetIntValue(a, "SeverCombat_YieldBroken")
                 If SeverActionsNativeExt.Ceasefire_IsWasNormallyHostile(a)
                     StorageUtil.SetIntValue(a, "SeverCombat_WasNormallyHostile", 1)
                 EndIf
@@ -627,25 +560,23 @@ Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
         Debug.Trace("[SeverCombat] CeaseFire: native affected " + affected.Length + " actor(s)")
     EndIf
 
-    ; If this fight was started by AttackTarget, undo its per-actor edits the
-    ; same way Yield does: restore Confidence + drop the AIO Attack/Target
-    ; factions (RestoreOriginalValues), restore the forced -4 relationship
-    ; ranks from the stored originals, and clear the combat-pair keys so
-    ; they don't linger through the truce. Previously none of this ran on
-    ; the ceasefire path — Confidence=3 and the faction memberships stuck,
-    ; and the pair stayed archenemies under the truce.
+    ; Undo AttackTarget's edits as Yield does: Confidence and the Attack/Target
+    ; factions, the forced -4 ranks, and the combat-pair keys.
     RestoreOriginalValues(akActor1)
     If akStoredTarget
         RestoreOriginalValues(akStoredTarget)
-        Int origRank1 = StorageUtil.GetIntValue(akActor1, "SeverCombat_OriginalRelationship", 0)
-        Int origRank2 = StorageUtil.GetIntValue(akStoredTarget, "SeverCombat_OriginalRelationship", 0)
-        akActor1.SetRelationshipRank(akStoredTarget, origRank1)
-        akStoredTarget.SetRelationshipRank(akActor1, origRank2)
+        ; Only a forced fight stored a rank: a fight that flared on its own changed none.
+        If StorageUtil.HasIntValue(akActor1, "SeverCombat_OriginalRelationship")
+            akActor1.SetRelationshipRank(akStoredTarget, StorageUtil.GetIntValue(akActor1, "SeverCombat_OriginalRelationship", 0))
+        EndIf
+        If StorageUtil.HasIntValue(akStoredTarget, "SeverCombat_OriginalRelationship")
+            akStoredTarget.SetRelationshipRank(akActor1, StorageUtil.GetIntValue(akStoredTarget, "SeverCombat_OriginalRelationship", 0))
+        EndIf
         ClearAllCombatState(akStoredTarget)
     EndIf
     ClearAllCombatState(akActor1)
 
-    ; Apply cooldown (prevents immediate re-attack action)
+    ; Cooldown: refuses AttackTarget and a brawl challenge for a while.
     ApplyCooldown(akActor1, akStoredTarget)
 
     Debug.Trace("[SeverCombat] CeaseFire complete - group ceasefire active, indefinite until player attacks or NPC re-engages")
@@ -659,16 +590,13 @@ Bool Function CeaseFire_IsEligible(Actor akActor1, Actor akActor2)
     Return akActor1.IsInCombat() || (akActor2 && akActor2.IsInCombat())
 EndFunction
 
-; ============================================================================
-; YIELD / SURRENDER FUNCTION
-; ============================================================================
+; === YIELD / SURRENDER FUNCTION ===
 
 Function Yield_Execute(Actor akYielder)
-{Makes an actor yield/surrender. Phase 6: faction-swap + aggression-zero +
- monitor-register all happen in one native call (Yield_ConvertToSurrendered).
- Papyrus owns: stop combat, relationship-rank restore (CLib NG doesn't expose
- those methods), yield prompt flags + timestamp, yield-slot persistence,
- cooldown, EvaluatePackage.}
+{Makes an actor yield/surrender. Native Yield_ConvertToSurrendered swaps
+ factions, zeroes aggression and registers the monitor; Papyrus stops combat,
+ restores relationship ranks (CommonLibSSE-NG has no rank API), and keeps the
+ prompt keys, the yield slot and the cooldown.}
 
     If !akYielder
         Debug.Trace("[SeverCombat] Yield: Yielder is None")
@@ -677,10 +605,8 @@ Function Yield_Execute(Actor akYielder)
 
     Debug.Trace("[SeverCombat] Yield: " + akYielder.GetDisplayName() + " is yielding")
 
-    ; Resolve the partner and clear the forced-combat flag BEFORE StopCombat:
-    ; the combat-end event otherwise reaches ForcedCombatMonitor with the
-    ; flag still set, and its ForcedCombatEnded → FullCleanup re-hostiles
-    ; the freshly-surrendered actor ("bandit yields, then stands back up").
+    ; Clear the forced-combat flag BEFORE StopCombat, or ForcedCombatEnded ->
+    ; FullCleanup re-hostiles the freshly surrendered actor.
     Actor akStoredTarget = StorageUtil.GetFormValue(akYielder, "SeverCombat_CombatTarget") as Actor
     SeverActionsNative.Native_SetInForcedCombat(akYielder, false)
     If akStoredTarget
@@ -700,8 +626,6 @@ Function Yield_Execute(Actor akYielder)
     EndIf
 
     If akStoredTarget
-        ; Relationship-rank restore stays Papyrus-side — CommonLibSSE-NG
-        ; doesn't expose GetRelationshipRank / SetRelationshipRank on Actor.
         Int origRankYielder = StorageUtil.GetIntValue(akYielder, "SeverCombat_OriginalRelationship", 0)
         Int origRankAttacker = StorageUtil.GetIntValue(akStoredTarget, "SeverCombat_OriginalRelationship", 0)
         akYielder.SetRelationshipRank(akStoredTarget, origRankYielder)
@@ -720,23 +644,20 @@ Function Yield_Execute(Actor akYielder)
         ClearAllCombatState(akStoredTarget)
     EndIf
 
-    ; StorageUtil mirror of original aggression — kept so YieldAlias.psc's
-    ; OnLoad re-register path keeps working.
+    ; Read by FullCleanup, and by ReassignYieldSlots when the native monitor lost this actor.
     StorageUtil.SetFloatValue(akYielder, "SeverCombat_OriginalAggression", akYielder.GetActorValue("Aggression"))
 
-    ; Phase 6: one native call replaces the Papyrus ConvertToSurrendered loop
-    ; + manual aggression zero + WasSurrendered flag write + Native_SetSurrendered.
-    ; The native side stores the removed-factions list directly in the
-    ; YieldedActorData entry; OnYieldBroken / ReturnToCrime / FullCleanup
-    ; restore them from there without Papyrus FormList round-trips.
+    ; The native keeps the removed factions in its YieldedActorData entry, which
+    ; OnYieldBroken / ReturnToCrime / FullCleanup restore from.
     Bool wasHostile = SeverActionsNativeExt.Yield_ConvertToSurrendered(akYielder)
     StorageUtil.SetIntValue(akYielder, "SeverCombat_WasSurrendered", 1)
+    ; A new surrender replaces an old broken one (0160's Betrayed Surrender).
+    StorageUtil.UnsetIntValue(akYielder, "SeverCombat_YieldBroken")
     If wasHostile
         StorageUtil.SetIntValue(akYielder, "SeverCombat_WasNormallyHostile", 1)
     EndIf
     SeverActionsNative.Native_SetSurrendered(akYielder, true)
 
-    ; YieldSlot persistence — Papyrus-side.
     If YieldPersistenceEnabled && wasHostile
         AssignYieldSlot(akYielder)
     EndIf
@@ -756,16 +677,12 @@ Bool Function Yield_IsEligible(Actor akYielder)
     Return akYielder.IsInCombat()
 EndFunction
 
-; ============================================================================
-; FACTION CONVERSION SYSTEM
-; ============================================================================
+; === FACTION CONVERSION SYSTEM ===
 
 Function RestoreHostileFactions(Actor akActor, String storageKey)
-{Inverse of ConvertToSurrendered's faction loop. Removes akActor from
- SeverSurrenderedFaction (if present), re-adds every faction stored in the
- named FormList, then clears the list. Shared by ReturnToCrime,
- OnYieldBroken, OnCeasefireBroken, and FullCleanup — previously each of
- those duplicated the same loop with subtly different surrounding cleanup.}
+{Legacy restore for saves from before the native yield/ceasefire stores (used by
+ FullCleanup): removes SeverSurrenderedFaction, re-adds every faction in the
+ named StorageUtil FormList, then clears the list.}
     If !akActor
         Return
     EndIf
@@ -790,10 +707,8 @@ Function RestoreHostileFactions(Actor akActor, String storageKey)
 EndFunction
 
 Function ReturnToCrime_Execute(Actor akActor)
-{Revert a surrendered actor back to their original hostile faction(s).
- Phase 6: aggression restore + surrendered-faction removal + hostile-faction
- re-add + monitor unregister all happen in Yield_ReturnToCrime. Papyrus
- only clears the prompt-side StorageUtil keys.}
+{Revert a surrendered actor to their hostile faction(s). Yield_ReturnToCrime
+ does the restore and the unregister; Papyrus clears the prompt-side keys.}
 
     If !akActor
         Return
@@ -806,10 +721,8 @@ Function ReturnToCrime_Execute(Actor akActor)
 
     Debug.Trace("[SeverCombat] ReturnToCrime: " + akActor.GetDisplayName() + " returning to hostile faction")
 
-    ; Release yield persistence alias — no longer surrendered.
     ClearYieldSlot(akActor)
 
-    ; One native call does the whole restore (aggression / factions / unregister).
     SeverActionsNativeExt.Yield_ReturnToCrime(akActor)
     SeverActionsNative.Native_SetSurrendered(akActor, false)
 
@@ -844,9 +757,7 @@ Bool Function IsSurrendered(Actor akActor)
     Return akActor.IsInFaction(SeverSurrenderedFaction)
 EndFunction
 
-; ============================================================================
-; HELPER FUNCTIONS
-; ============================================================================
+; === HELPER FUNCTIONS ===
 
 Function ClearAllCombatState(Actor akActor)
 {Completely clear all combat-related StorageUtil keys for an actor}
@@ -858,23 +769,16 @@ Function ClearAllCombatState(Actor akActor)
     ; Clear stored original values (already restored by this point)
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalConfidence")
     
-    ; NOTE: We do NOT clear these here - they're for prompt awareness and auto-expire:
-    ; - SeverCombat_CeasefireTime (auto-expires based on time comparison in prompt)
-    ; - SeverCombat_YieldTime (auto-expires based on time comparison in prompt)
-    ; - SeverCombat_YieldedTo (used with YieldTime for prompt)
-    ; - SeverCombat_ReceivedYieldFrom (used with YieldTime for prompt)
-    ; - SeverCombat_WasSurrendered (persistent until ReturnToCrime)
-    ; - SeverCombat_OriginalFaction (persistent until ReturnToCrime)
-    ; - SeverCombat_RemovedFactions (persistent until ReturnToCrime)
-    ; - SeverCombat_OriginalAggression (persistent until ReturnToCrime or FullCleanup)
+    ; Deliberately kept: the prompt keys (CeasefireTime, YieldTime, YieldedTo,
+    ; ReceivedYieldFrom; the prompt expires them by time) and the surrender keys
+    ; (WasSurrendered, OriginalAggression, legacy RemovedFactions), which
+    ; ReturnToCrime / OnYieldBroken / FullCleanup clear.
 EndFunction
 
 Function PrepareForCombat(Actor akActor)
 {Set actor values for combat - only boost confidence so they don't flee}
-    ; NOTE: We intentionally do NOT modify Aggression here.
-    ; Setting high aggression can cause NPCs to attack unintended targets
-    ; if combat ends abnormally and values aren't restored.
-    ; StartCombat() + relationship rank changes are sufficient.
+    ; Aggression is left alone: a raised value that is never restored makes the
+    ; NPC attack unintended targets.
 
     ; Confidence: 0=Cowardly, 1=Cautious, 2=Average, 3=Brave, 4=Foolhardy
     akActor.SetActorValue("Confidence", 3)
@@ -883,11 +787,11 @@ Function PrepareForCombat(Actor akActor)
 EndFunction
 
 Function StoreOriginalValues(Actor akActor)
-{Store actor's original combat values in StorageUtil}
-    ; Only store if not already stored (don't overwrite during ongoing combat)
+{Store the actor's original Confidence and Aggression in StorageUtil (FullCleanup restores both).}
+    ; Skipped mid-fight, so a forced value is never stored as the original.
     If StorageUtil.GetIntValue(akActor, "SeverCombat_InForcedCombat", 0) == 0
-        ; Store confidence
         StorageUtil.SetFloatValue(akActor, "SeverCombat_OriginalConfidence", akActor.GetActorValue("Confidence"))
+        StorageUtil.SetFloatValue(akActor, "SeverCombat_OriginalAggression", akActor.GetActorValue("Aggression"))
     EndIf
 EndFunction
 
@@ -900,24 +804,30 @@ Function RestoreOriginalValues(Actor akActor)
         StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalConfidence")
     EndIf
 
-    ; Remove from attack/target factions (kept — AIO flee-suppression patch
-    ; depends on these being toggled on/off around forced-combat windows)
-    If SeverActions_AttackFaction && akActor.IsInFaction(SeverActions_AttackFaction)
-        akActor.RemoveFromFaction(SeverActions_AttackFaction)
+    ; Drop the AIO flee-suppression factions. TRUE removal: RemoveFromFaction leaves a
+    ; rank -1 entry, and the AIO patch's GetInFaction package conditions are rank-blind,
+    ; so the survivor still could not flee (see Follow.ClearWaitingFaction).
+    _DropFactionClean(akActor, SeverActions_AttackFaction)
+    _DropFactionClean(akActor, SeverActions_TargetFaction)
+EndFunction
+
+Function _DropFactionClean(Actor akActor, Faction akFaction)
+{Erase a runtime membership outright; on a survivor (issue #437) fall back to RemoveFromFaction.}
+    If !akFaction
+        Return
     EndIf
-    If SeverActions_TargetFaction && akActor.IsInFaction(SeverActions_TargetFaction)
-        akActor.RemoveFromFaction(SeverActions_TargetFaction)
+    SeverActionsNativeExt2.Faction_RemoveClean(akActor, akFaction)
+    If akActor.GetFactionRank(akFaction) >= 0
+        Debug.Trace("[SeverCombat] WARNING: " + akFaction.GetName() + " survived Faction_RemoveClean on " + akActor.GetDisplayName() + " - RemoveFromFaction fallback applied")
+        akActor.RemoveFromFaction(akFaction)
     EndIf
 EndFunction
 
-; ============================================================================
-; COOLDOWN
-; ============================================================================
+; === COOLDOWN ===
 
 Function ApplyCooldown(Actor akActor, Actor akPartner)
-{Apply cooldown to prevent immediate re-engagement. Phase 6: backed by
- native CombatCooldownStore (cosave-persisted FormID->expiry map) instead
- of the SeverCombat_CooldownEnd StorageUtil key.}
+{Put both actors on cooldown (native CombatCooldownStore, cosaved FormID -> expiry); AttackTarget
+ (AttackOnCooldown) and ChallengeBrawl_Execute refuse while it runs.}
     If akActor
         SeverActionsNativeExt.Cooldown_Set(akActor, CombatCooldownDuration)
     EndIf
@@ -953,63 +863,45 @@ Function FullCleanup(Actor akActor)
     ; Release yield persistence alias if active
     ClearYieldSlot(akActor)
 
-    ; Stop any combat
     akActor.StopCombatAlarm()
     akActor.StopCombat()
 
-    ; Phase 6: if the native yield monitor is still tracking this actor,
-    ; tell C++ to restore aggression + factions + unregister silently.
-    ; ForceBreak is equivalent to ReturnToCrime but reads better at the
-    ; FullCleanup call site.
+    ; Yield_ForceBreak = ReturnToCrime: restore aggression and factions, unregister.
     If SeverActionsNative.IsYieldMonitored(akActor)
         SeverActionsNativeExt.Yield_ForceBreak(akActor)
         SeverActionsNative.Native_SetSurrendered(akActor, false)
     ElseIf StorageUtil.GetIntValue(akActor, "SeverCombat_WasSurrendered", 0) == 1
-        ; Surrendered but not in monitor (pre-Phase-6 save) — use the legacy
-        ; StorageUtil-driven restore path so old saves don't break.
+        ; Surrendered but unmonitored (a pre-native save): the legacy restore.
         RestoreHostileFactions(akActor, "SeverCombat_RemovedFactions")
         SeverActionsNative.UnregisterYieldedActor(akActor)
     Else
-        ; Not surrendered — just make sure they're not stuck in
-        ; SeverSurrenderedFaction (rare edge: ceasefire faction-swap that
-        ; never set WasSurrendered, FullCleanup invoked while still in it).
+        ; Not surrendered: still make sure they are out of SeverSurrenderedFaction
+        ; (a ceasefire swap puts them there without WasSurrendered).
         If SeverSurrenderedFaction && akActor.IsInFaction(SeverSurrenderedFaction)
             akActor.RemoveFromFaction(SeverSurrenderedFaction)
         EndIf
         SeverActionsNative.UnregisterYieldedActor(akActor)
     EndIf
 
-    ; Phase 5: if the native monitor is still tracking a ceasefire on this
-    ; actor (e.g. FullCleanup invoked from OnForcedCombatEnded before any
-    ; player hit broke it), tell C++ to restore aggression / factions
-    ; silently. ForceBreak skips the SeverActionsNative_CeasefireBroken
-    ; ModEvent so we don't trigger our own OnCeasefireBroken handler mid-wipe.
+    ; A live ceasefire: Ceasefire_ForceBreak restores aggression and factions
+    ; without the CeasefireBroken ModEvent, so OnCeasefireBroken does not run mid-wipe.
     If SeverActionsNative.Ceasefire_IsMonitored(akActor)
         SeverActionsNativeExt.Ceasefire_ForceBreak(akActor)
     EndIf
 
-    ; Legacy: if a pre-Phase-5 save still has the CeasefireFactionSwapped
-    ; flag, restore via the Papyrus path.
+    ; Legacy: a pre-native ceasefire save restores through StorageUtil.
     If StorageUtil.GetIntValue(akActor, "SeverCombat_CeasefireFactionSwapped", 0) == 1
         RestoreHostileFactions(akActor, "SeverCombat_CeasefireRemovedFactions")
         StorageUtil.UnsetIntValue(akActor, "SeverCombat_CeasefireFactionSwapped")
     EndIf
 
-    ; Always clear the native surrendered flag, regardless of whether the
-    ; StorageUtil "WasSurrendered" key was set. Belt-and-suspenders against
-    ; partial-state cleanup (crash between SetIntValue and Native_SetSurrendered,
-    ; older save with the native flag set but the Papyrus flag already unset,
-    ; etc.). Native flag stuck true would keep decorators reporting the actor
-    ; as surrendered for the rest of the session.
+    ; Always clear the native surrendered flag: the two flags can disagree after a
+    ; partial write, and a stuck native flag keeps decorators reporting a surrender.
     SeverActionsNative.Native_SetSurrendered(akActor, false)
 
-    ; Restore the relationship ranks AttackTarget forced to -4. This was the
-    ; one terminal path that unset the stored original WITHOUT restoring it —
-    ; any forced fight ending by flee/calm/separation left the pair as
-    ; permanent archenemies (only the yield path restored). Idempotent for
-    ; the double-cleanup case (both actors get ForcedCombatEnded): each call
-    ; restores its own direction, restores the partner's direction while the
-    ; partner's key still exists, and only unsets its own keys below.
+    ; Restore the ranks AttackTarget forced to -4. Safe when both actors get
+    ; ForcedCombatEnded: each call restores both directions while the partner's
+    ; key exists and unsets only its own keys.
     Actor rankPartner = StorageUtil.GetFormValue(akActor, "SeverCombat_CombatTarget") as Actor
     If rankPartner && StorageUtil.HasIntValue(akActor, "SeverCombat_OriginalRelationship")
         akActor.SetRelationshipRank(rankPartner, StorageUtil.GetIntValue(akActor, "SeverCombat_OriginalRelationship", 0))
@@ -1019,28 +911,29 @@ Function FullCleanup(Actor akActor)
         Debug.Trace("[SeverCombat] Restored relationship ranks between " + akActor.GetDisplayName() + " and " + rankPartner.GetDisplayName())
     EndIf
 
-    ; Restore aggression - use stored value if available, otherwise default to 1
+    ; Restore aggression if stored; otherwise leave it.
     Float originalAggression = StorageUtil.GetFloatValue(akActor, "SeverCombat_OriginalAggression", -1.0)
     If originalAggression >= 0.0
         akActor.SetActorValue("Aggression", originalAggression)
         Debug.Trace("[SeverCombat] Restored aggression to stored value: " + originalAggression)
     Else
-        ; Default to 1 (Aggressive) - normal for most NPCs
-        akActor.SetActorValue("Aggression", 1)
-        Debug.Trace("[SeverCombat] Set aggression to default: 1")
+        ; SetActorValue writes the BASE, so a guessed default would re-tune the NPC for good.
+        Debug.Trace("[SeverCombat] No stored aggression for " + akActor.GetDisplayName() + " - leaving it as is")
     EndIf
     
-    ; Restore confidence - use stored value if available, otherwise default to 3
+    ; Restore confidence if stored; otherwise leave it.
     Float originalConfidence = StorageUtil.GetFloatValue(akActor, "SeverCombat_OriginalConfidence", -1.0)
     If originalConfidence >= 0.0
         akActor.SetActorValue("Confidence", originalConfidence)
         Debug.Trace("[SeverCombat] Restored confidence to stored value: " + originalConfidence)
     Else
-        ; Default to 3 (Brave) - typical for most NPCs
-        akActor.SetActorValue("Confidence", 3)
-        Debug.Trace("[SeverCombat] Set confidence to default: 3")
+        Debug.Trace("[SeverCombat] No stored confidence for " + akActor.GetDisplayName() + " - leaving it as is")
     EndIf
-    
+
+    ; Also drops the AIO flee-suppression factions: a fight that ended on its own left
+    ; the survivor unable to flee under the AIO patch for good.
+    RestoreOriginalValues(akActor)
+
     ; Clear ALL StorageUtil keys
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_CombatTarget")
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_InForcedCombat")
@@ -1051,16 +944,15 @@ Function FullCleanup(Actor akActor)
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_YieldTime")
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_YieldedTo")
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_ReceivedYieldFrom")
-    SeverActionsNativeExt.Cooldown_Clear(akActor)  ; Phase 6: native-backed (was SeverCombat_CooldownEnd)
+    SeverActionsNativeExt.Cooldown_Clear(akActor)
 
     ; Clear surrender state
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasSurrendered")
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasNormallyHostile")
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_OriginalFaction")
-    ; YieldBroken is a prompt-flavor flag ("attacked after surrendering")
-    ; that nothing ever cleared — it stuck on the actor forever. A full
-    ; wipe is the natural place to retire it.
+    ; The YieldBroken prompt flag (a new yield or ceasefire also clears it).
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_YieldBroken")
+    StorageUtil.UnsetFloatValue(akActor, "SeverCombat_YieldBrokenTime")
     StorageUtil.FormListClear(akActor, "SeverCombat_RemovedFactions")
 
     akActor.EvaluatePackage()
@@ -1078,48 +970,76 @@ Bool Function FullCleanup_IsEligible(Actor akActor)
     Return True
 EndFunction
 
-Function OnGameLoaded()
-    {Load-time recovery. Called by SeverActions_Init.RunLoadRecovery() on
-     every load — this is a Quest script, and Quest scripts NEVER receive
-     OnPlayerLoadGame (Actor/alias-only event), so hanging this body off
-     that event left it dead code for every existing save.}
-    ; Re-register for native mod events
+Function HealPlayerAggression()
+    {Reset the player's Aggression to 0 (combat provider, stage 1, every load).
+     Pre-2.1.8 AttackTarget could leave it at 2 in the save, which makes Calm NPCs
+     flee on sight; a no-op on healthy saves.}
+    Actor playerRef = Game.GetPlayer()
+    If !playerRef
+        Return
+    EndIf
+    Float currentAggression = playerRef.GetActorValue("Aggression")
+    If currentAggression > 0.0
+        playerRef.SetActorValue("Aggression", 0.0)
+        Debug.Trace("[SeverActions] Healed corrupted player aggression: " + currentAggression + " -> 0")
+    EndIf
+EndFunction
+
+Function RegisterEvents()
+    {Event registrations and native pushes, before any recovery runs. Called from
+     the combat provider's stage 0 (plan 3.4) and from OnInit; registrations live
+     here, not in the provider, so they stay keyed to the quest handle old saves
+     hold (DR16). Idempotent.}
     RegisterForModEvent("SeverActionsNative_YieldBroken", "OnYieldBroken")
     RegisterForModEvent("SeverActionsNative_CeasefireBroken", "OnCeasefireBroken")
     RegisterForModEvent("SeverActions_ForcedCombatEnded", "OnForcedCombatEnded")
     RegisterForModEvent("SeverActions_CampChallenge", "OnCampChallenge")
     RegisterForModEvent("SeverActions_CampChallengeChoice", "OnCampChallengeChoice")
-    ; NOT registered for SeverActions_PersuasionFailed — deliberate, do not re-add.
-    ; See the OnInit note above for the (form, event) slot-sharing reason; the
-    ; camp-challenge refusal is routed natively via PersuasionMonitor instead.
+    ; NOT registered for SeverActions_PersuasionFailed - do not add: the first (form, event)
+    ; registration wins, so another callback name here would never fire. ArrestPlayer and
+    ; Ambush share its canonical callback; the camp-challenge refusal is routed natively
+    ; (PersuasionMonitor -> SeverActions_CampChallengeCleanup).
+    ; Combat and brawl verbs from the DLL's verb table (M-V).
+    RegisterForModEvent("SeverActions_Verb_Combat", "OnVerb_Combat")
+    RegisterForModEvent("SeverActions_Hotkey_Combat", "OnHotkey_Combat")   ; the Yield hotkey (M-K)
     RegisterForModEvent("SeverActions_CampChallengeCleanup", "OnCampChallengeCleanup")
     RegisterForModEvent("SeverActions_CampHoardPlundered", "OnCampHoardPlundered")
-    ; A challenge cannot survive a reload: the walk, the card and the parley
-    ; clock are all session state. A stale slot here would silently DROP every
-    ; future challenge (-a challenge is already in flight-), so clear it.
-    CurrentChallenger = None
-
-    ; Re-assign yield persistence aliases (ForceRefTo doesn't survive save/load)
-    ReassignYieldSlots()
-    ; Ceasefire'd actors are restored from the C++ cosave ('CEAS' record in
-    ; CeasefireMonitor); no Papyrus-side re-registration is needed.
-    ; Re-push the faction config in case the cosave was clobbered or the
-    ; load order shifted.
+    ; The challenge walk's arrival: shared event, canonical callback (M-E).
+    RegisterForModEvent("SeverActionsNative_OnArrival", "OnArrival")
+    ; Re-push the owner-hosted properties on every load (the native config can drift).
+    ; This also runs PushTruceConfigToNative - do not call that again here.
     PushCeasefireConfigToNative()
 EndFunction
 
-Event OnCeasefireBroken(String eventName, String strArg, Float numArg, Form sender)
-    {Native CeasefireMonitor detected a player hit on a ceasefire'd actor and
-     already did the heavy lifting in C++: restored Aggression, removed from
-     SeverSurrenderedFaction, re-added the hostile factions, called
-     EvaluatePackage. (Relationship ranks are NOT touched in C++ — CLib NG
-     doesn't expose them; the pair's mutual ranks were already restored on
-     the Papyrus side when the ceasefire was negotiated in CeaseFire_Execute,
-     so a broken truce turns them on the player, not back on each other.)
+Function OnGameLoaded()
+    {Load-time recovery, from the combat provider's stage 1 on every load (plan 3.4;
+     registrations are RegisterEvents' at stage 0). A Quest script never receives
+     OnPlayerLoadGame.}
+    ; The native challenge (pending slot, parley window, arrival watch) does not survive a load,
+    ; but the walk's package override and LinkedRef do: tear down the saved challenger's walk, or
+    ; they trail the player with a drawn weapon. A challenge the sweep re-issued before this check
+    ; is kept (one re-issued to the same chief mid-teardown stalls until the native watchdog
+    ; drops it and the sweep asks again); a stale slot would drop every later challenge.
+    Actor savedChallenger = CurrentChallenger
+    If savedChallenger && !SeverActionsNativeExt2.Camp_ChallengeIsPending(savedChallenger)
+        If CurrentChallenger == savedChallenger
+            CurrentChallenger = None
+        EndIf
+        Debug.Trace("[SeverActions] Combat OnGameLoaded: challenge walk dropped from " + savedChallenger.GetDisplayName() + " (saved mid-challenge)")
+        CleanUpChallengeWalk(savedChallenger)
+        If !savedChallenger.IsInCombat()
+            savedChallenger.SheatheWeapon()
+        EndIf
+    EndIf
 
-     This handler exists only to clean up the Papyrus-side StorageUtil keys
-     the prompt template reads, and to clear any legacy keys from saves
-     made before the Phase 5 migration.}
+    ReassignYieldSlots()
+    ; Ceasefires restore from CeasefireMonitor's 'CEAS' cosave record.
+EndFunction
+
+Event OnCeasefireBroken(String eventName, String strArg, Float numArg, Form sender)
+    {A player hit broke a ceasefire. CeasefireMonitor already restored aggression
+     and factions (ranks were restored when the ceasefire was made, so the pair
+     turns on the player, not each other); this clears the prompt and legacy keys.}
     Actor akActor = sender as Actor
     If !akActor
         Return
@@ -1127,8 +1047,7 @@ Event OnCeasefireBroken(String eventName, String strArg, Float numArg, Form send
 
     Debug.Trace("[SeverCombat] CeasefireBroken: " + akActor.GetDisplayName() + " - clearing prompt-side state")
 
-    ; Legacy keys (Phase 4 and earlier): clear if any old save still has them.
-    ; Phase 5 onward, the C++ side owns the faction list + partner.
+    ; Legacy keys from pre-native ceasefire saves.
     If StorageUtil.GetIntValue(akActor, "SeverCombat_CeasefireFactionSwapped", 0) == 1
         StorageUtil.FormListClear(akActor, "SeverCombat_CeasefireRemovedFactions")
         StorageUtil.UnsetIntValue(akActor, "SeverCombat_CeasefireFactionSwapped")
@@ -1146,17 +1065,12 @@ Event OnCeasefireBroken(String eventName, String strArg, Float numArg, Form send
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_InForcedCombat")
 EndEvent
 
-; ============================================================================
-; YIELD BROKEN EVENT HANDLER
-; ============================================================================
+; === YIELD BROKEN EVENT HANDLER ===
 
 Event OnYieldBroken(string eventName, string strArg, float numArg, Form sender)
-    {Called by native YieldMonitor when a yielded actor takes enough hits to
-     break surrender. Phase 6: C++ already restored aggression, removed from
-     SeverSurrenderedFaction, AND re-added the hostile factions (data lives
-     in the YieldedActorData entry). This handler only clears prompt-side
-     StorageUtil keys, sets the YieldBroken prompt flag, and fires the
-     SkyrimNet event.}
+    {YieldMonitor: a yielded actor took enough hits to break surrender. C++ already
+     restored aggression and factions; this clears the yield's prompt keys (not the
+     hostile-tone flag), stamps the YieldBroken flag and fires the SkyrimNet event.}
     Actor akActor = sender as Actor
     If !akActor
         Return
@@ -1166,9 +1080,10 @@ Event OnYieldBroken(string eventName, string strArg, float numArg, Form sender)
 
     ClearYieldSlot(akActor)
 
-    ; Prompt-side state cleanup.
+    ; Prompt-side state cleanup. SeverCombat_WasNormallyHostile stays: 0160 reads it
+    ; beside SeverCombat_YieldBroken for the betrayed-surrender tone, and FullCleanup
+    ; clears the two together.
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasSurrendered")
-    StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasNormallyHostile")
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_OriginalFaction")
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalAggression")
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_YieldTime")
@@ -1181,6 +1096,7 @@ Event OnYieldBroken(string eventName, string strArg, float numArg, Form sender)
     EndIf
 
     StorageUtil.SetIntValue(akActor, "SeverCombat_YieldBroken", 1)
+    StorageUtil.SetFloatValue(akActor, "SeverCombat_YieldBrokenTime", Utility.GetCurrentGameTime() * 24 * 3631)
 
     If playerRef
         SkyrimNetApi.RegisterEvent("yield_broken", \
@@ -1191,14 +1107,11 @@ Event OnYieldBroken(string eventName, string strArg, float numArg, Form sender)
     Debug.Trace("[SeverCombat] YieldBroken complete for " + akActor.GetDisplayName())
 EndEvent
 
-; ============================================================================
-; YIELD PERSISTENCE - Alias slot management for generic NPCs
-; ============================================================================
+; === YIELD PERSISTENCE (alias slots for generic NPCs) ===
 
 Function AssignYieldSlot(Actor akActor)
-    {Find an empty YieldSlot and assign the actor to it for persistence.
-     Also adds the actor to the global tracking FormList so the slot can
-     be re-assigned after save/load (ForceRefTo is runtime-only).}
+    {Seat the actor in an empty YieldSlot and add them to the tracking list that
+     ReassignYieldSlots refills from on load.}
     If !akActor || !YieldSlots
         Return
     EndIf
@@ -1253,10 +1166,8 @@ Function ClearYieldSlot(Actor akActor)
 EndFunction
 
 Function ReassignYieldSlots()
-    {Re-assign yield alias slots after a game load.
-     ForceRefTo is runtime-only and doesn't survive save/load, so we need to
-     repopulate the alias slots every time the game loads.
-     Uses the StorageUtil FormList to track which actors need persistence.}
+    {Refill the yield slots from SeverCombat_YieldedGenericActors on every load,
+     pruning dead or no-longer-surrendered entries.}
     If !YieldSlots || !YieldPersistenceEnabled
         Return
     EndIf
@@ -1270,7 +1181,6 @@ Function ReassignYieldSlots()
         i += 1
     EndWhile
 
-    ; Get the list of yielded generic actors
     Int count = StorageUtil.FormListCount(None, "SeverCombat_YieldedGenericActors")
     If count == 0
         Return
@@ -1302,11 +1212,8 @@ Function ReassignYieldSlots()
                 ; Re-zero aggression — generic NPCs can have actor values reset by template on load
                 npc.SetActorValue("Aggression", 0)
 
-                ; YieldMonitor is cosave-backed ('YELD' record) — it already
-                ; restored this actor with the correct original aggression.
-                ; Only re-register when the native side genuinely lost them
-                ; (pre-cosave save), or the StorageUtil 1.0 default would
-                ; stomp the cosaved original.
+                ; YieldMonitor restores from its 'YLDD' cosave record; re-register only
+                ; when it lost the actor, or the 1.0 default here would stomp the original.
                 If !SeverActionsNative.IsYieldMonitored(npc)
                     Float origAggro = StorageUtil.GetFloatValue(npc, "SeverCombat_OriginalAggression", 1.0)
                     SeverActionsNative.RegisterYieldedActor(npc, origAggro, SeverSurrenderedFaction)
@@ -1327,43 +1234,83 @@ Function ReassignYieldSlots()
     EndIf
 EndFunction
 
-; ============================================================================
-; CAMP CHALLENGE
-; ============================================================================
-; Flow, end to end:
+; === CAMP CHALLENGE ===
+; Flow:
 ;   native CampChallenge   -> SeverActions_CampChallenge  (challenger picked)
 ;   OnCampChallenge        -> walk them to the player     (follow pkg + Arrival)
-;   HandleChallengeArrived -> the card                    (PrismaUI prompt)
+;   HandleChallengeArrived -> the card                    (Magelight prompt)
 ;   OnCampChallengeChoice  -> posture                     (parley / refuse)
 ;   parley                 -> the OUTLAW decides in dialogue via the
 ;                             LetThemPass / RunThemOff actions
 ;
-; Fail-open is the rule throughout. Every path that cannot complete the
-; encounter (no challenger, no UI, a walk that never finishes) ALLOWS rather
-; than refuses: a plumbing failure must never start a fight the player had no
-; chance to avoid. Only a real answer - or a real refusal to give one - turns
-; the camp.
+; Fail-open throughout: a path that cannot complete the encounter (no
+; challenger, no UI, a walk that never finishes) ALLOWS, so plumbing never
+; starts a fight. Only a real answer, or a refusal to give one, turns the camp.
+
+; The walk borrows the arrest's follow-player package, by FormID: combat may not
+; name the arrest module's type (DR2).
+Package Function ChallengeFollowPackage() Global
+    {SeverActions_GuardFollowPlayer - Target = LinkedRef with FollowTargetKW.}
+    Return Game.GetFormFromFile(0x0AEAF6, "SeverActions.esp") as Package
+EndFunction
+
+Keyword Function ChallengeFollowKeyword() Global
+    {SeverActions_FollowTargetKW - the LinkedRef keyword that package follows.}
+    Return Game.GetFormFromFile(0x030155, "SeverActions.esp") as Keyword
+EndFunction
+
+Event OnArrival(String eventName, String strArg, Float numArg, Form sender)
+    {Shared native arrival (M-E): every consumer's OnArrival fires for every arrival,
+     so answer only our own tag.}
+    If strArg != "camp_challenge_arrived"
+        Return
+    EndIf
+    Actor arrived = sender as Actor
+    If arrived
+        HandleChallengeArrived(arrived)
+    EndIf
+EndEvent
 
 Function CleanUpChallengeWalk(Actor akChallenger)
-    {Drop everything the approach put on them. Safe to call twice.}
+    {Drop the walk: the arrival and stuck watches, the look-at, the follow override and, unless
+     another system holds them, the FollowTargetKW link. The drawn weapon and the parley window
+     are the caller's. Safe to call twice.}
     If akChallenger == None
         Return
     EndIf
     SeverActionsNativeExt.Arrival_Cancel(akChallenger)
     SeverActionsNativeExt.Stuck_StopTracking(akChallenger)
-    SeverActions_Arrest arrestRef = (Self as Quest) as SeverActions_Arrest
-    If arrestRef && arrestRef.SeverActions_GuardFollowPlayer
-        ActorUtil.RemovePackageOverride(akChallenger, arrestRef.SeverActions_GuardFollowPlayer)
-        akChallenger.EvaluatePackage()
+    akChallenger.ClearLookAt()
+    ; Brawl's challenge walk uses the same package; its own teardown removes it.
+    Package followPkg = ChallengeFollowPackage()
+    If followPkg && !SeverActionsNative.Native_BrawlChallenge_IsActive(akChallenger)
+        ActorUtil.RemovePackageOverride(akChallenger, followPkg)
     EndIf
+    ; The link is cosaved (LREF) and re-applied on every load, so it goes too, unless another
+    ; system has since taken them on the same keyword.
+    Keyword followKW = ChallengeFollowKeyword()
+    If followKW && !_WalkClaimedElsewhere(akChallenger)
+        SeverActionsNative.LinkedRef_Clear(akChallenger, followKW)
+    EndIf
+    akChallenger.EvaluatePackage()
+EndFunction
+
+Bool Function _WalkClaimedElsewhere(Actor akActor)
+    {True while another system holds akActor on FollowTargetKW: an arrest session or task, the
+     Final Audit, a bodyguard post, a kidnap or a brawl challenge (the holders
+     SeverActions_Arrest.ClearStaleArrestState also exempts).}
+    Return SeverActionsNative.Native_ArrestSession_HasSession(akActor) \
+        || SeverActionsNativeExt2.Native_ArrestSession_IsGuardOnTask(akActor) \
+        || SeverActionsNativeExt2.Venture_Audit_IsCollector(akActor) \
+        || (SeverActionsNative.Native_GetWorkLoc(akActor) as Actor) != None \
+        || SeverActionsNativeExt.Native_Kidnap_GetPhase(akActor) != 0 \
+        || SeverActionsNativeExt.Native_Kidnap_FindVictimOf(akActor) != None \
+        || SeverActionsNative.Native_BrawlChallenge_IsActive(akActor)
 EndFunction
 
 Event OnCampChallenge(String eventName, String strArg, Float numArg, Form sender)
-    {Native picked a challenger. Walk them over to the player.
-
-     The walk reuses the arrest's follow-player package (Target = LinkedRef
-     with FollowTargetKW), borrowed off the Arrest script - same quest, so the
-     property is right there and there is no second package to keep in sync.}
+    {Native picked a challenger. Walk them over to the player (see
+     ChallengeFollowPackage).}
 
     Actor challenger = sender as Actor
     Debug.Trace("[SeverActions] OnCampChallenge fired, challenger=" + challenger)
@@ -1372,9 +1319,21 @@ Event OnCampChallenge(String eventName, String strArg, Float numArg, Form sender
         SeverActionsNativeExt2.Camp_ChallengeAllow()
         Return
     EndIf
+    ; A traveler does not leave the road to challenge anyone.
+    If SeverActionsNativeExt2.Travel_GetPhaseByActor(challenger) == 1
+        Debug.Trace("[SeverActions] OnCampChallenge: " + challenger.GetDisplayName() + " is traveling - allowing")
+        SeverActionsNativeExt2.Camp_ChallengeAllow()
+        Return
+    EndIf
 
-    ; A challenge already in flight wins; this one is dropped rather than
-    ; stacking two walkers on one player.
+    ; A challenge in flight wins over a new one, but first drop a slot the native
+    ; watchdog already expired, or it would swallow every later challenge.
+    If CurrentChallenger != None && !SeverActionsNativeExt2.Camp_ChallengeIsPending(CurrentChallenger)
+        Actor expired = CurrentChallenger
+        CurrentChallenger = None
+        ; The watchdog tells Papyrus nothing, so the expired challenger may still be on the walk.
+        CleanUpChallengeWalk(expired)
+    EndIf
     If CurrentChallenger != None && CurrentChallenger != challenger
         Debug.Trace("[SeverActions] OnCampChallenge: a challenge is already in flight (" + CurrentChallenger + ") - dropping this one")
         Return
@@ -1391,17 +1350,18 @@ Event OnCampChallenge(String eventName, String strArg, Float numArg, Form sender
         Return
     EndIf
 
-    SeverActions_Arrest arrestRef = (Self as Quest) as SeverActions_Arrest
-    If arrestRef == None || arrestRef.SeverActions_GuardFollowPlayer == None
-        ; No package to walk them with - ask from where they stand rather
-        ; than dropping the encounter.
+    Package followPkg = ChallengeFollowPackage()
+    Keyword followKW = ChallengeFollowKeyword()
+    If followPkg == None || followKW == None
+        ; No package: ask from where they stand rather than drop the encounter.
         Debug.Trace("[SeverActions] OnCampChallenge: no follow package available - asking from where they stand")
         HandleChallengeArrived(challenger)
         Return
     EndIf
 
-    SeverActionsNative.LinkedRef_Set(challenger, player, arrestRef.SeverActions_FollowTargetKW)
-    ActorUtil.AddPackageOverride(challenger, arrestRef.SeverActions_GuardFollowPlayer, arrestRef.PackagePriority, 1)
+    SeverActionsNative.LinkedRef_Set(challenger, player, followKW)
+    ; 100 is Arrest.PackagePriority, which has no VMAD fill - the .psc default is the runtime value.
+    ActorUtil.AddPackageOverride(challenger, followPkg, 100, 1)
     challenger.EvaluatePackage()
 
     SeverActionsNativeExt.Stuck_StartTracking(challenger)
@@ -1410,18 +1370,15 @@ Event OnCampChallenge(String eventName, String strArg, Float numArg, Form sender
 EndEvent
 
 Function HandleChallengeArrived(Actor akChallenger)
-    {The challenger reached the player. Put the card up.
-
-     Routed here from SeverActions_Arrest's OnArrival - that script owns the
-     quest's one OnArrival callback and forwards by tag.}
+    {The challenger reached the player (or needed no walk): open the card or the
+     parley.}
 
     Debug.Trace("[SeverActions] HandleChallengeArrived: " + akChallenger)
     If akChallenger == None || CurrentChallenger != akChallenger
         Debug.Trace("[SeverActions] HandleChallengeArrived: stale (slot holds " + CurrentChallenger + ") - ignoring")
         Return
     EndIf
-    ; The world may have moved on during the walk (killed, camp broken by
-    ; something else, player left). Native is the authority.
+    ; The world may have moved on during the walk; native is the authority.
     If !SeverActionsNativeExt2.Camp_ChallengeIsPending(akChallenger)
         Debug.Trace("[SeverActions] HandleChallengeArrived: native no longer has this challenge pending - dropping")
         CleanUpChallengeWalk(akChallenger)
@@ -1429,19 +1386,15 @@ Function HandleChallengeArrived(Actor akChallenger)
         Return
     EndIf
 
-    ; Stop the ARRIVAL machinery but KEEP the follow package and LinkedRef.
-    ; The first live test removed everything here, and the challenger sandbox-
-    ; walked straight home mid-question - the split-second-run-then-leave
-    ; report. Like the arrest plea, the follow holds through the parley (they
-    ; track the player, weapon out) and is stripped only by the verdict paths.
+    ; Stop the arrival machinery but KEEP the follow package and LinkedRef, or the
+    ; challenger walks home mid-question; only the verdict paths strip them.
     SeverActionsNativeExt.Arrival_Cancel(akChallenger)
     SeverActionsNativeExt.Stuck_StopTracking(akChallenger)
     akChallenger.SetLookAt(Game.GetPlayer())
     akChallenger.DrawWeapon()
 
-    ; Tell native the handoff COMPLETED - the watchdog stands down. Without
-    ; this it declared the challenge dropped 45s into the 120s parley and
-    ; re-dispatched the same bandit every 48 seconds.
+    ; Handoff complete: stands down the native watchdog, which would otherwise
+    ; drop the challenge mid-parley and re-dispatch it.
     SeverActionsNativeExt2.Camp_ChallengeEngaged()
 
     ; Say it in the scene, not just the corner of the screen.
@@ -1450,41 +1403,27 @@ Function HandleChallengeArrived(Actor akChallenger)
     String campName = SeverActionsNativeExt2.Camp_Name(akChallenger)
     Int timeoutMs = (ChallengeParleySeconds * 1000.0) as Int
 
-    ; The card is opt-in. With it off the outlaw simply stands there having
-    ; asked, and the player answers in dialogue - which is where the verdict
-    ; is decided either way. The card only ever states the question; it never
-    ; decides anything the parley would not.
-    ; No corner-of-screen notification on either path - the direct narration
-    ; above IS the announcement, and the outlaw standing on the player with
-    ; steel out says the rest (user call, 2026-08-03).
+    ; The verdict is decided in dialogue either way; the opt-in card only states
+    ; the question. No notification: the narration above is the announcement.
     If !CampChallengeCardEnabled
         BeginChallengeParley(akChallenger)
-    ElseIf !SeverActionsNativeExt2.PrismaUI_OpenChallengePrompt(akChallenger, campName, timeoutMs)
-        ; Card wanted but unavailable (PrismaUI missing, or another view holds
-        ; focus). Same fallback - never swallow the challenge.
+    ElseIf !SeverActionsNativeExt2.Magelight_OpenChallengePrompt(akChallenger, campName, timeoutMs)
+        ; Card unavailable (no Magelight, or another view has focus): same fallback.
         BeginChallengeParley(akChallenger)
     EndIf
 EndFunction
 
 Function BeginChallengeParley(Actor akChallenger)
-    {The player chose to answer. Start the clock and let the outlaw decide.
-
-     Nothing is granted here - the verdict comes from the challenger, in
-     dialogue, through LetThemPass / RunThemOff. The clock only exists so
-     that walking away mid-question counts as the refusal it obviously is.}
+    {Start the parley clock. Nothing is granted here: the challenger gives the
+     verdict in dialogue (LetThemPass / RunThemOff); the clock makes a timeout or
+     walking away count as a refusal.}
 
     If akChallenger == None
         Return
     EndIf
-    ; The persuasion monitor is a singleton shared with the arrest plea. If
-    ; one is already running we simply skip the clock: a live parley without
-    ; a timer is far better than stomping an arrest in progress.
-    If !SeverActionsNative.Native_Persuasion_IsActive()
-        SeverActionsNative.Native_Persuasion_Begin(akChallenger, Game.GetPlayer(), ChallengeParleySeconds, ChallengeParleyDistance)
-        Debug.Trace("[SeverActions] BeginChallengeParley: clock started, " + ChallengeParleySeconds + "s")
-    Else
-        Debug.Trace("[SeverActions] BeginChallengeParley: persuasion already active (arrest plea?) - no clock")
-    EndIf
+    ; The challenger's own window: an arrest plea or ambush keeps its own clock.
+    SeverActionsNative.Native_Persuasion_Begin(akChallenger, Game.GetPlayer(), ChallengeParleySeconds, ChallengeParleyDistance)
+    Debug.Trace("[SeverActions] BeginChallengeParley: clock started, " + ChallengeParleySeconds + "s")
 EndFunction
 
 Event OnCampChallengeChoice(String eventName, String strArg, Float numArg, Form sender)
@@ -1496,6 +1435,7 @@ Event OnCampChallengeChoice(String eventName, String strArg, Float numArg, Form 
     EndIf
     If !SeverActionsNativeExt2.Camp_ChallengeIsPending(challenger)
         CurrentChallenger = None
+        CleanUpChallengeWalk(challenger)
         Return
     EndIf
 
@@ -1506,26 +1446,24 @@ Event OnCampChallengeChoice(String eventName, String strArg, Float numArg, Form 
     ElseIf strArg == "denySilent"
         ; Answered with a drawn weapon.
         CurrentChallenger = None
-        SeverActionsNative.Native_Persuasion_End()
+        SeverActionsNativeExt2.Native_Persuasion_EndFor(challenger)
         SeverActionsNativeExt2.Camp_ChallengeRefuse("the player answered with a drawn weapon")
+        CleanUpChallengeWalk(challenger)
         Game.GetPlayer().DrawWeapon()
 
     Else
         ; deny, a dismiss, or an expired card - all the same answer.
         CurrentChallenger = None
-        SeverActionsNative.Native_Persuasion_End()
+        SeverActionsNativeExt2.Native_Persuasion_EndFor(challenger)
         SeverActionsNativeExt2.Camp_ChallengeRefuse("the player pushed past without answering")
         CleanUpChallengeWalk(challenger)
         challenger.StartCombat(Game.GetPlayer())
     EndIf
 EndEvent
 
-; ----------------------------------------------------------------------------
-; The verdict - given by the CHALLENGER, in dialogue
-; ----------------------------------------------------------------------------
-; Both are gated on the camp_challenge_pending decorator, so only the outlaw
-; actually doing the challenging can end it. Everyone else in the camp reads
-; empty and never sees these in their eligible list.
+; --- The verdict, given by the CHALLENGER in dialogue ---
+; Both actions gate on the camp_challenge_pending decorator, so only the
+; challenger is offered them.
 
 Function LetThemPass_Execute(Actor akSpeaker)
     {The outlaw is satisfied. The truce holds for this visit.}
@@ -1533,7 +1471,7 @@ Function LetThemPass_Execute(Actor akSpeaker)
         Return
     EndIf
     CurrentChallenger = None
-    SeverActionsNative.Native_Persuasion_End()
+    SeverActionsNativeExt2.Native_Persuasion_EndFor(akSpeaker)
     CleanUpChallengeWalk(akSpeaker)
     akSpeaker.SheatheWeapon()
     SeverActionsNativeExt2.Camp_ChallengeAllow()
@@ -1545,20 +1483,17 @@ Function RunThemOff_Execute(Actor akSpeaker)
         Return
     EndIf
     CurrentChallenger = None
-    SeverActionsNative.Native_Persuasion_End()
+    SeverActionsNativeExt2.Native_Persuasion_EndFor(akSpeaker)
     CleanUpChallengeWalk(akSpeaker)
     SeverActionsNativeExt2.Camp_ChallengeRefuse("the outlaw refused the player passage")
-    ; The one who gave the verdict leads the charge - see the cleanup event
-    ; for why restore alone is not enough for a passive-by-record challenger.
+    ; The challenger leads the charge (see OnCampChallengeCleanup).
     akSpeaker.StartCombat(Game.GetPlayer())
 EndFunction
 
 Event OnCampChallengeCleanup(String eventName, String strArg, Float numArg, Form sender)
-    {Native refused the challenge (persuasion timeout or the player walking
-     off - routed natively because this quest form's second registration of
-     SeverActions_PersuasionFailed never fires; see PersuasionMonitor.h).
-     The camp is already broken; this handles the walk teardown, says the
-     patience ran out IN THE SCENE, and puts the challenger into the fight.}
+    {Native refused the challenge (parley timeout or the player walked off; routed
+     natively, see RegisterEvents). The camp is already broken: tear down the walk,
+     narrate it, and put the challenger into the fight.}
     Actor challenger = sender as Actor
     Debug.Trace("[SeverActions] OnCampChallengeCleanup: " + challenger + " (" + strArg + ")")
     If challenger == None
@@ -1572,9 +1507,7 @@ Event OnCampChallengeCleanup(String eventName, String strArg, Float numArg, Form
         Return
     EndIf
 
-    ; Say it before the swing - the player watched a silent NPC walk off and
-    ; then the room aggro. Two flavors: the clock ran out to their face, or
-    ; the player walked off mid-question.
+    ; Narrate before the swing: the player walked off, or the clock ran out.
     Actor player = Game.GetPlayer()
     If StringUtil.Find(strArg, "walked away") >= 0
         SkyrimNetApi.DirectNarration("*" + challenger.GetDisplayName() + " watches " + player.GetDisplayName() + " walk off mid-question. That answer suits the camp fine - blades come out.*", challenger, player)
@@ -1582,21 +1515,14 @@ Event OnCampChallengeCleanup(String eventName, String strArg, Float numArg, Form
         SkyrimNetApi.DirectNarration("*" + challenger.GetDisplayName() + "'s patience runs out. Silence is an answer too - and the whole camp draws the same conclusion.*", challenger, player)
     EndIf
 
-    ; The membership break restores everyone to their ORIGINAL aggression -
-    ; which is faithful, and exactly why a passive-by-record challenger
-    ; (Fort Greymoor's caretaker holds the bandit faction at aggression 0)
-    ; shrugged and walked away while the room aggro'd around her. The one
-    ; who asked the question does not get to sit the answer out: force the
-    ; engagement. StartCombat is the Papyrus-only half the native break
-    ; deliberately leaves to us.
+    ; The native break restores ORIGINAL aggression, so a challenger passive by
+    ; record (aggression 0) would sit the fight out; StartCombat is left to Papyrus.
     challenger.StartCombat(player)
 EndEvent
 
 Event OnCampHoardPlundered(String eventName, String strArg, Float numArg, Form sender)
-    {The player emptied a camp's boss chest and the camp turned (native
-     CampLoot broke it by roster). This writes the WHY into SkyrimNet's
-     persistent record - without it the outlaws attacked with no idea what
-     changed, which read as random aggression. strArg = camp name,
+    {The player emptied a camp's boss chest and native CampLoot turned the camp;
+     record why in SkyrimNet so the outlaws know. strArg = camp name,
      numArg = members turned, sender = the chief when one stands.}
     String campName = strArg
     If campName == ""
@@ -1606,4 +1532,117 @@ Event OnCampHoardPlundered(String eventName, String strArg, Float numArg, Form s
     String playerName = Game.GetPlayer().GetDisplayName()
     SkyrimNetApi.RegisterPersistentEvent(playerName + " plundered the war chest of " + campName + " under truce - the crew watched their hoard walk out the door, and the whole camp has turned on " + playerName + " for it.", chief, Game.GetPlayer())
     Debug.Trace("[SeverActions] OnCampHoardPlundered: " + campName + " (" + (numArg as Int) + " turned)")
+EndEvent
+
+; === M-V VERB DISPATCHER (plan 3.0 M-V, DR10) ===
+; Verbs this module dispatches (Native/data/verb_table.json) arrive as
+; SeverActions_Verb_Combat with the 8 pipe fields. This is the ONE script that
+; defines OnVerb_Combat (F4); RegisterEvents registers it.
+Event OnVerb_Combat(String eventName, String strArg, Float numArg, Form sender)
+    String actionId = SeverActions_ModuleBase.VerbField(strArg, 0)
+    String targetName = SeverActions_ModuleBase.VerbField(strArg, 1)
+    String target2Name = SeverActions_ModuleBase.VerbField(strArg, 2)
+    String strParam = SeverActions_ModuleBase.VerbField(strArg, 3)
+    Int intParam = SeverActions_ModuleBase.VerbField(strArg, 4) as Int
+    String str2Param = SeverActions_ModuleBase.VerbField(strArg, 5)
+    Int targetFid = SeverActions_ModuleBase.VerbField(strArg, 6) as Int
+    Int target2Fid = SeverActions_ModuleBase.VerbField(strArg, 7) as Int
+    Debug.Trace("[SeverActions_Combat] OnVerb_Combat: " + actionId + " target=" + targetName + " target2=" + target2Name \
+        + " str=" + strParam + " int=" + intParam + " str2=" + str2Param + " fid=" + targetFid + " fid2=" + target2Fid)
+
+    ; Sender, then the encoded FormID, then the fuzzy name; names are then
+    ; re-canonicalized to display names.
+    Actor target = SeverActions_ModuleBase.VerbActor(sender, targetFid, targetName)
+    If !target
+        Debug.Trace("[SeverActions_Combat] OnVerb_Combat: could not resolve target '" + targetName + "' for " + actionId)
+        Return
+    EndIf
+    targetName = target.GetDisplayName()
+    Actor target2 = SeverActions_ModuleBase.VerbActor(None, target2Fid, target2Name)
+    If target2
+        target2Name = target2.GetDisplayName()
+    ElseIf target2Name != ""
+        Debug.Trace("[SeverActions_Combat] OnVerb_Combat: target2 name '" + target2Name + "' did not resolve to an actor (action=" + actionId + ")")
+    EndIf
+
+    ; -- Combat (own code) --
+    If actionId == "ceaseFire"
+        CeaseFire_Execute(target, None)
+
+    ElseIf actionId == "attackTarget"
+        If target2
+            _AttackTarget(target, target2, False)
+        EndIf
+
+    ElseIf actionId == "yield"
+        Yield_Execute(target)
+
+    ; -- Brawl (sibling script; mirrors the YAML entry points 1:1).
+    ;    target = the acting participant, target2 = the other one.
+    ElseIf actionId == "challengeBrawl"
+        SeverActions_Brawl brawlChallenge = (Self as Quest) as SeverActions_Brawl
+        If brawlChallenge && target2
+            brawlChallenge.ChallengeBrawl_Execute(target, target2)
+        EndIf
+
+    ElseIf actionId == "acceptBrawl"
+        ; target2 may be None: AcceptBrawl_Execute finds the pending challenge natively.
+        SeverActions_Brawl brawlAccept = (Self as Quest) as SeverActions_Brawl
+        If brawlAccept
+            brawlAccept.AcceptBrawl_Execute(target, target2)
+        EndIf
+
+    ElseIf actionId == "declineBrawl"
+        SeverActions_Brawl brawlDecline = (Self as Quest) as SeverActions_Brawl
+        If brawlDecline
+            brawlDecline.DeclineBrawl_Execute(target, target2)
+        EndIf
+
+    ElseIf actionId == "forfeitBrawl"
+        SeverActions_Brawl brawlForfeit = (Self as Quest) as SeverActions_Brawl
+        If brawlForfeit
+            brawlForfeit.ForfeitBrawl_Execute(target)
+        EndIf
+
+    Else
+        Debug.Trace("[SeverActions_Combat] OnVerb_Combat: unknown actionId '" + actionId + "' (not a row this dispatcher carries)")
+    EndIf
+
+    ; Refresh after the forwarded call returns: the DLL's own refresh fires one
+    ; frame after routing, before this Papyrus work lands.
+    SeverActionsNative.Magelight_RefreshPage("world")
+    SeverActionsNative.Magelight_RefreshPage("enterprises")
+EndEvent
+
+; === M-K HOTKEY DISPATCHER (plan 3.0 M-K, DR10) ===
+; SeverActions_Hotkey_Combat from the DLL's input sink: strArg = hotkey id,
+; sender = the target resolved by targetMode, or None. The sink already applied
+; the global gates (menus, dialogue, dead, sitting); branches keep the per-key rules.
+Event OnHotkey_Combat(String eventName, String strArg, Float numArg, Form sender)
+    ; "wheel:<id>" = the quick wheel's pick of the same hotkey (fromWheel is unused here).
+    String hotkeyId = strArg
+    Bool fromWheel = false
+    If StringUtil.Substring(strArg, 0, 6) == "wheel:"
+        fromWheel = true
+        hotkeyId = StringUtil.Substring(strArg, 6)
+    EndIf
+    Actor target = sender as Actor
+    Actor player = Game.GetPlayer()
+    Debug.Trace("[SeverActions_Combat] OnHotkey_Combat: " + hotkeyId + " target=" + target)
+
+    If hotkeyId == "Yield"
+        If !target
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("hotkeys.noValidTarget"))
+        ElseIf target == player
+            Debug.Notification(SeverActionsNativeExt2.Native_L10n("hotkeys.cannotTargetYourself"))
+        ElseIf Yield_IsEligible(target)
+            Yield_Execute(target)
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hotkeys.hasSurrendered", ("" + target.GetDisplayName())))
+        Else
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hotkeys.isNotInCombat", ("" + target.GetDisplayName())))
+        EndIf
+
+    Else
+        Debug.Trace("[SeverActions_Combat] OnHotkey_Combat: unknown hotkeyId '" + hotkeyId + "' (not a row this dispatcher carries)")
+    EndIf
 EndEvent

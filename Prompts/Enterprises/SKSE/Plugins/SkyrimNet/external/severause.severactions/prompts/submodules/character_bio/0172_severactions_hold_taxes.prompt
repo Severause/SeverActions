@@ -1,0 +1,23 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" or render_mode == "dialogue_target" %}
+{# The jarl's hold tax: "you" in the jarl's own speaker modes, third person in the drill-down and as a listener. Each
+   action pointer renders only where the jarl can choose the action (NPC dialogue and the drill-down). #}
+{% set _actionsOffered = render_mode == "action" or (render_mode == "full" and default(responseTarget.type, "none") != "none") %}
+{% if isValidActor(actorUUID) %}
+{% set tax_ctx = hold_tax_rate(actorUUID) %}
+{% if tax_ctx != "" %}
+## Hold Taxes
+{{ tax_ctx }}
+{% if render_mode == "dialogue_target" or render_mode == "action" %}
+- As Jarl, {{ decnpc(actorUUID).name }} sets this tax and may ease or raise it.
+{% if render_mode == "action" %}
+- When {{ decnpc(actorUUID).name }} decides in this exchange to ease or raise it, select the **Taxes** action category, then **GrantTaxRelief** to ease it or **RaiseHoldTaxes** to raise it.
+{% endif %}
+{% else %}
+- As Jarl, you set this tax on {{ player.name }}'s enterprises. A respectful, well-argued petition or real service to the hold may move you to ease it; insults, threats or brazen behavior may move you to raise it. Whether to budge, and which way, is your own judgment.
+{% if _actionsOffered %}
+- When you decide in this exchange, select the **Taxes** action category, then **GrantTaxRelief** or **RaiseHoldTaxes**.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

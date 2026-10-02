@@ -1,0 +1,59 @@
+customCategory: economy
+name: RepayDebt
+description: "Use when the speaker pays back, now, money they owe this person: coin toward their own tab or loan. An amount of 0 pays everything owed; it never pays more than the debt. Not for promising to repay later. Collecting what the speaker is owed is CollectPayment; a gift is GiveGold; working a debt off without coin is ReduceDebt."
+questEditorId: SeverActions
+scriptName: SeverActions_Currency
+executionFunctionName: RepayDebt_Execute
+parameterMapping:
+  - type: speaker
+    name: akDebtor
+    description: the actor paying back what they owe
+  - type: dynamic
+    name: creditor
+    description: "who the speaker owes: exact name as listed in Nearby Actors, or the player's name"
+  - type: dynamic
+    name: amount
+    description: "gold to pay, a whole number; 0 or left empty pays everything owed"
+    optional: true
+    default: 0
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      # Only a debtor. sever_is_debtor reads the debt store by FormID (a
+      # faction named by EditorID never resolves on VR). Custom decorator, so
+      # a STRING compare: "" = owes nothing.
+      - decoratorName: "sever_is_debtor"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

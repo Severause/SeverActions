@@ -1,0 +1,71 @@
+customCategory: sa_captives
+name: KidnapNPC
+description: "Use only when {{ player.name }} explicitly orders the speaker to abduct a named person and says where to take them, and the speaker agrees in this line. The speaker leaves at once, seizes the target wherever they are, delivers them bound and hooded, and stands guard. Not for jokes, grumbling or 'we should grab him someday'. Abducting quest-important people can break their quests. To bind someone standing here, RestrainNPC."
+questEditorId: SeverActions
+scriptName: SeverActions_Kidnap
+executionFunctionName: KidnapNPC
+parameterMapping:
+  - type: speaker
+    name: akKidnapper
+    description: the companion carrying out the abduction
+  - type: dynamic
+    name: targetName
+    description: "exact name of the person to abduct (e.g. 'Nazeem'); they may be elsewhere"
+  - type: dynamic
+    name: destination
+    description: "where to deliver them: a named place, house or interior (e.g. 'Breezehome', 'Whiterun')"
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      # Opt-in feature toggle (MCM / PrismaUI Settings, default OFF).
+      # Custom decorator — STRING compare, "" = disabled. Never `== true`.
+      - decoratorName: "sever_kidnap_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Speaker must be a SeverActions companion (string decorator — != "").
+      - decoratorName: "is_sever_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives or take new ones (the
+      # self-release hole). String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Arrest in flight (either side), judgment, escort, spell cast — the
+      # SeverActions arrest path calls SetActorBusy("arrest") on BOTH the
+      # guard and the person being arrested. Users reported each of them
+      # kicking off an abduction mid-arrest; two FSMs then fight over the same
+      # actor's packages and captured AVs. Built-in decorator, real bool.
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

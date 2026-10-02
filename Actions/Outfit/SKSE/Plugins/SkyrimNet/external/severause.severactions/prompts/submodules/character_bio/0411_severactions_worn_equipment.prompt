@@ -1,0 +1,57 @@
+{% if render_mode == "full" or render_mode == "action" or render_mode == "dialogue_target" %}
+{# Adds to SkyrimNet's own 0410_equipment (never replaces it). In "action", where base 0410 renders nothing, the drill-down's
+   list; in full/dialogue_target, a renamed item's game name (the name the Outfit actions match). Name items as base 0410
+   does (keep them in step). The "you" rule is for "full" only; SA's background prompts read "transform" bios as outsiders. #}
+{% set eq_worn = get_worn_equipment(actorUUID) %}
+{% if render_mode == "action" %}
+    ## Worn Equipment
+    {% set eq_tempered = get_tempered_items(actorUUID) %}
+    {% set eq_count = 0 %}
+    {% for eq_slot, eq_item in eq_worn %}
+        {% if is_item_enabled(eq_item.formID) %}
+            {% set eq_name = get_item_name_for_wearer(eq_item.formID, actorUUID) %}
+            {% if length(eq_name) == 0 %}
+                {% set eq_name = get_item_name(eq_item.formID) %}
+            {% endif %}
+            {% set eq_original = get_item_customization(eq_item.formID).originalName %}
+            {% set eq_quality = "" %}
+            {% for t in eq_tempered %}
+                {% if t.formID == eq_item.formID and isString(t.quality) and length(t.quality) > 0 %}
+                    {% set eq_quality = t.quality %}
+                {% endif %}
+            {% endfor %}
+            {% set eq_count = eq_count + 1 %}
+            {% if eq_item.equipment_slot == "leftHand" or eq_item.equipment_slot == "rightHand" %}
+                - **{{ eq_item.equipment_slot }}**: {{ eq_name }}{% if isString(eq_original) and length(eq_original) > 0 and eq_original != eq_name %} ({{ eq_original }}){% endif %}{% if length(eq_quality) > 0 %} [{{ eq_quality }}]{% endif %} {% if has_weapon_drawn(actorUUID) %}(drawn){% else %}(sheathed){% endif %}
+            {% else %}
+                - **{{ eq_item.slot_body_area }}**: {{ eq_name }}{% if isString(eq_original) and length(eq_original) > 0 and eq_original != eq_name %} ({{ eq_original }}){% endif %}{% if length(eq_quality) > 0 %} [{{ eq_quality }}]{% endif %}
+            {% endif %}
+        {% endif %}
+    {% endfor %}
+    {% if eq_count == 0 %}
+    Nothing is worn, whatever was said earlier.
+    {% else %}
+    Nothing else is worn, whatever was said earlier.
+    {% endif %}
+{% else %}
+    {% set eq_renamed = [] %}
+    {% for eq_slot, eq_item in eq_worn %}
+        {% if is_item_enabled(eq_item.formID) %}
+            {% set eq_name = get_item_name_for_wearer(eq_item.formID, actorUUID) %}
+            {% if length(eq_name) == 0 %}
+                {% set eq_name = get_item_name(eq_item.formID) %}
+            {% endif %}
+            {% set eq_original = get_item_customization(eq_item.formID).originalName %}
+            {% if isString(eq_original) and length(eq_original) > 0 and eq_original != eq_name %}
+                {% set eq_renamed = append(eq_renamed, eq_name + " (" + eq_original + ")") %}
+            {% endif %}
+        {% endif %}
+    {% endfor %}
+    {% if length(eq_renamed) > 0 %}
+    Worn items that also go by another name: {{ join(unique(eq_renamed), ", ") }}.
+    {% endif %}
+    {% if render_mode == "full" %}
+    Worn Equipment is exactly what you have on right now; you are not wearing anything else, whatever was said earlier.
+    {% endif %}
+{% endif %}
+{% endif %}

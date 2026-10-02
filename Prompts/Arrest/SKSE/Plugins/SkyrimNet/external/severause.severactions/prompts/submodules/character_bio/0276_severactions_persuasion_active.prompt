@@ -1,0 +1,38 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# The guard confronting the player over a bounty after the player chose to talk their way out (ArrestPlayer's
+   persuasion); only that guard, only while the hearing lasts. Action rules render only where an action can be
+   chosen (_actionsOffered: NPC dialogue and the drill-down). #}
+{% set _actionsOffered = render_mode == "action" or (render_mode == "full" and default(responseTarget.type, "none") != "none") %}
+{% if player and player.UUID and actorUUID != player.UUID %}
+{% set inPersuasionMode = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "InPersuasionMode") %}
+{% set confrontingGuard = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "ConfrontingGuard") %}
+{% set confrontingBounty = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "ConfrontingBounty") %}
+{% if inPersuasionMode and confrontingGuard and confrontingGuard.uuid == actorUUID %}
+{% set actor = decnpc(actorUUID) %}
+{% set playerName = player.name %}
+{% set subj = actor.subjectivePronoun %}
+## {{ playerName }}'s Plea
+{{ actor.name }} has stopped {{ playerName }} over a {{ confrontingBounty }} gold bounty, and {{ playerName }} is trying to talk their way out of arrest.
+- {{ actor.name }} hears {{ playerName }} out and judges the case: a genuine, compelling argument, or excuses?
+{% if _actionsOffered %}
+- Once {{ subj }} has decided, select the **Arrest** action category, then **AcceptPersuasion** to let {{ playerName }} go, or **RejectPersuasion** if {{ playerName }} must face justice. While still listening, just talk; the verdict is not due on the first line.
+- Until the verdict, no other action category.
+- The line that gives the verdict says why, in character.
+{% endif %}
+{% if confrontingBounty >= 1000 %}
+- The bounty is very high, for serious crimes: only an exceptional argument, real leverage or a serious incentive should move {{ actor.name }}.
+{% elif confrontingBounty >= 300 %}
+- The bounty is significant: it takes solid reasoning, a good name or worthwhile compensation to overlook it.
+{% else %}
+- The bounty is minor: {{ actor.name }} may be open to a reasonable explanation or a small consideration.
+{% endif %}
+
+**What weighs on the verdict:**
+- {{ playerName }}'s standing: a known hero, a thane, someone important, or a known troublemaker.
+- The crime itself: violent, petty, or something that could be overlooked.
+- {{ actor.name }}'s own nature: by the book or flexible, corrupt or honorable.
+- What {{ playerName }} offers in return: coin, favors, or an arrangement some guards would take.
+- Whether {{ actor.name }} has reason to fear, respect or owe {{ playerName }}.
+{% endif %}
+{% endif %}
+{% endif %}

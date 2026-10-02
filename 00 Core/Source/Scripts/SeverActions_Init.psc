@@ -1,49 +1,34 @@
 Scriptname SeverActions_Init extends ReferenceAlias
-{Initializer script for SeverActions - attach to Player alias on your quest}
+{The kernel's load manager, on alias 0 (the player) of quest 0x000D62: the only script that gets
+ OnPlayerLoadGame (quest scripts never do) and, on VR, the only Papyrus door of a new game (F21).
+ Every load and new game runs K0 the DLL ABI handshake, K1 the kernel seeds and prompt mirrors,
+ K2 provider discovery, K3 the providers' OnModuleLoad stages 0-2 (every module's load recovery and
+ first-time setup, idempotent, DR20) and K4 the chronometer watchdog. Init names no module or
+ Legacy-shim type (DR1); the menu keys and the MCM's old load duties are the DLL's (KernelSession).}
 
-; =============================================================================
-; PROPERTIES - Set these in CK
-; =============================================================================
+; === Initialization ===
 
-SeverActions_FertilityMode_Bridge Property FertilityBridge Auto
-{Optional - Link to the FM bridge script if using Fertility Mode}
-
-SeverActions_Travel Property TravelSystem Auto
-{Optional - Link to the Travel system quest script}
-
-SeverActions_Hotkeys Property HotkeySystem Auto
-{Optional - Link to the Hotkeys system for keyboard shortcuts}
-
-SeverActions_Furniture Property FurnitureSystem Auto
-{Optional - Link to the Furniture system for auto-cleanup}
-
-SeverActions_Follow Property FollowSystem Auto
-{Optional - Link to the Follow system for sandbox auto-cleanup}
-
-SeverActions_WheelMenu Property WheelMenuSystem Auto
-{Optional - Link to the Wheel Menu system for UIExtensions integration}
-
-SeverActions_FollowerManager Property FollowerManagerSystem Auto
-{Optional - Link to the Follower Manager system for companion tracking}
-
-SeverActions_Loot Property LootSystem Auto
-{Optional - Link to the Loot system for book reading and item actions}
-
-SeverActions_PrismaUI Property PrismaUISystem Auto
-{Optional - Link to the PrismaUI config menu system}
-
-; =============================================================================
-; INITIALIZATION
-; =============================================================================
+; K0: bumped together with the DLL's KernelSession::kAbiVersion whenever a native's signature or
+; meaning changes in a way an older pex must not run against. 23: FollowerManager calls Sched_HoldYield,
+; Sched_NoteHold and Sched_GetAssignedRows, and Sched_GetTransitionDue returns relax-only NPCs; an older
+; DLL has neither.
+Int Property KERNEL_ABI = 23 AutoReadOnly
 
 Event OnInit()
     Debug.Trace("[SeverActions] OnInit - First time initialization")
-    ; Small delay to ensure all quest scripts have run their OnInit first
+    ; The native session-start tasks (settings replay, cosave re-seats, seeds) run from SKSE's
+    ; kNewGame, which SKSEVR never sends: a VR new game gets them only here. They run once per
+    ; session, so this is a no-op where kNewGame already ran them (R15).
+    SeverActionsNativeExt2.Kernel_OnSessionStart()
+    ; Let the quest scripts' OnInit run first.
     Utility.Wait(0.5)
     Initialize(true)
 EndEvent
 
 Event OnPlayerLoadGame()
+    ; First opcode of the load, so a watchdog OnUpdate persisted in the save finds it disarmed
+    ; (see WatchdogArmed; Initialize resets the rest).
+    WatchdogArmed = false
     Debug.Trace("[SeverActions] OnPlayerLoadGame - Save game loaded")
     Initialize(false)
 EndEvent
@@ -51,847 +36,574 @@ EndEvent
 Function Initialize(Bool isFirstInit)
     Debug.Trace("[SeverActions] Initializing SeverActions...")
 
-    ; ── Heal v2.1.7 aggression corruption ──
-    ; Pre-2.1.8 AttackTarget bumped both attacker AND target aggression. When
-    ; the player was the target, their Aggression actor value got stuck at 2
-    ; ("Very Aggressive"), which causes Calm-disposition NPCs to flee/cower
-    ; on sight. The cause was reverted in 2.1.8 but the corrupted value lives
-    ; in the save. Resetting to 0 on every load is a no-op for healthy saves
-    ; and self-heals affected ones.
-    Actor playerRef = Game.GetPlayer()
-    if playerRef
-        Float currentAggression = playerRef.GetActorValue("Aggression")
-        if currentAggression > 0.0
-            playerRef.SetActorValue("Aggression", 0.0)
-            Debug.Trace("[SeverActions] Healed corrupted player aggression: " + currentAggression + " -> 0")
-        endif
-    endif
+    ; Disarm the watchdog first: its state and pending update persist in a save (see WatchdogArmed).
+    UnregisterForUpdate()
+    WatchdogKicked = false
+    WatchdogArmed = false
+    WatchdogInitBase = 0
+    WatchedTicks = new String[1]
+    WatchedOwners = new String[1]
+    WatchedBase = new Int[1]
+    WatchedCount = 0
 
-    ; ── Init order matters: PrismaUI first ──
-    ; Previously PrismaUI ran at step 11 of 15, meaning the C++ DataGatherer
-    ; didn't have its quest references until the entire Maintenance() chain
-    ; had finished (~25s on saves with active followers + outfit slots). The
-    ; user could open the menu but every page showed empty/loading panels.
-    ;
-    ; Front-loading InitializePrismaUI lets the menu work within a couple of
-    ; seconds of save load. RegisterForPrismaEvents is self-contained — it
-    ; only does EnsureScriptReferences (lazy quest casts) + a single native
-    ; call to pass the quest pointers, with no dependency on the other
-    ; subsystems being initialized first.
-    InitializePrismaUI()
+    ; K0 ABI handshake. The box text is a literal: the localization table lives in the DLL that is
+    ; missing or stale here.
+    Int abi = SeverActionsNativeExt2.Kernel_AbiVersion()
+    If abi != KERNEL_ABI
+        String abiMsg
+        ; 0 = no DLL, or one from before the handshake (the public 3.9.14 and beta25 DLLs), where the
+        ; native is unbound and returns the default. Nothing can tell those apart, so one text.
+        If abi == 0
+            abiMsg = "SeverActions: SeverActionsNative.dll is missing, did not load, or is older than this version's scripts. Reinstall SeverActions with Replace so the DLL and the scripts come from the same build, and check the SKSE log if the box comes back."
+        Else
+            abiMsg = "SeverActions: SeverActionsNative.dll does not match this version's scripts (DLL kernel ABI " + abi + ", scripts expect " + KERNEL_ABI + "). Reinstall SeverActions with Replace so the DLL and the scripts come from the same build."
+        EndIf
+        Debug.MessageBox(abiMsg)
+        Debug.Trace("[SeverActions] K0 ABI handshake failed: DLL " + abi + ", scripts " + KERNEL_ABI + " - initialization stopped")
+        Return
+    EndIf
 
-    ; Surface the "loaded" notification right after PrismaUI is wired rather
-    ; than at the very end of the chain: PrismaUI is what the player most
-    ; immediately interacts with, so this matches perceived readiness. The rest
-    ; of Initialize() (decorators, bridge, travel/outfit/follower systems) keeps
-    ; chaining below without blocking the menu, and comes up within ~1-2s.
-    Debug.Notification("SeverActions menu ready")
+    ; SkyrimNet API floor: the DLL dispatches the quest-awareness summaries on API v8+ and the
+    ; completion memories on v5+, so below v8 the summaries are off - said on every load.
+    ; 0 = SkyrimNet not loaded.
+    Int snApi = SeverActionsNativeExt2.Kernel_SkyrimNetApiVersion()
+    If snApi > 0 && snApi < 8
+        String floorMsg
+        If snApi >= 5
+            floorMsg = "SeverActions: SkyrimNet API v" + snApi + " is below the v8 floor - followers' quest summaries are off (completion notes still land) until SkyrimNet is updated"
+        Else
+            floorMsg = "SeverActions: SkyrimNet API v" + snApi + " is below the v8 floor - followers' quest summaries and completion memories are off until SkyrimNet is updated"
+        EndIf
+        Debug.Notification(floorMsg)
+        Debug.Trace("[SeverActions] " + floorMsg)
+    EndIf
 
-    RegisterDecorators()
-    InitializeBridge()
-    InitializeTravelSystem(isFirstInit)
-    InitializeHotkeySystem()
-    InitializeFurnitureSystem()
-    InitializeFollowSystem()
-    InitializeWheelMenuSystem()
-    InitializeFollowerManagerSystem()
-    InitializeDebtSystem()
-    InitializeArrestSystem()
-    RunLoadRecovery()
-    InitializeSpellTeachSystem()
-    SyncMCMSettings()
-    ; SyncPluginConfig() — disabled: WebUI config clobbers PrismaUI/MCM settings on reload.
-    ; Will revisit once SkyrimNet exposes a PluginConfig setter API for bidirectional sync.
-    InitializeSurvivalSystem()
-    InitializeHearthCamp()
+    ; K1: the 'CAIO' seed, before any subsystem classifies a follower (so no track-only memo needs
+    ; invalidating).
+    SeedCustomAIOverrides()
+    ; K1: the StorageUtil-hosted settings rows into the Authority, then the prompt mirrors (M-X);
+    ; live changes arrive on SeverActions_SettingsMirror.
+    SeedSettingsFromStorageUtil()
+    RegisterForModEvent("SeverActions_SettingsMirror", "OnSettingsMirror_Init")
+    ; UI item transfers are the kernel's: the Inventory page that raises them is a kernel surface and
+    ; stays installed when the module that would own them is absent.
+    RegisterForModEvent("SeverActions_MagelightItemMoved", "OnPrismaItemMoved")
+    WriteSettingsMirrors()
 
-    ; Initialize diary viewer events (ModEvent registration)
-    if LootSystem
-        LootSystem.InitializeDiaryEvents()
-    endif
+    ; The menu needs nothing from Papyrus (the DataGatherer resolves its own quest refs) and is
+    ; usable by now, so say so early.
+    Debug.Notification(SeverActionsNativeExt2.Native_L10n("init.severActionsMenuReady"))
 
-    ; Migrate existing outfit data from StorageUtil to native OutfitDataStore
-    ; Safe to call every load — idempotent, re-pushes current state
-    Quest q = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
-    SeverActions_Outfit outfitScript = q as SeverActions_Outfit
-    if outfitScript
-        outfitScript.MigrateOutfitDataToNative()
-        outfitScript.Maintenance()
-    endif
+    ; K2 + K3: every module's load work runs from its provider, stage by stage in ProviderBundleIds
+    ; order (see SeverActions_ModuleBase). Cross-module orders are stage placements: Travel's recovery
+    ; first, from travelcore's stage 1 (R23); FollowerManager's recovery at stage 2, after Arrest's and
+    ; Travel's; Outfit at stage 2, after the roster.
+    String[] bound = DiscoverProviders()
+    RunProviderStages(bound, isFirstInit)
 
-    ; NFF-style outfit slot system — one-shot migration from legacy presets,
-    ; then rebuild all LvlItem contents from their containers.
-    SeverActions_OutfitSlot slotScript = q as SeverActions_OutfitSlot
-    if slotScript
-        slotScript.MigrateToOutfitSlotSystem()
-        slotScript.Maintenance()
-    endif
+    ; K4: the chronometer watchdog.
+    ArmWatchdog(bound)
 
-    ; WebUI real-time config sync disabled — see SyncPluginConfig() note above.
-    ; RegisterForModEvent("SkyrimNet_OnPluginConfigSaved", "OnPluginConfigSaved")
+    ; Mirrors again: the kPostLoadGame replays are not ordered against this event and may have fed
+    ; rows during the K1 pass; this closes the window a late feed left.
+    WriteSettingsMirrors()
 
-    ; Debug.Notification fired earlier (right after PrismaUI was wired) so the
-    ; user gets acknowledgement at the point the menu is actually interactive,
-    ; not after every Maintenance() pass completes. The log trace below still
-    ; records the true completion time for diagnostic timing audits.
+    ; Last, so timing audits read it as the completion time.
     Debug.Trace("[SeverActions] Initialization complete!")
 EndFunction
 
-; =============================================================================
-; WEBUI REAL-TIME CONFIG CALLBACK
-; Fired by SkyrimNet when any plugin config is saved via the WebUI.
-; strArg = plugin name (e.g. "SeverActions"), so we only re-sync our own.
-; =============================================================================
+; === K2: provider discovery ===
 
-; WebUI config callback — disabled while SyncPluginConfig is disabled.
-; Event OnPluginConfigSaved(string eventName, string strArg, float numArg, Form sender)
-;     If strArg == "SeverActions"
-;         Debug.Trace("[SeverActions] WebUI plugin config changed - re-syncing settings...")
-;         SyncPluginConfig()
-;         Debug.Notification("SeverActions config updated from WebUI")
-;     EndIf
-; EndEvent
-
-; =============================================================================
-; HOTKEY SYSTEM INITIALIZATION
-; =============================================================================
-
-Function InitializeHotkeySystem()
-    Debug.Trace("[SeverActions] Initializing Hotkey System...")
-    
-    if HotkeySystem
-        ; Re-register keys on game load
-        HotkeySystem.RegisterKeys()
-        Debug.Trace("[SeverActions] Hotkey System initialized successfully")
-    else
-        ; Try to find it on the owning quest
-        Quest myQuest = GetOwningQuest()
-        if myQuest
-            SeverActions_Hotkeys hotkeys = myQuest as SeverActions_Hotkeys
-            if hotkeys
-                Debug.Trace("[SeverActions] Found Hotkey System via quest cast")
-                hotkeys.RegisterKeys()
-            else
-                Debug.Trace("[SeverActions] Hotkey System not found (optional)")
-            endif
-        endif
-    endif
-EndFunction
-
-; =============================================================================
-; FURNITURE SYSTEM INITIALIZATION
-; =============================================================================
-
-Function InitializeFurnitureSystem()
-    Debug.Trace("[SeverActions] Initializing Furniture System...")
-
-    SeverActions_Furniture furnSys = GetFurnitureSystem()
-
-    If furnSys
-        ; Re-register for mod events on game load
-        furnSys.Maintenance()
-        Debug.Trace("[SeverActions] Furniture System initialized successfully")
-    Else
-        Debug.Trace("[SeverActions] Furniture System not found (optional)")
-    EndIf
-EndFunction
-
-; Helper to get furniture system reference
-SeverActions_Furniture Function GetFurnitureSystem()
-    If FurnitureSystem
-        Return FurnitureSystem
-    EndIf
-
-    ; Try to find it on the owning quest
-    Quest myQuest = GetOwningQuest()
-    If myQuest
-        SeverActions_Furniture furnSys = myQuest as SeverActions_Furniture
-        If furnSys
-            Debug.Trace("[SeverActions] Found Furniture System via quest cast")
-            Return furnSys
-        EndIf
-    EndIf
-
-    ; Try to get instance via global function
-    Return SeverActions_Furniture.GetInstance()
-EndFunction
-
-; =============================================================================
-; FOLLOW SYSTEM INITIALIZATION
-; =============================================================================
-
-Function InitializeFollowSystem()
-    Debug.Trace("[SeverActions] Initializing Follow System...")
-
-    SeverActions_Follow followSys = GetFollowSystem()
-
-    If followSys
-        ; Re-register for mod events on game load (sandbox cleanup)
-        followSys.Maintenance()
-        Debug.Trace("[SeverActions] Follow System initialized successfully")
-    Else
-        Debug.Trace("[SeverActions] Follow System not found (optional)")
-    EndIf
-EndFunction
-
-; Helper to get follow system reference
-SeverActions_Follow Function GetFollowSystem()
-    If FollowSystem
-        Return FollowSystem
-    EndIf
-
-    ; Try to find it on the owning quest (0x000800 was a phantom FormID --
-    ; the only quest in SeverActions.esp is 0x000D62, which owns this script)
-    Quest myQuest = GetOwningQuest()
-    If myQuest
-        SeverActions_Follow followSys = myQuest as SeverActions_Follow
-        If followSys
-            Debug.Trace("[SeverActions] Found Follow System via quest cast")
-            Return followSys
-        EndIf
-    EndIf
-
-    Return None
-EndFunction
-
-; =============================================================================
-; WHEEL MENU SYSTEM INITIALIZATION
-; =============================================================================
-
-Function InitializeWheelMenuSystem()
-    Debug.Trace("[SeverActions] Initializing Wheel Menu System...")
-
-    SeverActions_WheelMenu wheelMenu = GetWheelMenuSystem()
-
-    If wheelMenu
-        ; Re-register key on game load
-        wheelMenu.RegisterWheelKey()
-        If Game.GetModByName("UIExtensions.esp") != 255
-            Debug.Trace("[SeverActions] Wheel Menu System initialized (UIExtensions found)")
-        Else
-            Debug.Trace("[SeverActions] Wheel Menu System initialized (UIExtensions NOT installed)")
-        EndIf
-    Else
-        Debug.Trace("[SeverActions] Wheel Menu System not found (optional)")
-    EndIf
-EndFunction
-
-; Helper to get wheel menu system reference
-SeverActions_WheelMenu Function GetWheelMenuSystem()
-    If WheelMenuSystem
-        Return WheelMenuSystem
-    EndIf
-
-    ; Try to find it on the owning quest
-    Quest myQuest = GetOwningQuest()
-    If myQuest
-        SeverActions_WheelMenu wheelMenu = myQuest as SeverActions_WheelMenu
-        If wheelMenu
-            Debug.Trace("[SeverActions] Found Wheel Menu System via quest cast")
-            Return wheelMenu
-        EndIf
-    EndIf
-
-    ; Try to get instance via global function
-    Return SeverActions_WheelMenu.GetInstance()
-EndFunction
-
-; =============================================================================
-; FOLLOWER MANAGER INITIALIZATION
-; =============================================================================
-
-Function InitializeFollowerManagerSystem()
-    Debug.Trace("[SeverActions] Initializing Follower Manager...")
-
-    SeverActions_FollowerManager fmSys = GetFollowerManagerSystem()
-
-    If fmSys
-        fmSys.Maintenance()
-        Int count = fmSys.GetFollowerCount()
-        Debug.Trace("[SeverActions] Follower Manager initialized - " + count + " companions tracked")
-    Else
-        Debug.Trace("[SeverActions] Follower Manager not found (optional)")
-    EndIf
-EndFunction
-
-; Helper to get follower manager system reference
-SeverActions_FollowerManager Function GetFollowerManagerSystem()
-    If FollowerManagerSystem
-        Return FollowerManagerSystem
-    EndIf
-
-    ; Try to find it via FormID
-    SeverActions_FollowerManager fmSys = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
-    If fmSys
-        Debug.Trace("[SeverActions] Found Follower Manager via GetFormFromFile")
-        Return fmSys
-    EndIf
-
-    Return None
-EndFunction
-
-; =============================================================================
-; DEBT SYSTEM INITIALIZATION
-; =============================================================================
-
-Function InitializeDebtSystem()
-    Debug.Trace("[SeverActions] Initializing Debt System...")
-
-    ; DebtScript is wired via CK property on FollowerManager
-    SeverActions_FollowerManager fmSys = GetFollowerManagerSystem()
-    If fmSys && fmSys.DebtScript
-        fmSys.DebtScript.Maintenance()
-        Int debtCount = fmSys.DebtScript.GetDebtCount()
-        Debug.Trace("[SeverActions] Debt System initialized - " + debtCount + " active debts")
-    Else
-        Debug.Trace("[SeverActions] Debt System not found (optional)")
-    EndIf
-EndFunction
-
-; =============================================================================
-; ARREST SYSTEM INITIALIZATION
-; SeverActions_Arrest is a Quest script — it NEVER receives OnPlayerLoadGame
-; (Actor/alias-only event), so its load-recovery body historically never ran:
-; the native HoldResolver table stayed empty (every arrest bailed with
-; "Could not determine guard's crime faction"), session cooldowns kept stale
-; real-time values across relaunches (silently blocking arrests for the
-; length of the previous session), and jailed-NPC migration/verification
-; never happened.
-;
-; Chaining arrest.OnGameLoaded() from here — the canonical load-time entry
-; point — guarantees the full recovery runs on every save load. It calls
-; Maintenance() first and everything in it is idempotent: RegisterForModEvent
-; dedups, back-refs are no-op if already filled, Hold_Clear runs at the top
-; of the Hold_Register loop, migrations are sentinel-gated.
-; =============================================================================
-
-Function InitializeArrestSystem()
-    Debug.Trace("[SeverActions] Initializing Arrest System...")
-
-    Quest myQuest = GetOwningQuest()
-    If !myQuest
-        Return
-    EndIf
-
-    SeverActions_Arrest arrest = myQuest as SeverActions_Arrest
-    If arrest
-        arrest.OnGameLoaded()
-        Debug.Trace("[SeverActions] Arrest System initialized (load recovery run)")
-    Else
-        Debug.Trace("[SeverActions] Arrest System not found (optional)")
-    EndIf
-EndFunction
-
-; =============================================================================
-; LOAD-RECOVERY ROUTER
-; Quest scripts NEVER receive OnPlayerLoadGame — it is an Actor/alias-only
-; event. This alias IS the reliably-loaded entry point, so every subsystem's
-; load-recovery body is invoked from here as a plain function (Arrest's via
-; InitializeArrestSystem above). All recovery functions are idempotent and
-; no-op on clean state, so running them on a brand-new game is safe.
-; =============================================================================
-
-Function RunLoadRecovery()
-    Quest myQuest = GetOwningQuest()
-    If !myQuest
-        Return
-    EndIf
-
-    SeverActions_Travel travel = GetTravelSystem()
-    If travel
-        travel.OnGameLoaded()
-        Debug.Trace("[SeverActions] Travel load recovery complete")
-    EndIf
-
-    SeverActions_Combat combat = myQuest as SeverActions_Combat
-    If combat
-        combat.OnGameLoaded()
-        Debug.Trace("[SeverActions] Combat load recovery complete")
-    EndIf
-
-    ; Currency owns the Final Audit ModEvent listeners. Its Maintenance() is
-    ; called ONLY from OnInit, which never re-fires on an existing save - so
-    ; without this the audit's deploy/arrival events were dead listeners for
-    ; every current player (field-verified: native logged the deploy, Papyrus
-    ; never heard it). Registration must ride the load path.
-    SeverActions_Currency currency = myQuest as SeverActions_Currency
-    If currency
-        currency.OnGameLoaded()
-        Debug.Trace("[SeverActions] Currency load recovery complete")
-    EndIf
-
-    SeverActions_Brawl brawl = myQuest as SeverActions_Brawl
-    If brawl
-        brawl.OnGameLoaded()
-        Debug.Trace("[SeverActions] Brawl load recovery complete")
-    EndIf
-
-    SeverActions_ArrestPlayer arrestPlayer = myQuest as SeverActions_ArrestPlayer
-    If arrestPlayer
-        arrestPlayer.OnGameLoaded()
-        Debug.Trace("[SeverActions] ArrestPlayer load recovery complete")
-    EndIf
-
-    SeverActions_FollowerManager fmRecovery = myQuest as SeverActions_FollowerManager
-    If fmRecovery
-        fmRecovery.OnGameLoaded()
-        Debug.Trace("[SeverActions] FollowerManager load recovery complete (captivity-sandbox sweep)")
-    EndIf
-
-    ; ── Chronometer heartbeat watchdog (PR #423 review) ──────────────────
-    ; The converted timer loops re-arm from inside their own tick handlers,
-    ; so a stale/missing SeverActionsNative.dll (mod-manager overwrite rule
-    ; keeping an old DLL under a new pex) kills EVERY periodic system with
-    ; nothing but a papyrus.0.log line to show for it. FollowerManager
-    ; stamps a real-time value on every chronometer tick; this alias-hosted
-    ; engine timer (LEGAL here - Init owns its own form handle) checks once
-    ; ~90s after load and warns the player if no tick ever landed.
-    StorageUtil.SetFloatValue(None, "SeverActions_ChronoTickRT", 0.0)
-    StorageUtil.SetIntValue(None, "SeverActions_ChronoKick", 0)
-    RegisterForSingleUpdate(90.0)
-EndFunction
-
-Event OnUpdate()
-    {Chronometer-liveness watchdog, armed at the end of RunLoadRecovery.
-     If FollowerManager's tick never stamped since load, the chain is dead:
-     either the DLL is stale/missing, or the first-tick ModEvent was lost
-     to post-load VM congestion (field-proven on a heavy rig, 2026-08-18 -
-     and that dead chain ALSO killed RunDeferredMaintenance, whose
-     track-only ownership reconcile is what keeps SA from dragging
-     DLC-owned followers like Serana through load doors). So RESTART the
-     chain once before complaining: ChronoArm re-registers and re-requests,
-     DeferredMaintenancePending is still unconsumed so the deferred passes
-     run on the revived tick. Only if a restarted chain is STILL dead 90s
-     later do we warn the player - at that point a stale DLL really is the
-     overwhelming suspect.}
-    If StorageUtil.GetFloatValue(None, "SeverActions_ChronoTickRT", 0.0) == 0.0
-        If StorageUtil.GetIntValue(None, "SeverActions_ChronoKick", 0) == 0
-            StorageUtil.SetIntValue(None, "SeverActions_ChronoKick", 1)
-            Quest q = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
-            SeverActions_FollowerManager fmKick = q as SeverActions_FollowerManager
-            If fmKick
-                fmKick.ChronoArm(0.1)
-                Debug.Trace("[SeverActions_Init] CHRONOMETER WATCHDOG: no tick stamp ~90s after load - restarting the chain (first-tick ModEvent likely lost to load congestion)")
-                RegisterForSingleUpdate(90.0)
-                Return
+String[] Function DiscoverProviders()
+    {Returns the provider ids whose alias on 0x000D62 holds a bound provider answering its own id and
+     this kernel's contract, and reports them to the registry (Module_ReportBound). Reaches a provider
+     only through SeverActions_ModuleBase.Provider, never its own type.}
+    String[] ids = SeverActions_ModuleBase.ProviderBundleIds()
+    String[] bound = new String[16]
+    Int n = 0
+    Int i = 0
+    While i < ids.Length
+        String id = ids[i]
+        SeverActions_ModuleBase p = SeverActions_ModuleBase.Provider(id)
+        If !p
+            Debug.Trace("[SeverActions] K2 provider " + id + ": not bound (alias " + SeverActions_ModuleBase.ProviderAliasId(id) + ")")
+            ; An installed module (every one, in Legacy) without its provider pex is a broken install:
+            ; its load work is skipped, so say so.
+            If SeverActionsNativeExt2.Module_IsUsable(id)
+                Debug.Notification("SeverActions: module '" + id + "' is installed but its provider script did not load - reinstall with Replace")
             EndIf
+        ElseIf p.BundleId() != id
+            Debug.Trace("[SeverActions] K2 provider " + id + ": alias " + SeverActions_ModuleBase.ProviderAliasId(id) + " answers '" + p.BundleId() + "' - skipped")
+        ElseIf p.ContractVersion() != p.kContractVersion
+            Debug.Trace("[SeverActions] K2 provider " + id + ": contract " + p.ContractVersion() + ", kernel " + p.kContractVersion + " - skipped")
+        ElseIf n < bound.Length
+            bound[n] = id
+            n += 1
         EndIf
-        Debug.MessageBox("SeverActions: the periodic tick service never started, and a restart attempt did not take. SeverActionsNative.dll is likely out of date or missing - update it to match this version's scripts, or every periodic system (followers, travel, arrests, survival) will stay frozen.")
-        Debug.Trace("[SeverActions_Init] CHRONOMETER WATCHDOG: chain still dead after a restart kick - stale or missing SeverActionsNative.dll")
+        i += 1
+    EndWhile
+    ; Zero providers is a one-element array holding "": a never-assigned array is None, which must
+    ; never reach a native (B-36). The stages and the registry skip an empty id.
+    String[] result
+    If n > 0
+        result = Utility.ResizeStringArray(bound, n)
+        Debug.Trace("[SeverActions] K2: " + n + " of " + ids.Length + " providers bound")
+    Else
+        result = new String[1]
+        Debug.Trace("[SeverActions] K2: no provider bound - no module installed (or every provider pex missing)")
+        Debug.Notification("SeverActions: no modules installed")
     EndIf
-EndEvent
+    SeverActionsNativeExt2.Module_ReportBound(result)
+    Return result
+EndFunction
 
-; =============================================================================
-; SPELL TEACH INITIALIZATION
-; Sweeps any pending paralysis reset that a save/crash interrupted — the
-; alteration-failure effect writes Paralysis=1 with a timed reset, and a
-; save inside the window would otherwise bake the paralysis in permanently.
-; =============================================================================
+; === K3: the provider stages ===
 
-Function InitializeSpellTeachSystem()
-    Quest myQuest = GetOwningQuest()
-    If !myQuest
+Function RunProviderStages(String[] asBound, Bool abNewGame)
+    {Stage 0, then 1, then 2, each over every bound provider in the static
+     order. Every stage is idempotent and runs on every load and new game: a
+     module's first-time setup on an existing save is simply its first pass.}
+    If !asBound
         Return
     EndIf
-    SeverActions_SpellTeach spellTeach = myQuest as SeverActions_SpellTeach
-    If spellTeach
-        spellTeach.Maintenance()
-        Debug.Trace("[SeverActions] SpellTeach System initialized (pending-paralysis sweep run)")
-    EndIf
-EndFunction
-
-; =============================================================================
-; SURVIVAL SYSTEM INITIALIZATION
-; Runs after SyncMCMSettings; rates would be WebUI-synced here if
-; SyncPluginConfig were re-enabled (it is currently disabled at its call site).
-; The Enabled toggle comes from the save (MCM property), not WebUI.
-; =============================================================================
-
-Function InitializeSurvivalSystem()
-    Debug.Trace("[SeverActions] Initializing Survival System...")
-
-    Quest myQuest = GetOwningQuest()
-    If !myQuest
-        Return
-    EndIf
-
-    SeverActions_Survival survival = myQuest as SeverActions_Survival
-    If survival
-        survival.Maintenance()
-        Debug.Trace("[SeverActions] Survival System initialized - Enabled: " + survival.Enabled)
-    Else
-        Debug.Trace("[SeverActions] Survival System not found (optional)")
-    EndIf
-EndFunction
-
-; =============================================================================
-; SEVER'S HEARTH CAMP — re-register listeners on every load
-; =============================================================================
-; Hearth's camp script (SeversHearth_Camp) is a Quest script, which does NOT
-; receive OnPlayerLoadGame — so its own RegisterCampEvents only ever runs once
-; via OnInit (when the quest first started). Any camp ModEvents added after that
-; (e.g. the player-placement Setup/Reposition events) never re-register on an
-; existing save, so the buttons/hotkey fire into a dead listener.
-;
-; This script is a ReferenceAlias, which DOES get OnPlayerLoadGame reliably, so
-; we soft-resolve the Hearth camp quest and re-run RegisterCampEvents here every
-; load. Idempotent (RegisterForModEvent dedups). No-op if Hearth isn't installed
-; — GetFormFromFile returns None and the cast yields None.
-Function InitializeHearthCamp()
-    ; SeversHearth quest is FE..BED800 at runtime → local 0x800 in SeversHearth.esp.
-    SeversHearth_Camp campScript = Game.GetFormFromFile(0x000800, "SeversHearth.esp") as SeversHearth_Camp
-    If campScript
-        campScript.RegisterCampEvents()
-        Debug.Trace("[SeverActions] Re-registered Sever's Hearth camp ModEvents")
-    Else
-        Debug.Trace("[SeverActions] Sever's Hearth not installed - camp re-register skipped")
-    EndIf
-EndFunction
-
-; =============================================================================
-; TRAVEL SYSTEM INITIALIZATION
-; =============================================================================
-
-Function InitializeTravelSystem(Bool isFirstInit)
-    Debug.Trace("[SeverActions] Initializing Travel System...")
-
-    SeverActions_Travel travel = GetTravelSystem()
-
-    If travel
-        ; Native LocationResolver auto-initializes on kDataLoaded
-        ; Just verify it's ready and show status
-        If SeverActionsNative.IsLocationResolverReady()
-            Int locCount = SeverActionsNative.GetLocationCount()
-            Debug.Trace("[SeverActions] Travel System ready - " + locCount + " locations indexed natively")
-        Else
-            Debug.Trace("[SeverActions] WARNING: Native LocationResolver not yet initialized")
-        EndIf
-
-        ; Show status for debugging
-        If travel.EnableDebugMessages
-            travel.ShowStatus()
-        EndIf
-
-        Debug.Trace("[SeverActions] Travel System initialized successfully")
-    Else
-        Debug.Trace("[SeverActions] WARNING: Travel System not found!")
-    EndIf
-EndFunction
-
-; Helper to get travel system reference
-SeverActions_Travel Function GetTravelSystem()
-    If TravelSystem
-        Return TravelSystem
-    EndIf
-    
-    ; Try to find it on the owning quest
-    Quest myQuest = GetOwningQuest()
-    If myQuest
-        SeverActions_Travel travel = myQuest as SeverActions_Travel
-        If travel
-            Debug.Trace("[SeverActions] Found Travel System via quest cast")
-            Return travel
-        EndIf
-    EndIf
-    
-    Return None
-EndFunction
-
-; =============================================================================
-; BRIDGE INITIALIZATION
-; =============================================================================
-
-Function InitializeBridge()
-    ; Initialize Fertility Mode bridge if available
-    If Game.GetModByName("Fertility Mode.esm") != 255
-        ; Initialize native FM module first (before Papyrus bridge)
-        If SeverActionsNative.FM_Initialize()
-            Debug.Trace("[SeverActions] Native FM module initialized")
-        Else
-            Debug.Trace("[SeverActions] Native FM module init returned false (may already be initialized)")
-        EndIf
-
-        If FertilityBridge
-            Debug.Trace("[SeverActions] Calling FertilityBridge.Maintenance()...")
-            FertilityBridge.Maintenance()
-        Else
-            ; Try to find it via quest cast if property not set
-            Debug.Trace("[SeverActions] FertilityBridge property not set, trying to find quest...")
-            Quest myQuest = GetOwningQuest()
-            If myQuest
-                SeverActions_FertilityMode_Bridge bridge = myQuest as SeverActions_FertilityMode_Bridge
-                If bridge
-                    Debug.Trace("[SeverActions] Found bridge on quest, initializing...")
-                    bridge.Maintenance()
-                Else
-                    Debug.Trace("[SeverActions] WARNING: Could not cast quest to FertilityBridge")
+    Int stage = 0
+    While stage <= 2
+        Int i = 0
+        While i < asBound.Length
+            If asBound[i] != ""
+                SeverActions_ModuleBase p = SeverActions_ModuleBase.Provider(asBound[i])
+                If p
+                    p.OnModuleLoad(stage, abNewGame)
                 EndIf
             EndIf
-        EndIf
-    Else
-        Debug.Trace("[SeverActions] Fertility Mode not installed - skipping FM initialization")
-    EndIf
+            i += 1
+        EndWhile
+        Debug.Trace("[SeverActions] K3 stage " + stage + " complete (" + asBound.Length + " providers)")
+        stage += 1
+    EndWhile
 EndFunction
 
-; =============================================================================
-; DECORATOR REGISTRATION
-; =============================================================================
+; === K1: kernel seeds and prompt mirrors ===
 
-Function RegisterDecorators()
-    Debug.Trace("[SeverActions] Registering decorators...")
-    
-    Int result
-    
-    ; -------------------------------------------------------------------------
-    ; AROUSAL DECORATORS
-    ; -------------------------------------------------------------------------
-    
-    ; OSLAroused (if using OSLAroused.esp with native SKSE plugin)
-    ; SLO Aroused ships a dummy OSLAroused.esp for compatibility - if SexLabAroused.esm
-    ; is also loaded, it's SLO's dummy, not the real standalone OSL Aroused.
-    If Game.GetModByName("OSLAroused.esp") != 255 && Game.GetModByName("SexLabAroused.esm") == 255
-        result = SkyrimNetApi.RegisterDecorator("get_arousal_state", "SeverActions_Arousal", "GetArousalState")
-        Debug.Trace("[SeverActions] get_arousal_state (OSLAroused): " + (result == 0) as String)
-    EndIf
-    
-    ; SLO Aroused NG / OAroused (if using SexLabAroused.esm)
-    If Game.GetModByName("SexLabAroused.esm") != 255
-        ; Full JSON state
-        result = SkyrimNetApi.RegisterDecorator("get_slo_arousal_state", "SeverActions_SLOArousal", "GetSLOArousalState")
-        Debug.Trace("[SeverActions] get_slo_arousal_state: " + (result == 0) as String)
-        
-        ; Simple arousal value (just the number as string)
-        result = SkyrimNetApi.RegisterDecorator("get_slo_arousal", "SeverActions_SLOArousal", "GetSLOArousal")
-        Debug.Trace("[SeverActions] get_slo_arousal: " + (result == 0) as String)
-        
-        ; Simple arousal description (just the text)
-        result = SkyrimNetApi.RegisterDecorator("get_slo_arousal_desc", "SeverActions_SLOArousal", "GetSLOArousalDesc")
-        Debug.Trace("[SeverActions] get_slo_arousal_desc: " + (result == 0) as String)
-        
-        ; Nakedness check (returns "true" or "false")
-        result = SkyrimNetApi.RegisterDecorator("get_slo_is_naked", "SeverActions_SLOArousal", "GetSLOIsNaked")
-        Debug.Trace("[SeverActions] get_slo_is_naked: " + (result == 0) as String)
-    EndIf
-    
-    ; -------------------------------------------------------------------------
-    ; FERTILITY MODE DECORATORS - Only register if FM is installed
-    ; -------------------------------------------------------------------------
-
-    If Game.GetModByName("Fertility Mode.esm") != 255
-        ; Batch decorator (preferred - 5x faster, single call for all data)
-        result = SkyrimNetApi.RegisterDecorator("fertility_data_batch", "SeverActions_FertilityMode_Bridge", "GetFertilityDataBatch")
-        Debug.Trace("[SeverActions] fertility_data_batch: " + (result == 0) as String)
-
-         ;Individual decorators (for backwards compatibility)
-        result = SkyrimNetApi.RegisterDecorator("fertility_state", "SeverActions_FertilityMode_Bridge", "GetFertilityState")
-        Debug.Trace("[SeverActions] fertility_state: " + (result == 0) as String)
-        result = SkyrimNetApi.RegisterDecorator("fertility_father", "SeverActions_FertilityMode_Bridge", "GetFertilityFather")
-        Debug.Trace("[SeverActions] fertility_father: " + (result == 0) as String)
-        result = SkyrimNetApi.RegisterDecorator("fertility_cycle_day", "SeverActions_FertilityMode_Bridge", "GetCycleDay")
-        Debug.Trace("[SeverActions] fertility_cycle_day: " + (result == 0) as String)
-        result = SkyrimNetApi.RegisterDecorator("fertility_pregnant_days", "SeverActions_FertilityMode_Bridge", "GetPregnantDays")
-        Debug.Trace("[SeverActions] fertility_pregnant_days: " + (result == 0) as String)
-        result = SkyrimNetApi.RegisterDecorator("fertility_has_baby", "SeverActions_FertilityMode_Bridge", "GetHasBaby")
-        Debug.Trace("[SeverActions] fertility_has_baby: " + (result == 0) as String)
-        Debug.Trace("[SeverActions] Fertility Mode decorators registered")
-    Else
-        Debug.Trace("[SeverActions] Fertility Mode not installed - skipping FM decorators")
-    EndIf
-    
-    ; -------------------------------------------------------------------------
-    ; OTHER DECORATORS
-    ; -------------------------------------------------------------------------
-    
-    ; Environmental awareness - uses WorldCache for VR performance
-    ;result = SkyrimNetApi.RegisterDecorator("get_nearby_objects", "SeverActions_WorldCache", "GetNearbyObjects")
-    ;Debug.Trace("[SeverActions] get_nearby_objects: " + (result == 0) as String)
-    
-    ; Travel System decorators - NOT NEEDED!
-    ; The travel system stores state via StorageUtil, which can be read directly
-    ; using the native papyrus_util decorator in prompt templates:
-    ;   {{ papyrus_util("GetStringValue", actorUUID, "SeverTravel_State", "") }}
-    ;   {{ papyrus_util("GetStringValue", actorUUID, "SeverTravel_Destination", "") }}
-    ;   {{ papyrus_util("GetFloatValue", actorUUID, "SeverTravel_WaitUntil", 0) }}
-    ; Or use the new query functions:
-    ;   travel.IsNPCTraveling(actor)
-    ;   travel.GetNPCTravelState(actor)  ; returns "", "traveling", or "waiting"
-    Debug.Trace("[SeverActions] Travel system uses native papyrus_util decorator")
-    
-    ; Spell Cast
-    ;SkyrimNetApi.RegisterDecorator("get_known_spells", "SeverActions_Magic", "GetKnownSpells")
-    
-    Debug.Trace("[SeverActions] Decorator registration complete")
-EndFunction
-
-; =============================================================================
-; PRISMAUI INITIALIZATION
-; =============================================================================
-
-Function InitializePrismaUI()
-    Debug.Trace("[SeverActions] Initializing PrismaUI...")
-
-    SeverActions_PrismaUI prisma = GetPrismaUISystem()
-
-    If prisma
-        ; Re-register ModEvents and re-send C++ quest references on every game load.
-        ; SKSE's RegisterForModEvent persists through save/load, but the C++ quest
-        ; references passed via PrismaUI_SetQuestRefs are in-memory only and lost
-        ; when the DLL reloads (new game session).
-        prisma.RegisterForPrismaEvents()
-        Debug.Trace("[SeverActions] PrismaUI initialized successfully")
-    Else
-        Debug.Trace("[SeverActions] PrismaUI not found (optional)")
-    EndIf
-EndFunction
-
-; Helper to get PrismaUI system reference
-SeverActions_PrismaUI Function GetPrismaUISystem()
-    If PrismaUISystem
-        Return PrismaUISystem
-    EndIf
-
-    ; Try to find it on the owning quest
-    Quest myQuest = GetOwningQuest()
-    If myQuest
-        SeverActions_PrismaUI prisma = myQuest as SeverActions_PrismaUI
-        If prisma
-            Debug.Trace("[SeverActions] Found PrismaUI via quest cast")
-            Return prisma
-        EndIf
-    EndIf
-
-    Return None
-EndFunction
-
-; =============================================================================
-; MCM SETTINGS SYNC
-; =============================================================================
-
-Function SyncMCMSettings()
-    Debug.Trace("[SeverActions] Syncing MCM settings...")
-
-    SeverActions_MCM mcm = SeverActions_MCM.GetInstance()
-    If mcm
-        mcm.SyncAllSettings()
-        Debug.Trace("[SeverActions] MCM settings synced")
-    Else
-        Debug.Trace("[SeverActions] MCM not found - using defaults")
-    EndIf
-EndFunction
-
-; =============================================================================
-; SKYRIMNET WEBUI PLUGIN CONFIG SYNC
-; CURRENTLY DISABLED — never called (see the commented-out call in Initialize():
-; WebUI config clobbers PrismaUI/MCM settings on reload). Kept for re-enablement.
-; Reads settings from SkyrimNet's Plugin Configuration WebUI and applies them.
-; Would run after SyncMCMSettings — WebUI values override MCM for shared settings.
-; Gracefully skips if SkyrimNet doesn't support plugin config (older versions).
-;
-; Synced categories: Travel, Followers, Survival, General (dialogue anims + debug)
-; =============================================================================
-
-Function SyncPluginConfig()
-    If !SeverActionsNative.PluginConfig_IsAvailable()
-        Debug.Trace("[SeverActions] WebUI plugin config not available - using MCM/defaults")
+Function SeedCustomAIOverrides()
+    {Seed the 'CAIO' record (the "treat as a normal follower" overrides) once per save from the
+     StorageUtil list SeverActions_CustomAIOverrideList, under a 'MIGR' claim (DR14). Seeding only
+     adds, so a cleared override never returns through here. FollowerManager.ReconcileCustomAIOverrides
+     still pushes the list on every load as a belt (R2).}
+    String mig = "CustomAIOverrideSeed"
+    Int migVersion = 1
+    If SeverActionsNativeExt2.Migration_IsDone(mig, migVersion)
         Return
     EndIf
-
-    Debug.Trace("[SeverActions] Syncing WebUI plugin config settings...")
-
-    ; Travel settings (NOT in MCM — WebUI is the only way to tune these)
-    If TravelSystem
-        TravelSystem.ArrivalDistance = SeverActionsNative.PluginConfig_GetFloat("travel.arrival_distance", 300.0)
-        TravelSystem.DefaultWaitTime = SeverActionsNative.PluginConfig_GetFloat("travel.default_wait_hours", 48.0)
-        TravelSystem.MinWaitTime = SeverActionsNative.PluginConfig_GetFloat("travel.min_wait_hours", 6.0)
-        TravelSystem.MaxWaitTime = SeverActionsNative.PluginConfig_GetFloat("travel.max_wait_hours", 168.0)
+    If !SeverActionsNativeExt2.Migration_TryClaim(mig, migVersion)
+        ; Claimed by another caller this session (none today); the claimant records done. (A DLL
+        ; without the ledger never gets here: K0 stops Initialize first.)
+        Return
     EndIf
-
-    ; Dialogue settings — stored in StorageUtil so prompt templates can read via papyrus_util()
-    Int silenceChanceVal = SeverActionsNative.PluginConfig_GetInt("dialogue.silence_chance", 50)
-    StorageUtil.SetIntValue(None, "SeverActions_ZeroChance", silenceChanceVal)
-
-    ; Speaker tag settings — control which tags appear in the speaker selector prompt
-    Bool tagCompanion = SeverActionsNative.PluginConfig_GetBool("dialogue.tag_companion", true)
-    Bool tagEngaged = SeverActionsNative.PluginConfig_GetBool("dialogue.tag_engaged", true)
-    Bool tagInScene = SeverActionsNative.PluginConfig_GetBool("dialogue.tag_in_scene", true)
-    StorageUtil.SetIntValue(None, "SeverActions_TagCompanion", tagCompanion as Int)
-    StorageUtil.SetIntValue(None, "SeverActions_TagEngaged", tagEngaged as Int)
-    StorageUtil.SetIntValue(None, "SeverActions_TagInScene", tagInScene as Int)
-
-    ; Player inventory prompt — per-category item limits (only set defaults if not already configured)
-    If StorageUtil.GetIntValue(None, "SeverActions_InvLimit_Weapons", -1) == -1
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Weapons", 10)
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Armor", 10)
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Potions", 10)
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Ingredients", 5)
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Books", 10)
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Scrolls", 5)
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Ammo", 5)
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Keys", 5)
-        StorageUtil.SetIntValue(None, "SeverActions_InvLimit_Misc", 5)
-    EndIf
-
-    ; Follower settings (WebUI overrides MCM for these)
-    If FollowerManagerSystem
-        FollowerManagerSystem.MaxFollowers = SeverActionsNative.PluginConfig_GetInt("followers.max_companions", 20)
-        FollowerManagerSystem.RapportDecayRate = SeverActionsNative.PluginConfig_GetFloat("followers.rapport_decay_rate", 1.0)
-        FollowerManagerSystem.AutoRelAssessment = SeverActionsNative.PluginConfig_GetBool("followers.auto_assessment", true)
-        FollowerManagerSystem.AssessmentCooldownMinHours = SeverActionsNative.PluginConfig_GetFloat("followers.assessment_cooldown_hours", 5.0)
-        FollowerManagerSystem.AllowAutonomousLeaving = SeverActionsNative.PluginConfig_GetBool("followers.allow_leaving", true)
-        FollowerManagerSystem.LeavingThreshold = SeverActionsNative.PluginConfig_GetInt("followers.leaving_threshold", -60) as Float
-    EndIf
-
-    ; Survival settings — rates from WebUI, but Enabled is MCM-only
-    ; The Enabled toggle is a Papyrus property that persists in the save.
-    ; Overwriting it here would clobber the MCM value on every load because
-    ; PluginConfig_GetBool defaults to false when the key doesn't exist.
-    Quest myQuest = GetOwningQuest()
-    If myQuest
-        SeverActions_Survival survival = myQuest as SeverActions_Survival
-        If survival
-            survival.HungerRate = SeverActionsNative.PluginConfig_GetFloat("survival.hunger_rate", 1.0)
-            survival.FatigueRate = SeverActionsNative.PluginConfig_GetFloat("survival.fatigue_rate", 1.0)
-            survival.ColdRate = SeverActionsNative.PluginConfig_GetFloat("survival.cold_rate", 1.0)
+    Int n = StorageUtil.FormListCount(None, "SeverActions_CustomAIOverrideList")
+    Int seeded = 0
+    Int i = 0
+    While i < n
+        Actor ovA = StorageUtil.FormListGet(None, "SeverActions_CustomAIOverrideList", i) as Actor
+        If ovA && SeverActionsNativeExt2.CustomAI_SeedOverride(ovA)
+            seeded += 1
         EndIf
+        i += 1
+    EndWhile
+    SeverActionsNativeExt2.Migration_MarkDone(mig, migVersion)
+    Debug.Trace("[SeverActions] K1 custom-AI override seed done: " + seeded + " of " + n + " listed actor(s) added to the native record")
+EndFunction
 
-        ; General settings
-        SeverActions_MCM mcm = myQuest as SeverActions_MCM
-        If mcm
-            mcm.DialogueAnimEnabled = SeverActionsNative.PluginConfig_GetBool("general.dialogue_animations", true)
-            mcm.SilenceChance = silenceChanceVal
-            mcm.TagCompanionEnabled = tagCompanion
-            mcm.TagEngagedEnabled = tagEngaged
-            mcm.TagInSceneEnabled = tagInScene
-        EndIf
-
-        ; Spell teaching settings
-        SeverActions_SpellTeach spellTeach = myQuest as SeverActions_SpellTeach
-        If spellTeach
-            spellTeach.EnableFailureSystem = SeverActionsNative.PluginConfig_GetBool("spellteach.failure_enabled", true)
-            spellTeach.FailureDifficultyMult = SeverActionsNative.PluginConfig_GetFloat("spellteach.failure_difficulty", 1.0)
-            StorageUtil.SetIntValue(None, "SeverActions_SpellFailEnabled", spellTeach.EnableFailureSystem as Int)
-            StorageUtil.SetFloatValue(None, "SeverActions_SpellFailDifficulty", spellTeach.FailureDifficultyMult)
-        EndIf
-
-        ; Book reading mode — "verbatim" (0) or "summarize" (1)
-        If LootSystem
-            String readMode = SeverActionsNative.PluginConfig_GetString("general.book_reading_mode", "verbatim")
-            If readMode == "summarize"
-                LootSystem.BookReadMode = 1
+Function SeedSettingsFromStorageUtil()
+    {K1 (R21): seed the Settings Authority from the rows whose per-save value lives only in
+     StorageUtil; Settings_PendingSeeds lists the rows this save lacks as "key|storageKey|type|holder".
+     The seeding rules (once per save, the global file wins, a claim per row) are
+     Settings_SeedFromStorageUtil's.}
+    String[] pending = SeverActionsNativeExt2.Settings_PendingSeeds()
+    Int seeded = 0
+    Int i = 0
+    While i < pending.Length
+        String[] parts = StringUtil.Split(pending[i], "|")
+        If parts.Length == 4
+            String rowKey = parts[0]
+            String storageKey = parts[1]
+            String typ = parts[2]
+            Form holder = None
+            If parts[3] == "quest"
+                holder = GetOwningQuest()
+            EndIf
+            String value = ""
+            Bool has = false
+            If typ == "float"
+                has = StorageUtil.HasFloatValue(holder, storageKey)
+                If has
+                    value = "" + StorageUtil.GetFloatValue(holder, storageKey)
+                EndIf
+            ElseIf typ == "string"
+                has = StorageUtil.HasStringValue(holder, storageKey)
+                If has
+                    value = StorageUtil.GetStringValue(holder, storageKey)
+                EndIf
             Else
-                LootSystem.BookReadMode = 0
+                has = StorageUtil.HasIntValue(holder, storageKey)
+                If has
+                    If typ == "bool"
+                        If StorageUtil.GetIntValue(holder, storageKey) != 0
+                            value = "true"
+                        Else
+                            value = "false"
+                        EndIf
+                    Else
+                        value = "" + StorageUtil.GetIntValue(holder, storageKey)
+                    EndIf
+                EndIf
+            EndIf
+            If has && SeverActionsNativeExt2.Settings_SeedFromStorageUtil(rowKey, value)
+                seeded += 1
             EndIf
         EndIf
-
-        ; Debug mode — applies to all subsystems that have it
-        Bool debugMode = SeverActionsNative.PluginConfig_GetBool("general.debug_mode", false)
-        If survival
-            survival.DebugMode = debugMode
-        EndIf
-        If FollowerManagerSystem
-            FollowerManagerSystem.DebugMode = debugMode
-        EndIf
-    EndIf
-
-    Debug.Trace("[SeverActions] WebUI plugin config synced successfully")
+        i += 1
+    EndWhile
+    Debug.Trace("[SeverActions] K1 settings seed: " + seeded + " of " + pending.Length + " StorageUtil-hosted row(s) seeded into the Authority")
 EndFunction
+
+Function WriteSettingsMirrors()
+    {K1 (M-X): write every prompt-mirror StorageUtil key of an installed owner from the Settings
+     Authority (the rows come from Settings_MirrorRows, which leaves out a row whose mirror slot is
+     its own seed source until it is settled). Prompts read them through papyrus_util, which C++
+     cannot write.}
+    String[] mirrors = SeverActionsNativeExt2.Settings_MirrorRows()
+    Int i = 0
+    While i < mirrors.Length
+        WriteSettingsMirror(mirrors[i])
+        i += 1
+    EndWhile
+EndFunction
+
+Function WriteSettingsMirror(String asRow)
+    {One mirror row "key|storageKey|type": the StorageUtil key takes the
+     Authority's value (a Bool as 0/1, an Int, a Float, a String; holder None).}
+    String[] parts = StringUtil.Split(asRow, "|")
+    If parts.Length != 3
+        Return
+    EndIf
+    String rowKey = parts[0]
+    String storageKey = parts[1]
+    String typ = parts[2]
+    If typ == "bool"
+        StorageUtil.SetIntValue(None, storageKey, SeverActionsNativeExt2.Settings_GetBool(rowKey) as Int)
+    ElseIf typ == "int"
+        StorageUtil.SetIntValue(None, storageKey, SeverActionsNativeExt2.Settings_GetInt(rowKey))
+    ElseIf typ == "float"
+        StorageUtil.SetFloatValue(None, storageKey, SeverActionsNativeExt2.Settings_GetFloat(rowKey))
+    Else
+        StorageUtil.SetStringValue(None, storageKey, SeverActionsNativeExt2.Settings_GetString(rowKey))
+    EndIf
+EndFunction
+
+Event OnSettingsMirror_Init(String eventName, String strArg, Float numArg, Form sender)
+    {SeverActions_SettingsMirror (strArg = the row), sent by the DLL on every live change of a
+     mirrored setting. The callback name is unique to the kernel.}
+    WriteSettingsMirror(strArg)
+EndEvent
+
+; === Safe-exit stubs of the old shim inits (see Safe-exit stubs below) ===
+
+Function InitializeHotkeySystem()
+    ; M-I-STUB 3.9.14-beta25 (P4-04): the DLL matches the hotkey codes (P4-02) and syncs the config-menu key with
+    ; the settings file at session start (KernelSession); an older build's key registrations stay in the save
+    ; unheard (no OnKeyDown remains on quest 0x000D62).
+EndFunction
+
+Function InitializeWheelMenuSystem()
+    ; M-I-STUB 3.9.14-beta25 (P4-04): the DLL owns the wheel key (P4-03) and syncs it with the settings file at
+    ; session start (KernelSession).
+EndFunction
+
+; === K4: chronometer watchdog (R13) ===
+; Every periodic system re-arms from its own tick handler, so a stale or missing DLL stops them all
+; with only a papyrus log line to show. This alias-hosted engine timer (legal here: Init owns its
+; form handle) checks ~90 s after load, by the service's per-name acknowledged-tick counts
+; (Chrono_TickCountSinceLoad, reset on every load). Watched: the tick names the bound providers
+; return from ChronoTickNames(), always-on chains only (an on-demand chain's zero is normal). A
+; module chain's zero alone does not implicate the DLL (a live service can lose a first tick), so
+; Init also arms its own probe; only a probe that never lands, even after a re-arm, boxes. The
+; timer is armed before the probe request, which may be an unbound native.
+
+Function ArmWatchdog(String[] asBound)
+    {Collect the bound providers' tick names, arm the timer and the probe.}
+    String[] names = new String[16]
+    String[] owners = new String[16]
+    Int n = 0
+    Int i = 0
+    While asBound && i < asBound.Length
+        If asBound[i] != ""
+            SeverActions_ModuleBase p = SeverActions_ModuleBase.Provider(asBound[i])
+            If p
+                String[] ticks = p.ChronoTickNames()
+                Int t = 0
+                While ticks && t < ticks.Length
+                    If ticks[t] != "" && n < names.Length
+                        names[n] = ticks[t]
+                        owners[n] = asBound[i]
+                        n += 1
+                    EndIf
+                    t += 1
+                EndWhile
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+    WatchedTicks = names
+    WatchedOwners = owners
+    WatchedBase = new Int[16]
+    WatchedCount = n
+    WatchdogKicked = false
+    WatchdogArmed = true
+    RegisterForSingleUpdate(90.0)
+    ArmChronoProbe()
+    Debug.Trace("[SeverActions] K4 watchdog armed over " + n + " tick name(s)")
+EndFunction
+
+; Set once OnUpdate has restarted the dead chains; the next pass judges.
+Bool WatchdogKicked = false
+; True from ArmWatchdog to the verdict. It persists in a save together with the pending update, and
+; a stale OnUpdate on reload would judge counts the revert zeroed and box on a healthy install. So
+; OnPlayerLoadGame and Initialize clear it first thing, and the verdict re-checks it after a 1 s wait.
+Bool WatchdogArmed = false
+; Init's probe count after the first pass re-arms it. A Chrono_Request answering a fired tick counts
+; as its ack, and the kicks and the re-arm are requests, so the second pass judges growth past this
+; and WatchedBase, not > 0.
+Int WatchdogInitBase = 0
+; The watched chains (tick name, owning provider id, base count) in up to 16 slots. They persist in
+; the save; Initialize resets them and ArmWatchdog refills them every load.
+String[] WatchedTicks
+String[] WatchedOwners
+Int[] WatchedBase
+Int WatchedCount = 0
+
+Function ArmChronoProbe()
+    {Request a one-shot chronometer tick for Init itself. Event and callback
+     names are unique to this script (the Chronometer naming rule).}
+    RegisterForModEvent("SeverActions_Tick_Init", "OnChronoTick_Init")
+    SeverActionsNativeExt2.Chrono_Request("SeverActions_Tick_Init", 5.0)
+EndFunction
+
+Event OnChronoTick_Init(String eventName, String strArg, Float numArg, Form sender)
+    ; The Cancel is the ack the service counts; it also stops the retries.
+    SeverActionsNativeExt2.Chrono_Cancel("SeverActions_Tick_Init")
+EndEvent
+
+Event OnUpdate()
+    {The K4 watchdog. First pass (~90 s): every watched chain with no acknowledged tick since load is
+     restarted once through its provider's OnChronoDead (a first-tick ModEvent can be lost to
+     post-load congestion) and Init's probe is re-armed. Second pass (~90 s later): a probe that still
+     never landed boxes; a chain that stays dead over a live service is only logged. With no watched
+     chain the probe alone judges.}
+    If !WatchdogArmed
+        Return
+    EndIf
+    Int initCount = SeverActionsNativeExt2.Chrono_TickCountSinceLoad("SeverActions_Tick_Init")
+    If !WatchdogKicked
+        WatchdogKicked = true
+        Int dead = 0
+        Int i = 0
+        While i < WatchedCount
+            If SeverActionsNativeExt2.Chrono_TickCountSinceLoad(WatchedTicks[i]) == 0
+                dead += 1
+                Debug.Trace("[SeverActions_Init] CHRONOMETER WATCHDOG: " + WatchedTicks[i] + " acknowledged no tick ~90s after load - asking " + WatchedOwners[i] + " to restart the chain (first-tick ModEvent likely lost to load congestion)")
+                SeverActions_ModuleBase p = SeverActions_ModuleBase.Provider(WatchedOwners[i])
+                If p
+                    p.OnChronoDead(WatchedTicks[i])
+                EndIf
+            EndIf
+            i += 1
+        EndWhile
+        If dead == 0 && WatchedCount > 0
+            ; Every watched chain is alive: the service delivers.
+            WatchdogArmed = false
+            Return
+        EndIf
+        RegisterForSingleUpdate(90.0)
+        If WatchedCount == 0
+            Debug.Trace("[SeverActions_Init] CHRONOMETER WATCHDOG: no module chain to watch - judging the service by Init's own probe")
+        EndIf
+        ; Re-arm the probe even if it landed: its Cancel erased the slot, so this request counts no
+        ; phantom ack, and the verdict needs a landing in the second window (count > base).
+        ArmChronoProbe()
+        ; The kicks and the probe can count as acks: take the bases after them.
+        i = 0
+        While i < WatchedCount
+            WatchedBase[i] = SeverActionsNativeExt2.Chrono_TickCountSinceLoad(WatchedTicks[i])
+            i += 1
+        EndWhile
+        WatchdogInitBase = SeverActionsNativeExt2.Chrono_TickCountSinceLoad("SeverActions_Tick_Init")
+        Return
+    EndIf
+    ; A stale OnUpdate from the save can land here in the first opcodes of a reload: give the load's
+    ; OnPlayerLoadGame / Initialize a moment to clear WatchdogArmed, then look again.
+    Utility.Wait(1.0)
+    If !WatchdogArmed
+        Return
+    EndIf
+    WatchdogArmed = false
+    ; A chain that grew past its base proves the service too: never box over a live chain.
+    Bool chronoProbeLanded = initCount > WatchdogInitBase
+    Bool anyChainAlive = false
+    Int i = 0
+    While i < WatchedCount
+        If SeverActionsNativeExt2.Chrono_TickCountSinceLoad(WatchedTicks[i]) > WatchedBase[i]
+            anyChainAlive = true
+        EndIf
+        i += 1
+    EndWhile
+    If chronoProbeLanded || anyChainAlive
+        i = 0
+        While i < WatchedCount
+            If SeverActionsNativeExt2.Chrono_TickCountSinceLoad(WatchedTicks[i]) <= WatchedBase[i]
+                Debug.Trace("[SeverActions_Init] CHRONOMETER WATCHDOG: the service delivers ticks (" + (initCount > WatchdogInitBase) as String + " probe landed) but " + WatchedTicks[i] + " (" + WatchedOwners[i] + ") never acknowledged one after the restart - not a DLL problem, no warning")
+            EndIf
+            i += 1
+        EndWhile
+        Return
+    EndIf
+    ; The L10n table lives in the DLL this box is about: a missing DLL returns "", one without the
+    ; key returns the key. The fallback stays byte-identical to the en entry in SeverActions_L10n.json.
+    String msgKey = "init.periodicTickNeverStarted"
+    String msg = SeverActionsNativeExt2.Native_L10n(msgKey)
+    If msg == "" || msg == msgKey
+        msg = "SeverActions: the periodic tick service never started, and a restart attempt did not take. SeverActionsNative.dll is likely out of date or missing - update it to match this version's scripts, or every periodic system (followers, travel, arrests, survival) will stay frozen."
+    EndIf
+    Debug.MessageBox(msg)
+    Debug.Trace("[SeverActions_Init] CHRONOMETER WATCHDOG: Init's own chronometer probe never landed, even after a re-arm - stale or missing SeverActionsNative.dll")
+EndEvent
+
+; === Safe-exit stubs of the old shim and MCM inits (see Safe-exit stubs below) ===
+
+Function InitializePrismaUI()
+    ; M-I-STUB 3.9.14-beta25 (P4-10, R8 CLOSED): this cast the quest to the Legacy shim
+    ; SeverActions_PrismaUI and called RegisterForPrismaEvents on it. Never name a shim type in the
+    ; kernel again: a Modular install carries no shims, and a kernel script naming one fails to link
+    ; on the stock VM and takes all of Init with it (F3/F31, D43).
+EndFunction
+
+Function SyncMCMSettings()
+    ; M-I-STUB 3.9.14-beta25 (P4-04, C8/R8): the Settings Authority's per-save replay pushes the RAM-only natives
+    ; (dialogueAnimEnabled, outfitStabilityDelay, furnitureAutoStandDistance), Init's M-X service writes the prompt
+    ; mirrors, the courier registration is SeverActions_Courier.Maintenance's and the MCM reads the Authority.
+EndFunction
+
+; === Safe-exit stubs (M-I, R17) ===
+; A save made while the old Initialize was running resumes its SAVED bytecode on this alias and
+; calls these by name (F7). Each is a void no-op with no typed local, so the old frame walks through
+; them; their work runs from the providers (K3) on the same load. The Get<X>System getters are gone:
+; only the old bodies of these stubs called them, and a call to a missing function returns None and
+; continues (F2).
+; The old frame also reads the deleted LootSystem property after InitializeHearthCamp; whether the VM
+; yields None or drops the frame there, nothing after it is unique to that frame. Check 20 forbids
+; removing a marked stub.
+
+Function RegisterDecorators()
+    ; M-I-STUB 3.9.14-beta25 (P3-04): the SLO and Fertility decorators register from their providers' stage 0.
+EndFunction
+
+Function InitializeBridge()
+    ; M-I-STUB 3.9.14-beta25 (P3-04): the fertility provider's stages 0 and 1.
+EndFunction
+
+Function InitializeTravelSystem(Bool isFirstInit)
+    ; M-I-STUB 3.9.14-beta25 (P3-04): the travel provider's stage 1 (the recovery itself runs from travelcore, R23).
+EndFunction
+
+Function InitializeFurnitureSystem()
+    ; M-I-STUB 3.9.14-beta25 (P3-04): the travel provider's stage 1.
+EndFunction
+
+Function InitializeFollowSystem()
+    ; M-I-STUB 3.9.14-beta25 (P3-04): the followers provider's stage 1.
+EndFunction
+
+Function InitializeFollowerManagerSystem()
+    ; M-I-STUB 3.9.14-beta25 (P3-04): the followers provider's stage 1.
+EndFunction
+
+Function InitializeDebtSystem()
+    ; M-I-STUB 3.9.14-beta25 (P3-04): the economy provider's stage 1.
+EndFunction
+
+Function InitializeArrestSystem()
+    ; M-I-STUB 3.9.14-beta25 (P3-04): the arrest provider's stage 1.
+EndFunction
+
+Function RunLoadRecovery()
+    ; M-I-STUB 3.9.14-beta25 (P3-04): the providers' stages 1 and 2 and ArmWatchdog.
+EndFunction
+
+Function InitializeSpellTeachSystem()
+    ; M-I-STUB 3.9.14-beta25 (P3-04): the items provider's stage 1.
+EndFunction
+
+Function InitializeSurvivalSystem()
+    ; M-I-STUB 3.9.14-beta25 (P3-04): the survival provider's stage 1.
+EndFunction
+
+Function InitializeHearthCamp()
+    ; M-I-STUB 3.9.14-beta25 (P3-04): Hearth heals its own load recovery (the R24 belt, P3-03); the kernel names no Hearth type.
+EndFunction
+
+; Removed functions that shipped in v3.9.14-beta25, kept for a suspended frame that calls them by
+; name (F7). Never remove one; the registry is fomod/safe_exit_stubs.json.
+
+Function SyncPluginConfig()
+    {Safe-exit stub: unreachable at beta25, kept because check 20's union rule does not read call sites.}
+    ; M-I-STUB 3.9.14-beta25 (P3-08): unreachable at beta25 (call sites commented out), deleted by P2-08 (c98e4cb3)
+EndFunction
+
+
+; === UI item transfers ===
+
+Event OnPrismaItemMoved(String eventName, String strArg, Float numArg, Form sender)
+    {Registers an item the player moved on the Inventory page (transferItems) or granted from the
+     Catalog (giveItem) as an item_given / item_taken event, as the spoken GiveItem / TakeItem
+     actions do: SkyrimNet's own container_changed event for these is ephemeral and reaction-free.
+     strArg = "fromFid|toFid|itemFid|count", FormIDs as signed decimal (never float numArg, the
+     2^24 rule); fromFid 0 = the catalog.}
+    Int fromFid = SeverActions_ModuleBase.VerbField(strArg, 0) as Int
+    Int toFid   = SeverActions_ModuleBase.VerbField(strArg, 1) as Int
+    Int itemFid = SeverActions_ModuleBase.VerbField(strArg, 2) as Int
+    Int count   = SeverActions_ModuleBase.VerbField(strArg, 3) as Int
+    Form item = Game.GetFormEx(itemFid)
+    Actor toActor = Game.GetFormEx(toFid) as Actor
+    If !item || !toActor
+        Return
+    EndIf
+    Actor player = Game.GetPlayer()
+    Actor fromActor = None
+    If fromFid != 0
+        fromActor = Game.GetFormEx(fromFid) as Actor
+    EndIf
+    If fromActor == None
+        fromActor = player   ; a catalog grant is the player's gift
+    EndIf
+    ; A Catalog grant to the player (from 0, read as the player; the Catalog's default target) is a
+    ; spawn, not a hand-over: it would log "<player> took N <item> from <player>".
+    If fromActor == toActor
+        Return
+    EndIf
+    ; The player's renamed/enchanted piece keeps the name they gave it - a
+    ; base FormID does not identify an item.
+    String itemName = item.GetName()
+    String customName = SeverActionsNativeExt2.GetCustomItemName(toActor, item)
+    If customName != ""
+        itemName = customName
+    EndIf
+    String qty = ""
+    If count > 1
+        qty = count + " "
+    EndIf
+    If toActor == player
+        SkyrimNetApi.RegisterEvent("item_taken", player.GetDisplayName() + " took " + qty + itemName + " from " + fromActor.GetDisplayName(), player, fromActor)
+    Else
+        SkyrimNetApi.RegisterEvent("item_given", fromActor.GetDisplayName() + " gave " + qty + itemName + " to " + toActor.GetDisplayName(), fromActor, toActor)
+    EndIf
+EndEvent

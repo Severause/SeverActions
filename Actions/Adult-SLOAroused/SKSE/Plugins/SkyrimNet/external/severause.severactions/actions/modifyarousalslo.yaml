@@ -1,0 +1,29 @@
+customCategory: sa_arousal_slo
+name: ModifyArousalSLO
+description: "Use sparingly: once, when something that just happened clearly stirs or cools the speaker's own desire (a flirtation that lands, a kiss, a humiliation, a cold shock). Shifts their arousal level up or down; it is an inner state, not an act. Not on every line of a flirtation or a quarrel, not for anyone else's arousal, and not to start anything physical. Most lines need none."
+questEditorId: SeverActions
+scriptName: SeverActions_SLOArousal
+executionFunctionName: ModifyArousal_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor whose arousal is shifting
+  - type: dynamic
+    name: amount
+    description: "the change as a whole number, positive raises and negative lowers: small 2 to 5, strong 6 to 12, extreme up to 15; a sharp cooling may go to -20; never 0"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

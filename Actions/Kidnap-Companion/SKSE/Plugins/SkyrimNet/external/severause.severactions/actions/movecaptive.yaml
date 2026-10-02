@@ -1,0 +1,78 @@
+customCategory: sa_captives
+name: MoveCaptive
+description: "Use when {{ player.name }} tells the speaker to move a captive already being held to a new place (somewhere safer, out of sight, a named house) and it happens now. The speaker goes to the captive, marches them bound there and keeps guard. Not for talk of moving them later. To lead the captive along with the group, RestrainNPC; to free them, ReleaseCaptive."
+questEditorId: SeverActions
+scriptName: SeverActions_Kidnap
+executionFunctionName: MoveCaptive
+parameterMapping:
+  - type: speaker
+    name: akEscort
+    description: the companion moving the captive (may differ from the original kidnapper)
+  - type: dynamic
+    name: targetName
+    description: "the captive's name, approximate is fine; leave empty when only one captive is held"
+    optional: true
+    default: ""
+  - type: dynamic
+    name: destination
+    description: "the new place to hold them: a named location, house or interior (e.g. 'Breezehome')"
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      # Opt-in feature toggle. Custom decorator — STRING compare, never == true.
+      - decoratorName: "sever_kidnap_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+      # OR the restrain opt-in: restraint is default-ON while kidnap is
+      # default-OFF, and a restrained captive must be manageable under
+      # default settings.
+      - decoratorName: "sever_restrain_enabled"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "OR"
+    required: true
+  - conditions:
+      - decoratorName: "is_sever_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot manage captives or take new ones (the
+      # self-release hole). String decorator: "" = not a victim -> eligible.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Arrest in flight (either side), judgment, escort, spell cast — the
+      # SeverActions arrest path calls SetActorBusy("arrest") on BOTH the
+      # guard and the person being arrested. Users reported each of them
+      # kicking off a captive move mid-arrest; two FSMs then fight over the same
+      # actor's packages and captured AVs. Built-in decorator, real bool.
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

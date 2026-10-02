@@ -1,0 +1,48 @@
+customCategory: camp
+name: GoToCamp
+description: "Use when {{ player.name }} sends the speaker back to tonight's camp ahead of them ('go back to camp', 'wait for me at the fire'), or the speaker says they are heading there now on their own. The speaker leaves {{ player.name }}, goes to the camp and stays there until told to follow again. Not for going back together: when {{ player.name }} says 'let's head back to camp', the speaker simply comes along. Not for plans for later; the company's base is GoToBase."
+questEditorId: SeversHearth
+scriptName: SeversHearth_Camp
+executionFunctionName: GoToCamp
+parameterMapping:
+  - type: speaker
+    name: akNPC
+    description: The NPC who will travel to the camp.
+  - type: dynamic
+    name: speed
+    description: "how fast they go: 0 walk (unhurried), 1 jog (normal), 2 run (urgent or told to hurry)"
+    optional: true
+    default: 1
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+      - decoratorName: "current_camp"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+      # An indoor camp is no journey's end (GoToCamp refuses it); the marker is current_camp's text.
+      - decoratorName: "current_camp"
+        arguments: ["currentActor"]
+        comparisonOperator: "not_contains"
+        expectedValue: "made indoors"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

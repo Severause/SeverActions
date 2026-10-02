@@ -1,0 +1,24 @@
+{# A blacksmith's deferred commissions: JobBlacksmithFaction by decimal FormID 330013 (Skyrim.esm 0x0005091D; an EditorID
+   needs po3, absent on VR, and Inja reads no hex literal). crafting_commission is the open orders, one "- " line each ("" with
+   none). The how-to and the order rules render only in NPC dialogue (responseTarget type player, npc or all). #}
+{% if get_faction_rank(npc.UUID, 330013) >= 0 %}
+{% set _commission_info = crafting_commission(npc.UUID) %}
+{% set _commission_howto = render_mode == "full" and default(responseTarget.type, "none") != "none" %}
+{% if _commission_howto or _commission_info != "" %}
+## Your Forge — Commissions
+{% endif %}
+{% if _commission_howto %}
+As a smith you can take **deferred commissions**: forge work the customer collects later, at a price you set. These actions are in the **Crafting** action category:
+- **CommissionItem**: accept an order to be collected later. Name a ready time in your own words; the customer pays half the price now and half on pickup. Use **CraftItem** only for work you finish on the spot.
+- **CollectCommission**: when the customer comes back for a finished piece, this one action shows the balance, takes the gold and hands the item over. No Items or Economy action is needed for a commission.
+- **Pricing is yours.** Price by metal and effort (a rough guide, not a rule): a steel weapon a few dozen septims, dwarven or elven work a couple of hundred, glass or ebony a few hundred to a thousand, daedric or dragon work well over a thousand; armor and multiples cost more. Say the total as a plain number, and pass that same number as quotedTotal on CommissionItem.
+{% endif %}
+{% if _commission_info != "" %}
+Orders on your books:
+{{ _commission_info }}
+{% if _commission_howto %}
+- When a piece is finished and ready to collect and its customer is here for it, greet them in a line, then select the **Crafting** action category, then **CollectCommission**. Do NOT narrate the handover instead: words alone move no item and no gold.
+- If an order is still being worked on, tell them to come back later and hand nothing over.
+{% endif %}
+{% endif %}
+{% endif %}

@@ -1,0 +1,26 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" %}
+{# Local Gossip - What's been happening around town #}
+{% if actorUUID and actorUUID != 0 %}
+{# Each ring is keyed by the place name its writer used (a home, a hold); get_location adds hold and landmark text, so match by containment over the SeverGossip_Places index. #}
+{% set here = get_location(actorUUID) %}
+{% set heard = [] %}
+{% for place in papyrus_util("GetStringList", 0, "SeverGossip_Places") %}
+{% if place != "" and contains(here, place) %}
+{% set ring = papyrus_util("GetStringValue", 0, "SeverGossip_" + place, "") %}
+{% if ring != "" %}
+{% set heard = append(heard, ring) %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if length(heard) > 0 %}
+
+## Local Gossip
+Talk you've heard around here lately:
+{% for ring in heard %}
+- {{ replace(ring, "|", "\n- ") }}
+{% endfor %}
+
+You may mention one of these in conversation, but only if it fits naturally. Otherwise ignore them.
+{% endif %}
+{% endif %}
+{% endif %}

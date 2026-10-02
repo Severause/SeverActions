@@ -1,0 +1,51 @@
+customCategory: items
+name: SearchContainer
+description: "Use when someone wants to know what a chest, barrel, sack, drawer or strongbox nearby holds and the speaker goes to look now. Nothing is taken; the contents are revealed so they, or whoever asked, can choose what to take next with LootContainer. A locked container gets one lockpick attempt."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: SearchContainer_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor rummaging through the container
+  - type: dynamic
+    name: containerName
+    description: "the container as named nearby (e.g. 'Chest', 'Barrel', 'Sack', 'End Table')"
+enabled: true
+eligibilityRules:
+  - conditions:
+      # A traveler on the road: walking to the object would take them off it.
+      - decoratorName: "sever_is_traveling"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

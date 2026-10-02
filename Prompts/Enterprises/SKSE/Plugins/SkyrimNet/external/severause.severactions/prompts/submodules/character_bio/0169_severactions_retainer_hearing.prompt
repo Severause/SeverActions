@@ -1,0 +1,27 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# A retainer's grievance or open request, and once the player has sent word to talk it out, the hearing that ends in one Employment action (the shape of 0276's persuasion block). The action rules render only where an action can be chosen (_actionsOffered: NPC dialogue, whose responseTarget type is player, npc or all, and the drill-down). #}
+{% set _actionsOffered = render_mode == "action" or (render_mode == "full" and default(responseTarget.type, "none") != "none") %}
+{% if actorUUID and actorUUID != 0 and player and player.UUID and player.UUID != 0 and actorUUID != player.UUID %}
+{% set retGrievance = retainer_grievance(actorUUID) %}
+{% if retGrievance != "" %}
+{% set retName = decnpc(actorUUID).name %}
+## Unsettled Business with {{ player.name }}
+{{ retGrievance }}
+{% if _actionsOffered %}
+{% set retCanNegotiate = has_raise_ask(actorUUID) != "" %}
+{% if retainer_hearing(actorUUID) != "" %}
+**The hearing:** if {{ player.name }} is speaking with {{ retName }} now, this is the talk they sent word about. {{ retName }} raises the grievance plainly, hears {{ player.name }} out, and judges them by what is actually said, not by pleasantries. Before the talk ends, {{ retName }} selects the **Employment** action category, then exactly one of:
+- **GrantRetainerRaise**, if {{ player.name }} clearly commits to better pay or easier terms: grants the raise, promises the owed coin will move, or eases the cut. This changes the terms and is the strongest answer to a pay grievance; a clear commitment earns it, not ReassureRetainer.
+{% if retCanNegotiate %}
+- **NegotiateTerms**, if {{ player.name }} answers {{ retName }}'s request with a counter-offer below what they asked and {{ retName }} accepts it.
+{% endif %}
+- **ReassureRetainer**, if {{ player.name }} genuinely takes up the grievance (a sincere apology, a real promise, an honest reckoning) without changing the terms. Empty flattery does not earn it.
+- **BrushOffRetainer**, if {{ player.name }} dismisses or mocks the grievance, threatens {{ retName }}, or answers with hollow words and a change of subject.
+- No other action category settles the grievance during this talk.
+{% else %}
+- If {{ player.name }} seriously takes this up, {{ retName }} selects the **Employment** action category, then **GrantRetainerRaise** if {{ player.name }} commits to better pay or easier terms, {% if retCanNegotiate %}**NegotiateTerms** if {{ retName }} accepts a counter-offer below their ask, {% endif %}**ReassureRetainer** if {{ player.name }} hears it out honestly without changing the terms, or **BrushOffRetainer** if they dismiss it to {{ retName }}'s face. Small talk settles nothing.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

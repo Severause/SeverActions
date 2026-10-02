@@ -1,0 +1,11 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" %}
+{# Bio Blocks: the library blocks applied to this character, each a "### Title" section from custom_bio_blocks
+   under this file's own heading. Ships with the DLL that registers the decorator; the bare test catches null. #}
+{% if actorUUID and actorUUID != 0 %}
+{% set bio_blocks = custom_bio_blocks(actorUUID) %}
+{% if bio_blocks and bio_blocks != "" %}
+## Additional Details
+{{ bio_blocks }}
+{% endif %}
+{% endif %}
+{% endif %}

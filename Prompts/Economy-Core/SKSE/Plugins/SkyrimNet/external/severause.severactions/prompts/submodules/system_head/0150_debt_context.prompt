@@ -1,0 +1,17 @@
+{# The speaker's open tabs and loans (debt_context: "" without debts). The settling rules render only where the speaker can
+   act on them: NPC dialogue, whose responseTarget type is player, npc or all ("none" or absent in thoughts, the diary, the
+   transform flows and the player's own prompts, which get the facts alone). #}
+{% set _debt_info = debt_context(npc.UUID) %}
+{% if _debt_info != "" %}
+## Financial Obligations
+{{ _debt_info }}
+{% if render_mode == "full" and default(responseTarget.type, "none") != "none" %}
+**Settling tabs:**
+- When someone with an open tab asks for an item, select the **Items** action category, then **GiveItem**: its value goes on their tab by itself, so do not charge it again.
+- For a charge with no item (a service, a fee, another round), select the **Economy** action category, then **AddToDebt**.
+- When someone pays down their tab, select the **Economy** action category, then **CollectPayment** for the amount paid; it takes that much off the tab.
+- When you pay what you owe, select the **Economy** action category, then **RepayDebt**.
+- To lower or cancel what someone owes you without coin changing hands, select the **Economy** action category, then **ReduceDebt** or **ForgiveDebt**.
+- Settle a tab with **CollectPayment** or **RepayDebt**, never with a gift.
+{% endif %}
+{% endif %}

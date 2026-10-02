@@ -1,0 +1,32 @@
+customCategory: camp
+name: BreakBase
+description: "Use only when {{ player.name }} and the speaker decide, in this line, to abandon the company's base for good. Strikes its tents and puts out the fire; the stash chest's contents are kept. Not for leaving it for a while (a base stands while the company is away), moving it, or tonight's field camp (BreakCamp)."
+questEditorId: SeversHearth
+scriptName: SeversHearth_Camp
+executionFunctionName: BreakBase
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: The actor striking the base (player or companion).
+enabled: true
+defaultPriority: 5
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+      - decoratorName: "camp_base"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act - see the is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

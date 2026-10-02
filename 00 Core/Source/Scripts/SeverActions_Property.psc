@@ -1,22 +1,18 @@
 Scriptname SeverActions_Property extends Quest
 
 {
-    Property Ownership System for SeverActions
-
-    Transfers cell/building ownership via native C++ functions with
-    faction-based co-ownership. Both the player and original owner are
-    added to a shared faction so neither gets theft/trespass flags.
+    Property ownership: an NPC hands a cell or building to the player through native C++,
+    as co-ownership through a shared faction.
 }
 
 Faction Property SeverActions_PropertyFaction Auto
-{Shared faction for property co-ownership. Both player and original
- owner are added so both can use beds, containers, etc. without theft.
- Create in CK — just a new faction, no special setup needed.}
+{The co-ownership faction: the player and the residents whose ownership a transfer took join it,
+ so each can use the beds and containers without a theft or trespass flag. It is shared by every
+ transferred property.}
 
 Function TransferOwnership(Actor akActor, String propertyName)
-    {An NPC transfers ownership of a property to the player via shared faction.
-     akActor is the NPC giving away ownership (the speaker).
-     If propertyName is empty, transfers the current location.}
+    {akActor (the speaker, who must own it or be its hold's jarl) gives propertyName to the
+     player; an empty name means the current cell.}
 
     If akActor == None
         Debug.Trace("[SeverActions_Property] ERROR: TransferOwnership called with None actor")
@@ -25,7 +21,7 @@ Function TransferOwnership(Actor akActor, String propertyName)
 
     If SeverActions_PropertyFaction == None
         Debug.Trace("[SeverActions_Property] ERROR: SeverActions_PropertyFaction not filled - create in CK")
-        Debug.Notification("Property system error - faction not configured.")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("property.systemErrorFaction"))
         Return
     EndIf
 
@@ -34,19 +30,20 @@ Function TransferOwnership(Actor akActor, String propertyName)
         cleanName = SeverActionsNative.TrimString(cleanName)
     EndIf
 
-    ; Ownership gate (issue #12 public). The LLM picks this action freely and
-    ; SkyrimNet eligibility decorators can't see the dynamic propertyName
-    ; parameter at filter time, so the only place to enforce "speaker actually
-    ; owns this" is here. Native_IsCellOwner accepts either a direct NPC owner
-    ; or membership in the cell's faction owner (covers Hulda/Bannered Mare via
-    ; BanneredMareInnFaction etc.). Empty cleanName falls back to akActor's
-    ; current cell, matching the transfer fallback.
-    If !SeverActionsNative.Native_IsCellOwner(akActor, cleanName)
+    ; Eligibility decorators cannot see propertyName, so ownership is enforced here.
+    ; Native_IsCellOwner accepts the cell's NPC owner, a member of its owning faction (Hulda
+    ; through BanneredMareInnFaction) or the hold's jarl. With "" it checks the SPEAKER's cell
+    ; while the transfer takes the PLAYER's, so an unnamed transfer needs both in one cell.
+    Bool owns = SeverActionsNative.Native_IsCellOwner(akActor, cleanName)
+    If owns && cleanName == "" && akActor.GetParentCell() != Game.GetPlayer().GetParentCell()
+        owns = False
+    EndIf
+    If !owns
         String rejected = cleanName
         If rejected == ""
             rejected = "this property"
         EndIf
-        Debug.Notification(akActor.GetDisplayName() + " doesn't own " + rejected + ".")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("property.doesntOwn", ("" + akActor.GetDisplayName()), ("" + rejected)))
         Debug.Trace("[SeverActions_Property] REJECTED transfer - " + akActor.GetDisplayName() \
             + " is not the owner of '" + rejected + "'")
         Return
@@ -60,10 +57,10 @@ Function TransferOwnership(Actor akActor, String propertyName)
     EndIf
 
     If success
-        Debug.Notification(akActor.GetDisplayName() + " transferred " + displayName + " to you.")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("property.transferredToYou", ("" + akActor.GetDisplayName()), ("" + displayName)))
         Debug.Trace("[SeverActions_Property] " + akActor.GetDisplayName() + " transferred '" + displayName + "' to player")
     Else
-        Debug.Notification("Failed to transfer ownership.")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("property.failedToTransfer"))
         Debug.Trace("[SeverActions_Property] Failed to transfer '" + displayName + "' from " + akActor.GetDisplayName())
     EndIf
 EndFunction

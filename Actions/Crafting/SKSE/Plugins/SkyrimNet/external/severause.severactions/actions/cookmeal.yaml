@@ -1,0 +1,50 @@
+customCategory: crafting
+name: CookMeal
+description: "Use when the speaker commits in this line to cooking a named dish now for someone who asked for it. They go to the nearest cookpot or oven, cook and serve it; it costs nothing. Food only: drinks and food already made are sold (Economy) or given (Items). Not for cooking already under way or kitchen chores. A potion is BrewPotion."
+questEditorId: SeverActions
+scriptName: SeverActions_Crafting
+executionFunctionName: CookMeal_Internal
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor working the spit and ladle
+  - type: dynamic
+    name: recipeName
+    description: "the dish as the game names it ('Venison Stew', 'Sweet Roll')"
+  - type: dynamic
+    name: recipient
+    description: "who receives it: exact name as listed in Nearby Actors, or the player's name"
+  - type: dynamic
+    name: itemCount
+    description: "how many portions; above 1 only when several were asked for"
+    optional: true
+    default: 1
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: is_in_combat
+        arguments:
+          - currentActor
+        comparisonOperator: ==
+        expectedValue: false
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

@@ -1,0 +1,30 @@
+customCategory: camp
+name: Camping
+description: "Category: the player's own campsite: pitch camp where the player stands (the first camp becomes the company's permanent base, later ones a night's bivouac), break camp, make the camp the base, build the base out or strike it, or send the speaker ahead to the camp or the base to wait there. Only when it is decided in this line; 'we should camp soon' is talk, and heading back together with the player needs no action. For a trip to the camp or base, choose this over other travel; changing pace on, or calling off, a trip already under way is Journeys. Not inns, beds, or outlaw camps."
+enabled: true
+
+eligibilityRules:
+  - conditions:
+      # SkyrimNet's built-in teammate test (a bool: IsPlayerTeammate, at any distance).
+      # sever_follow_state and is_sever_follower are followers-owned, outside
+      # hearth's install closure.
+      - decoratorName: "is_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

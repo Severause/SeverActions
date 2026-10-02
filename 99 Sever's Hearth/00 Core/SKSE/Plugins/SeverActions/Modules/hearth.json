@@ -1,0 +1,22 @@
+{
+    "id":  "hearth",
+    "version":  "4.0.0",
+    "name":  "Sever\u0027s Hearth",
+    "group":  "World",
+    "requires":  [
+                     "travelcore"
+                 ],
+    "scripts":  [
+                    "SeversHearth_Camp"
+                ],
+    "yamls":  [
+                  "BreakBase.yaml",
+                  "BreakCamp.yaml",
+                  "EstablishCamp.yaml",
+                  "GoToBase.yaml",
+                  "GoToCamp.yaml",
+                  "PromoteCampToBase.yaml",
+                  "UpgradeBase.yaml",
+                  "camping.yaml"
+              ]
+}

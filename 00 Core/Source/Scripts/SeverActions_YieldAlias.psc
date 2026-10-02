@@ -1,29 +1,15 @@
 Scriptname SeverActions_YieldAlias extends ReferenceAlias
 
 {
-    Per-yielded-NPC persistence anchor via ReferenceAlias.
-
-    When a generic hostile NPC (bandit, necromancer, etc.) surrenders via the
-    Yield action, they're ForceRefTo'd into an empty YieldSlot. The alias
-    makes them persistent — the engine won't recycle or despawn them when
-    the player crosses cells.
-
-    The 3D-load re-apply (re-zero Aggression + re-add SeverSurrenderedFaction on
-    every 3D-load) is owned by native YieldMonitor, which sinks
-    TESObjectLoadedEvent and covers ALL tracked actors via the cosave-backed
-    entry map. This script keeps only the OnDeath slot-cleanup +
-    monitor-unregister so the slot can be reused by another yielded NPC.
-
-    CK Setup:
-    - 5 ReferenceAlias slots on the SeverActions quest (YieldSlot00-04)
-    - Optional, Allow Reuse, Initially Cleared
-    - This script attached to each
+    Persistence anchor for a generic hostile NPC who surrendered via the Yield action: the
+    YieldSlot alias keeps them from being recycled across cells. The native YieldMonitor
+    re-applies the pacification (Aggression 0, SeverSurrenderedFaction) on every 3D load; this
+    script only frees the slot on death.
+    Attached to each YieldSlot alias (00-04: Optional, Allow Reuse, Initially Cleared).
 }
 
 Event OnDeath(Actor akKiller)
-    {When the yielded NPC dies, free the alias slot and clean up tracking.
-     The 3D-load re-apply lives in native
-     YieldMonitor::ProcessEvent(TESObjectLoadedEvent).}
+    {Free the slot and drop the actor from the yield tracking list and the native monitor.}
     Actor npc = self.GetActorRef()
     If npc
         StorageUtil.FormListRemove(None, "SeverCombat_YieldedGenericActors", npc)

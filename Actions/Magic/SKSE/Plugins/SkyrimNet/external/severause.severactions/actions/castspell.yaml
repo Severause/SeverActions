@@ -1,0 +1,65 @@
+customCategory: magic
+name: CastSpell
+description: "Use when the speaker casts one spell they know right now, outside a fight, asked and agreeing or on their own in this line: mending a friend's wound, a light for a dark passage, a ward before a door, a firebolt at a beast on the road. Not for readying a spell 'in case', a threat, or talk about magic, and never to start a fight with a person (Combat). A heal on a wounded target repeats until they are whole or the caster runs out of magicka."
+questEditorId: SeverActions
+scriptName: SeverActions_SpellCast
+executionFunctionName: CastSpell_Execute
+parameterMapping:
+  - type: speaker
+    name: akCaster
+    description: the actor raising their hand to work the magic
+  - type: dynamic
+    name: spellName
+    description: "the spell to cast, exactly as listed under the speaker's known spells (e.g. 'Healing', 'Healing Hands', 'Flames'). Match the delivery to the target: a self-only spell such as 'Healing' or 'Oakflesh' affects only the caster, so to heal or ward someone else pick a touch or aimed spell ('Healing Hands', 'Close Wounds')"
+  - type: dynamic
+    name: targetName
+    description: "the name of the person or creature to cast at; 'self' for the caster; '0' to cast straight ahead or for a self-only spell"
+    optional: true
+    default: "0"
+  - type: static
+    value: false
+    name: bDualCasting
+    description: Static bool - dual-hand cast for double magnitude at double cost
+  - type: static
+    value: true
+    name: bHealToFull
+    description: Static bool - for Restoration heals, keep casting until target is fully healed or caster is out of magicka
+  - type: static
+    value: true
+    name: bUseMagicka
+    description: Static bool - deduct magicka cost from the caster after each cast
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+# No eventString — the cast is visible in-game (animation + projectile + sound)
+# and we deliberately don't pollute the LLM context with a redundant "X casts Y"
+# event for every cast. The action invocation itself is enough signal.
+

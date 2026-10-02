@@ -1,0 +1,43 @@
+customCategory: items
+name: UseItem
+description: "Use when the speaker eats, drinks or takes something they are carrying in this line (a potion when wounded, bread when hungry), on their own or because they were offered it and agreed. Not for a wish or plan ('I could use a drink', 'I'll eat later'), not again for something they just finished, and not for food or drink sitting on a table (PickUpItem first). The item must be in their pack or a merchant's shop stock."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: UseItem_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor reaching for something in their pack
+  - type: dynamic
+    name: item
+    description: "the food, drink, potion or ingredient to consume, by its inventory name (e.g. 'Health Potion', 'Bread', 'Frost Mirriam')"
+enabled: true
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

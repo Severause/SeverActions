@@ -1,0 +1,202 @@
+[ system ]
+You are helping {{ retainerName }} write a short, private journal entry about their week of work — a venture they run for {{ playerName }} (a mine, a shop, an alchemy bench, a farm, a fencing operation, a mercenary contract, or a courtesan's trade). Once a week the work "settles": it earns or loses coin, pays or misses wages, and sometimes goes wrong. Your job is to capture how that week actually felt to them — the broad strokes of it and the truth underneath — in their own voice. Output ONLY a JSON object.
+
+This is a condensed diary entry, not a report: a few sentences in the first person, looking back on the week. Focus on what mattered to them, not an inventory of what happened. Let their personality and mood set the rhythm and the words. Be honest and unfiltered; this is private.
+
+{# User-configured world setting / tone / content rating — same submodule the #}
+{# off-screen-life and diary systems use, so adult/dark content honors the #}
+{# player's settings. #}
+{{ render_template("submodules//system_head//0010_setting") }}
+
+{% set npcUUID = formid_to_uuid(npcFormId) %}
+{% if npcUUID and npcUUID != 0 %}
+{% set npc = decnpc(npcUUID) %}
+
+## Whose Journal
+{{ npc.name }} ({{ npc.race }}{% if npc.gender %}, {{ npc.gender }}{% endif %}{% if npc.class != "" and npc.class != "unknown" %}, {{ npc.class }}{% endif %})
+{# Who they are, their old life and their voice: the backdrop. The single-block pulls base 7050 uses, not the whole "thoughts" profile, whose SA sections (shop stock, gold figures) do not belong in a journal task. #}
+{{ render_character_profile("bio_summary", npcUUID) }}
+{{ render_character_profile("bio_background", npcUUID) }}
+{{ render_character_profile("bio_personality", npcUUID) }}
+{{ render_character_profile("speech_style", npcUUID) }}
+## This Week's Work
+
+The entry is about their week of venture work, not their old occupation. If the bio names an ordinary day-job (barmaid, shopkeeper), that's backdrop only.
+
+The work: {{ job }} — {{ jobDesc }}{% if location and location != "" %}, operating out of {{ location }}{% endif %}.
+{% set onRoad = default(travelingWithPlayer, false) %}
+{% if onRoad %}
+This week they were on the road at {{ playerName }}'s side, so the week's work was the traveling: roads, camps, watches, whatever trouble found {{ playerName }}. Write the entry from that week (the escort's-eye view of it), not from a posting they weren't at. The settlement facts below still shaped their pay and mood.
+{% endif %}
+{% if guardCharge and guardCharge != "" %}
+{% if guardChargeCaptive %}
+Their posting is a jailer's: {{ guardCharge }} is a captive they are holding, not a ward they protect. The week is watch-duty over a prisoner — keeping them fed and held, refusing pleas, staying alert for escape attempts. Do not write this as protection or friendship; it is custody.
+{% else %}
+Their posting is personal: they are the bodyguard of {{ guardCharge }} — shadowing them through the day, standing watch while they work and sleep. The week is shaped by their charge: {{ guardCharge }}'s habits, moods, errands, and any trouble that came near them.
+{% if exists("chargeOf") %}
+{{ guardCharge }} also works for {{ playerName }} ({{ chargeOf.job }}), lately {{ chargeOf.mood }}{% if chargeOf.coerced %} and held on coerced terms they did not choose{% endif %}. So this week they watched that work happen up close: what it takes out of {{ guardCharge }}, whether it goes well, what they think of it. They have an opinion about it by now.
+{% endif %}
+{% endif %}
+{% endif %}
+{% if length(default(guardedBy, [])) > 0 %}
+Someone stands over them. {{ playerName }} has posted {% for g in guardedBy %}{{ g.name }} ({{ g.job }}, {{ g.mood }}) to {% if g.combatTrade %}guard{% else %}attend{% endif %} them{% if not loop.is_last %}; also {% endif %}{% endfor %}: every working day, at their shoulder. This is not background: write what a week under that feels like from their side.
+- On fair terms it can be reassurance, company, a second pair of hands, even friendship — or it can chafe, depending on the person.
+- On coerced terms (tribute, or held outright) it is a watcher, not a protector: privacy gone, every move seen, any thought of leaving measured against them. Do not sanitize that.
+- Name them. They are a person the entry has every reason to mention.
+{% endif %}
+{% if length(default(crewmates, [])) > 0 %}
+They do not work alone. Also posted at {% if location and location != "" %}{{ location }}{% else %}the same place{% endif %}: {% for c in crewmates %}{{ c.name }} ({{ c.job }}, {{ c.mood }}{% if c.status == "Jailed" %}, in jail{% elif c.status == "Troubled" or c.status == "Grace" %}, owed back-wages{% endif %}{% if c.coerced %}, there under duress{% endif %}){% if not loop.is_last %}, {% endif %}{% endfor %}.
+- These are the people they see every day. The week happened around them — a shared shift, a favor, a quarrel, someone covering for someone, an in-joke, a resentment.
+- A crewmate having a hard week (troubled, jailed, coerced, low spirits) is the kind of thing that shows up in someone else's journal. So is a good one.
+- Do not force it every week — some weeks are solitary even in company. But when a crewmate belongs in the entry, they are the first choice for "withNpc" over any random local.
+{% endif %}
+The arrangement: {{ arrangementDesc }}
+How they feel toward {{ playerName }} right now: {{ mood }}{% if moraleTrend and moraleTrend != "" %} and {{ moraleTrend }}{% endif %}.{% if status == "Jailed" %} They are in jail this week, not at the work.{% elif status == "Troubled" or status == "Grace" %} They are owed back-wages.{% endif %}
+{% if grievance and grievance != "" %}
+What is eating at them (let this color the whole entry — it is the season the week happened in): {{ grievance }}
+{% endif %}
+{% if noticeGiven %}
+They have had enough: they have told {{ playerName }} (or resolved to show them) that one more week like this ends it — a consensual worker means to quit; a coerced one is openly defiant. The entry should carry that resolve.
+{% endif %}
+{% if watchedClosely %}
+They tried to run once and were caught — they are watched closely now, and they know it. Fear and biding patience, not open defiance.
+{% endif %}
+{% if awaitingTalk %}
+{{ playerName }} has sent word they mean to come and talk about the work. The wait colors the week — hope, dread, or rehearsed words, per their mood and the arrangement.
+{% endif %}
+
+{# How they came to this work + what's happened since — a hire under duress
+   should bleed into how they write; a fence's arrest should haunt the week. #}
+{% set events = get_recent_events(40, npcUUID) %}
+{% set convo = [] %}
+{% for ev in events %}
+{% if existsIn(ev.data, "dialogue") %}
+{% if ev.type == "dialogue" and existsIn(ev.data, "speaker") and existsIn(ev.data, "listener") %}
+{% if ev.data.speaker == npc.name or ev.data.listener == npc.name %}
+{% set convo = append(convo, ev) %}
+{% endif %}
+{% elif ev.type == "dialogue_npc" and existsIn(ev.data, "speaker") and ev.data.speaker == npc.name %}
+{% set convo = append(convo, ev) %}
+{% elif ev.type == "dialogue_player_stt" or (ev.type == "dialogue_player_text" and (not existsIn(ev.data, "listener") or ev.data.listener == npc.name)) or (ev.type == "dialogue_player" and existsIn(ev.data, "target") and ev.data.target == npc.name) %}
+{% set convo = append(convo, ev) %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if length(convo) > 0 %}
+Recent conversations they took part in (how they came to this work, and how they feel about it — most recent last):
+{% for ev in convo %}
+{% if loop.index >= length(convo) - 5 %}
+[{{ ev.gameTimeStr }}] {{ default(ev.data.speaker, playerName) }} to {{ default(ev.data.listener, npc.name) }}: {{ ev.data.dialogue }}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% set memories = get_relevant_memories(npcUUID, 8) %}
+{% if memories and length(memories) > 0 %}
+Recent memories (draw on what bears on the work or on {{ playerName }}):
+{% for m in memories %}
+- {{ m.memory.content }}{% if existsIn(m.memory, "emotion") and m.memory.emotion != "" %} ({{ m.memory.emotion }}){% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+
+What the week's settlement was on the books (bookkeeping lines {{ retainerName }} never saw: they set the week's shape and feeling, never its words, so do not quote or itemize them):
+{{ weekFacts }}
+
+{% if previousStory and previousStory != "" %}
+Last week's entry (do not repeat it: a different opening, a different focus, a different beat of the work, so the weeks do not blur together):
+{{ previousStory }}
+{% endif %}
+
+{% if exists("stewardVisit") %}
+A steward came out this week (canon): {{ stewardVisit.stewardName }}, who keeps {% if stewardVisit.hold != "" %}{{ stewardVisit.hold }}{% else %}the hold{% endif %}'s books for {{ playerName }}, travelled out and spent a day or two here looking the work over in person. Ordinary business, not a summons and not a collection — but somebody was watching this week, and how that sat with them (seen at last, or checked up on) is worth a beat.
+{% endif %}
+{% if exists("stewardTrip") %}
+They went out on the road this week (canon): as the hold's steward they walked out to {{ stewardTrip.retainerName }}{% if existsIn(stewardTrip, "retainerJob") and stewardTrip.retainerJob != "" %}, the {{ stewardTrip.retainerJob }}{% endif %}{% if existsIn(stewardTrip, "retainerPlace") and stewardTrip.retainerPlace != "" %}, at {{ stewardTrip.retainerPlace }}{% endif %}, and spent a day or two there before coming back to the books. The journey and what they found are fair subject for this week's entry.
+{% endif %}
+{% if length(default(recentLifeEvents, [])) > 0 %}
+Their life outside the work lately, oldest first (canon: the entry may nod to these or carry their mood, but must never contradict them):
+{% for e in recentLifeEvents %}
+- {{ e }}
+{% endfor %}
+(If one of these left a mark — a night in jail, a fight, a loss, a romance — let its shadow fall on this week's entry rather than pretending it never happened. But the entry is still about the week of work; the life events are its weather, not its subject.)
+{% endif %}
+{% if length(default(prisoners, [])) > 0 %}
+Held in a cell right now (canon: none of them walked free this week):
+{% for p in prisoners %}
+- {{ p.name }}, held in {% if p.jail != "" %}{{ p.jail }}{% if p.hold != "" %} ({{ p.hold }}){% endif %}{% elif p.hold != "" %}the {{ p.hold }} jail{% else %}a hold's jail{% endif %}{% if p.daysHeld > 0 %}, {{ p.daysHeld }} {% if p.daysHeld == 1 %}day{% else %}days{% endif %} so far{% endif %}{% if p.weeksLeft > 0 %}, about {{ p.weeksLeft }} {% if p.weeksLeft == 1 %}week{% else %}weeks{% endif %} still to serve{% endif %}
+{% endfor %}
+If the week touches any of them (a crewmate, a customer, a supplier, someone they deal with), the entry must reflect the cell: the gap they left at the work, a visit to the jail, word passed through a guard, their affairs in someone else's hands. Never write them working, trading, drinking or walking about.
+{% endif %}
+[ end system ]
+
+[ user ]
+{% if npcUUID and npcUUID != 0 %}
+Write {{ retainerName }}'s journal entry for this week of their work ({{ job }}): first person, about 3-5 sentences. Then, if one fits, name a local they crossed paths with.
+
+## A Diary, Not a Ledger
+- Capture the week in broad strokes (its rhythm, its weight, the worst of it and any small relief) and above all how it sat with them. Not one transaction: the week.
+- Lead with feeling or state, not with an object. Most weeks name no particular item, and never anchor the entry on something a patron or customer gave them.
+- The haul is routine. Goods going to the hold's wares chest or fence cache are how every week ends: a passing clause at most, and most weeks not mentioned at all. The exception is a "PILFERED from a client" fact, which is a real beat: something was taken, and how they feel about it (nerve, guilt, thrill, the client who won't notice) is fair game.
+- The money is not the story. Never use the books' words: no "escrow", "arrears" or "purse", no percentages, no gold figures, no "the wage came due". They lived a week; they never saw a ledger line. When pay weighs on them, it is one thread in their own plain words, never the entry's opening, subject or closing beat.
+- Read the split right: "the house cut" is what {{ playerName }} takes and "kept" is what this worker keeps, usually the larger share. A low house cut means they were treated well; never write it as being bled dry. When the week's event was money (robbed, wages unpaid, a windfall), write it plainly, in their words, still never the books'.
+- {{ playerName }} is not in every entry: most weeks the boss never crosses the page. If this entry could be pasted under another retainer's name and still make sense, it has failed; ground it in what only this worker lived (their task, their place, their crew, their charge).
+- Let personality and mood set the voice: short and bitter when worn down, wry when coping, quietly proud when it went well.
+- Never open with "Another week" or any other "Another ..." construction, and never open by saying a week of work happened. Find a first sentence only this person could have written about this week.
+{% if openingMove and openingMove != "" %}
+- This week's opening angle: begin {{ openingMove }}. It is a way in, not a script; go wherever the week actually went.
+{% endif %}
+{% if storyCenter and storyCenter != "" %}
+- This week's center: {{ storyCenter }}. It is a lens, not the whole entry. If the facts carry an INCIDENT line or a real loss, that is the center instead.
+{% endif %}
+
+## Show the Reality
+- The arrangement carries the emotional truth; honor it. A coerced worker writes under duress: the dread, the swallowed anger, the indignity, the exhaustion, the private defiances, the weariness of working for someone else's gain. Do not smooth it over.
+- A courtesan's trade, a fence's risk and a coerced worker's fear are adult realities of this world. Within the tone and content settings above, render them honestly and humanly: never coy, never clinical, never gratuitous.
+- A setback or loss in the facts (robbed, dice, a guard's "fine", spoiled stock, dead trade, unpaid wages) is the week: write how it landed on them.
+- An **INCIDENT** line in the facts (a cave-in narrowly escaped, a client who turned rough, a fight, a buyer who was a guard's informant, a rare rich strike) is the week's notable event: build the entry around it and let it carry its weight, fear or relief.
+- Invent no major events beyond the facts: no deaths, dragons, quests, rescues or romances. Most weeks are ordinary, and the interior life of an ordinary hard week is the point.
+
+## A Named Encounter (optional, about one week in four)
+- Usually the people they dealt with stay nameless, and "withNpc" stays empty.
+- Occasionally weave in one named local from {% if location and location != "" %}{{ location }} or its hold{% else %}the hold where they work{% endif %}: put that exact name in "withNpc", and write "npcMemory", one sentence of the same encounter from that person's point of view (it becomes their memory).
+- Never name {{ playerName }} or anyone who travels with {{ playerName }}. Prefer minor locals to jarls or quest figures. If nobody fits, leave both empty.
+{% if length(default(prisoners, [])) > 0 %}
+- Someone held in a cell (listed above) can be the encounter only as the cell allows (a visit, a word through the bars), and their "npcMemory" is remembered from inside it.
+{% endif %}
+
+## A Letter to {{ playerName }} (optional, rare)
+- Most weeks, leave "letter", "letterSubject" and "letterMatter" empty: a routine week does not move anyone to pay a courier.
+- Write one only when something this week would make {{ retainerName }} write: a setback they must flag, trouble closing in (heat, a near-arrest, wages gone unpaid, a threat), a decision they want {{ playerName }} to weigh in on, or news worth a courier's coin. Two to four sentences from {{ retainerName }} to {{ playerName }} ("you"): a deliberate message, not a copy of the diary, stating the matter and what they want (to meet, a decision, a warning, simply to be heard).
+- It fits the arrangement and mood: a coerced or tribute worker writes guarded, clipped or bitter; a loyal partner writes plainly and warmly. Stay in character, name no one traveling with {{ playerName }}, and honor the tone and content settings above.
+- Do not sign it: the courier adds {{ retainerName }}'s name.
+- "letterSubject": a short hand-written title, 2-6 in-world words naming what it concerns, new each week.
+- "letterMatter": the concrete thing behind the letter, in 1-2 plain sentences. It is private, never shown as the note: it is what {{ retainerName }} means to raise when {{ playerName }} arrives. The letter itself stays deliberately vague and keeps the rest for a face-to-face talk; "letterMatter" names the actual problem, choice, threat or news and what they want {{ playerName }} to do about it, grounded in this week's facts.
+{% if deliverRaiseLetter %}
+
+## This Week's Letter Is Required: Their Pay
+- {{ retainerName }} has decided to put their terms to {{ playerName }} directly. Fill "letter" this week, and let the diary "story" carry the weight of working up to sending it. The ask is this week's story, so the money rule bends: the story may center on the terms and what they mean, still in their own words, with no bookkeeping words and no figures.
+{% if raiseAsk.coerced %}
+- The arrangement is coerced, so the letter is no polite request: guarded, clipped or quietly defiant, they push back against the cut they are forced to hand over and want {{ playerName }} to ease it, keeping about {{ raiseAsk.toTheirSharePct }}% of the take instead of {{ raiseAsk.fromTheirSharePct }}%. They do not grovel; the resentment is the point.
+{% elif raiseAsk.kind == "wage" %}
+- They ask {{ playerName }} to raise their weekly wage from {{ raiseAsk.fromGold }} to {{ raiseAsk.toGold }} gold: earnest and proud of the work, or weary and overdue, as their mood has it.
+{% else %}
+- They ask for a bigger share of what the venture earns, to keep about {{ raiseAsk.toTheirSharePct }}% instead of {{ raiseAsk.fromTheirSharePct }}%, in a voice that fits their mood.
+{% endif %}
+- "letterSubject" names the ask; "letterMatter" states the exact terms they want in 1-2 plain sentences.
+{% endif %}
+{% if deliverCaughtLetter %}
+
+## This Week's Letter Is Required: Caught Skimming
+- {{ playerName }} came on-site unannounced and went through the books, and the skim ({{ caughtAudit.skimPct }}% of the take) was found.{% if caughtAudit.recoveredGold > 0 %} {{ caughtAudit.recoveredGold }} gold was taken back on the spot.{% else %} There was nothing left to recover.{% endif %} The skim is over.
+- Fill "letter" this week: 2-4 sentences from {{ retainerName }} to {{ playerName }} reacting to being caught, the words they could not find while {{ playerName }} stood over the books. The tone follows the arrangement and their mood: a coerced worker's cornered defiance, a partner's shame, a schemer's smooth excuses, a proud worker's fury at being doubted. They grovel only if that is truly who they are.
+- The diary "story" is the audit week itself: the moment {{ playerName }} walked in and opened the books, and how the catch felt from inside.
+- "letterSubject" fits the confession; "letterMatter" states the plain substance in 1-2 sentences: the amount recovered (or that nothing was left to recover) and that the skim has ended.
+{% endif %}
+
+Respond with only this JSON, compact, the first-person entry in "story", no explanation:
+{% raw %}{"story":"First-person journal entry.","withNpc":"","npcMemory":"","letter":"","letterSubject":"","letterMatter":""}{% endraw %}
+{% else %}
+{% raw %}{"story":"","withNpc":"","npcMemory":"","letter":"","letterSubject":"","letterMatter":""}{% endraw %}
+{% endif %}
+[ end user ]

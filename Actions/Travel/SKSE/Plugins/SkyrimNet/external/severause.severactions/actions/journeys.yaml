@@ -1,0 +1,14 @@
+customCategory: sa_journeys
+name: Journeys
+description: "Category: the speaker sets off on foot for another place right now, ahead of the player or without them (sent on ahead to wait there, or leaving on their own business), or changes pace on, or calls off, a trip already under way, a camp trip included. Only for a departure in this line: plans, maybes, 'we could go', questions and a place merely coming up are talk. Going together is not a departure: someone already walking with the player just comes along, and agreeing now to come along is TagAlong or Companionship. Setting off for the player's camp or base is Camping; a guard going to arrest or search someone is Arrest."
+enabled: true
+
+eligibilityRules:
+  - conditions:
+      # A bound captive cannot act (see the is_kidnap_victim bullet in CLAUDE.md).
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

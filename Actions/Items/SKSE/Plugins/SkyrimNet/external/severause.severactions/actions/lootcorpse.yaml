@@ -1,0 +1,56 @@
+customCategory: items
+name: LootCorpse
+description: "Use when the speaker decides or agrees to strip a dead body nearby, and does it now: coin from a bandit's belt, a soldier's blade. If nobody knows what the body carries yet, SearchCorpse first. Only the dead; never a living or unconscious person."
+questEditorId: SeverActions
+scriptName: SeverActions_Loot
+executionFunctionName: LootCorpse_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor kneeling to take from the dead
+  - type: dynamic
+    name: corpseName
+    description: "the dead person's name (e.g. 'Bandit', 'Stormcloak Soldier', a named NPC)"
+  - type: dynamic
+    name: itemsToTake
+    description: "what to take: 'all', 'valuables', 'gold', a category (weapons, armor, jewelry, potions, food, ingredients, books, soul gems, ammo, scrolls, gems), or a comma-separated list of item names or categories ('Iron Sword, potions')"
+    optional: true
+    default: "all"
+enabled: true
+eligibilityRules:
+  - conditions:
+      # A traveler on the road: walking to the object would take them off it.
+      - decoratorName: "sever_is_traveling"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

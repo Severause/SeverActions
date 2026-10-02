@@ -1,0 +1,41 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# What a hold's guards, jarl and housecarls have been told about the Imperial Fiscal Levy while an audit runs or after it ended. The twelve seconded soldiers patrol Solitude (four), Whiterun, Markarth, Falkreath and Morthal (two each) from case-open: VentureMonitor.h kAuditHoldMarker. #}
+{% if isValidActor(actorUUID) %}
+{% set is_collector = is_tax_collector(actorUUID) %}
+{% set authority = is_guard_or_authority(actorUUID) %}
+{% if is_collector == "" and authority != "" %}
+{% set audit_state = tax_audit_state(actorUUID) %}
+{% if audit_state != "" %}
+{% set hold = sever_hold_name(actorUUID) %}
+{% set audit_pending = tax_audit_pending(actorUUID) %}
+{% set court_hold = "Haafingar" %}{% set court_city = "Solitude" %}{% set four_hold = "Haafingar" %}
+{% if contains(audit_pending, "court") %}{% set court_hold = "Whiterun" %}{% set court_city = "Whiterun" %}{% endif %}
+{% if contains(audit_pending, "squads") %}{% set four_hold = "Whiterun" %}{% endif %}
+## The Imperial Fiscal Levy
+{% if audit_state == "casebuilding" or audit_state == "approaching" %}
+{% if contains(audit_pending, "court") %}
+General Cassius Vero of the Imperial Treasury is in Skyrim under an Imperial revenue writ. He is quartered at Dragonsreach in Whiterun with two Legates, a guest of the Jarl of Whiterun's court until the detail removes to the Blue Palace in Solitude, and twelve seconded soldiers patrol Solitude, Whiterun, Markarth, Falkreath and Morthal in the Levy's name. The Treasury is restoring the Emperor's tax on enterprise income, and each hold's court keeps the share collected there: the holds profit, and every court knows it.
+{% else %}
+General Cassius Vero of the Imperial Treasury is in Skyrim under an Imperial revenue writ. He is quartered at the Blue Palace in Solitude, a guest of the Jarl of Haafingar's court, with two Legates, and twelve seconded soldiers patrol Solitude, Whiterun, Markarth, Falkreath and Morthal in the Levy's name. The Treasury is restoring the Emperor's tax on enterprise income, and each hold's court keeps the share collected there: the holds profit, and every court knows it.
+{% endif %}
+{% if audit_pending == "" %}
+{% if hold == "Haafingar" %}The detail are guests of this court: you have seen them at their work, four of the Levy's soldiers walk Solitude's streets under the General's eye, and you know the present case concerns the largest undeclared fortune in the province.{% elif hold == "Whiterun" or hold == "The Reach" or hold == "Falkreath" or hold == "Hjaalmarch" %}Two of the Levy's soldiers walk this hold's city streets, and word from Solitude is that the detail is building its first great case, against the largest undeclared fortune in the province.{% else %}Word from Solitude is that the detail is building its first great case, against the largest undeclared fortune in the province.{% endif %}
+{% else %}
+{% if hold == court_hold %}The detail are guests of this court{% if court_hold == "Whiterun" %} until they remove to the Blue Palace in Solitude{% endif %}: you have seen them at their work, {% if hold == four_hold %}four{% else %}two{% endif %} of the Levy's soldiers walk {{ court_city }}'s streets under the General's eye, and you know the present case concerns the largest undeclared fortune in the province.{% elif hold == four_hold %}Four of the Levy's soldiers walk this hold's city streets, and word from {{ court_city }} is that the detail is building its first great case, against the largest undeclared fortune in the province.{% elif hold == "Whiterun" or hold == "Haafingar" or hold == "The Reach" or hold == "Falkreath" or hold == "Hjaalmarch" %}Two of the Levy's soldiers walk this hold's city streets, and word from {{ court_city }} is that the detail is building its first great case, against the largest undeclared fortune in the province.{% else %}Word from {{ court_city }} is that the detail is building its first great case, against the largest undeclared fortune in the province.{% endif %}
+{% endif %}
+- The writ is Treasury business, above hold authority: no Jarl's warrant reaches it, and only the Ruby Throne hears an appeal. The Final Audit is sent when the Empire has already decided how a matter ends.
+- Stories of where the detail has been before are told behind closed doors and nobody checks them; retell them only vaguely, in your own words.
+- You weigh every word said in the General's hearing, keep well clear of the Empire's ledger, and do not mind the coin reaching your own hold's treasury.
+{% elif audit_state == "demanding" %}
+The General's writ has been served on {{ player.name }}, the largest undeclared fortune in the province and the first great test of the Emperor's restored tax. The courts know an assessment of back-taxes has been made and that the General awaits payment. If the Levy collects, the weekly tax already reaching the holds' treasuries has teeth behind it. The writ carries no local warrant; the wise course is to stand clear and be seen to be neutral.
+{% elif audit_state == "paid" %}
+{{ player.name }} paid the Treasury's assessment in full, the coin counted before witnesses, and the Emperor's restored tax became fact rather than proclamation. You regard {{ player.name }} as someone who can produce a very large sum on demand, solvent and back in the Empire's good ledger, and the weekly tax reaching your hold's treasury as the way of things now.
+{% elif audit_state == "dead" %}
+General Cassius Vero is dead, killed in Skyrim rather than paid, and every court knows it, whatever is said officially. The writ died with him and no local warrant followed: it is the Empire's grievance to pursue, not the holds'. The tax he came to restore still runs and the holds still receive their share. You speak of his death carefully; nobody wants to be quoted on an Imperial General cut down over the Emperor's due.
+{% elif audit_state == "refused" %}
+The Final Audit ended in refusal and blood: {{ player.name }} turned the Emperor's due away, and what remains of the Treasury detail is no longer collecting. The weekly tax still reaches the holds' treasuries, but its great enforcement case is dead, and no hold warrant hangs on any of it. You understand perfectly well what {{ player.name }} now is to the Empire, and weigh every courtesy accordingly.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

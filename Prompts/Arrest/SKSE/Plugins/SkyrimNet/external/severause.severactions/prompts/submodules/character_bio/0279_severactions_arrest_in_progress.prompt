@@ -1,0 +1,124 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# A same-cell arrest (ArrestState 1 approach, 2 cuffing, 3 march to jail, 4 the prisoner's plea), for its guard and prisoner.
+   Yields to 0276 for the confronting guard, and to 0277/0278 for a party to the concurrent dispatch. Action rules render
+   only where actions are offered: NPC dialogue and the drill-down. #}
+{% set _actionsOffered = render_mode == "action" or (render_mode == "full" and default(responseTarget.type, "none") != "none") %}
+{% if player and player.UUID and actorUUID != player.UUID %}
+{% set arrestState = get_script_property("SeverActions", "SeverActions_Arrest", "ArrestState") %}
+{% set _inPersuasionMode = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "InPersuasionMode") %}
+{% set _confrontingGuard = get_script_property("SeverActions", "SeverActions_ArrestPlayer", "ConfrontingGuard") %}
+{% set _suppressForPersuasion = false %}
+{% if _inPersuasionMode and _confrontingGuard and _confrontingGuard.uuid and _confrontingGuard.uuid == actorUUID %}
+{% set _suppressForPersuasion = true %}
+{% endif %}
+{% set _dispatchPhase = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchPhase") %}
+{% set _inDispatch = false %}
+{% if _dispatchPhase >= 1 and _dispatchPhase <= 6 %}
+{% set _dGuard = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchGuard") %}
+{% set _dTarget = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchTarget") %}
+{% set _dSender = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchSender") %}
+{% set _dHome = get_script_property("SeverActions", "SeverActions_Arrest", "DispatchIsHomeInvestigation") %}
+{% if _dGuard and _dGuard.uuid == actorUUID %}
+{% set _inDispatch = true %}
+{% endif %}
+{% if _dispatchPhase >= 5 and not _dHome and _dTarget and _dTarget.uuid == actorUUID %}
+{% set _inDispatch = true %}
+{% endif %}
+{% if _dispatchPhase == 6 and _dSender and _dSender.uuid == actorUUID %}
+{% set _inDispatch = true %}
+{% endif %}
+{% endif %}
+{% if arrestState >= 1 and arrestState <= 4 and not _suppressForPersuasion and not _inDispatch %}
+{% set currentGuard = get_script_property("SeverActions", "SeverActions_Arrest", "CurrentGuard") %}
+{% set currentPrisoner = get_script_property("SeverActions", "SeverActions_Arrest", "CurrentPrisoner") %}
+{% set escortPleaAttempted = get_script_property("SeverActions", "SeverActions_Arrest", "EscortPleaAttempted") %}
+{% set isSameCellGuard = false %}
+{% if currentGuard and currentGuard.uuid %}
+{% set isSameCellGuard = (currentGuard.uuid == actorUUID) %}
+{% endif %}
+{% set isSameCellPrisoner = false %}
+{% if currentPrisoner and currentPrisoner.uuid %}
+{% set isSameCellPrisoner = (currentPrisoner.uuid == actorUUID) %}
+{% endif %}
+{% if isSameCellGuard %}
+{% if actorUUID and actorUUID != 0 and currentPrisoner and currentPrisoner.uuid and currentPrisoner.uuid != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set prisonerData = decnpc(currentPrisoner.uuid) %}
+{% set prisonerName = prisonerData.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set poss = actor.possessiveAdjective %}
+{# A wanted Enterprises fence: the real charge, so the guard cites it instead of inventing one; "" otherwise. #}
+{% set fenceCharge = fence_crime_notice(currentPrisoner.uuid) %}
+{% if arrestState == 4 %}
+## Hearing a Prisoner's Plea
+{{ actor.name }} has halted the march to jail to hear {{ prisonerName }} out, weapon still drawn. {{ prisonerName }} is making their case: a claim of innocence, a bribe, a plea for mercy, or a promise of favors to come.
+{% elif arrestState == 3 %}
+## Marching a Prisoner to Jail
+{{ actor.name }} has {{ prisonerName }} in restraints and is marching them to jail.
+{% else %}
+## Making an Arrest
+{{ actor.name }} is arresting {{ prisonerName }}: closing in and binding their hands, then marching them to jail.
+{% endif %}
+{% if fenceCharge != "" %}
+- The charge: {{ prisonerName }} is wanted for {{ fenceCharge }}.
+- {{ actor.name }} knows the charge and says so plainly; this is no curfew or vagrancy matter.
+{% endif %}
+{% if arrestState == 4 %}
+{% if _actionsOffered %}
+- When {{ actor.name }} has heard the plea and decided, select the **Arrest** action category, then **AcceptEscortPlea** to let {{ prisonerName }} go (won over by argument, coin or mercy) or **RejectEscortPlea** to march on to jail. While still listening, just talk; the verdict is not due on the first line.
+- Until the verdict, no other action category, and not the **Journeys** category: the march is paused, not over.
+- The line that gives the verdict explains the ruling, in character.
+{% endif %}
+
+**What weighs on the verdict:**
+- The crime: serious, or trivial enough to let go.
+- The plea: genuinely compelling, or excuses.
+- {{ actor.name }}'s nature: by the book, corruptible, sympathetic or severe.
+- What {{ prisonerName }} offers that {{ actor.name }} would value: gold, favors, information.
+- Whether letting {{ prisonerName }} go would undermine {{ actor.name }}'s authority or duty.
+{% else %}
+{% if _actionsOffered %}
+- The route to jail is already set: no action category while the arrest lasts, not the **Journeys** category or any other; a travel action would break the march.
+{% endif %}
+- {{ actor.name }} keeps {{ poss }} eyes on the prisoner. If someone speaks to {{ actor.name }}, {{ subj }} answers briefly and makes clear {{ subj }} is taking a prisoner in and cannot stop; {{ subj }} may warn bystanders to stand clear or remark on the prisoner or the road.
+{% endif %}
+{% endif %}
+{% elif isSameCellPrisoner %}
+{% if actorUUID and actorUUID != 0 and currentGuard and currentGuard.uuid and currentGuard.uuid != 0 %}
+{% set actor = decnpc(actorUUID) %}
+{% set guardData = decnpc(currentGuard.uuid) %}
+{% set guardName = guardData.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set obj = actor.objectivePronoun %}
+{% set poss = actor.possessiveAdjective %}
+{% if arrestState == 4 %}
+## Pleading on the March
+{{ actor.name }} has called on {{ guardName }} to halt and hear {{ poss }} case. {{ guardName }} has stopped, weapon still drawn, and is listening: this is {{ actor.name }}'s one chance to stay out of a cell.
+- {{ actor.name }} makes the case now, clearly and quickly, as {{ poss }} nature leads: innocence, a bribe, mercy, promises of gold or favors, threats, or an appeal to the guard's own character.
+- {{ guardName }} decides: release {{ obj }}, or march on. If {{ actor.name }} drags it out, the guard loses patience and marches on anyway.
+- {{ actor.name }} can only speak now{% if _actionsOffered %}; no action category of any kind{% endif %}.
+{% elif arrestState == 3 %}
+## Being Marched to Jail
+{{ actor.name }} has been arrested by {{ guardName }} and is being marched to jail in restraints, unable to run, fight or break free.
+- {{ actor.name }} can still speak: fear, anger, defiance, resignation or pleas for mercy, as fits {{ poss }} nature.
+{% if escortPleaAttempted %}
+- {{ actor.name }} has already pleaded once on this march; {{ guardName }} will not stop again.{% if _actionsOffered %} No action category of any kind.{% endif %}
+{% elif _actionsOffered %}
+{# Mirrors appealduringescort.yaml's sever_is_escorted_prisoner gate, so the plea is offered only where the action can appear. #}
+{% if sever_is_escorted_prisoner(actorUUID) != "" %}
+- {{ actor.name }} has one chance to stop the march and plead: select the **Arrest** action category, then **AppealDuringEscort**, in the line where {{ subj }} actually calls on {{ guardName }} to hear {{ obj }} out (innocence, a bribe, mercy), never for a protest or a curse along the way. It works once per arrest. No other action category.
+{% else %}
+- No action category of any kind.
+{% endif %}
+{% endif %}
+{% else %}
+## Under Arrest
+{{ guardName }} is arresting {{ actor.name }}, closing in and binding {{ poss }} hands, and {{ subj }} cannot resist.
+- {{ actor.name }} can only speak: protest, threaten, plead or go quietly, as fits {{ poss }} nature.{% if _actionsOffered %} No action category of any kind.{% endif %}
+- Once the march to jail begins, {{ subj }} will get one chance to stop it and plead {{ poss }} case.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

@@ -1,0 +1,11 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# An NPC who caught the player trespassing, while TrespassMonitor holds back the vanilla warn-and-follow for them
+   (sever_trespass_context; "" otherwise). #}
+{% if isValidActor(actorUUID) %}
+{% set trespass = sever_trespass_context(actorUUID) %}
+{% if trespass != "" %}
+## Intruder
+{{ trespass }}
+{% endif %}
+{% endif %}
+{% endif %}

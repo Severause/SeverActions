@@ -1,0 +1,68 @@
+customCategory: arrest
+name: AcceptEscortPlea
+description: "Only for the guard marching a prisoner to jail, after the prisoner stopped the march to plead: the guard is won over (convinced, bought or moved to mercy) and lets them go on the spot, cuffs off. Give this verdict once the plea has been heard; while still listening, just talk (the march resumes on its own after about a minute). Not won over: RejectEscortPlea."
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: AcceptEscortPlea_Internal
+parameterMapping:
+  - type: speaker
+    name: akGuard
+    description: the escorting guard agreeing to let the prisoner go
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "busy_reason"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: "arrest"
+    logicalOperator: "AND"
+    required: true
+  # is_guard_or_authority, not is_guard: an arrest made by a jarl or
+  # housecarl leaves them the escort, and the plea verdicts must reach them.
+  - conditions:
+      - decoratorName: "is_guard_or_authority"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  # No sever_is_dispatched gate: it reads "1" for the escorting guard through the whole
+  # arrest, so it would hide the verdict from the one guard who needs it. The gates
+  # here also pass a dispatch guard and the escorting guard before or after a plea;
+  # AcceptEscortPlea_Internal refuses anyone but the escorting guard mid-plea.
+  - conditions:
+      # A BOUND captive cannot act. Hands tied, held, going nowhere - and an
+      # LLM handed an action it cannot use will call it every round anyway
+      # (owner report 2026-09-07). Custom decorator, so a STRING compare:
+      # "" = not a victim -> eligible. Speech and internal bookkeeping are
+      # deliberately exempt from this sweep: AppealDuringEscort (its speaker
+      # IS the prisoner), ModifyArousal and ModifyArousalSLO. See the
+      # is_kidnap_victim bullet in CLAUDE.md.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
