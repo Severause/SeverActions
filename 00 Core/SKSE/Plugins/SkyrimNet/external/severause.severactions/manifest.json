@@ -2,7 +2,7 @@
   "type": "bundle",
   "id": "severause.severactions",
   "author": "severause",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "min_skyrimnet_version": "0.24.0",
   "title": "SeverActions",
   "tagline": "Action, prompt and trigger pack for SkyrimNet NPCs",

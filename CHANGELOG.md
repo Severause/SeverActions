@@ -1,5 +1,15 @@
 # SeverActions Changelog
 
+## v4.0.2 - Hotfix
+
+Magelight UI 0.30.3 is bundled (`98 Magelight UI`). It fixes three problems in 4.0.1:
+
+- The game crashing at startup alongside Community Shaders, or about eight minutes into play with ENB or an upscaler (an access violation in `d3d11.dll`).
+- The game crashing at startup with ENB, with no crash log.
+- SeverActions' menu being cut off on screens under about 1067 pixels tall (1366x768 or 1600x900, for example), where only the top-left part of the menu showed.
+
+If you made a `Magelight.json` with `"presentHook": "vtable"` to work around the ENB crash, you can delete it. Nothing in SeverActions itself changed: install it over 4.0.1 with Replace, and saves load as they are.
+
 ## v4.0.1 - Hotfix
 
 Magelight UI 0.30.2 is bundled (`98 Magelight UI`). It fixes two problems some players hit with 4.0.0:
