@@ -1,6 +1,15 @@
 # SeverActions Changelog
 
-## v4.0.0 - Unreleased
+## v4.0.1 - Hotfix
+
+Magelight UI 0.30.2 is bundled (`98 Magelight UI`). It fixes two problems some players hit with 4.0.0:
+
+- The game crashing at startup or when the menu opened, alongside some SKSE mods that hook the game window (the crash log showed USER32 calling an address like `0xFFFF...`).
+- SeverActions' menus opening (the sound played and the game paused) but staying invisible with Skyrim Upscaler, frame generation included, or behind other mods that hook the game's frame output.
+
+Nothing else changed: install it over 4.0.0 with Replace, and saves from 4.0.0 load as they are.
+
+## v4.0.0 - Words and Deeds
 
 Skyrim VR: loading a long-running save as the first load after starting the game no longer freezes the game for good. SeverActions' menus handed their work to the game from inside the frame Magelight UI was drawing, and on VR, right after a load, that could wait forever on the game's own background work; they now hand it over from a helper thread. A VR controller chord for the menu or the quick wheel now toggles what was open when you pressed it, and a VR controller rebind still waiting for a press when the menu closes is cancelled instead of catching your next button press in play.
 
