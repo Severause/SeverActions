@@ -12,7 +12,7 @@
 
 <p align="center">
   <code>Skyrim SE &middot; AE &middot; VR</code> &nbsp;&middot;&nbsp; <code>SkyrimNet 0.25+</code> &nbsp;&middot;&nbsp;
-  <code>Magelight UI 0.30.1 included</code>
+  <code>Magelight UI 0.30.5 included</code>
 </p>
 
 <p align="center">
@@ -20,18 +20,32 @@
 </p>
 
 > [!IMPORTANT]
-> **SeverActions 4.0 needs SkyrimNet 0.25 (beta 25) or newer.** On an older SkyrimNet, none of its actions, prompts
+> **SeverActions 4.x needs SkyrimNet 0.25 (beta 25) or newer.** On an older SkyrimNet, none of its actions, prompts
 > or triggers load.
 >
 > **Upgrading from 3.9.x?** Reinstall with **Replace**; don't merge into the old mod. See
 > [Installing and upgrading](#installing-and-upgrading).
 
-**Contents:** [What's new in 4.0](#whats-new-in-40) · [Overview](#overview) · [Features](#features) ·
+**Contents:** [What's new in 4.1](#whats-new-in-41) · [What's new in 4.0](#whats-new-in-40) · [Overview](#overview) · [Features](#features) ·
 [Requirements](#requirements) · [Compatibility](#compatibility) · [Installing and upgrading](#installing-and-upgrading) ·
 [Settings](#settings) · [Support and troubleshooting](#support-and-troubleshooting) · [Under the hood](#under-the-hood) ·
 [Credits](#credits)
 
 ---
+
+## What's new in 4.1
+
+- **Wait and Follow answer at the first press**, Wait All and Follow All included: a command now undoes only what
+  SeverActions actually put on a follower.
+- **Faster loading**: on a long-running save, start-up after a load drops from about a minute to about twelve
+  seconds, and commands given right after a load no longer wait behind it.
+- **Magelight UI 0.30.5**: the menus show with DLSS and frame generation behind NVIDIA Streamline, with Community
+  Shaders' frame generation and with NVIDIA Smooth Motion, and a new cursor. When the UI cannot draw, the menu and
+  wheel keys say so.
+- **Fixes**: mouse and gamepad buttons work as the menu and quick wheel keys again, casual follow works in Tracking
+  mode, and companions in the follow pool are no longer pushed back onto their follow package every few seconds.
+
+The full list is in [CHANGELOG.md](CHANGELOG.md).
 
 ## What's new in 4.0
 
@@ -292,7 +306,7 @@ other languages show English. Page help and many setting descriptions are in Eng
 | | |
 |---|---|
 | **Required** | Skyrim SE 1.5.97, AE 1.6.x or 1.7.x, or Skyrim VR 1.4.15 · SKSE64 (2.3.0 or newer on 1.7.x), or SKSEVR on VR · Address Library for SKSE Plugins (the VR Address Library on VR) · [SkyrimNet](https://www.nexusmods.com/skyrimspecialedition/mods/148913) 0.25 (beta 25) or newer · PapyrusUtil · the latest Microsoft Visual C++ Redistributable 2015-2022 (x64), which the menu needs |
-| **Included** | Magelight UI 0.30.1, which draws the menu, popups and quick wheel and always installs with the core · Sever's Hearth, the camp system, on its own installer page |
+| **Included** | Magelight UI 0.30.5, which draws the menu, popups and quick wheel and always installs with the core · Sever's Hearth, the camp system, on its own installer page |
 | **Recommended** | SkyUI, only for the MCM |
 | **Optional** | See [Compatibility](#compatibility) |
 | **No longer needed** | PrismaUI and UIExtensions. Papyrus MessageBox is optional now, only a fallback for when one of SeverActions' own popups can't open |
@@ -301,7 +315,7 @@ SeverActions also does not need powerofthree's Papyrus Extender, JContainers, Co
 powerofthree's Tweaks.
 
 PrismaUI can stay installed for other mods, such as SkyrimNet's chat; SeverActions won't open its menu or popups while
-that chat has focus. If you also install Magelight UI as its own mod, let the newer copy win: it should be 0.30.1 or
+that chat has focus. If you also install Magelight UI as its own mod, let the newer copy win: it should be 0.30.5 or
 newer.
 
 **Load order**: place SeverActions after SkyrimNet; otherwise the order doesn't matter. `SeverActions.esp` uses a full
@@ -497,7 +511,7 @@ source and the build and release tooling live in the private development reposit
 # It stages both native plugins and Magelight UI from their build folders, so build those first.
 .\build_fomod_zip.ps1 -Version "X.Y.Z-dev"
 
-# Lint before any release: 23 checks, each guarding a failure class that once shipped
+# Lint before any release: 25 checks, each guarding a failure class that once shipped
 .\check_release.ps1
 ```
 

@@ -9,10 +9,10 @@ Scriptname SeverActions_Init extends ReferenceAlias
 ; === Initialization ===
 
 ; K0: bumped together with the DLL's KernelSession::kAbiVersion whenever a native's signature or
-; meaning changes in a way an older pex must not run against. 23: FollowerManager calls Sched_HoldYield,
-; Sched_NoteHold and Sched_GetAssignedRows, and Sched_GetTransitionDue returns relax-only NPCs; an older
-; DLL has neither.
-Int Property KERNEL_ABI = 23 AutoReadOnly
+; meaning changes in a way an older pex must not run against. 25: the wait / follow cores call
+; Follow_HeldState, which an older DLL does not register (unbound, it reads 0 and every teardown
+; would run in full).
+Int Property KERNEL_ABI = 25 AutoReadOnly
 
 Event OnInit()
     Debug.Trace("[SeverActions] OnInit - First time initialization")
@@ -35,6 +35,9 @@ EndEvent
 
 Function Initialize(Bool isFirstInit)
     Debug.Trace("[SeverActions] Initializing SeverActions...")
+    ; Real seconds per startup step, for finding what holds a player's first commands back after a load.
+    ; Kernel_RealTime costs no frame; Utility.GetCurrentRealTime waits for one.
+    Float tStart = SeverActionsNativeExt2.Kernel_RealTime()
 
     ; Disarm the watchdog first: its state and pending update persist in a save (see WatchdogArmed).
     UnregisterForUpdate()
@@ -80,6 +83,7 @@ Function Initialize(Bool isFirstInit)
 
     ; K1: the 'CAIO' seed, before any subsystem classifies a follower (so no track-only memo needs
     ; invalidating).
+    Float tK1 = SeverActionsNativeExt2.Kernel_RealTime()
     SeedCustomAIOverrides()
     ; K1: the StorageUtil-hosted settings rows into the Authority, then the prompt mirrors (M-X);
     ; live changes arrive on SeverActions_SettingsMirror.
@@ -98,10 +102,13 @@ Function Initialize(Bool isFirstInit)
     ; order (see SeverActions_ModuleBase). Cross-module orders are stage placements: Travel's recovery
     ; first, from travelcore's stage 1 (R23); FollowerManager's recovery at stage 2, after Arrest's and
     ; Travel's; Outfit at stage 2, after the roster.
+    Float tK2 = SeverActionsNativeExt2.Kernel_RealTime()
     String[] bound = DiscoverProviders()
+    Float tK3 = SeverActionsNativeExt2.Kernel_RealTime()
     RunProviderStages(bound, isFirstInit)
 
     ; K4: the chronometer watchdog.
+    Float tK4 = SeverActionsNativeExt2.Kernel_RealTime()
     ArmWatchdog(bound)
 
     ; Mirrors again: the kPostLoadGame replays are not ordered against this event and may have fed
@@ -109,17 +116,27 @@ Function Initialize(Bool isFirstInit)
     WriteSettingsMirrors()
 
     ; Last, so timing audits read it as the completion time.
-    Debug.Trace("[SeverActions] Initialization complete!")
+    Float tEnd = SeverActionsNativeExt2.Kernel_RealTime()
+    Debug.Trace("[SeverActions] Initialization complete! " + SeverActions_ModuleBase.Secs(tEnd - tStart) + " (K0 " + SeverActions_ModuleBase.Secs(tK1 - tStart) \
+        + ", K1 " + SeverActions_ModuleBase.Secs(tK2 - tK1) + ", K2 " + SeverActions_ModuleBase.Secs(tK3 - tK2) + ", K3 " + SeverActions_ModuleBase.Secs(tK4 - tK3) + ", K4 " + SeverActions_ModuleBase.Secs(tEnd - tK4) + ")")
 EndFunction
 
 ; === K2: provider discovery ===
 
+; The providers DiscoverProviders bound, parallel to the ids it returns, so K3 and K4 skip the
+; Quest.GetAlias (a frame each) behind SeverActions_ModuleBase.Provider. They persist in the save, so
+; DiscoverProviders rebuilds them before the first stage; read them only through CachedProvider.
+SeverActions_ModuleBase[] _providerCache
+String[] _providerCacheIds
+
 String[] Function DiscoverProviders()
     {Returns the provider ids whose alias on 0x000D62 holds a bound provider answering its own id and
-     this kernel's contract, and reports them to the registry (Module_ReportBound). Reaches a provider
-     only through SeverActions_ModuleBase.Provider, never its own type.}
+     this kernel's contract, reports them to the registry (Module_ReportBound) and caches the providers
+     for K3 and K4. Reaches a provider only through SeverActions_ModuleBase.Provider, never its own type.}
     String[] ids = SeverActions_ModuleBase.ProviderBundleIds()
     String[] bound = new String[16]
+    _providerCache = new SeverActions_ModuleBase[16]
+    _providerCacheIds = new String[16]
     Int n = 0
     Int i = 0
     While i < ids.Length
@@ -138,6 +155,8 @@ String[] Function DiscoverProviders()
             Debug.Trace("[SeverActions] K2 provider " + id + ": contract " + p.ContractVersion() + ", kernel " + p.kContractVersion + " - skipped")
         ElseIf n < bound.Length
             bound[n] = id
+            _providerCache[n] = p
+            _providerCacheIds[n] = id
             n += 1
         EndIf
         i += 1
@@ -157,6 +176,18 @@ String[] Function DiscoverProviders()
     Return result
 EndFunction
 
+SeverActions_ModuleBase Function CachedProvider(Int aiIndex, String asId)
+    {asId's provider: the one DiscoverProviders cached at aiIndex when the id cached there is asId, else
+     SeverActions_ModuleBase.Provider(asId). A frame resumed from an older save passes K3 and K4 its own
+     bound list, which may not line up with the cache; the id test sends it to the fallback.}
+    If _providerCacheIds && _providerCache && aiIndex >= 0 && aiIndex < _providerCacheIds.Length && aiIndex < _providerCache.Length
+        If _providerCacheIds[aiIndex] == asId && _providerCache[aiIndex]
+            Return _providerCache[aiIndex]
+        EndIf
+    EndIf
+    Return SeverActions_ModuleBase.Provider(asId)
+EndFunction
+
 ; === K3: the provider stages ===
 
 Function RunProviderStages(String[] asBound, Bool abNewGame)
@@ -168,17 +199,35 @@ Function RunProviderStages(String[] asBound, Bool abNewGame)
     EndIf
     Int stage = 0
     While stage <= 2
+        ; Each provider taking 0.05 s or more is listed with its time: the gap since the previous stamp,
+        ; one free Kernel_RealTime per provider.
+        Float stageStart = SeverActionsNativeExt2.Kernel_RealTime()
+        Float tPrev = stageStart
+        String slow = ""
         Int i = 0
         While i < asBound.Length
             If asBound[i] != ""
-                SeverActions_ModuleBase p = SeverActions_ModuleBase.Provider(asBound[i])
+                SeverActions_ModuleBase p = CachedProvider(i, asBound[i])
                 If p
                     p.OnModuleLoad(stage, abNewGame)
+                    Float tNow = SeverActionsNativeExt2.Kernel_RealTime()
+                    Float took = tNow - tPrev
+                    tPrev = tNow
+                    If took >= 0.05
+                        If slow != ""
+                            slow += ", "
+                        EndIf
+                        slow += asBound[i] + " " + SeverActions_ModuleBase.Secs(took)
+                    EndIf
                 EndIf
             EndIf
             i += 1
         EndWhile
-        Debug.Trace("[SeverActions] K3 stage " + stage + " complete (" + asBound.Length + " providers)")
+        If slow == ""
+            slow = "none over 0.05s"
+        EndIf
+        Debug.Trace("[SeverActions] K3 stage " + stage + " complete (" + asBound.Length + " providers) in " \
+            + SeverActions_ModuleBase.Secs(SeverActionsNativeExt2.Kernel_RealTime() - stageStart) + ": " + slow)
         stage += 1
     EndWhile
 EndFunction
@@ -338,7 +387,7 @@ Function ArmWatchdog(String[] asBound)
     Int i = 0
     While asBound && i < asBound.Length
         If asBound[i] != ""
-            SeverActions_ModuleBase p = SeverActions_ModuleBase.Provider(asBound[i])
+            SeverActions_ModuleBase p = CachedProvider(i, asBound[i])
             If p
                 String[] ticks = p.ChronoTickNames()
                 Int t = 0

@@ -517,6 +517,20 @@ Int Property SCHEDULE_HOME = 0 AutoReadOnly
 Int Property SCHEDULE_WORK = 1 AutoReadOnly
 Int Property SCHEDULE_PLAY = 2 AutoReadOnly
 
+; The Follow_HeldState bits the wait / follow cores test (SeverActions_Follow's HELD_* block has the full list and
+; the helpers; check 25 keeps both copies equal to Native/src/FollowHeldState.h).
+Int Property HELD_JOURNEY         = 1 AutoReadOnly
+Int Property HELD_TRAVEL_SEAT     = 2 AutoReadOnly
+Int Property HELD_SCHED_SEAT      = 64 AutoReadOnly
+Int Property HELD_GUARD_SEAT      = 128 AutoReadOnly
+Int Property HELD_FURNITURE       = 1024 AutoReadOnly
+Int Property HELD_WFP_STAMP       = 8192 AutoReadOnly
+Int Property HELD_WFP_SET         = 16384 AutoReadOnly
+Int Property HELD_HANDS_OFF       = 1048576 AutoReadOnly
+Int Property HELD_UNLED_TRACKING  = 2097152 AutoReadOnly
+Int Property HELD_NFF_MANAGED     = 4194304 AutoReadOnly
+Int Property HELD_OWNER_DLC       = 8388608 AutoReadOnly
+
 Float Property SCHEDULE_WORK_START = 8.0 Auto
 Float Property SCHEDULE_WORK_END = 17.0 Auto
 Float Property SCHEDULE_PLAY_START = 17.0 Auto
@@ -760,6 +774,13 @@ Function Maintenance()
     ; The tick guard is save-persisted; clear it so a save made mid-tick cannot
     ; stall the 30s loop. (Each LLM module's Maintenance clears its own flags.)
     IsUpdating = false
+    ; The outer guard stays set: a pass saved mid-body resumes its saved frame and
+    ; clears it itself, and must not run beside a fresh one. Its stamp is another
+    ; process's clock, so the 120 s ceiling restarts here; a guard whose stack is
+    ; gone frees within 120 s.
+    If _OnUpdateInFlight
+        _OnUpdateStartRT = Utility.GetCurrentRealTime()
+    EndIf
 
     ; Push the settings rows the native stores hold only in memory.
     SeverActionsNative.Native_QuestAwareness_SetOutputCap(SeverActionsNativeExt2.Settings_GetInt("questAwarenessOutputCap"))
@@ -798,23 +819,30 @@ EndFunction
 ; tick 0.1s after Maintenance().
 Function RunDeferredMaintenance()
     Debug.Trace("[SeverActions_FollowerManager] Running deferred maintenance...")
+    ; Real seconds per step (the summary at the end): the Follow script is busy until this ends, so a
+    ; follow command given right after a load waits behind it.
+    Float tm0 = SeverActionsNativeExt2.Kernel_RealTime()
 
     ; Auto-detect followers recruited outside our system (vanilla dialogue, NFF, other mods)
     DetectExistingFollowers()
+    Float tm1 = SeverActionsNativeExt2.Kernel_RealTime()
 
     ; Re-flag custom-AI followers who joined before SPID gave them the keyword
     ; (cosaved with isFollower=false because onboarding skipped them).
     RecoverCustomAIFollowers()
+    Float tm2 = SeverActionsNativeExt2.Kernel_RealTime()
 
     ; hasFollowPkg ("SA drives this follow package") is sticky in the cosave:
     ; release SA's follow claim on anyone who now classifies hands-off, or SA
     ; packages fight their framework (FollowDriftMonitor cancels the player's
     ; Wait, CellCatchup drags them).
     ReconcileTrackOnlyOwnership()
+    Float tm3 = SeverActionsNativeExt2.Kernel_RealTime()
 
     ; The reverse: adopt NFF followers SA never rostered (recruited off-cell, or a
     ; save made mid-recruit).
     AdoptUnrosteredNFFFollowers()
+    Float tm4 = SeverActionsNativeExt2.Kernel_RealTime()
 
     ; The legacy FrameworkMode migration stays at the tail of this function and
     ; never maps 1 -> 0, so it cannot undo the NFF default below. Do not add a
@@ -857,6 +885,7 @@ Function RunDeferredMaintenance()
     SeverActionsNativeExt.Native_HydrateFollowerSystem_Run()
 
     Bool hydratorDidRun = SeverActionsNativeExt.Native_HydrateFollowerSystem_DidRun()
+    Float tm5 = SeverActionsNativeExt2.Kernel_RealTime()
 
     ; A no-op now: the native FollowerDataStore is authoritative.
     SyncAllRelationshipsOnLoad(cachedFollowers)
@@ -934,6 +963,7 @@ Function RunDeferredMaintenance()
         StorageUtil.SetIntValue(None, KEY_WORKPOOL_MIG, 1)
     EndIf
 
+    Float tm6 = SeverActionsNativeExt2.Kernel_RealTime()
     ; Before the migration snapshot and the load sweep read the rosters (the sweep clears a holder on neither list).
     _ClearRelaxRelics()
     _RelistAssignedRows()
@@ -957,12 +987,16 @@ Function RunDeferredMaintenance()
     ; skips hands-off actors itself, and the pool sweep is needed in Tracking mode
     ; too (do not gate this on mode 0). ReconcileTrackOnlyOwnership ran above, so
     ; seats SA must not hold are already gone.
+    Float tm7 = SeverActionsNativeExt2.Kernel_RealTime()
+    Float tm8 = tm7
     SeverActions_Follow followSys = GetFollowScript()
     If followSys
         ; Pool sweep (FLWD v18) BEFORE the re-apply, so it sees pool state.
         followSys.SweepFollowAliasesOnLoad(cachedFollowers)
+        tm8 = SeverActionsNativeExt2.Kernel_RealTime()
         followSys.ReapplyFollowTracking(cachedFollowers)
     EndIf
+    Float tm9 = SeverActionsNativeExt2.Kernel_RealTime()
 
     ; PO3's override survives in its cosave, but a cell transition or 3D unload
     ; can drop it from the active stack and PO3's re-apply timing is not
@@ -1009,7 +1043,14 @@ Function RunDeferredMaintenance()
         StorageUtil.SetIntValue(None, "SeverActions_FrameworkModeMigrated", 2)
     EndIf
 
-    Debug.Trace("[SeverActions_FollowerManager] Maintenance complete - Mode: " + SeverActionsNativeExt2.Settings_GetInt("frameworkMode"))
+    Float tmEnd = SeverActionsNativeExt2.Kernel_RealTime()
+    Debug.Trace("[SeverActions_FollowerManager] Maintenance complete - Mode: " + SeverActionsNativeExt2.Settings_GetInt("frameworkMode") \
+        + " - " + SeverActions_ModuleBase.Secs(tmEnd - tm0) + " (detect " + SeverActions_ModuleBase.Secs(tm1 - tm0) \
+        + ", customAI " + SeverActions_ModuleBase.Secs(tm2 - tm1) + ", reconcile " + SeverActions_ModuleBase.Secs(tm3 - tm2) \
+        + ", adoptNFF " + SeverActions_ModuleBase.Secs(tm4 - tm3) + ", rosterSync+hydrate " + SeverActions_ModuleBase.Secs(tm5 - tm4) \
+        + ", followerState " + SeverActions_ModuleBase.Secs(tm6 - tm5) + ", schedule " + SeverActions_ModuleBase.Secs(tm7 - tm6) \
+        + ", followPool " + SeverActions_ModuleBase.Secs(tm8 - tm7) + ", followReapply " + SeverActions_ModuleBase.Secs(tm9 - tm8) \
+        + ", homes " + SeverActions_ModuleBase.Secs(tmEnd - tm9) + ", " + cachedFollowers.Length + " followers)")
 EndFunction
 
 ; =============================================================================
@@ -2083,6 +2124,9 @@ Function ReconcileTrackOnlyOwnership()
                 Debug.Trace("[SeverActions_FollowerManager] ReconcileTrackOnlyOwnership: " + a.GetDisplayName() + " is owned by " + SeverActionsNativeExt2.Native_GetFollowerOwnerName(a) + " - released SA's claim")
             Else
                 Debug.Trace("[SeverActions_FollowerManager] ReconcileTrackOnlyOwnership: Tracking mode - released SA's lead on " + a.GetDisplayName() + " (D45)")
+                If SeverActionsNativeExt2.Settings_GetBool("debugMode")
+                    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.trackingModeReleased", ("" + a.GetDisplayName())))
+                EndIf
             EndIf
             healed += 1
         EndIf
@@ -2152,8 +2196,8 @@ Bool Function IsFollowHandsOff(Actor akActor)
      signals only mean "dismissed" for a framework-led actor) or by home and
      schedule sites, which stay live in Tracking mode and ask
      Native_IsTrackOnlyFollower alone. Other scripts: SeverActions_ModuleBase.IsFollowHandsOff.
-     Exception: _CompanionWaitCore parks an NPC no framework leads in SA's wait sandbox in Tracking mode too
-     (_UnledInTracking).}
+     Exceptions for an NPC no framework leads (_UnledInTracking): in Tracking mode too, _CompanionWaitCore parks her
+     in SA's wait sandbox, and Follow.StartFollowing, the wait hotkey and _CompanionFollowCore give her a casual follow.}
     If !akActor
         Return false
     EndIf
@@ -2170,6 +2214,26 @@ Bool Function _UnledInTracking(Actor akActor)
     Return akActor && SeverActionsNativeExt2.Settings_GetInt("frameworkMode") == 1 \
         && !IsRegisteredFollower(akActor) && !akActor.IsPlayerTeammate() \
         && !SeverActionsNativeExt2.Native_IsTrackOnlyFollower(akActor)
+EndFunction
+
+Function _ReleaseCasualFollow(Actor akActor)
+    {Releases SA's casual follow (the follow flag, the pool seat and the follow LinkedRef) from an NPC becoming a
+     follower SA does not lead (Tracking mode, D45). Once rostered, the flag would make SA the owner and
+     FollowDriftMonitor would fight their framework's follow until the next load's ReconcileTrackOnlyOwnership.}
+    SeverActions_Follow followSys = GetFollowScript()
+    If !akActor || !followSys || IsRegisteredFollower(akActor)
+        Return
+    EndIf
+    If !SeverActionsNative.Native_GetHasFollowPkg(akActor) && !followSys.IsInFollowerSlot(akActor)
+        Return
+    EndIf
+    SeverActionsNativeExt2.Native_ClearSAFollowOwnership(akActor)
+    followSys.ClearFollowerSlot(akActor)
+    If followSys.SeverActions_FollowerFollowKW
+        SeverActionsNative.LinkedRef_Clear(akActor, followSys.SeverActions_FollowerFollowKW)
+    EndIf
+    followSys.SetActivelyFollowing(akActor, false)
+    Debug.Trace("[SeverActions_FollowerManager] _ReleaseCasualFollow: released SA's casual follow on " + akActor.GetDisplayName() + " (D45)")
 EndFunction
 
 Function _ReleaseSAWait(Actor akActor)
@@ -2266,7 +2330,12 @@ Function ChronoArm(Float afSeconds)
      RegisterForSingleUpdate; see the Chronometer block in SeverActionsNativeExt2.psc).
      Event and callback names are unique per script. Re-arm replaces the pending
      tick; ticks do not survive save/load; one in-flight tick can land after a
-     cancel, so the handler stays state-guarded.}
+     cancel, so the handler stays state-guarded. While DeferredMaintenancePending
+     is set the tick comes within 1 s whoever arms it, a pass resumed from a save
+     included: the load passes wait on that tick.}
+    If DeferredMaintenancePending && afSeconds > 1.0
+        afSeconds = 1.0
+    EndIf
     RegisterForModEvent("SeverActions_Tick_FollowerManager", "OnChronoTick_FollowerManager")
     SeverActionsNativeExt2.Chrono_Request("SeverActions_Tick_FollowerManager", afSeconds)
 EndFunction
@@ -2279,8 +2348,14 @@ Event OnChronoTick_FollowerManager(String eventName, String strArg, Float numArg
     ; One pass at a time: with a huge roster a pass can outlive its tick, and
     ; stacked passes compound the load. The 120 s ceiling keeps a pass whose
     ; stack died from wedging the loop shut.
-    If _OnUpdateInFlight && (Utility.GetCurrentRealTime() - _OnUpdateStartRT) < 120.0
-        Return
+    If _OnUpdateInFlight
+        ; GetCurrentRealTime counts from the executable's launch, so a stamp saved by an
+        ; earlier process can read negative: expired (Maintenance restamps it at load).
+        Float inFlightFor = Utility.GetCurrentRealTime() - _OnUpdateStartRT
+        If inFlightFor >= 0.0 && inFlightFor < 120.0
+            Return
+        EndIf
+        Debug.Trace("[SeverActions_FollowerManager] OnChronoTick: in-flight guard STUCK (" + inFlightFor + " s) - previous pass died mid-body, clearing")
     EndIf
     _OnUpdateInFlight = true
     _OnUpdateStartRT = Utility.GetCurrentRealTime()
@@ -2417,7 +2492,7 @@ Function _OnUpdatePass()
     ; Backstop for TeammateMonitor: untrack track-only followers who lost teammate
     ; status while the event was missed (loaded actors only).
     CheckTrackOnlyFollowerStatus()
-    Float tPrologue = Utility.GetCurrentRealTime()
+    Float tPrologue = SeverActionsNativeExt2.Kernel_RealTime()
 
     ; The schedule-era gate, read once per tick (it is not free).
     Bool tickSchedActive = SchedSystemActive()
@@ -2430,40 +2505,40 @@ Function _OnUpdatePass()
     Actor[] tickHomed = GetAllHomedNPCs()
     ; One sleep-window test, shared by the bed conductor and room rotation.
     Bool tickSleepOpen = SeverActionsNativeExt2.Settings_GetBool("homeSleepEnabled") && HourInWindow(GetCurrentGameHour(), SeverActionsNativeExt2.Settings_GetFloat("homeSleepStart"), SeverActionsNativeExt2.Settings_GetFloat("homeSleepEnd"))
-    Float tHomedRoster = Utility.GetCurrentRealTime()
+    Float tHomedRoster = SeverActionsNativeExt2.Kernel_RealTime()
 
     ; Schedule passes (homed and work-only): pre-migration, move HomeMarker to the
     ; hour's anchor (home/work/play); post-migration, reconcile the schedule alias
     ; pools. A large alias-era roster gets the native due set plus a chunked slow lane.
     ProcessSchedulePasses(tickSchedActive)
-    Float tSchedPasses = Utility.GetCurrentRealTime()
+    Float tSchedPasses = SeverActionsNativeExt2.Kernel_RealTime()
     ; Homed NPCs find their claimed bed during the sleep window.
     ProcessHomeSleep(tickHomed, tickSleepOpen)
-    Float tHomeSleep = Utility.GetCurrentRealTime()
+    Float tHomeSleep = SeverActionsNativeExt2.Kernel_RealTime()
     ; Room rotation: homed NPCs hop their sandbox anchor between the home's named
     ; markers. After ProcessHomeSleep on purpose: it owns the bed window.
     If SeverActionsNativeExt2.Settings_GetBool("roomRotationEnabled")
         ProcessHomeMarkerHops(tickHomed, tickSleepOpen)
     EndIf
-    Float tRoomHops = Utility.GetCurrentRealTime()
+    Float tRoomHops = SeverActionsNativeExt2.Kernel_RealTime()
 
     ; The active roster, built once for every read-only consumer below, and after
     ; the sweeps that can unregister followers so no pass acts on a removed entry.
     Actor[] tickFollowers = GetAllFollowers()
-    Float tFollowerRoster = Utility.GetCurrentRealTime()
+    Float tFollowerRoster = SeverActionsNativeExt2.Kernel_RealTime()
 
     ; Release the home alias while a follower is in a vanilla scene so the scene's
     ; package drives; restore it after (see CheckSceneSuspendedHomes).
     CheckSceneSuspendedHomes(tickFollowers, tickHomed, tickSchedActive)
-    Float tSceneSuspend = Utility.GetCurrentRealTime()
+    Float tSceneSuspend = SeverActionsNativeExt2.Kernel_RealTime()
 
     ; IgnoreFriendlyHits drops in AI state transitions: re-stamp it every tick.
     RefreshFriendlyFireFlags(tickFollowers)
-    Float tFFFlags = Utility.GetCurrentRealTime()
+    Float tFFFlags = SeverActionsNativeExt2.Kernel_RealTime()
 
     ; (Assessment, off-screen life and banter run on SeverActions_CompanionMind's and
     ; _CompanionLife's own ticks; ambient banter and actions on SeverActions_Ambient's.)
-    Float tEnd = Utility.GetCurrentRealTime()
+    Float tEnd = SeverActionsNativeExt2.Kernel_RealTime()
 
     TraceTickTimings(tickFollowers.Length, tickHomed.Length, \
         tPrologue, tHomedRoster, tSchedPasses, tHomeSleep, \
@@ -2483,7 +2558,7 @@ Function TraceTickTimings(Int followerCount, Int homedCount, \
     Float tFFFlags, Float tEnd)
     {Log one tick's per-pass real-time breakdown when it exceeds
      TICK_TRACE_BUDGET_SEC, or always under debugMode. The stamps are absolute
-     GetCurrentRealTime readings in _OnUpdatePass order; the span starts after the
+     Kernel_RealTime readings in _OnUpdatePass order; the span starts after the
      relationship, death and track-only sweeps, measuring the roster-scaling passes.}
     Float total = tEnd - tPrologue
     If total < TICK_TRACE_BUDGET_SEC && !SeverActionsNativeExt2.Settings_GetBool("debugMode")
@@ -3183,6 +3258,8 @@ Event OnPrismaCompanionWait(string eventName, string strArg, float numArg, Form 
     If akActor
         DebugMsg("PrismaUI wait: " + akActor.GetDisplayName())
         CompanionWait(akActor)
+        ; The authoritative repaint: the DLL's own refresh ran before this handler.
+        SeverActionsNative.Magelight_RefreshPage("companions")
     EndIf
 EndEvent
 
@@ -3197,6 +3274,8 @@ Event OnPrismaCompanionFollow(string eventName, string strArg, float numArg, For
     If akActor
         DebugMsg("PrismaUI follow: " + akActor.GetDisplayName())
         CompanionFollow(akActor)
+        ; The authoritative repaint: the DLL's own refresh ran before this handler.
+        SeverActionsNative.Magelight_RefreshPage("companions")
     EndIf
 EndEvent
 
@@ -3226,6 +3305,7 @@ Event OnPrismaCompanionWaitAll(string eventName, string strArg, float numArg, Fo
     EndIf
     ; Proves the event fired and times the per-follower work on large rosters.
     DebugMsg("PrismaUI wait-all: done in " + (Utility.GetCurrentRealTime() - waStart) + "s")
+    SeverActionsNative.Magelight_RefreshPage("companions")
 EndEvent
 
 Event OnPrismaCompanionFollowAll(string eventName, string strArg, float numArg, Form sender)
@@ -3251,6 +3331,7 @@ Event OnPrismaCompanionFollowAll(string eventName, string strArg, float numArg, 
         EndIf
     EndIf
     DebugMsg("PrismaUI follow-all: done in " + (Utility.GetCurrentRealTime() - faStart) + "s")
+    SeverActionsNative.Magelight_RefreshPage("companions")
 EndEvent
 
 Event OnPrismaResetAll(string eventName, string strArg, float numArg, Form sender)
@@ -3290,6 +3371,7 @@ Function _OnboardTrackingMode(Actor akActor, Bool isFirstRecruit)
         Return
     EndIf
     _ReleaseSAWait(akActor)
+    _ReleaseCasualFollow(akActor)
     StorageUtil.SetIntValue(akActor, "SeverActions_HandsOffAtRecruit", 1)
     Float now = GetGameTimeInSeconds()
     Bool wasRegistered = IsRegisteredFollower(akActor)
@@ -3496,11 +3578,12 @@ Function RegisterFollower(Actor akActor)
     ; is the ownership verdict (custom AI, NFF, DLC) OR FrameworkMode 1 (D45).
     ElseIf IsFollowHandsOff(akActor)
         DebugMsg("Tracking mode: " + akActor.GetDisplayName())
-        ; Still drop our home/work sandboxes and schedule alias, and SA's own wait.
+        ; Still drop our home/work sandboxes and schedule alias, SA's own wait and a casual follow it held.
         StripSandboxesForFollow(akActor)
         ClearWorkSandboxForFollow(akActor)
         EmptySchedAliasesForFollow(akActor)
         _ReleaseSAWait(akActor)
+        _ReleaseCasualFollow(akActor)
 
     ; SeverActions mode: full control.
     Else
@@ -4743,6 +4826,12 @@ EndFunction
 Function RemoveWorkSandbox(Actor akActor)
     {Removes the work overrides and the WORK alias so the NPC falls back to their
      home schedule or native AI.}
+    _RemoveWorkSandboxHeld(akActor, -1, true)
+EndFunction
+
+Function _RemoveWorkSandboxHeld(Actor akActor, Int aiHeld, Bool abFinish)
+    {RemoveWorkSandbox with a HeldState answer: the WORK and guard seats are freed only when one is held. abFinish
+     false (the follow core, which has cleared the stamp and evaluates at its end) skips the stamp check and evaluate.}
     If !akActor
         Return
     EndIf
@@ -4757,16 +4846,26 @@ Function RemoveWorkSandbox(Actor akActor)
     EndIf
     ; Clear our WFP 2 stamp or WFP-conditioned packages read a phantom wait
     ; forever; left alone while a home or a relax alias holds the actor.
-    If akActor.GetAV("WaitingForPlayer") == 2.0
+    If abFinish && akActor.GetAV("WaitingForPlayer") == 2.0
         If SeverActionsNative.Native_GetHomeMarkerSlot(akActor) < 0 && !GetHomeMarkerB(akActor) \
             && !(SchedSystemActive() && SeverActionsNativeExt.Native_GetSchedAliasIndex(akActor, SCHEDULE_PLAY) >= 0)
             akActor.SetAV("WaitingForPlayer", 0)
         EndIf
     EndIf
     If SchedSystemActive()
-        EmptySchedAlias(akActor, SCHEDULE_WORK)
+        If SeverActions_Follow.Held(aiHeld, HELD_SCHED_SEAT) || SeverActions_Follow.Held(aiHeld, HELD_GUARD_SEAT)
+            EmptySchedAlias(akActor, SCHEDULE_WORK)
+        Else
+            ; No seat held: skip EmptySchedAlias, whose guard-seat search costs a frame; only its V2 assist strip.
+            Package workV2 = GetSchedPackageForType(SCHEDULE_WORK)
+            If workV2
+                ActorUtil.RemovePackageOverride(akActor, workV2)
+            EndIf
+        EndIf
     EndIf
-    akActor.EvaluatePackage()
+    If abFinish
+        akActor.EvaluatePackage()
+    EndIf
 EndFunction
 
 Function StripScheduleForJail(Actor akActor)
@@ -4807,15 +4906,25 @@ Function ClearWorkSandboxForFollow(Actor akActor)
     {On any follow start: drops the work package (110 outranks follow) and resets
      the schedule cursor so a later dismiss re-applies work in work hours. The work
      assignment is kept. Safe on any actor.}
+    _ClearWorkSandboxForFollowHeld(akActor, -1)
+EndFunction
+
+Function _ClearWorkSandboxForFollowHeld(Actor akActor, Int aiHeld)
+    {ClearWorkSandboxForFollow with a HeldState answer. A known one (the follow core, which evaluates once at its end)
+     also skips the evaluate.}
     If !akActor
         Return
     EndIf
     ; Our follow package needs WFP 0; clear only our work-shift 2, never another
     ; path's follow/wait value.
-    If akActor.GetAV("WaitingForPlayer") == 2.0
+    If aiHeld < 0
+        If akActor.GetAV("WaitingForPlayer") == 2.0
+            akActor.SetAV("WaitingForPlayer", 0.0)
+        EndIf
+    ElseIf SeverActions_Follow.HeldSure(aiHeld, HELD_WFP_STAMP)
         akActor.SetAV("WaitingForPlayer", 0.0)
     EndIf
-    RemoveWorkSandbox(akActor)
+    _RemoveWorkSandboxHeld(akActor, aiHeld, aiHeld < 0)
     StorageUtil.SetIntValue(akActor, KEY_LAST_SCHEDULED_TYPE, -99)
 EndFunction
 
@@ -4825,19 +4934,26 @@ Function StripSandboxesForFollow(Actor akActor)
      (80). The work sandbox is ClearWorkSandboxForFollow's and the schedule aliases
      EmptySchedAliasesForFollow's. No-op when inactive; assignments are kept and
      re-apply once follow ends.}
+    _StripSandboxesForFollowHeld(akActor, -1)
+EndFunction
+
+Function _StripSandboxesForFollowHeld(Actor akActor, Int aiHeld)
+    {StripSandboxesForFollow with a HeldState answer. A known one (the follow core) also skips the WaitingForPlayer 0
+     and the evaluates, which the core writes and runs once at its end.}
     If !akActor
         Return
     EndIf
-    RemoveHomeSandbox(akActor)
-    RemovePlaySandboxB(akActor)
+    Bool finish = aiHeld < 0
+    _RemoveHomeSandboxHeld(akActor, finish)
+    _RemovePlaySandboxHeld(akActor, finish)
     ; The light strip: no teleport or follow re-registration (the caller starts follow).
     SeverActions_Follow followSys = GetFollowScript()
     If followSys
-        followSys.StripSafeInteriorForFollow(akActor)
+        followSys.StripSafeInteriorHeld(akActor, aiHeld, finish)
     EndIf
     ; Only when using furniture (seated or on the way), or every follow start fires a
     ; spurious furniture_stopped.
-    If SeverActions_FurnitureLib.IsUsing(akActor)
+    If SeverActions_Follow.Held(aiHeld, HELD_FURNITURE) && SeverActions_FurnitureLib.IsUsing(akActor)
         SeverActions_FurnitureLib.Stop(akActor)
     EndIf
 EndFunction
@@ -5461,6 +5577,11 @@ EndFunction
 Function RemovePlaySandboxB(Actor akActor)
     {No-op when the play override isn't applied; with the schedule system active it
      also empties the play alias.}
+    _RemovePlaySandboxHeld(akActor, true)
+EndFunction
+
+Function _RemovePlaySandboxHeld(Actor akActor, Bool abFinish)
+    {RemovePlaySandboxB; abFinish false (the follow core, which evaluates once at its end) skips the evaluate.}
     Package playPkg = GetPlaySandboxBPackage()
     If playPkg
         ActorUtil.RemovePackageOverride(akActor, playPkg)
@@ -5468,7 +5589,9 @@ Function RemovePlaySandboxB(Actor akActor)
     If SchedSystemActive()
         EmptySchedAlias(akActor, SCHEDULE_PLAY)
     EndIf
-    akActor.EvaluatePackage()
+    If abFinish
+        akActor.EvaluatePackage()
+    EndIf
 EndFunction
 
 ; =============================================================================
@@ -5793,15 +5916,16 @@ Function _FreeGuardAlias(Actor akActor)
         SeverActionsNativeExt.Native_SetGuardAliasIndex(akActor, -1)
         Return
     EndIf
-    ; No index (e.g. ClearFollowerData ran first on a dismiss): scan the pool so a
-    ; filled alias can't keep the retainer shadowing their charge.
-    Int scan = 0
-    While scan < GUARD_ALIAS_POOL_SIZE
-        ReferenceAlias scanAl = GetGuardAlias(scan)
+    ; No index (e.g. ClearFollowerData ran first on a dismiss): clear every seat the
+    ; pool says holds them, so a filled alias can't keep the retainer shadowing their charge.
+    Int[] held = SeverActionsNativeExt2.Pool_FilledIndices(GetGuardQuest(), akActor)
+    Int k = 0
+    While k < held.Length
+        ReferenceAlias scanAl = GetGuardAlias(held[k])
         If scanAl && scanAl.GetReference() == akActor
             scanAl.Clear()
         EndIf
-        scan += 1
+        k += 1
     EndWhile
 EndFunction
 
@@ -6290,10 +6414,15 @@ Function SweepGuardAliasesOnLoad()
         StorageUtil.SetIntValue(None, "SeverActions_GuardPoolMigDone", 1)
         Debug.Trace("[SeverActions] GuardPool migration pass complete (sentinel set)")
     EndIf
-    ; Pool side.
-    Int i = 0
-    While i < GUARD_ALIAS_POOL_SIZE
-        ReferenceAlias al = gq.GetNthAlias(i) as ReferenceAlias
+    ; Pool side: the filled seats only (an empty one needs nothing), from one native read.
+    Int[] filled = SeverActionsNativeExt2.Pool_FilledIndices(gq)
+    Int k = 0
+    While k < filled.Length
+        Int i = filled[k]
+        ReferenceAlias al = None
+        If i < GUARD_ALIAS_POOL_SIZE
+            al = gq.GetNthAlias(i) as ReferenceAlias
+        EndIf
         If al
             Actor a = al.GetReference() as Actor
             If a
@@ -6324,7 +6453,7 @@ Function SweepGuardAliasesOnLoad()
                 EndIf
             EndIf
         EndIf
-        i += 1
+        k += 1
     EndWhile
     ; Roster side.
     _DropStaleGuardIndicesFromList(KEY_HOMED_NPCS)
@@ -6681,13 +6810,22 @@ Int Function ReclaimSchedAliasesByEngine(Actor akActor)
      that type's recorded index, and strips (and counts) a V2 override still holding them.
      One native read per pool, cheap enough for the per-tick self-heal. Returns
      the count; each hit is traced.}
+    Return ReclaimSchedAliasesHeld(akActor, true)
+EndFunction
+
+Int Function ReclaimSchedAliasesHeld(Actor akActor, Bool abEngineSeats)
+    {ReclaimSchedAliasesByEngine; abEngineSeats false (Follow_HeldState saw no schedule seat) skips the per-quest seat
+     reads, which cost a frame each, and strips only the V2 overrides.}
     If !akActor
         Return 0
     EndIf
     Int released = 0
     Int t = 0
     While t < 3
-        Quest q = GetSchedQuestForType(t)
+        Quest q = None
+        If abEngineSeats
+            q = GetSchedQuestForType(t)
+        EndIf
         If q
             Int idx = SeverActionsNativeExt2.Sched_AliasIndexIn(akActor, q)
             If idx >= 0
@@ -6726,6 +6864,12 @@ Function EmptySchedAliasesForFollow(Actor akActor)
     {Called by Follow.psc when an NPC comes under direct player or framework
      control (follow, wait, sandbox, track-only wait). Releases every schedule
      alias and the relax WaitingForPlayer bias; safe to call in any era.}
+    EmptySchedAliasesForFollowHeld(akActor, -1, true)
+EndFunction
+
+Function EmptySchedAliasesForFollowHeld(Actor akActor, Int aiHeld, Bool abCheckStamp)
+    {EmptySchedAliasesForFollow with a HeldState answer (-1: unknown): the engine-seat sweep runs only when a schedule
+     seat was held. abCheckStamp false skips the WaitingForPlayer 2 check, for a caller that wrote the flag itself.}
     If !akActor
         Return
     EndIf
@@ -6734,10 +6878,10 @@ Function EmptySchedAliasesForFollow(Actor akActor)
         EmptyAllSchedAliases(akActor)
     EndIf
     ; Also release any seat the engine still shows (see ReclaimSchedAliasesByEngine).
-    If ReclaimSchedAliasesByEngine(akActor) > 0
+    If ReclaimSchedAliasesHeld(akActor, SeverActions_Follow.Held(aiHeld, HELD_SCHED_SEAT)) > 0
         had = true
     EndIf
-    If akActor.GetAV("WaitingForPlayer") == 2.0
+    If abCheckStamp && akActor.GetAV("WaitingForPlayer") == 2.0
         akActor.SetAV("WaitingForPlayer", 0)
         had = true
     EndIf
@@ -6887,19 +7031,25 @@ EndFunction
 ; Per-load maintenance
 
 Function SweepSchedAliasesOnLoad()
-    {Post-migration load sweep, the only full-pool scan (900 GetReference
-     calls): clears aliases holding deleted/disabled actors or actors in no
-     schedule roster, resolves duplicates to the recorded index, adopts
-     mismatches, and drops stale FLWD indices (the next tick refills them).}
+    {Post-migration load sweep, the only full-pool scan (one Pool_FilledIndices
+     read per quest, then the filled seats): clears aliases holding
+     deleted/disabled actors or actors in no schedule roster, resolves duplicates
+     to the recorded index, adopts mismatches, and drops stale FLWD indices (the
+     next tick refills them).}
     If !SchedSystemActive() || SchedMigrationPending
         Return
     EndIf
     Int t = 0
     While t < 3
         Quest q = GetSchedQuestForType(t)
-        Int i = 0
-        While i < SCHED_ALIAS_POOL_SIZE
-            ReferenceAlias al = q.GetNthAlias(i) as ReferenceAlias
+        Int[] filled = SeverActionsNativeExt2.Pool_FilledIndices(q)
+        Int k = 0
+        While k < filled.Length
+            Int i = filled[k]
+            ReferenceAlias al = None
+            If i < SCHED_ALIAS_POOL_SIZE
+                al = q.GetNthAlias(i) as ReferenceAlias
+            EndIf
             If al
                 Actor a = al.GetReference() as Actor
                 If a
@@ -6925,7 +7075,7 @@ Function SweepSchedAliasesOnLoad()
                     EndIf
                 EndIf
             EndIf
-            i += 1
+            k += 1
         EndWhile
         t += 1
     EndWhile
@@ -7696,6 +7846,12 @@ Function RemoveHomeSandbox(Actor akActor)
     {Releases every home hold (legacy slot alias and override, Route B override,
      the schedule pool's home override and alias) and resets WaitingForPlayer,
      so follow packages take over (e.g. on re-recruitment).}
+    _RemoveHomeSandboxHeld(akActor, true)
+EndFunction
+
+Function _RemoveHomeSandboxHeld(Actor akActor, Bool abFinish)
+    {RemoveHomeSandbox; abFinish false (the follow core, which writes WaitingForPlayer and evaluates once at its end)
+     skips the WaitingForPlayer 0 and the evaluate.}
     If !akActor
         Return
     EndIf
@@ -7728,9 +7884,10 @@ Function RemoveHomeSandbox(Actor akActor)
     EndIf
 
     ; WaitingForPlayer 0 lets custom follower packages resume following.
-    akActor.SetAV("WaitingForPlayer", 0)
-
-    akActor.EvaluatePackage()
+    If abFinish
+        akActor.SetAV("WaitingForPlayer", 0)
+        akActor.EvaluatePackage()
+    EndIf
 EndFunction
 
 String Function GetAssignedHome(Actor akActor)
@@ -8618,23 +8775,31 @@ Function _CompanionWaitCore(Actor akActor, Bool abQuiet)
         Return
     EndIf
 
+    ; What SA holds on them, read once: each step below runs only for state present (-1, unknown: every step).
+    SeverActions_Follow followSys = GetFollowScript()
+    Int held = -1
+    If followSys
+        held = followSys.HeldState(akActor)
+    EndIf
+
     ; A live journey would countermand this wait on arrival: cancel it first
     ; (afArg 0.0 = do not restore follow).
-    SeverActions_ModuleBase.CallBool("travelcore", "cancelJourney", akActor, None, "", 0.0)
+    If SeverActions_Follow.Held(held, HELD_JOURNEY)
+        SeverActions_ModuleBase.CallBool("travelcore", "cancelJourney", akActor, None, "", 0.0)
+    EndIf
     ; Stale travel seat: see _CompanionFollowCore. A pinned pool package would
     ; outrank the wait.
-    If SeverActionsNativeExt2.Travel_ReleaseStaleAliasFor(akActor)
+    If SeverActions_Follow.Held(held, HELD_TRAVEL_SEAT) && SeverActionsNativeExt2.Travel_ReleaseStaleAliasFor(akActor)
         Debug.Trace("[SeverActions] CompanionWait: released stale travel alias for " + akActor.GetDisplayName())
     EndIf
 
     ; NFF-owned: NFF's own wait (its packages ignore the WaitingForPlayer AV).
-    If SeverActionsNativeExt2.Native_IsNFFInstalled() && SeverActions_NFFLib.NFFWait(akActor)
+    If SeverActions_Follow.Held(held, HELD_NFF_MANAGED) && SeverActionsNativeExt2.Native_IsNFFInstalled() && SeverActions_NFFLib.NFFWait(akActor)
         ; A safe-interior relax under NFF's wait is lifted, or its exit would move the
         ; waiter. A hands-off relax never wrote WaitingForPlayer.
-        SeverActions_Follow followNff = GetFollowScript()
-        If followNff && followNff.YieldSafeInteriorToWait(akActor, None)
-            followNff.SetSandboxFlag(akActor, false)
-            followNff.ClearWaitingFaction(akActor)
+        If followSys && followSys.YieldSafeInteriorToWait(akActor, None)
+            followSys.SetSandboxFlag(akActor, false)
+            followSys.ClearWaitingFaction(akActor)
             akActor.EvaluatePackage()
         EndIf
         If SeverActionsNativeExt2.Settings_GetBool("showNotifications") && !abQuiet
@@ -8655,35 +8820,52 @@ Function _CompanionWaitCore(Actor akActor, Bool abQuiet)
         ModEvent.Send(waitEvt)
     EndIf
 
-    SeverActions_Follow followSys = GetFollowScript()
+    ; The verdicts from the same read, unless a journey was cancelled above (its teardown can change the teammate
+    ; flag _UnledInTracking reads).
+    Bool handsOff = false
+    Bool dlcOwned = false
+    If held >= 0 && !SeverActions_Follow.HeldSure(held, HELD_JOURNEY)
+        handsOff = SeverActions_Follow.HeldSure(held, HELD_HANDS_OFF) && !SeverActions_Follow.HeldSure(held, HELD_UNLED_TRACKING)
+        dlcOwned = SeverActions_Follow.HeldSure(held, HELD_OWNER_DLC)
+    Else
+        handsOff = IsFollowHandsOff(akActor) && !_UnledInTracking(akActor)
+        dlcOwned = handsOff && SeverActionsNativeExt2.Native_GetFollowerOwner(akActor) == 3
+    EndIf
 
-    If IsFollowHandsOff(akActor) && !_UnledInTracking(akActor)
+    If handsOff
         ; Hands-off (another framework, or Tracking mode - D45): strip any SA
         ; package a past call attached; their own package honours WaitingForPlayer.
+        ; No release in between: the flag goes straight to the wait below.
         If followSys
-            followSys.CompanionStopFollowing(akActor, false)
-            followSys.StopSandbox(akActor)
+            followSys.ReleaseFollowHold(akActor, held, false)
         EndIf
         ; DLC-owned (Serana): wait through her own brain - Dawnguard zeroes a
         ; WaitingForPlayer it did not order (see FollowerFrameworkLib.WaitSerana).
+        ; Her Wait() sets the flag only when she is willing; an unwilling Serana
+        ; must be left at 0, not at a wait from before.
         Bool dlcWaitRouted = false
-        If SeverActionsNativeExt2.Native_GetFollowerOwner(akActor) == 3
+        If dlcOwned
+            If SeverActions_Follow.Held(held, HELD_WFP_SET)
+                akActor.SetAV("WaitingForPlayer", 0)
+            EndIf
             dlcWaitRouted = SeverActions_FollowerFrameworkLib.WaitSerana(akActor)
         EndIf
         If !dlcWaitRouted
             akActor.SetAV("WaitingForPlayer", 1)
         EndIf
-        ; StopSandbox took a relax's package and sandbox flag but not its relax flag
+        ; The release took a relax's package and sandbox flag but not its relax flag
         ; or the monitor's claim, whose exit would move the waiter.
         If followSys
             followSys.YieldSafeInteriorToWait(akActor, None)
         EndIf
         ; Release the schedule aliases (and the track-only assist override) so the
-        ; schedule can't pull them to work/home mid-wait.
-        EmptySchedAliasesForFollow(akActor)
+        ; schedule can't pull them to work/home mid-wait. The flag is the wait's by
+        ; now, never the schedule's 2.
+        EmptySchedAliasesForFollowHeld(akActor, held, false)
         akActor.EvaluatePackage()
     ElseIf followSys
-        followSys.Sandbox(akActor)
+        ; Its own follow-state line would be replaced by the one below at once.
+        followSys.SandboxHeld(akActor, held, false)
     Else
         ; No Follow script: the flag alone.
         akActor.SetAV("WaitingForPlayer", 1)
@@ -8709,17 +8891,28 @@ Function _CompanionFollowCore(Actor akActor, Bool abQuiet)
      - Hands-off: NFF / Serana resume through their own framework, SA state is
        stripped, WaitingForPlayer cleared.
      - Registered companions: CompanionStartFollowing (alias + LinkedRef).
-     - Casual followers: StopSandbox + StartFollowing.
-     For an NPC no framework leads in Tracking mode this only ends SA's wait; her schedule takes her back.}
+     - Casual followers: StopSandbox + StartFollowing, in Tracking mode too.
+     For any other NPC no framework leads in Tracking mode this only ends SA's wait; her schedule takes her back.}
     If !akActor
         Return
     EndIf
-    Bool stopsWaitingOnly = _UnledInTracking(akActor)
+    ; What SA holds on them, read once: each step below runs only for state present (-1, unknown: every step).
+    SeverActions_Follow followSys = GetFollowScript()
+    Int held = -1
+    If followSys
+        held = followSys.HeldState(akActor)
+    EndIf
+    Bool stopsWaitingOnly = false
+    If held >= 0
+        stopsWaitingOnly = SeverActions_Follow.HeldSure(held, HELD_UNLED_TRACKING)
+    Else
+        stopsWaitingOnly = _UnledInTracking(akActor)
+    EndIf
 
     ; Drop the work package and every SA sandbox that outranks follow (~50); the
     ; assignments are kept for after dismissal.
-    ClearWorkSandboxForFollow(akActor)
-    StripSandboxesForFollow(akActor)
+    _ClearWorkSandboxForFollowHeld(akActor, held)
+    _StripSandboxesForFollowHeld(akActor, held)
 
     ; Break out of camp / wait / travel holds before resuming:
     ;  - cancelJourney tears down any journey or wait (the arrival sandbox, the
@@ -8727,10 +8920,12 @@ Function _CompanionFollowCore(Actor akActor, Bool abQuiet)
     ;    follow, it is re-applied below.
     ;  - FollowerCalledByPlayer makes Hearth's camp untrack and release the actor,
     ;    so CampTick stops returning them to the fire.
-    SeverActions_ModuleBase.CallBool("travelcore", "cancelJourney", akActor, None, "", 0.0)
+    If SeverActions_Follow.Held(held, HELD_JOURNEY)
+        SeverActions_ModuleBase.CallBool("travelcore", "cancelJourney", akActor, None, "", 0.0)
+    EndIf
     ; cancelJourney only reaches live journeys; a completed one whose pool alias
     ; never emptied leaves the priority-106 pool package outranking follow.
-    If SeverActionsNativeExt2.Travel_ReleaseStaleAliasFor(akActor)
+    If SeverActions_Follow.Held(held, HELD_TRAVEL_SEAT) && SeverActionsNativeExt2.Travel_ReleaseStaleAliasFor(akActor)
         Debug.Trace("[SeverActions] CompanionFollow: released stale travel alias for " + akActor.GetDisplayName())
     EndIf
     Int followEvt = ModEvent.Create("SeverActions_FollowerCalledByPlayer")
@@ -8742,27 +8937,48 @@ Function _CompanionFollowCore(Actor akActor, Bool abQuiet)
         ModEvent.Send(followEvt)
     EndIf
 
-    SeverActions_Follow followSys = GetFollowScript()
+    ; A casual follower no framework leads (SA holds their follow, a wait included) resumes as in SeverActions mode.
+    Bool unledCasual = stopsWaitingOnly && followSys && SeverActionsNative.Native_GetHasFollowPkg(akActor)
+    If unledCasual
+        stopsWaitingOnly = false
+    EndIf
 
-    If IsFollowHandsOff(akActor)
+    ; Nothing the strips or a journey cancel above change moves this verdict.
+    Bool handsOff = false
+    If held >= 0
+        handsOff = SeverActions_Follow.HeldSure(held, HELD_HANDS_OFF)
+    Else
+        handsOff = IsFollowHandsOff(akActor)
+    EndIf
+
+    If handsOff && !unledCasual
         ; Hands-off (D45): strip any SA package a past call attached, clear the
         ; wait flag and let their own package take over.
+        ; The release's schedule refill reads the flag, and a wait's 1 refuses it (SCHED_HOLD_WAITING): clear it first.
+        If SeverActions_Follow.Held(held, HELD_WFP_SET)
+            akActor.SetAV("WaitingForPlayer", 0)
+        EndIf
         ; WAIT AND RESUME MUST STAY SYMMETRIC: NFFWait is NFF's own wait state,
         ; which the WaitingForPlayer AV does not reach - only NFFResume un-parks.
-        If SeverActionsNativeExt2.Native_IsNFFInstalled()
+        If SeverActionsNativeExt2.Native_IsNFFInstalled() && SeverActions_Follow.Held(held, HELD_NFF_MANAGED)
             SeverActions_NFFLib.NFFResume(akActor)
         EndIf
         If followSys
-            followSys.CompanionStopFollowing(akActor, false)
-            followSys.StopSandbox(akActor)
+            followSys.ReleaseFollowHold(akActor, held, true)
         EndIf
         ; Serana's wait went through her brain, so resume through StopWaiting():
         ; the raw AV alone leaves her IsWaiting set and her 72h release timer armed.
-        If SeverActionsNativeExt2.Native_GetFollowerOwner(akActor) == 3
+        Bool dlcOwned = false
+        If held >= 0
+            dlcOwned = SeverActions_Follow.HeldSure(held, HELD_OWNER_DLC)
+        Else
+            dlcOwned = SeverActionsNativeExt2.Native_GetFollowerOwner(akActor) == 3
+        EndIf
+        If dlcOwned
             SeverActions_FollowerFrameworkLib.ResumeSerana(akActor)
         EndIf
-        ; CompanionStopFollowing's refill re-seated an unled NPC's schedule (WaitingForPlayer 2), which StopSandbox then
-        ; zeroed: a holder gets SA's 2 back.
+        ; The release's refill re-seated an unled NPC's schedule (WaitingForPlayer 2), which the write below must keep:
+        ; a holder gets SA's 2.
         If stopsWaitingOnly && HoldsAnySchedAlias(akActor)
             akActor.SetAV("WaitingForPlayer", 2)
         Else
@@ -8771,7 +8987,7 @@ Function _CompanionFollowCore(Actor akActor, Bool abQuiet)
         akActor.EvaluatePackage()
     ElseIf followSys
         If IsRegisteredFollower(akActor)
-            followSys.CompanionStartFollowing(akActor)
+            followSys.CompanionStartFollowingHeld(akActor, held)
         Else
             followSys.StopSandbox(akActor)
             followSys.StartFollowing(akActor)
@@ -9486,14 +9702,17 @@ Event OnVerb_Followers(String eventName, String strArg, Float numArg, Form sende
     EndIf
 
     ; -- Followers (own code) --
+    Bool repaintCompanions = false
     If actionId == "registerFollower"
         RegisterFollower(target)
 
     ElseIf actionId == "companionFollow"
         CompanionFollow(target)
+        repaintCompanions = true
 
     ElseIf actionId == "companionWait"
         CompanionWait(target)
+        repaintCompanions = true
 
     ElseIf actionId == "dismissCompanion"
         DismissCompanion(target)
@@ -9563,6 +9782,9 @@ Event OnVerb_Followers(String eventName, String strArg, Float numArg, Form sende
     ; after routing, before most verbs have changed anything.
     SeverActionsNative.Magelight_RefreshPage("world")
     SeverActionsNative.Magelight_RefreshPage("enterprises")
+    If repaintCompanions
+        SeverActionsNative.Magelight_RefreshPage("companions")
+    EndIf
 EndEvent
 
 ; ============================================================================
@@ -9641,16 +9863,12 @@ Event OnHotkey_Followers(String eventName, String strArg, Float numArg, Form sen
             Debug.Notification(SeverActionsNativeExt2.Native_L10n("hotkeys.noValidTarget"))
         ElseIf target == player
             Debug.Notification(SeverActionsNativeExt2.Native_L10n("hotkeys.cannotTargetYourself"))
-        ElseIf IsFollowHandsOff(target)
-            ; Hands-off (another framework, or Tracking mode - D45): toggle through the companion verbs. An NPC no
-            ; framework leads waits in SA's sandbox (_UnledInTracking); for her only WaitingForPlayer 1 is a wait (2 is
-            ; the schedule's own hold), and the wheel refuses her as it refuses a stranger in SeverActions mode.
-            Float wfpKey = target.GetAV("WaitingForPlayer")
-            Bool unled = _UnledInTracking(target)
-            If wfpKey == 1.0 || (wfpKey > 0 && !unled)
+        ElseIf IsFollowHandsOff(target) && !_UnledInTracking(target)
+            ; Hands-off (another framework, or a follower a framework leads in Tracking mode - D45): toggle through
+            ; the companion verbs. An NPC no framework leads takes the branch below, as in SeverActions mode: a casual
+            ; follower waits through the Follow script, anyone else through CompanionWait (her wait sandbox).
+            If target.GetAV("WaitingForPlayer") > 0
                 CompanionFollow(target)
-            ElseIf unled && fromWheel
-                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("wheelmenu.notFollowingYou", ("" + target.GetDisplayName())))
             Else
                 CompanionWait(target)
             EndIf

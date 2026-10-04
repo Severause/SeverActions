@@ -2,7 +2,7 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
 
-    <moduleName>SeverActions - SkyrimNet Action Pack v4.0</moduleName>
+    <moduleName>SeverActions - SkyrimNet Action Pack v4.1</moduleName>
 
     <requiredInstallFiles>
         <folder source="00 Core" destination="" priority="0"/>

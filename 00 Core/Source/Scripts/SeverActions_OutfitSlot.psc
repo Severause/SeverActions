@@ -631,9 +631,9 @@ Function PopulateLvlItemFromContainer(Int slotIdx, Int presetIdx)
 EndFunction
 
 Function RepopulateAllLvlItemsForActor(Actor akActor)
-    {Rebuild all 8 preset LvlItems from their chests (Maintenance, every load).
-     Vestigial scaffolding (see PopulateLvlItemFromContainer). A no-op without
-     a slot.}
+    {Rebuild all 8 preset LvlItems from their chests (Maintenance, on a load,
+     for an actor whose default or sleep outfit is a preset Outfit). Vestigial
+     scaffolding (see PopulateLvlItemFromContainer). A no-op without a slot.}
     if !akActor
         return
     endif
@@ -1657,11 +1657,12 @@ Function MigrateToOutfitSlotSystem()
         return
     endif
 
-    ; Actors with legacy presets in either store: the native one also holds
-    ; presets the C++ direct path saved before the StorageUtil mirror existed.
-    Actor[] storageActors = outfitSys.GetPresetActors()
-    Actor[] nativeActors = SeverActionsNative.Native_Outfit_GetActorsWithPresets()
-    Actor[] presetActors = MergeActorArraysUnique(storageActors, nativeActors)
+    ; Every actor with a user preset in OutfitDataStore, which also holds the
+    ; StorageUtil presets (SeverActions_Outfit.MigrateOutfitDataToNative).
+    Actor[] presetActors = outfitSys.GetPresetActors()
+    if !presetActors
+        presetActors = PapyrusUtil.ActorArray(0)
+    endif
     Int migratedActors = 0
     Int migratedPresets = 0
     Int migratedSituations = 0
@@ -1862,24 +1863,32 @@ EndFunction
 
 Function Maintenance()
     {Run by the outfit provider's stage 2 on every load and new game, after the
-     migration: rebuilds the LvlItems, empties and re-binds slot aliases, repairs
+     migration: rebuilds the LvlItems of an actor wearing a preset Outfit as
+     default or sleep outfit, empties and re-binds slot aliases, repairs
      ghost presets once, registers known guardians and drains stranded satchels.
      AutoRegisterKnownGuardians MUST run before DrainStrandedSatchelItems: the
      drain skips guardian actors, and one not yet registered would have its
      guardian-stowed items dumped into its inventory.}
 
-    ; 1: rebuild the LvlItems.
+    ; 1: rebuild the LvlItems only where the engine reads them: through a preset
+    ; Outfit set as the actor's default or sleep outfit. SA never sets one; an
+    ; older build or a restored outfit snapshot may have.
     Actor[] assigned = GetAllAssignedActors()
     Int i = 0
     Int rebuilt = 0
+    Int skipped = 0
     While i < assigned.Length
         if assigned[i]
-            RepopulateAllLvlItemsForActor(assigned[i])
-            rebuilt += 1
+            if SeverActionsNativeExt2.Native_OutfitSlot_UsesPresetOutfit(assigned[i])
+                RepopulateAllLvlItemsForActor(assigned[i])
+                rebuilt += 1
+            else
+                skipped += 1
+            endif
         endif
         i += 1
     EndWhile
-    Log("Maintenance: Rebuilt LvlItems for " + rebuilt + " actors")
+    Log("Maintenance: Rebuilt LvlItems for " + rebuilt + " actors, skipped " + skipped + " with no preset default or sleep outfit")
 
     ; 1.2: empty a slot alias its occupant no longer owns. The native releases
     ; (ReleaseOrphanedSlots at kPostLoadGame, a purge) free the slot but cannot

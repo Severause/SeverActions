@@ -555,9 +555,11 @@ Function SweepCaptiveAliasesOnLoad()
     EndIf
     ; Pass 1 (pool side): empty a slot holding a deleted/disabled actor or one with no live
     ; held entry.
-    Int i = 0
-    While i < CAPTIVE_ALIAS_POOL_SIZE
-        ReferenceAlias al = q.GetNthAlias(i) as ReferenceAlias
+    Int[] filled = SeverActionsNativeExt2.Pool_FilledIndices(q)
+    Int k = 0
+    While k < filled.Length
+        Int i = filled[k]
+        ReferenceAlias al = GetCaptiveAlias(i)
         If al
             Actor a = al.GetReference() as Actor
             If a
@@ -570,7 +572,7 @@ Function SweepCaptiveAliasesOnLoad()
                 EndIf
             EndIf
         EndIf
-        i += 1
+        k += 1
     EndWhile
     ; Pass 2 (entry side): drop indices whose alias no longer points at the victim.
     Actor[] victims = SeverActionsNativeExt.Native_Kidnap_ListVictims()

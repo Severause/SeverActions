@@ -241,6 +241,16 @@ Form Function CallForm(String asBundle, String asSvc, Form akA = None, Form akB 
     Return p.ServiceForm(asSvc, akA, akB, asArg, afArg)
 EndFunction
 
+String Function Secs(Float afSeconds) Global
+    {Seconds as "1.23s", for timing lines (Papyrus prints a Float with six decimals).}
+    Int hundredths = (afSeconds * 100.0 + 0.5) as Int
+    String frac = hundredths % 100
+    If hundredths % 100 < 10
+        frac = "0" + frac
+    EndIf
+    Return (hundredths / 100) + "." + frac + "s"
+EndFunction
+
 ; Verb decoding (plan 3.0 M-V). The DLL sends each UI verb (Native/data/verb_table.json)
 ; to the owning module's dispatcher as SeverActions_Verb_<Name> (callback OnVerb_<Name>,
 ; one dispatcher script per module, DR10); strArg is 8
@@ -300,9 +310,10 @@ Bool Function IsFollowHandsOff(Actor akActor) Global
     {The FOLLOW gate every script asks before leading an actor: True when SA must not
      lead akActor (follow package or wait sandbox) because someone else owns them
      (Native_IsTrackOnlyFollower: NFF, DLC, custom AI) or the player is in Tracking
-     mode (frameworkMode 1), where SA leads nobody. Home and schedule orders are the
+     mode (frameworkMode 1), where SA leads no follower. Home and schedule orders are the
      player's own and stay live in Tracking mode: their sites read the ownership verdict
-     alone. FollowerManager keeps
+     alone. An NPC no framework leads (FollowerManager._UnledInTracking) still waits in
+     SA's sandbox and takes a casual follow. FollowerManager keeps
      a member copy of the same test.}
     If !akActor
         Return False

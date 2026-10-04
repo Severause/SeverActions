@@ -1,5 +1,31 @@
 # SeverActions Changelog
 
+## v4.1.0 - Quicker Commands
+
+Magelight UI 0.30.5 is bundled (`98 Magelight UI`):
+
+- With DLSS or frame generation behind NVIDIA Streamline (Community Shaders' and Open Shaders' upscalers among them), SeverActions' menus no longer open invisible: they are drawn in the game's own interface pass.
+- With Community Shaders' frame generation, the menus show again: Magelight no longer writes past the end of that swapchain's function table, which turned its renderer off at startup.
+- With NVIDIA Smooth Motion, opening the menu no longer freezes the game: Magelight draws with the game's own graphics device there.
+- If the graphics device is lost, Magelight turns itself off instead of leaving the game paused under a menu that cannot draw.
+- A new mouse cursor, drawn sharp at any resolution, and only one of it: the game's own menu cursor no longer shows under or over the page.
+
+When Magelight UI cannot draw at all, the menu key and the quick wheel key now say so on screen and point to `Magelight.log`, instead of doing nothing. A menu or popup that could not take focus no longer leaves the game half in menu mode, with other mods' hotkeys muted, until the next time a menu opened.
+
+Wait and Follow answer at the first press. Each command used to undo everything SeverActions could have put on a follower, whether it was there or not: about forty steps that each wait for the next frame, for every follower, every time. It now checks once what is actually there and undoes only that, so a custom follower SeverActions only tracks takes about ten steps instead of forty, and Wait All and Follow All over a full party finish in a second or two. The Companions page updates when the command has finished instead of half a second after the click, when it still showed the old state. A custom follower told to wait is no longer let go for a moment in the middle of the command, which gave their own mod time to make them follow again.
+
+Loading is faster. On a long-running save, SeverActions' start-up after a load took about a minute and now takes about twelve seconds, and a follow or wait command given right after a load no longer waits behind it for twenty seconds or more. Most of the time went on walking pools of hundreds of empty slots one by one; those walks now visit only the filled ones. The load logs also report how long each step of SeverActions' start-up took.
+
+Companions in the follow pool are no longer pushed back onto their follow package every few seconds. The check that notices a companion drifting off their follow package did not know the pool's own copies of those packages, so it read every companion seated there as drifted and re-applied the package five times every five seconds, then every five minutes, all session.
+
+The quick wheel and the menu key work again when bound to a mouse or gamepad button (M3, M4 or M5, for example), as they did before 4.0. Settings > Hotkeys can now capture the mouse's extra buttons, and names mouse and gamepad buttons instead of showing "Key 259".
+
+In Tracking mode, casual follow works again for an NPC no follower framework leads: they follow, wait and resume as in SeverActions mode. Recruiting someone who was casually following you hands them over to their framework cleanly. The Companions page now shows the framework mode the game is actually using; it read an older copy of the setting, which could disagree. With Debug mode on, a notice names each follower SeverActions stops leading after a load because Tracking mode is on.
+
+The Outfits page's live mirror, on Magelight's CPU renderer, starts the Live Stage on its own and shows the NPC there instead of an empty hole through the menu. In VR it shows a dark box with a short hint instead of whatever was behind the panel.
+
+Installing this version: install it over 4.0.x with Replace. The installer's pages and choices are the same, and saves load as they are.
+
 ## v4.0.2 - Hotfix
 
 Magelight UI 0.30.3 is bundled (`98 Magelight UI`). It fixes three problems in 4.0.1:

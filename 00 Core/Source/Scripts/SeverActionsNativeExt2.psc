@@ -451,6 +451,10 @@ Int Function Kernel_SkyrimNetApiVersion() Global Native
 {SkyrimNet's PublicAPI version as the DLL resolved it (0 = not loaded). Below v8
  the quest-awareness summaries are off (below v5 the completion memories too),
  and Init shows a notice.}
+Float Function Kernel_RealTime() Global Native
+{Real seconds on a steady clock since the DLL loaded, for timing stamps. It costs
+ no frame (Utility.GetCurrentRealTime does). Never compare it with a value from
+ another session or with GetCurrentRealTime.}
 
 ; --- Module registry (plan 6.2, M-R) ---------------------------------------
 ; Which modules this install carries, from the FOMOD's marker files
@@ -531,9 +535,11 @@ Bool Function Script_SetString(String asScript, String asProp, String asValue) G
 ; One per-save value per settings-table row (Native/data/settings_table.json),
 ; fed by every successful settings write: the settings handler (live and its
 ; load replay of the global file), Native_SettingsApply / Native_SettingsRecord
-; and Settings_Set. A row with no value yet migrates on first read from its
-; legacy host property (through ScriptObjectAccess), the global file, or the
-; table default. Keys are the table's web keys.
+; and Settings_Set. A row with no value yet answers the table default: the DLL
+; migrates it at session start from its legacy host property (through
+; ScriptObjectAccess) or the global file, and retries a row whose host the gate
+; refused at Init K2 (Module_ReportBound). The getters never migrate (they are
+; callable from tasklets, TaskletAllowlist.h). Keys are the table's web keys.
 Bool Function Settings_GetBool(String asKey) Global Native
 {The row's per-save value; the table default while the row has none (a refused
  host script, a StorageUtil-hosted row before Init K1 seeds it). False, with a
@@ -872,6 +878,11 @@ Bool Function Native_IsTrackOnlyFollower(Actor akActor) Global Native
  stay live under it, D45); the follow / wait sites read
  SeverActions_ModuleBase.IsFollowHandsOff (this OR the mode).}
 
+Int Function Follow_HeldState(Actor akActor, Faction akWaitingFaction, Faction akActiveFaction) Global Native
+{What SA holds on akActor that a wait or follow tears down, plus the follow verdicts, as one bitmask (SeverActions_Follow's
+ HELD_* properties). HELD_VALID is set on every answer, so 0 (an older DLL) or -1 (None) means unknown. The factions
+ are the Follow script's waiting and actively-following fills.}
+
 Int Function Native_HydrateFollowerSystem_RebuildOpinions() Global Native
 {Only the FollowerSystemHydrator's opinions pass: rebuild every rostered
  follower's companionOpinions string from the pair store. For mid-session
@@ -1199,6 +1210,13 @@ Bool Function FollowPool_Release(Int aiIndex) Global Native
 {Release the claim on an alias index; false when none was held.}
 String Function FollowPool_OwnerOf(Int aiIndex) Global Native
 {The owner tag of the claim on an alias index, "" when free.}
+Int Function FollowPool_ReleaseEmptyClaims() Global Native
+{Release every follow-pool claim whose alias holds nobody; returns how many. Only
+ where no seat is mid-fill (the load sweep): a fresh claim is empty until its alias is filled.}
+Int[] Function Pool_FilledIndices(Quest akQuest, ObjectReference akHolder = None) Global Native
+{The GetNthAlias indices of akQuest's reference aliases that hold a reference
+ (only those holding akHolder when it is given), ascending, in one call: a
+ Papyrus walk pays a frame per GetNthAlias. Empty for None or no match.}
 Int Function Hotkey_GetCode(String asId) Global Native
 {The bound DirectInput code of a hotkey id (an int keybind row of the settings
  table: FollowToggleKey ... SetupSmallCampKey ... TieUntieKey, ConfigMenuKey, WheelMenuKey), read
@@ -1234,3 +1252,8 @@ ObjectReference Function Furniture_SeatFor(Actor akActor, ObjectReference akFurn
 {akFurniture when it has a place for akActor (a free marker, or one akActor already holds or is
  heading to), else the nearest furniture of the same kind with a place within afRedirectRadius of
  it (0 = no redirect), else None. None too for a ref that is not furniture.}
+
+; ── Outfit slots (OutfitSlotStore.h) ───────────────────────────────────────
+Bool Function Native_OutfitSlot_UsesPresetOutfit(Actor akActor) Global Native
+{True when akActor's default or sleep outfit is one of the 800 preset BGSOutfits, the only
+ case in which the engine reads a preset's LeveledItem.}

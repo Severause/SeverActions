@@ -1529,8 +1529,9 @@ Bool Function FriendlyFireMonitor_IsEnabled() Global Native
 ; 100 slots x 8 presets, each an Outfit + LeveledItem + Container triple scaffolded in the ESP
 ; (GenerateOutfitSlots / esp generate-outfit-slots). The CONTAINER is the wardrobe: a preset is worn
 ; through Native_OutfitSlot_DirectEquipPreset and re-applied on cell load by the OutfitAlias, never
-; through SetOutfit. SeverActions_OutfitSlot still fills the LeveledItem from the chest (BuildPreset
-; and every load) and Reverts it on release.
+; through SetOutfit. SeverActions_OutfitSlot still fills the LeveledItem from the chest (BuildPreset,
+; the migration, and on a load for an actor whose default or sleep outfit is a preset Outfit, the
+; only way the engine reads it) and Reverts it on release.
 
 Int Function Native_OutfitSlot_AssignSlot(Actor akActor) Global Native
 {akActor's slot, assigning the first free one if needed; -1 when all 100 are taken.}
@@ -1545,7 +1546,7 @@ Outfit Function Native_OutfitSlot_GetOutfitForm(Int slotIdx, Int presetIdx) Glob
 {The slot's Outfit record, or None (out of range, ESP not scaffolded). Nothing is worn through it; ApplyPresetBySlot uses it as a scaffold check.}
 
 LeveledItem Function Native_OutfitSlot_GetLvlItem(Int slotIdx, Int presetIdx) Global Native
-{The slot's LeveledItem, filled and Reverted by SeverActions_OutfitSlot; nothing equips through it.}
+{The slot's LeveledItem, filled and Reverted by SeverActions_OutfitSlot; SA equips nothing through it.}
 
 ObjectReference Function Native_OutfitSlot_GetContainer(Int slotIdx, Int presetIdx) Global Native
 {The (slot, preset) chest, or None until spawned (PlaceAtMe, then SetContainerRef).}

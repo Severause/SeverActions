@@ -1206,8 +1206,10 @@ Function SendCampHomeById(Int aiCampId)
         cleared += _UnmusterOne(members[i], home)
         i += 1
     EndWhile
-    Int s = 0
-    While s < FOLLOW_POOL_SIZE
+    Int[] filled = SeverActionsNativeExt2.Pool_FilledIndices(_FollowQuest())
+    Int k = 0
+    While k < filled.Length
+        Int s = filled[k]
         ReferenceAlias al = _FollowAlias(s)
         If al
             Actor holder = al.GetReference() as Actor
@@ -1223,7 +1225,7 @@ Function SendCampHomeById(Int aiCampId)
                 EndIf
             EndIf
         EndIf
-        s += 1
+        k += 1
     EndWhile
     Debug.Notification(SeverActionsNativeExt2.Native_L10n("follow.theWarBandReturns"))
     Debug.Trace("[SeverActions_Enterprises] SendCampHomeById " + aiCampId + ": released " + cleared)
@@ -1334,8 +1336,10 @@ Int Function _PumpMusterArrivals()
     Int watched = 0
     Int arrived = 0
     Int gathered = 0
-    Int s = 0
-    While s < FOLLOW_POOL_SIZE
+    Int[] filled = SeverActionsNativeExt2.Pool_FilledIndices(_FollowQuest())
+    Int k = 0
+    While k < filled.Length
+        Int s = filled[k]
         ReferenceAlias al = _FollowAlias(s)
         If al
             Actor holder = al.GetReference() as Actor
@@ -1372,7 +1376,7 @@ Int Function _PumpMusterArrivals()
                 EndIf
             EndIf
         EndIf
-        s += 1
+        k += 1
     EndWhile
     If arrived == 1
         Debug.Notification(SeverActionsNativeExt2.Native_L10n("follow.oneOfYourWar"))
@@ -1423,36 +1427,39 @@ ReferenceAlias Function GetCampPersistAlias(Int aiIndex)
 EndFunction
 
 Function _UnpersistOne(Actor akMember)
-    {Free one member's persistence alias by holder scan (native seating keeps no index).
-     Safe on non-holders; also clears the legacy SeverCamp_PersistAlias key.}
+    {Free every persistence alias holding one member, found by holder scan (native seating
+     keeps no index). Safe on non-holders; also clears the legacy SeverCamp_PersistAlias key.}
     If !akMember
         Return
     EndIf
     StorageUtil.UnsetIntValue(akMember, "SeverCamp_PersistAlias")
-    If GetCampPersistQuest() == None
+    Quest pool = GetCampPersistQuest()
+    If pool == None
         Return
     EndIf
-    Int s = 0
-    While s < CAMP_PERSIST_POOL_SIZE
-        ReferenceAlias al = GetCampPersistAlias(s)
+    Int[] filled = SeverActionsNativeExt2.Pool_FilledIndices(pool, akMember)
+    Int k = 0
+    While k < filled.Length
+        ReferenceAlias al = GetCampPersistAlias(filled[k])
         If al && al.GetReference() == akMember
             al.Clear()
-            Return
         EndIf
-        s += 1
+        k += 1
     EndWhile
 EndFunction
 
 Function SweepCampPersistPool()
     {Free every persistence alias whose holder is no longer a sworn camp member, or is a
      confirmed (loaded) corpse. Runs on load and on SeverActions_CampReleased.}
-    If GetCampPersistQuest() == None
+    Quest pool = GetCampPersistQuest()
+    If pool == None
         Return
     EndIf
     Int freed = 0
-    Int s = 0
-    While s < CAMP_PERSIST_POOL_SIZE
-        ReferenceAlias al = GetCampPersistAlias(s)
+    Int[] filled = SeverActionsNativeExt2.Pool_FilledIndices(pool)
+    Int k = 0
+    While k < filled.Length
+        ReferenceAlias al = GetCampPersistAlias(filled[k])
         If al
             Actor holder = al.GetReference() as Actor
             If holder
@@ -1468,7 +1475,7 @@ Function SweepCampPersistPool()
                 EndIf
             EndIf
         EndIf
-        s += 1
+        k += 1
     EndWhile
     If freed > 0
         Debug.Trace("[SeverActions_Enterprises] CampPersist sweep: freed " + freed + " alias(es)")
@@ -1509,31 +1516,38 @@ ReferenceAlias Function GetRetainerPersistAlias(Int aiIndex)
 EndFunction
 
 Function _UnpersistOneRetainer(Actor akRetainer)
-    {Free one retainer's persistence alias by holder scan. Safe on non-holders.}
-    If !akRetainer || GetRetainerPersistQuest() == None
+    {Free every persistence alias holding one retainer, found by holder scan. Safe on
+     non-holders.}
+    If !akRetainer
         Return
     EndIf
-    Int s = 0
-    While s < RETAINER_PERSIST_POOL_SIZE
-        ReferenceAlias al = GetRetainerPersistAlias(s)
+    Quest pool = GetRetainerPersistQuest()
+    If pool == None
+        Return
+    EndIf
+    Int[] filled = SeverActionsNativeExt2.Pool_FilledIndices(pool, akRetainer)
+    Int k = 0
+    While k < filled.Length
+        ReferenceAlias al = GetRetainerPersistAlias(filled[k])
         If al && al.GetReference() == akRetainer
             al.Clear()
-            Return
         EndIf
-        s += 1
+        k += 1
     EndWhile
 EndFunction
 
 Function SweepRetainerPersistPool()
     {Free every persistence alias whose holder is no longer an active retainer. Runs on load;
      mid-session frees come from the SeverActions_RetainerUnpersist ping.}
-    If GetRetainerPersistQuest() == None
+    Quest pool = GetRetainerPersistQuest()
+    If pool == None
         Return
     EndIf
     Int freed = 0
-    Int s = 0
-    While s < RETAINER_PERSIST_POOL_SIZE
-        ReferenceAlias al = GetRetainerPersistAlias(s)
+    Int[] filled = SeverActionsNativeExt2.Pool_FilledIndices(pool)
+    Int k = 0
+    While k < filled.Length
+        ReferenceAlias al = GetRetainerPersistAlias(filled[k])
         If al
             Actor holder = al.GetReference() as Actor
             If holder && !SeverActionsNativeExt2.Venture_IsActiveRetainer(holder)
@@ -1541,7 +1555,7 @@ Function SweepRetainerPersistPool()
                 freed += 1
             EndIf
         EndIf
-        s += 1
+        k += 1
     EndWhile
     If freed > 0
         Debug.Trace("[SeverActions_Enterprises] RetainerPersist sweep: freed " + freed + " alias(es)")
