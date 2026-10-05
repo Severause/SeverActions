@@ -305,10 +305,10 @@ Bool Function Survival_IsInColdRegion(Actor akActor) Global Native
 {True in a cold region (Winterhold, the Pale, ...).}
 
 Float Function Survival_CalculateColdExposure(Actor akActor) Global Native
-{Cold exposure (0.0 to 1.0) from akActor's surroundings.}
+{Cold exposure (0.0 to 1.0) from akActor's surroundings, less what akActor wears.}
 
 Float Function Survival_GetArmorWarmthFactor(Actor akActor) Global Native
-{Warmth of akActor's equipped armor (higher = warmer).}
+{Warmth of what akActor wears, 0.0 to 1.0, where 1.0 = a full set of Survival Mode warm gear (a lit torch and warming food included).}
 
 ; --- Heat Sources (akActor's parent cell only) ---
 
@@ -1274,8 +1274,10 @@ Bool Function Native_Outfit_IsNativeSuspended(Actor akActor) Global Native
 ; More Native_Outfit_* natives (the migration scalars, DressStash) are on SeverActionsNativeExt.
 
 ; --- Burst strip detection ---
-; 3+ external unequips within 500 ms (a bathing or animation mod stripping the actor) suspend the lock
-; until ClearBurstSuppression. Recording is SeverActionsNativeExt2.Native_Outfit_RecordExternalChange.
+; A latch on enforcement: set by 3+ external unequips within 500 ms (recorded by
+; SeverActionsNativeExt2.Native_Outfit_RecordExternalChange) or by the settle's verify finding the actor
+; re-dressed again; cleared by ClearBurstSuppression, or by SeverActionsNativeExt2.Native_Outfit_ResolveBurst
+; on a re-dress or a still fully worn preset.
 
 Function Native_Outfit_ClearBurstSuppression(Actor akActor) Global Native
 {End burst suppression (when the outfit system takes control back).}

@@ -10,6 +10,73 @@
          (brass-on-dark, EB Garamond) for consistency with the rest of
          the SeverActions UI suite. Vanilla HTML/CSS — no React. */
 
+      /* Default values: the main UI's tokens, then this card's own with their gen_themes.py roles. */
+      :root {
+        --accent: #cba560;
+        --accent-warm: #c9a866;
+        --color-error: #a8513e;
+        --card-ground-top: #140e06; /* theme: ground */
+        --card-ground-bottom: #1e160a; /* theme: ground */
+        --card-ink: #e2c382; /* theme: accent */
+        --btn-ground: #3c2d16; /* theme: ground */
+        --btn-ground-hi: #55411e; /* theme: ground */
+        --btn-go-ink: #d8e5b8; /* theme: fixed-ink */
+        --btn-go-edge: #8caf5f; /* theme: fixed */
+        --btn-go-fill: #374b1e; /* theme: fixed-ground */
+        --btn-go-edge-hi: #aac878; /* theme: fixed */
+        --btn-stop-ink: #e6b69a; /* theme: fixed-ink */
+        --btn-stop-fill: #502319; /* theme: fixed-ground */
+        --btn-stop-edge-hi: #c86e5a; /* theme: fixed */
+        --well: #000000; /* theme: ink */ /* a black well fill */
+      }
+      /* BEGIN GENERATED theme blocks (scripts/themes/gen_themes.py) */
+      :root[data-theme="windhelm"] {
+          --accent: #7cb2ce;
+          --accent-warm: #7db3d0;
+          --card-ground-top: #05101c;
+          --card-ground-bottom: #081829;
+          --card-ink: #97ceeb;
+          --btn-ground: #103150;
+          --btn-ground-hi: #154673;
+      }
+      :root[data-theme="dwemer"] {
+          --accent: #ec9660;
+          --accent-warm: #ee9862;
+          --card-ground-top: #011212;
+          --card-ground-bottom: #011b1b;
+          --card-ink: #feb78c;
+          --btn-ground: #013636;
+          --btn-ground-hi: #034d4d;
+      }
+      :root[data-theme="soulcairn"] {
+          --accent: #be9aef;
+          --accent-warm: #c09cf1;
+          --card-ground-top: #150b1a;
+          --card-ground-bottom: #1f1226;
+          --card-ink: #d6bbfe;
+          --btn-ground: #3e264c;
+          --btn-ground-hi: #59366d;
+      }
+      :root[data-theme="vellum"] {
+          --accent: #664603;
+          --accent-warm: #654502;
+          --color-error: #943f2d;
+          --card-ground-top: #d7caaf;
+          --card-ground-bottom: #dccfb3;
+          --card-ink: #593d03;
+          --btn-ground: #e6d9bd;
+          --btn-ground-hi: #ede0c4;
+          --btn-go-ink: #556038;
+          --btn-go-edge: #476510;
+          --btn-go-fill: #d9eec4;
+          --btn-go-edge-hi: #4b6410;
+          --btn-stop-ink: #7c5239;
+          --btn-stop-fill: #fee1da;
+          --btn-stop-edge-hi: #974230;
+          --well: #796a5b;
+      }
+      /* END GENERATED theme blocks */
+
       html, body {
         margin: 0;
         padding: 0;
@@ -18,7 +85,7 @@
         background: transparent !important;
         font-family: 'Trajan Pro', 'EB Garamond', Georgia, serif;
         font-size: 19px;
-        color: #cba560;
+        color: var(--accent);
         overflow: hidden;
         pointer-events: none;
         -webkit-font-smoothing: antialiased;
@@ -50,13 +117,13 @@
         width: 100%;
         background:
           linear-gradient(to bottom,
-            rgba(20, 14, 6, 0.96),
-            rgba(30, 22, 10, 0.96));
-        border: 1px solid rgba(203, 165, 96, 0.6);
+            color-mix(in srgb, var(--card-ground-top) 96%, transparent),
+            color-mix(in srgb, var(--card-ground-bottom) 96%, transparent));
+        border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
         border-radius: 5px;
         box-shadow:
           0 8px 26px rgba(0, 0, 0, 0.8),
-          inset 0 1px 0 rgba(226, 195, 130, 0.18);
+          inset 0 1px 0 color-mix(in srgb, var(--card-ink) 18%, transparent);
         padding: 18px 22px 0 22px;
         overflow: hidden;
       }
@@ -64,9 +131,9 @@
       .brawl-header {
         font-size: 0.85em;
         letter-spacing: 0.22em;
-        color: rgba(203, 165, 96, 0.78);
+        color: color-mix(in srgb, var(--accent) 78%, transparent);
         font-weight: 600;
-        border-bottom: 1px solid rgba(203, 165, 96, 0.22);
+        border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
         padding-bottom: 7px;
         margin-bottom: 12px;
       }
@@ -74,11 +141,11 @@
       .brawl-body {
         font-size: 1.12em;
         line-height: 1.5;
-        color: rgba(226, 195, 130, 0.97);
+        color: color-mix(in srgb, var(--card-ink) 97%, transparent);
         margin-bottom: 16px;
       }
       .brawl-name {
-        color: #e2c382;
+        color: var(--card-ink);
         font-weight: 600;
       }
 
@@ -94,9 +161,9 @@
       .brawl-btn {
         flex: 1 1 0;
         padding: 11px 10px;
-        background: rgba(60, 45, 22, 0.55);
-        color: #cba560;
-        border: 1px solid rgba(203, 165, 96, 0.45);
+        background: color-mix(in srgb, var(--btn-ground) 55%, transparent);
+        color: var(--accent);
+        border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
         border-radius: 3px;
         cursor: pointer;
         font-family: inherit;
@@ -105,33 +172,33 @@
         transition: background 80ms ease-out, border-color 80ms ease-out;
       }
       .brawl-btn:hover {
-        background: rgba(85, 65, 30, 0.7);
-        border-color: rgba(226, 195, 130, 0.65);
+        background: color-mix(in srgb, var(--btn-ground-hi) 70%, transparent);
+        border-color: color-mix(in srgb, var(--card-ink) 65%, transparent);
       }
 
       .brawl-btn--accept {
-        color: #d8e5b8;
-        border-color: rgba(140, 175, 95, 0.55);
+        color: var(--btn-go-ink);
+        border-color: color-mix(in srgb, var(--btn-go-edge) 55%, transparent);
       }
       .brawl-btn--accept:hover {
-        background: rgba(55, 75, 30, 0.55);
-        border-color: rgba(170, 200, 120, 0.7);
+        background: color-mix(in srgb, var(--btn-go-fill) 55%, transparent);
+        border-color: color-mix(in srgb, var(--btn-go-edge-hi) 70%, transparent);
       }
 
       .brawl-btn--decline {
-        color: #e6b69a;
-        border-color: rgba(168, 81, 62, 0.55);
+        color: var(--btn-stop-ink);
+        border-color: color-mix(in srgb, var(--color-error) 55%, transparent);
       }
       .brawl-btn--decline:hover {
-        background: rgba(80, 35, 25, 0.55);
-        border-color: rgba(200, 110, 90, 0.7);
+        background: color-mix(in srgb, var(--btn-stop-fill) 55%, transparent);
+        border-color: color-mix(in srgb, var(--btn-stop-edge-hi) 70%, transparent);
       }
 
       /* Drain bar matches PR146 exactly: 5px high, dark track, gold->lighter-gold
          fill, breaks out of card padding via negative margin + width:calc. */
       .brawl-timer {
         height: 5px;
-        background: rgba(0, 0, 0, 0.6);
+        background: color-mix(in srgb, var(--well) 60%, transparent);
         overflow: hidden;
         margin: 0 -22px;
         padding: 0;
@@ -142,8 +209,8 @@
         width: 100%;
         background: linear-gradient(
           to right,
-          rgba(203, 165, 96, 0.95),
-          rgba(226, 195, 130, 0.95)
+          color-mix(in srgb, var(--accent) 95%, transparent),
+          color-mix(in srgb, var(--card-ink) 95%, transparent)
         );
         transform-origin: left center;
         animation-name: brawl-drain;
@@ -282,7 +349,7 @@
   // Up/Down for value browsing.
   (function () {
     var style = document.createElement('style');
-    style.textContent = 'button:focus,input:focus,select:focus,textarea:focus{outline:2px solid rgba(201,168,102,0.9);outline-offset:1px;}';
+    style.textContent = 'button:focus,input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb, var(--accent-warm) 90%, transparent);outline-offset:1px;}';
     document.head.appendChild(style);
     function focusables() {
       var all = document.querySelectorAll('button, input, select, textarea');

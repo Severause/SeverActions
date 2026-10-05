@@ -588,10 +588,12 @@ Event OnOffScreenLifeReady(string eventName, string strArg, float numArg, Form s
         SeverActionsNativeExt.Native_SetLifeEventHistory(akActor, eventHistory)
     EndIf
 
-    ; Persistent events, so the follower remembers them
-    SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(actorName + ": " + summary1), akActor, None)
+    ; Persistent events, so the follower remembers them. They say the player was away: SkyrimNet's diary
+    ; and dialogue read them without the event's context.
+    String away = " (while " + Game.GetPlayer().GetDisplayName() + " was away): "
+    SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(actorName + away + summary1), akActor, None)
     If summary2 != ""
-        SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(actorName + ": " + summary2), akActor, None)
+        SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(actorName + away + summary2), akActor, None)
     EndIf
 
     ; Memories (this actor's and the involved NPCs') and the rumor gossip are the native parser's:
@@ -651,9 +653,9 @@ Event OnOffScreenLifeReady(string eventName, string strArg, float numArg, Form s
             If involvedName != "" && StringUtil.GetLength(involvedName) >= 3 && StringUtil.Find(involvedName, "|") < 0 && StringUtil.Find(involvedName, "0") != 0 && StringUtil.Find(involvedName, "[") < 0
                 Actor involvedActor = SeverActionsNative.FindActorByName(involvedName)
                 If involvedActor && involvedActor != akActor
-                    SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(involvedName + ": " + summary1), involvedActor, akActor)
+                    SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(involvedName + away + summary1), involvedActor, akActor)
                     If summary2 != ""
-                        SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(involvedName + ": " + summary2), involvedActor, akActor)
+                        SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(involvedName + away + summary2), involvedActor, akActor)
                     EndIf
                     DebugMsg("Off-screen life: shared event + memory registered for " + involvedName)
                 EndIf

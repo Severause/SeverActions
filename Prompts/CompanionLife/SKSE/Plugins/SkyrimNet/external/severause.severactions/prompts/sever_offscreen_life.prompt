@@ -184,6 +184,7 @@ Rules:
 - The summary: 1-3 sentences, a factual third-person account, not dialogue.
 - "type": "routine" (barely worth mentioning), "notable" (worth bringing up in conversation) or "significant" (rare: it affected them emotionally).
 - "diary": true only when the event moved them enough to write about it; most days it is false.
+- {{ player.name }} is not there: they are far away, somewhere else in Skyrim. Never put {{ player.name }} in the scene: nobody sees, meets, talks to or spends the day with them. They can only come up as a memory, a thought, a letter they write to them, a story told about them or something kept for their return.
 
 {% if includeTownRumor %}
 {% if length(default(recentRumors, [])) > 0 %}

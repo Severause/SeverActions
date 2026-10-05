@@ -9,15 +9,119 @@
     /* Palette synced to the main menu's design tokens v2 ("The Ledger,
        Illuminated") — this file stays standalone by design, so the values
        are copied, not imported. */
-    --bg-panel: #1f1913;
-    --bg-sector: rgba(31, 25, 19, 0.92);
-    --bg-sector-hot: rgba(201, 164, 92, 0.28);
     --brass: #c9a45c;
     --border: rgba(201, 164, 92, 0.22);
     --border-accent: rgba(201, 164, 92, 0.55);
     --text: #cfc1a5;
     --text-dim: #948871;
+    --txt-hot: #f0e4c8;
+    /* Each action's pigment, by hotkey id (TONES in the script); an id with no row draws the default tone. */
+    --tone-followtoggle: #8fa86b;
+    --tone-companionwait: #8fa86b;
+    --tone-setcompanion: #cba560;
+    --tone-dismiss: #c0755a;
+    --tone-standup: #b5875a;
+    --tone-usefurniture: #b5875a;
+    --tone-yield: #c0584a;
+    --tone-undress: #7f9cc0;
+    --tone-dress: #7f9cc0;
+    --tone-assignhome: #b48aa6;
+    --tone-clearhome: #b48aa6;
+    --tone-setupcamp: #c08b4a;
+    --tone-setupsmallcamp: #c08b4a;
+    --tone-dropmarker: #6fa397;
+    --tone-tieuntie: #9a85a6;
+    --tone-default: #cba560;
+    --tone-greyed: #7d725f;
+    /* The sector and hub gradients (stops inner to outer), and the fill each base draws if its gradient does not paint. */
+    --sector-inner: #110d09;
+    --sector-outer: #2c2319;
+    --hub-center: #2b2219;
+    --hub-edge: #16110c;
+    --sector-fallback: #1c1610;
+    --hub-fallback: #1f1913;
   }
+  /* BEGIN GENERATED theme blocks (scripts/themes/gen_themes.py) */
+  :root[data-theme="windhelm"] {
+      --brass: #7ab0cd;
+      --border: rgba(122, 176, 205, 0.22);
+      --border-accent: rgba(122, 176, 205, 0.55);
+      --text: #b9c4ce;
+      --text-dim: #818a93;
+      --txt-hot: #dbe6f0;
+      --tone-default: #7cb2ce;
+      --tone-greyed: #6d747b;
+      --sector-inner: #080e15;
+      --sector-outer: #172635;
+      --hub-center: #172533;
+      --hub-edge: #0b131b;
+      --sector-fallback: #0e1822;
+      --hub-fallback: #121b25;
+  }
+  :root[data-theme="dwemer"] {
+      --brass: #ea955e;
+      --border: rgba(234, 149, 94, 0.22);
+      --border-accent: rgba(234, 149, 94, 0.55);
+      --text: #d1c0ab;
+      --text-dim: #968776;
+      --txt-hot: #f4e2ce;
+      --tone-default: #ec9660;
+      --tone-greyed: #7e7163;
+      --sector-inner: #031010;
+      --sector-outer: #022a2a;
+      --hub-center: #042828;
+      --hub-edge: #041515;
+      --sector-fallback: #041a1a;
+      --hub-fallback: #071d1d;
+  }
+  :root[data-theme="soulcairn"] {
+      --brass: #bd99ee;
+      --border: rgba(189, 153, 238, 0.22);
+      --border-accent: rgba(189, 153, 238, 0.55);
+      --text: #c6c0ce;
+      --text-dim: #8c8793;
+      --txt-hot: #e8e2f0;
+      --tone-default: #be9aef;
+      --tone-greyed: #76727b;
+      --sector-inner: #110c14;
+      --sector-outer: #2c2033;
+      --hub-center: #2a1f31;
+      --hub-edge: #16101a;
+      --sector-fallback: #1c1420;
+      --hub-fallback: #1f1723;
+  }
+  :root[data-theme="vellum"] {
+      --brass: #664603;
+      --border: rgba(102, 70, 3, 0.30);
+      --border-accent: rgba(102, 70, 3, 0.62);
+      --text: #3d3020;
+      --text-dim: #594732;
+      --txt-hot: #2b2014;
+      --tone-followtoggle: #4c6227;
+      --tone-companionwait: #4c6227;
+      --tone-setcompanion: #775503;
+      --tone-dismiss: #8d472d;
+      --tone-standup: #7d5225;
+      --tone-usefurniture: #7d5225;
+      --tone-yield: #9e392d;
+      --tone-undress: #435d7e;
+      --tone-dress: #435d7e;
+      --tone-assignhome: #754f69;
+      --tone-clearhome: #754f69;
+      --tone-setupcamp: #815103;
+      --tone-setupsmallcamp: #815103;
+      --tone-dropmarker: #31645a;
+      --tone-tieuntie: #685473;
+      --tone-default: #664603;
+      --tone-greyed: #847a6f;
+      --sector-inner: #c7b58d;
+      --sector-outer: #e3d8be;
+      --hub-center: #e6dcc5;
+      --hub-edge: #c9b68e;
+      --sector-fallback: #d7c7a6;
+      --hub-fallback: #e0d3b7;
+  }
+  /* END GENERATED theme blocks */
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%;
@@ -34,22 +138,40 @@
     opacity: 0; transition: opacity 140ms ease;
   }
   #overlay.show { opacity: 1; }
-  /* 40rem: the VR field test read 27rem as "rather small" on the popup
-     panel; the SVG scales its text with it. popupScale still applies. */
-  #wheel { width: 40rem; height: 40rem; display: block; }
-  .sector { fill: var(--bg-sector); stroke: var(--border); stroke-width: 1.5; cursor: pointer;
-            transition: fill 90ms ease; }
-  .sector.hot { fill: var(--bg-sector-hot); stroke: var(--border-accent); }
-  /* A slot whose module is not installed (Modular): greyed, never picked. After .hot, so a
-     keyboard-hot greyed slot keeps the plain fill and shows only the accent stroke. */
-  .sector.dis { fill: var(--bg-sector); opacity: .45; cursor: default; }
+  /* 41.2rem at up to 8 sectors (2 * (R_OUT + PAD) at 0.1rem a viewBox unit):
+     the VR field test read 27rem as "rather small" on the popup panel, and
+     the SVG scales its text with it.
+     popupScale still applies. More than 8 sectors widen it (sizeFor), the
+     text keeping its size; the cap keeps 12 sectors at a large popupScale
+     on screen (all of it shrinks). */
+  #wheel { width: 41.2rem; height: 41.2rem; max-width: 96vmin; max-height: 96vmin; display: block; }
+  /* A sector is its base (the hit area), a wash and a rim band in its action's pigment, and
+     the pigment's glyph by the hub. Nothing strokes the radial edges: the gaps between
+     sectors are the separators. */
+  .sector { cursor: pointer; }
+  /* The base path and the hub are the hit areas: hit-tested whether or not their gradient paints. */
+  .hit { pointer-events: all; }
+  .sector .tint { opacity: .09; pointer-events: none; transition: opacity 90ms ease; }
+  .sector .band { fill: none; stroke-width: 3; opacity: .6; pointer-events: none;
+                  transition: opacity 90ms ease, stroke-width 90ms ease; }
+  .sector .glyph { font-size: 13px; text-anchor: middle; pointer-events: none; opacity: .75; }
+  .sector.hot .tint { opacity: .26; }
+  .sector.hot .band { opacity: 1; stroke-width: 4.5; }
+  .sector.hot .glyph { opacity: 1; }
+  /* A slot whose module is not installed (Modular): greyed, never picked. Keyboard-hot, it
+     keeps the quiet wash and only its band and glyph brighten. */
+  .sector.dis { opacity: .45; cursor: default; }
+  .sector.dis.hot .tint { opacity: .09; }
+  .ring { fill: none; stroke: var(--border); stroke-width: 1; pointer-events: none; }
+  .stud { fill: var(--brass); opacity: .55; pointer-events: none; }
   .txt { fill: var(--text); font-size: 15px; text-anchor: middle; pointer-events: none;
          letter-spacing: 0.3px; }
   .lbl { fill: var(--text-dim); font-size: 10.5px; text-anchor: middle; pointer-events: none;
          text-transform: uppercase; letter-spacing: 1.2px; }
   .txt.dis, .lbl.dis { opacity: .45; }
-  .hot ~ .txt { fill: #f0e4c8; }
-  #hub { fill: var(--bg-panel); stroke: var(--border-accent); stroke-width: 1.5; cursor: pointer; }
+  .txt.hot { fill: var(--txt-hot); }
+  #hub { stroke: var(--border-accent); stroke-width: 1.5; cursor: pointer; }
+  .hub-ring { fill: none; stroke: var(--brass); stroke-width: 1; opacity: .18; pointer-events: none; }
   #hub-name { fill: var(--brass); font-size: 13px; text-anchor: middle; pointer-events: none;
               letter-spacing: 1px; text-transform: uppercase; }
   #hub-hint { fill: var(--text-dim); font-size: 10px; text-anchor: middle; pointer-events: none;
@@ -58,13 +180,14 @@
 </head>
 <body>
   <div id="overlay" data-ml-sound="cancel">
-    <svg id="wheel" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" aria-label="Quick actions"></svg>
+    <svg id="wheel" viewBox="0 0 412 412" xmlns="http://www.w3.org/2000/svg" aria-label="Quick actions"></svg>
   </div>
 
 <script>
   // Quick wheel frontend — the host draws it, the DLL drives it.
-  //  IN  -- window.receiveWheelData({ targetFid, targetName, options:[{text,label,disabled?,note?} x0..SLOT_COUNT] })
-  //         the player's non-empty slots in slot order, drawn from the top, clockwise
+  //  IN  -- window.receiveWheelData({ targetFid, targetName, options:[{id,text,label,disabled?,note?} x0..SLOT_COUNT] })
+  //         the player's non-empty slots in slot order, drawn from the top, clockwise; id is the
+  //         slot's hotkey id (hotkey_table.json), which picks its pigment and glyph (TONES)
   //         window.resetWheel()   a close the page did not post: nothing drawn stays pickable
   //  OUT -- window.wheelChoice(JSON.stringify({ choice:"select", index }))   pick
   //         window.wheelChoice(JSON.stringify({ choice:"dismiss" }))         cancel
@@ -74,12 +197,41 @@
   // disabled/note come only on a slot whose module a Modular install lacks: it is
   // greyed and never posts - hovering, clicking or Enter shows the note in the hub.
   (function () {
-    var SLOT_COUNT = 8;
+    var SLOT_COUNT = 12;
     var NS = 'http://www.w3.org/2000/svg';
     var overlay = document.getElementById('overlay');
     var svg = document.getElementById('wheel');
-    var CX = 200, CY = 200, R_OUT = 192, R_IN = 74, R_TXT = 138;
+    // Up to 8 sectors the ring is 192 units out; each sector past 8 widens it by 1/16 while the text keeps its
+    // size (viewBox and element grow together, 0.1rem a unit), so 12 narrow sectors still hold their names.
+    // Text keeps TXT_IN clear of the hub (the glyph sits there) and TXT_OUT clear of the rim (the band).
+    var R_IN = 74, PAD = 14, TXT_IN = 24, TXT_OUT = 9;
+    var CX = 206, CY = 206, R_OUT = 192, R_TXT = 140;
+    function sizeFor(n) {
+      var s = n > 8 ? 1 + (n - 8) / 16 : 1;
+      R_OUT = 192 * s;
+      var size = 2 * (R_OUT + PAD);
+      CX = CY = size / 2;
+      R_TXT = (R_IN + TXT_IN + R_OUT - TXT_OUT) / 2;
+      svg.setAttribute('viewBox', '0 0 ' + size + ' ' + size);
+      svg.style.width = svg.style.height = (size / 10) + 'rem';
+    }
+    // Each action's pigment and glyph: pigments from the Actions page's palette (CATEGORY_META in ActionsPage.tsx),
+    // a few lifted for a dark ground, glyphs chosen per action. An id with no row (a new hotkey) draws in brass.
+    var TONES = {
+      followtoggle:   ['var(--tone-followtoggle)', '\u2766'], companionwait: ['var(--tone-companionwait)', '\u2766'],
+      setcompanion:   ['var(--tone-setcompanion)', '\u2691'], dismiss:       ['var(--tone-dismiss)', '\u2715'],
+      standup:        ['var(--tone-standup)', '\u2756'], usefurniture:  ['var(--tone-usefurniture)', '\u2756'],
+      yield:          ['var(--tone-yield)', '\u2690'],
+      undress:        ['var(--tone-undress)', '\u25C8'], dress:         ['var(--tone-dress)', '\u25C8'],
+      assignhome:     ['var(--tone-assignhome)', '\u2302'], clearhome:     ['var(--tone-clearhome)', '\u2302'],
+      setupcamp:      ['var(--tone-setupcamp)', '\u25B3'], setupsmallcamp: ['var(--tone-setupsmallcamp)', '\u25B3'],
+      dropmarker:     ['var(--tone-dropmarker)', '\u2726'],
+      tieuntie:       ['var(--tone-tieuntie)', '\u26D3']
+    };
+    var TONE_DEFAULT = ['var(--tone-default)', '\u2726'], TONE_GREYED = 'var(--tone-greyed)';
+    function toneOf(o) { return TONES[String(o.id || '').toLowerCase()] || TONE_DEFAULT; }
     var sectors = [];
+    var sectorText = [];   // each sector's name lines, which brighten with it
     var curOpts = [];
     var hintEl = null;
     var hot = -1;
@@ -97,10 +249,10 @@
       var a = (deg - 90) * Math.PI / 180;
       return [CX + r * Math.cos(a), CY + r * Math.sin(a)];
     }
+    var GAP = 1.6;                         // degrees of breathing room between slots
+    function sectorAngles(i, n) { return [i * 360 / n - 180 / n + GAP, (i + 1) * 360 / n - 180 / n - GAP]; }
     function sectorPath(i, n) {
-      var gap = 1.6;                       // degrees of breathing room between slots
-      var a0 = i * 360 / n - 180 / n + gap;
-      var a1 = (i + 1) * 360 / n - 180 / n - gap;
+      var ang = sectorAngles(i, n), a0 = ang[0], a1 = ang[1];
       var o0 = polar(R_OUT, a0), o1 = polar(R_OUT, a1);
       var i0 = polar(R_IN, a0),  i1 = polar(R_IN, a1);
       var big = (a1 - a0) > 180 ? 1 : 0;   // SVG large-arc flag: only a lone sector spans more than half the ring
@@ -109,12 +261,118 @@
              ' L' + i1[0] + ',' + i1[1] +
              ' A' + R_IN + ',' + R_IN + ' 0 ' + big + ' 0 ' + i0[0] + ',' + i0[1] + ' Z';
     }
+    function arcPath(r, a0, a1) {
+      var p0 = polar(r, a0), p1 = polar(r, a1);
+      return 'M' + p0[0] + ',' + p0[1] + ' A' + r + ',' + r + ' 0 ' + ((a1 - a0) > 180 ? 1 : 0) + ' 1 ' + p1[0] + ',' + p1[1];
+    }
+    function radialFill(id, r, stops) {
+      var g = el('radialGradient', { id: id, gradientUnits: 'userSpaceOnUse', cx: CX, cy: CY, r: r });
+      stops.forEach(function (st) { g.appendChild(el('stop', { offset: st[0], 'stop-color': st[1], 'stop-opacity': st[2] })); });
+      return g;
+    }
     function el(tag, attrs, cls) {
       var e = document.createElementNS(NS, tag);
       for (var k in attrs) e.setAttribute(k, attrs[k]);
       if (cls) e.setAttribute('class', cls);
       return e;
     }
+    // Sector labels: a name and its caption are horizontal lines centred in the sector, and a layout fits when every
+    // line's box, sampled along its edges, lies inside the sector less MARGIN on its angles and less TXT_IN / TXT_OUT
+    // on its radii.
+    // Tried in order: one line, then two (split at the space nearest the middle), each at the middle radius and a
+    // little further out, then the same a little smaller; last, each overflowing line is squeezed (textLength, as
+    // the hub does) to the widest width that fits. render runs it twice so every sector shares the smallest size any
+    // sector needed, and the names read as one set.
+    var TXT_PX = 15, LBL_PX = 10.5, MARGIN = 5;
+    var widths = {};   // measure()'s results for this render: the fit retries the same lines many times
+    function measure(str, px, cls) {
+      var key = cls + '|' + px + '|' + str;
+      if (widths.hasOwnProperty(key)) return widths[key];
+      return (widths[key] = measureNow(str, px, cls));
+    }
+    function measureNow(str, px, cls) {
+      var t = el('text', { x: 0, y: -1000, style: 'font-size:' + px + 'px' }, cls);
+      t.textContent = str;
+      svg.appendChild(t);
+      var w = 0;
+      try { w = t.getComputedTextLength(); } catch (e) {}
+      svg.removeChild(t);
+      if (w > 0) return w;
+      // Counted where the host cannot measure: CJK runs about twice as wide per character.
+      var n = 0;
+      for (var i = 0; i < str.length; i++) n += str.charCodeAt(i) >= 0x2E80 ? 1 : 0.56;
+      return n * px + str.length * (cls === 'lbl' ? 1.2 : 0.3);
+    }
+    function inSector(x, y, a0, a1) {
+      var dx = x - CX, dy = y - CY, r = Math.sqrt(dx * dx + dy * dy);
+      if (r < R_IN + TXT_IN || r > R_OUT - TXT_OUT) return false;
+      var d = Math.atan2(dx, -dy) * 180 / Math.PI, pad = MARGIN / r * 180 / Math.PI;
+      while (d < a0) d += 360;
+      while (d > a0 + 360) d -= 360;
+      return d >= a0 + pad && d <= a1 - pad;
+    }
+    function boxFits(cx, base, w, px, a0, a1) {
+      var top = base - 0.8 * px, bot = base + 0.25 * px;
+      for (var k = 0; k <= 6; k++) {
+        var x = cx - w / 2 + w * k / 6;
+        if (!inSector(x, top, a0, a1) || !inSector(x, bot, a0, a1)) return false;
+      }
+      return true;
+    }
+    function splitTwo(str) {
+      var best = -1;
+      for (var i = 1; i < str.length - 1; i++) {
+        if (str.charAt(i) === ' ' && (best < 0 || Math.abs(i - str.length / 2) < Math.abs(best - str.length / 2))) best = i;
+      }
+      return best < 0 ? null : [str.slice(0, best).trim(), str.slice(best + 1).trim()];
+    }
+    function lineHeight(ln, i) { return ln.px * (ln.cls === 'lbl' ? 1.3 : 1.2) + (i > 0 && ln.cls === 'lbl' ? 2 : 0); }
+    // lines [{ str, cls, px }], top to bottom, centred on (cx, cy): each gets its baseline y and measured width w
+    function place(lines, cx, cy) {
+      var h = 0;
+      lines.forEach(function (ln, i) { h += lineHeight(ln, i); });
+      var y = cy - h / 2;
+      return lines.map(function (ln, i) {
+        y += lineHeight(ln, i);
+        return { str: ln.str, cls: ln.cls, px: ln.px, cx: cx, y: y - 0.25 * ln.px, w: measure(ln.str, ln.px, ln.cls) };
+      });
+    }
+    function fits(placed, a0, a1) {
+      for (var i = 0; i < placed.length; i++) {
+        if (!boxFits(placed[i].cx, placed[i].y, placed[i].w, placed[i].px, a0, a1)) return false;
+      }
+      return true;
+    }
+    var SCALES = [1, 0.93, 0.86, 0.8];
+    function layoutLabel(text, caption, mid, a0, a1, scales) {
+      var two = splitTwo(text);
+      var radii = [R_TXT, R_TXT + (R_OUT - R_TXT) * 0.15];
+      var tries = [];
+      scales.forEach(function (scale) {
+        [false, true].forEach(function (split) {
+          if (split && !two) return;
+          radii.forEach(function (r) { tries.push({ scale: scale, split: split, r: r }); });
+        });
+      });
+      var last = null;
+      for (var i = 0; i < tries.length; i++) {
+        var tr = tries[i];
+        var lines = (tr.split ? two : [text]).map(function (s) { return { str: s, cls: 'txt', px: TXT_PX * tr.scale }; });
+        if (caption) lines.push({ str: caption, cls: 'lbl', px: Math.max(8, LBL_PX * tr.scale) });
+        var p = polar(tr.r, mid);
+        var placed = place(lines, p[0], p[1]);
+        placed.scale = tr.scale;
+        if (fits(placed, a0, a1)) return placed;
+        last = placed;
+      }
+      last.forEach(function (ln) {
+        var w = ln.w;
+        for (var k = 0; k < 24 && !boxFits(ln.cx, ln.y, w, ln.px, a0, a1); k++) w *= 0.95;
+        if (w < ln.w) ln.fitW = w;
+      });
+      return last;
+    }
+
     function isDisabled(i) { return !!(curOpts[i] && curOpts[i].disabled); }
     function noteOf(i) { return (curOpts[i] && curOpts[i].note) || ''; }
     // The hub's second line: 'cancel', or a greyed slot's note, squeezed to the hub like a long
@@ -133,52 +391,92 @@
     }
     function restoreHint() { setHint(hot >= 0 && isDisabled(hot) ? noteOf(hot) : 'cancel'); }
     function setHot(i) {
-      if (hot >= 0 && sectors[hot]) sectors[hot].classList.remove('hot');
+      if (hot >= 0 && sectors[hot]) {
+        sectors[hot].classList.remove('hot');
+        (sectorText[hot] || []).forEach(function (t) { t.classList.remove('hot'); });
+      }
       hot = i;
-      if (hot >= 0 && sectors[hot]) sectors[hot].classList.add('hot');
+      if (hot >= 0 && sectors[hot]) {
+        sectors[hot].classList.add('hot');
+        (sectorText[hot] || []).forEach(function (t) { t.classList.add('hot'); });
+      }
       restoreHint();
     }
 
     function render(data) {
       while (svg.firstChild) svg.removeChild(svg.firstChild);
       sectors = [];
+      sectorText = [];
       hintEl = null;
       hot = -1;
       var opts = data.options || [];
       curOpts = opts;
       var n = Math.min(opts.length, SLOT_COUNT);   // no options: only the hub, nothing to pick
+      widths = {};
+      sizeFor(n);
+      var shared = 1;
+      for (var j = 0; j < n; j++) {
+        var aj = sectorAngles(j, n), oj = opts[j] || {};
+        shared = Math.min(shared, layoutLabel(oj.text || '', (oj.label || '').toUpperCase(), j * 360 / n, aj[0], aj[1], SCALES).scale);
+      }
+      var scales = SCALES.filter(function (sc) { return sc <= shared; });
+      var defs = el('defs', {});
+      defs.appendChild(radialFill('sectorFill', R_OUT, [[R_IN / R_OUT, 'var(--sector-inner)', 0.94], [1, 'var(--sector-outer)', 0.94]]));
+      defs.appendChild(radialFill('hubFill', R_IN - 8, [[0, 'var(--hub-center)', 1], [1, 'var(--hub-edge)', 1]]));
+      svg.appendChild(defs);
+      if (n > 0) {
+        svg.appendChild(el('circle', { cx: CX, cy: CY, r: R_OUT + 6 }, 'ring'));
+        for (var k = 0; k < n; k++) {   // a brass stud over each gap
+          var sp = polar(R_OUT + 6, k * 360 / n - 180 / n);
+          svg.appendChild(el('rect', { x: sp[0] - 2.5, y: sp[1] - 2.5, width: 5, height: 5,
+            transform: 'rotate(45 ' + sp[0] + ' ' + sp[1] + ')' }, 'stud'));
+        }
+      }
       for (var i = 0; i < n; i++) {
         (function (idx) {
           var o = opts[idx] || {};
           var dis = !!o.disabled;
-          var s;
+          var tone = toneOf(o), color = dis ? TONE_GREYED : tone[0];
+          var ang = sectorAngles(idx, n), mid = idx * 360 / n, d = sectorPath(idx, n);
+          var s = el('g', {}, dis ? 'sector dis' : 'sector');
+          var base;
           if (dis) {
             // The host's refusal sound, not the pick's click.
-            s = el('path', { d: sectorPath(idx, n), 'data-ml-sound': 'inactive' }, 'sector dis');
-            s.addEventListener('mouseenter', function () { setHint(o.note || ''); });
-            s.addEventListener('mouseleave', function () { restoreHint(); });
-            s.addEventListener('click', function (ev) { ev.stopPropagation(); setHint(o.note || ''); });
+            base = el('path', { d: d, fill: 'url(#sectorFill) var(--sector-fallback)', 'class': 'hit', 'data-ml-sound': 'inactive' });
+            base.addEventListener('mouseenter', function () { setHint(o.note || ''); });
+            base.addEventListener('mouseleave', function () { restoreHint(); });
+            base.addEventListener('click', function (ev) { ev.stopPropagation(); setHint(o.note || ''); });
           } else {
-            s = el('path', { d: sectorPath(idx, n), 'data-ml-sound': 'click', 'data-ml-sound-hover': 'focus' }, 'sector');   // host-played (Magelight 0.29.0)
-            s.addEventListener('mouseenter', function () { setHot(idx); });
-            s.addEventListener('mouseleave', function () { if (hot === idx) setHot(-1); });
-            s.addEventListener('click', function (ev) { ev.stopPropagation(); pick(idx); });
+            base = el('path', { d: d, fill: 'url(#sectorFill) var(--sector-fallback)', 'class': 'hit', 'data-ml-sound': 'click', 'data-ml-sound-hover': 'focus' });   // host-played (Magelight 0.29.0)
+            base.addEventListener('mouseenter', function () { setHot(idx); });
+            base.addEventListener('mouseleave', function () { if (hot === idx) setHot(-1); });
+            base.addEventListener('click', function (ev) { ev.stopPropagation(); pick(idx); });
           }
+          s.appendChild(base);
+          s.appendChild(el('path', { d: d, fill: color }, 'tint'));
+          s.appendChild(el('path', { d: arcPath(R_OUT - 3.5, ang[0], ang[1]), stroke: color }, 'band'));
+          var gp = polar(R_IN + 13, mid);
+          var glyph = el('text', { x: gp[0], y: gp[1] + 4.5, fill: color }, 'glyph');
+          glyph.textContent = tone[1];
+          s.appendChild(glyph);
           svg.appendChild(s);
           sectors.push(s);
-          var mid = idx * 360 / n;
-          var p = polar(R_TXT, mid);
-          var t = el('text', { x: p[0], y: p[1] + 2 }, dis ? 'txt dis' : 'txt');
-          t.textContent = o.text || '';
-          svg.appendChild(t);
-          var l = el('text', { x: p[0], y: p[1] + 18 }, dis ? 'lbl dis' : 'lbl');
-          l.textContent = o.label || '';
-          svg.appendChild(l);
+          var names = [];
+          layoutLabel(o.text || '', (o.label || '').toUpperCase(), mid, ang[0], ang[1], scales).forEach(function (ln) {
+            var attrs = { x: ln.cx, y: ln.y, style: 'font-size:' + ln.px + 'px' + (ln.cls === 'lbl' && !dis ? ';fill:' + color : '') };
+            if (ln.fitW) { attrs.textLength = String(ln.fitW); attrs.lengthAdjust = 'spacingAndGlyphs'; }
+            var t = el('text', attrs, dis ? ln.cls + ' dis' : ln.cls);
+            t.textContent = ln.str;
+            svg.appendChild(t);
+            if (ln.cls === 'txt') names.push(t);
+          });
+          sectorText[idx] = names;
         })(i);
       }
-      var hub = el('circle', { id: 'hub', cx: CX, cy: CY, r: R_IN - 8, 'data-ml-sound': 'cancel' });
+      var hub = el('circle', { id: 'hub', cx: CX, cy: CY, r: R_IN - 8, fill: 'url(#hubFill) var(--hub-fallback)', 'data-ml-sound': 'cancel' }, 'hit');
       hub.addEventListener('click', function (ev) { ev.stopPropagation(); dismiss(); });
       svg.appendChild(hub);
+      svg.appendChild(el('circle', { cx: CX, cy: CY, r: R_IN - 13 }, 'hub-ring'));
       var name = el('text', { id: 'hub-name', x: CX, y: CY - 2 });
       var nm = (data.targetName || 'No target');
       name.textContent = nm;
@@ -228,6 +526,7 @@
       posted = true;
       while (svg.firstChild) svg.removeChild(svg.firstChild);
       sectors = [];
+      sectorText = [];
       curOpts = [];
       hintEl = null;
       hot = -1;

@@ -2,7 +2,7 @@
 <fomod>
     <Name>SeverActions - SkyrimNet Action Pack</Name>
     <Author>Sever</Author>
-    <Version>4.1.0</Version>
+    <Version>4.2.0</Version>
     <Description>A comprehensive action, prompt, and behavior pack for SkyrimNet. 118 actions (Sever's Hearth's 7 included), 78 prompt templates, and a native C++ SKSE plugin (about 1,200 Papyrus-callable functions). NPCs can follow, travel, craft, cook, brew, read books aloud, manage outfits with presets and persistent outfit locking, handle gold and debts, use furniture, fight and brawl, get arrested and escorted to jail, run businesses for you, and more - all driven naturally through conversation. Includes a companion framework with relationship tracking, automatic LLM-based relationship assessment and survival needs, and coexists with Nether's Follower Framework (a follower NFF manages is dismissed, told to wait and resumed through NFF's own controller). Features a debt tracking system with credit limits, due dates, recurring charges, and guard reports for overdue debts. Game state lives in the SKSE co-save and survives save/load. The in-game interface is Magelight UI, bundled and installed with the core; the MCM (SkyUI) remains available. Optional adult content modules included.
 
 Credits:

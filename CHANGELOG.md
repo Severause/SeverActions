@@ -1,5 +1,40 @@
 # SeverActions Changelog
 
+## v4.2.0 - Colours and Clarity
+
+Magelight UI 0.31.2 is bundled (`98 Magelight UI`):
+
+- Page shapes are anti-aliased again: icons, curves and the quick wheel's slices have smooth edges. `"msaa"` in `Magelight.json` sets it (1 off, 2, 4 or 8; 4 by default).
+- After a save loads, pages that are not open load one per frame instead of all at once, which smooths the first seconds of play.
+- A page's ordinary console output is no longer written to `Magelight.log`; warnings and errors still are, and `"consoleLog": "all"` brings the rest back.
+- A second, Windows mouse pointer no longer stays on screen after closing a menu.
+- VR: arrow keys, Delete, Insert, Home, End, Page Down, numpad Enter and numpad Divide type into pages; held keys repeat; the numpad types digits with NumLock on.
+- `"toggleKey"` in `Magelight.json` takes a key name ("F3", "PageDown") as well as a scancode, and the log warns about a number that is not a scancode.
+
+Five colour themes for every SeverActions page, popup and the quick wheel, picked in Settings > UI Display: The Ledger (today's look, the default), Windhelm Slate, Dwemer Verdigris, Soul Cairn and Jarl's Vellum, a light theme. With Magelight 0.31.1 or later the cursor takes the theme's colours too. Status, hold, school and money colours keep their meaning in every theme. The Enterprises popup for hiring or managing a retainer follows the theme too, with a new layout: the people to choose from beside the terms, occupation tiles, and a line at the bottom that sums up the hire.
+
+Slot presets stay on after fast travel, sleep and waiting. SeverActions re-applied a preset when a follower loaded and never looked again, so a re-dress by the game or the follower's own mod went unnoticed, and nothing re-checked after a sleep or a wait. It now re-checks a few seconds after every load, sleep or wait, one follower per frame, and re-applies only when another outfit has been put on or a preset piece is missing. A follower's sleep outfit no longer dresses them over a preset either. Situation outfits also switch again right after you close the menu: after editing someone on the Outfits page, their outfit changes stayed paused for up to five minutes.
+
+A follower's inventory shows the armour they carry again. The page hid every item that matched the follower's default outfit, so a piece you freed from it, or a plain copy you gave them, stayed hidden; it now hides only the game's own outfit copies, a note says how many, and a worn one can be taken off with the new Take off button on the character sheet. Giving, selling, dropping and destroying never take an outfit copy. The warmth meter now reads 100% for a full set of warm gear, so ordinary armour no longer shows as "Bare".
+
+Turning off a spell on the Spells page now really stops a follower casting it. A spell from the NPC's own record (a mage follower's Flames) used to stay known while the page showed it off; it is now removed from the record, and turning it back on restores it. Spells from a record other NPCs share, or from a template, cannot be removed for one NPC alone: the page shows their toggle dimmed and says why. Innate spells carry an "Innate" badge.
+
+The quick wheel holds up to twelve slots and draws only the ones you fill, evenly spaced, with every name kept inside its slice.
+
+The Work row on the Companions page places a plain work mark again with Enterprises installed, like Home and Relax, instead of hiring the NPC as your retainer: an NPC can now work for someone else and still keep a routine. Hiring stays on the Enterprises board, which lists a work mark with no terms.
+
+Retainer work stories can be muted: one retainer, a whole hold or a sworn camp on the Enterprises page, or every retainer in a job or on certain terms in Settings > AI. Their gold and goods still settle. Retainers who are dead, captive or gone no longer use up a story at all. Off-screen events no longer write diary entries that put you in the scene, and Settings > Off-Screen Events can turn those diary entries off.
+
+Settings > Hotkeys: a key capture always ends (after a key, Esc, a refusal or ten seconds), clearing a key redraws its row, and in VR the page says keyboard capture is not available there and warns when the menu chord clashes with another binding.
+
+The Life Tracker no longer marks every letter read the moment it opens: only the letter shown at the top is read, and in the Unread view the letters you read stay listed until you change the filter. The World page's first open no longer freezes the game for most of a second, and travel to a named place no longer hitches on the same lookup.
+
+The interface reads more plainly: the over-written wording across the Dashboard, the Actions page, Survival, Enterprises, the Life Tracker, World and the help text says what each thing is, while The Hearth Ledger and Writ & Command keep their names. The hotkey names on Settings > Hotkeys are translated. The Russian translation is corrected throughout, with one word per term (спутник, униформа, управитель, подручный, задание), names no longer forced into the wrong case, and the same hotkey names in the menu and the MCM.
+
+The installer no longer depends on how a FOMOD installer reads an unset choice: the module scripts now always install, so installs made with FOMOD Plus that came out missing scripts get all of them.
+
+Installing this version: install it over 4.1.x with Replace. The installer's pages and choices are the same, and saves load as they are.
+
 ## v4.1.0 - Quicker Commands
 
 Magelight UI 0.30.5 is bundled (`98 Magelight UI`):

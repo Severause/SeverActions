@@ -800,6 +800,18 @@ Bool Function Native_Outfit_RecordExternalChange(Actor akActor, Form akItem, Boo
  intrusions itself. True while burst-strip suppression is active. Replaces
  Native_Outfit_RecordExternalUnequip.}
 
+Function Native_Outfit_RecordIntrusionEquip(Actor akActor, Form akItem) Global Native
+{Note armor put on outside the active slot preset (the OutfitAlias's intrusion
+ equip), for Native_Outfit_ResolveBurst to weigh against the burst's unequips.
+ A Devious Device or a blacklisted piece is not counted.}
+
+Int Function Native_Outfit_ResolveBurst(Actor akActor) Global Native
+{What a latched burst was, decided once per latch: 1 = a strip, or a fight with
+ another mod that enforces an outfit (yield); 2 = a re-dress (re-apply the
+ preset; the latch is dropped); 3 = no latch (also when the active preset is
+ still worn in full). Never 0: an older DLL without it reads 0, so fall back to
+ Native_Outfit_IsBurstSuppressed.}
+
 Bool Function Native_Outfit_ShouldYieldCombatGear(Actor akActor) Global Native
 {True when outfit enforcement should yield this debounce round: the yield
  setting is on, the actor is out of combat, and the settled burst was only

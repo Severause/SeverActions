@@ -9,10 +9,10 @@ Scriptname SeverActions_Init extends ReferenceAlias
 ; === Initialization ===
 
 ; K0: bumped together with the DLL's KernelSession::kAbiVersion whenever a native's signature or
-; meaning changes in a way an older pex must not run against. 25: the wait / follow cores call
-; Follow_HeldState, which an older DLL does not register (unbound, it reads 0 and every teardown
-; would run in full).
-Int Property KERNEL_ABI = 25 AutoReadOnly
+; meaning changes in a way an older pex must not run against. 26: the OutfitAlias calls
+; Native_Outfit_RecordIntrusionEquip and Native_Outfit_ResolveBurst, which an older DLL does not
+; register (unbound, every intrusion equip logs an error).
+Int Property KERNEL_ABI = 26 AutoReadOnly
 
 Event OnInit()
     Debug.Trace("[SeverActions] OnInit - First time initialization")

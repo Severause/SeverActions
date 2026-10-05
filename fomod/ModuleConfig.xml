@@ -2,7 +2,7 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
 
-    <moduleName>SeverActions - SkyrimNet Action Pack v4.1</moduleName>
+    <moduleName>SeverActions - SkyrimNet Action Pack v4.2</moduleName>
 
     <requiredInstallFiles>
         <folder source="00 Core" destination="" priority="0"/>
@@ -15,6 +15,31 @@
              Scripts/ at the Data root. A separately installed Magelight must
              be this version or newer (VERSION.txt beside the runtime). -->
         <folder source="98 Magelight UI/00 Core" destination="" priority="1"/>
+        <folder source="10 Modules/followers" destination="" priority="0"/>
+        <folder source="10 Modules/companions" destination="" priority="0"/>
+        <folder source="10 Modules/social" destination="" priority="0"/>
+        <folder source="10 Modules/arrest" destination="" priority="0"/>
+        <folder source="10 Modules/combat" destination="" priority="0"/>
+        <folder source="10 Modules/travel" destination="" priority="0"/>
+        <folder source="10 Modules/items" destination="" priority="0"/>
+        <folder source="10 Modules/outfit" destination="" priority="0"/>
+        <folder source="10 Modules/survival" destination="" priority="0"/>
+        <folder source="10 Modules/economy" destination="" priority="0"/>
+        <folder source="10 Modules/enterprises" destination="" priority="0"/>
+        <folder source="10 Modules/arousal_osl" destination="" priority="0"/>
+        <folder source="10 Modules/arousal_slo" destination="" priority="0"/>
+        <folder source="10 Modules/fertility" destination="" priority="0"/>
+        <folder source="10 Modules/travelcore" destination="" priority="0"/>
+        <folder source="10 Modules/couriers" destination="" priority="0"/>
+        <folder source="10 Modules/furniturelib" destination="" priority="0"/>
+        <folder source="10 Modules/fwlib" destination="" priority="0"/>
+        <folder source="10 Modules/leashlib" destination="" priority="0"/>
+        <folder source="10 Modules/walklib" destination="" priority="0"/>
+        <folder source="10 Modules/skymsglib" destination="" priority="0"/>
+        <folder source="10 Modules/_kopt_mcm" destination="" priority="0"/>
+        <folder source="10 Modules/_LegacyShims" destination="" priority="0"/>
+        <folder source="20 Markers/Legacy" destination="" priority="0"/>
+        <folder source="Prompts/Arrest-Trespass" destination="" priority="1"/>
     </requiredInstallFiles>
 
     <installSteps order="Explicit">
@@ -644,45 +669,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
         <patterns>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
-                </dependencies>
-                <files>
-                    <folder source="10 Modules/followers" destination="" priority="0"/>
-                    <folder source="10 Modules/companions" destination="" priority="0"/>
-                    <folder source="10 Modules/social" destination="" priority="0"/>
-                    <folder source="10 Modules/arrest" destination="" priority="0"/>
-                    <folder source="10 Modules/combat" destination="" priority="0"/>
-                    <folder source="10 Modules/travel" destination="" priority="0"/>
-                    <folder source="10 Modules/items" destination="" priority="0"/>
-                    <folder source="10 Modules/outfit" destination="" priority="0"/>
-                    <folder source="10 Modules/survival" destination="" priority="0"/>
-                    <folder source="10 Modules/economy" destination="" priority="0"/>
-                    <folder source="10 Modules/enterprises" destination="" priority="0"/>
-                    <folder source="10 Modules/arousal_osl" destination="" priority="0"/>
-                    <folder source="10 Modules/arousal_slo" destination="" priority="0"/>
-                    <folder source="10 Modules/fertility" destination="" priority="0"/>
-                    <folder source="10 Modules/travelcore" destination="" priority="0"/>
-                    <folder source="10 Modules/couriers" destination="" priority="0"/>
-                    <folder source="10 Modules/furniturelib" destination="" priority="0"/>
-                    <folder source="10 Modules/fwlib" destination="" priority="0"/>
-                    <folder source="10 Modules/leashlib" destination="" priority="0"/>
-                    <folder source="10 Modules/walklib" destination="" priority="0"/>
-                    <folder source="10 Modules/skymsglib" destination="" priority="0"/>
-                    <folder source="10 Modules/_kopt_mcm" destination="" priority="0"/>
-                    <folder source="10 Modules/_LegacyShims" destination="" priority="0"/>
-                    <folder source="20 Markers/Legacy" destination="" priority="0"/>
-                    <folder source="Prompts/Arrest-Trespass" destination="" priority="1"/>
-                </files>
-            </pattern>
-            <pattern>
-                <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_basic" value="On"/>
                 </dependencies>
                 <files>
@@ -694,10 +680,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_travel" value="On"/>
                 </dependencies>
                 <files>
@@ -706,10 +688,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_combat" value="On"/>
                 </dependencies>
                 <files>
@@ -718,10 +696,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_brawl" value="On"/>
                 </dependencies>
                 <files>
@@ -730,10 +704,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_outfit" value="On"/>
                 </dependencies>
                 <files>
@@ -742,10 +712,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_furniture" value="On"/>
                 </dependencies>
                 <files>
@@ -754,10 +720,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_economy" value="On"/>
                 </dependencies>
                 <files>
@@ -767,10 +729,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_enterprises" value="On"/>
                 </dependencies>
                 <files>
@@ -781,10 +739,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_crafting" value="On"/>
                 </dependencies>
                 <files>
@@ -794,10 +748,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_arrest" value="On"/>
                 </dependencies>
                 <files>
@@ -806,10 +756,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_follower" value="On"/>
                 </dependencies>
                 <files>
@@ -820,10 +766,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_kidnap" value="On"/>
                 </dependencies>
                 <files>
@@ -833,10 +775,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_p_core" value="On"/>
                 </dependencies>
                 <files>
@@ -851,10 +789,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_p_familiarity" value="On"/>
                 </dependencies>
                 <files>
@@ -863,10 +797,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_p_combat" value="On"/>
                 </dependencies>
                 <files>
@@ -875,10 +805,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_p_brawl" value="On"/>
                 </dependencies>
                 <files>
@@ -887,10 +813,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_p_survival" value="On"/>
                 </dependencies>
                 <files>
@@ -899,10 +821,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_p_arrest" value="On"/>
                 </dependencies>
                 <files>
@@ -911,10 +829,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_p_follower" value="On"/>
                 </dependencies>
                 <files>
@@ -928,10 +842,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_p_groupmeeting" value="On"/>
                 </dependencies>
                 <files>
@@ -940,10 +850,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_p_merchant_anywhere" value="On"/>
                 </dependencies>
                 <files>
@@ -952,10 +858,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_p_merchant_location" value="On"/>
                 </dependencies>
                 <files>
@@ -964,10 +866,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_patch_aio" value="On"/>
                 </dependencies>
                 <files>
@@ -976,10 +874,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_patch_daegon" value="On"/>
                 </dependencies>
                 <files>
@@ -988,10 +882,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_adult_osl_action" value="On"/>
                 </dependencies>
                 <files>
@@ -1000,10 +890,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_adult_slo_action" value="On"/>
                 </dependencies>
                 <files>
@@ -1012,10 +898,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_adult_osl_prompt" value="On"/>
                 </dependencies>
                 <files>
@@ -1024,10 +906,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_adult_slo_prompt" value="On"/>
                 </dependencies>
                 <files>
@@ -1036,10 +914,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_adult_fertility_prompt" value="On"/>
                 </dependencies>
                 <files>
@@ -1048,10 +922,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_adult_abort_trigger" value="On"/>
                 </dependencies>
                 <files>
@@ -1060,10 +930,6 @@ Recommended if you want camping integrated into the SeverActions experience.</de
             </pattern>
             <pattern>
                 <dependencies operator="And">
-                    <dependencies operator="Or">
-                        <flagDependency flag="sa_installMode" value="Legacy"/>
-                        <flagDependency flag="sa_installMode" value=""/>
-                    </dependencies>
                     <flagDependency flag="sa_leg_hearth" value="On"/>
                 </dependencies>
                 <files>

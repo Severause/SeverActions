@@ -4,9 +4,10 @@ Scriptname SeverActions_OutfitAlias extends ReferenceAlias
     Per-follower outfit enforcement on a ReferenceAlias of the SeverActions quest.
     A slot preset is applied with no SetOutfit (see SeverActions_OutfitSlot's
     header), so the engine never re-applies it: this alias does, beside the
-    native 3D-load pass. Loads re-equip at once; unequips and intrusion equips
-    are debounced so strip mods are not fought, and OnUpdate yields to scenes,
-    bulk strips and helm/shield-only removals, else re-applies.
+    native 3D-load pass and the native settle re-check (OutfitSettle.h). Loads
+    re-equip at once; unequips and intrusion equips are debounced so strip mods
+    are not fought, and OnUpdate yields to scenes, bulk strips and
+    helm/shield-only removals, else re-applies (a bulk re-dress included).
 }
 
 SeverActions_Outfit Property OutfitScript Auto
@@ -21,7 +22,8 @@ Bool IntrusionEquipPending = false
 ; yield: such a burst is an auto-equip swap, not a bare helm/shield removal.
 ; Equips stay out of the native burst counter, the bulk-strip detector (3+
 ; calls in 500 ms, blind to equip vs unequip): a two-piece swap would latch
-; it and OnUpdate would leave the intruders on.
+; it. They are noted beside it instead (Native_Outfit_RecordIntrusionEquip),
+; so Native_Outfit_ResolveBurst can tell a full re-dress from a strip.
 
 
 
@@ -136,6 +138,7 @@ Event OnObjectEquipped(Form akBaseObject, ObjectReference akReference)
     ; Non-preset armor put on: mark the burst (see IntrusionEquipPending),
     ; then debounce-reapply the preset.
     IntrusionEquipPending = true
+    SeverActionsNativeExt2.Native_Outfit_RecordIntrusionEquip(follower, akBaseObject)
     RegisterForSingleUpdate(ReequipDebounceSeconds)
 EndEvent
 
@@ -178,11 +181,21 @@ Event OnUpdate()
         Return
     EndIf
 
-    ; Bulk strip (3+ unequips in 500 ms): latched until a cell load or our own
-    ; outfit change clears it
-    If SeverActionsNative.Native_Outfit_IsBurstSuppressed(follower)
+    ; Bulk change (3+ unequips in 500 ms): a strip stays latched until a cell
+    ; load or our own outfit change clears it; a re-dress (non-preset armor put
+    ; on in their place) is re-applied over, up to twice a minute. 0 = an older
+    ; DLL without the native: the latch alone decides.
+    Int burst = SeverActionsNativeExt2.Native_Outfit_ResolveBurst(follower)
+    If burst == 0
+        If SeverActionsNative.Native_Outfit_IsBurstSuppressed(follower)
+            Debug.Trace("[SeverActions_OutfitAlias] Burst suppression active - yielding for " + follower.GetDisplayName())
+            Return
+        EndIf
+    ElseIf burst == 1
         Debug.Trace("[SeverActions_OutfitAlias] Burst suppression active - yielding for " + follower.GetDisplayName())
         Return
+    ElseIf burst == 2
+        intruderInBurst = True
     EndIf
 
     ; Combat-gear yield (both paths below): an out-of-combat removal of ONLY
@@ -247,20 +260,21 @@ Function ReequipIfLocked()
         Return
     EndIf
 
-    ; Don't fight in-progress outfit operations (builder, preset apply, etc.)
-    If SeverActionsNative.Native_Outfit_IsNativeSuspended(follower)
-        Return
-    EndIf
-
     ; Defer to bondage mods (DOM/PAH) — a captured/tied NPC stays as they are
     If SeverActionsNativeExt.Native_Outfit_IsExternallyControlled(follower)
         Return
     EndIf
 
     ; A cell change ends the external scene (bathing strip, animation framework):
-    ; clear burst suppression for EVERY enforced actor, before the slot branch,
+    ; clear burst suppression for EVERY enforced actor, before the slot branch
+    ; and the suspend test (the native 3D-load apply's grace is often live here),
     ; or a preset wearer stays suppressed and OnUpdate yields to every later swap.
     SeverActionsNative.Native_Outfit_ClearBurstSuppression(follower)
+
+    ; Don't fight in-progress outfit operations (builder, preset apply, etc.)
+    If SeverActionsNative.Native_Outfit_IsNativeSuspended(follower)
+        Return
+    EndIf
 
     ; HELD preset: no re-apply and no legacy-lock re-equip, mirroring
     ; OutfitDataStore::ReequipLockedItemsOnActor (IsSlotPresetHeld).
