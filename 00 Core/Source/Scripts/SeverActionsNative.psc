@@ -627,7 +627,8 @@ Bool Function Native_IsActorArrested(Actor akActor) Global Native
 ; === ARREST SESSION STORE ('ARST' cosave) ===
 ; In-flight arrests keyed by prisoner. A per-state game-time watchdog, measured from the last state
 ; change, fires SeverActions_ArrestSessionTimeout so Papyrus can cancel. States (C++ ArrestSessionState):
-; 1 Approach, 2 Arresting, 3 Escort, 4 Arrived, 5 Dispatch, 6 Judgment, 7 Persuasion, 8 EscortPlea,
+; 1 Approach, 2 Arresting, 3 Escort, 4 Arrived, 5 Dispatch, 6 Judgment, 7 Parley (a guard questioning one
+; of the player's people, ArrestPlayer's parley lane), 8 EscortPlea,
 ; 9 Jailed (no timeout).
 
 Function Native_ArrestSession_Begin(Actor akPrisoner, Actor akGuard, ObjectReference akJailMarker, Faction akCrimeFaction, Int aiState, Int aiDispatchPhase, Int aiFlags) Global Native
@@ -651,8 +652,9 @@ Bool Function Native_ArrestSession_HasSession(Actor akPrisoner) Global Native
 {True if the prisoner has a session.}
 
 Bool Function Native_ArrestSession_IsActorInArrest(Actor akActor) Global Native
-{True while akActor is in an arrest as prisoner, arresting guard, either half of the player quest's
-active pair, or either end of a live dispatch. Unlike HasSession (prisoner only), answers for guards.}
+{True while akActor is in an arrest as prisoner, arresting guard (until the prisoner is jailed), either
+half of the player quest's active pair, or either end of a live dispatch. Unlike HasSession (prisoner
+only), answers for guards.}
 
 Int Function Native_ArrestSession_GetCount() Global Native
 {Number of active sessions.}
@@ -970,50 +972,6 @@ Bool Function HomeVerifier_IsEnabled() Global Native
 
 Function HomeVerifier_SetScanIntervalSeconds(Int seconds) Global Native
 {Set the scan interval, clamped to 1-600 s (default 10).}
-
-; === ORPHAN CLEANUP ===
-; Every ~5 s finds loaded actors holding a SeverActions LinkedRef keyword no system tracks (left by a
-; crashed script) and fires SeverActions_OrphanCleanup for Papyrus to clear it. Off by default (settings
-; row orphanCleanupEnabled); the DLL resolves its keywords and factions by FormID at kDataLoaded. The
-; registries clear at every session start: a system keeping an NPC linked across a save re-registers it.
-
-Function OrphanCleanup_Initialize(Keyword travelKW, Keyword furnitureKW, Keyword followKW) Global Native
-{Push the package keywords to the scanner. Callerless: the DLL resolves them by FormID at
- kDataLoaded and ignores a push once seeded; kept for an older pex.}
-
-Function OrphanCleanup_SetArrestKeywords(Keyword arrestFollowKW, Keyword arrestSandboxKW) Global Native
-{Push the arrest LinkedRef keywords (FollowTargetKW, SandboxAnchorKW). Callerless, like
- OrphanCleanup_Initialize. Every holder is reported (strArg "arrest_follow" / "arrest_sandbox");
- SeverActions_Arrest.OnOrphanCleanup skips the legitimate ones (live arrest, jail, kidnap, brawl, bodyguard).}
-
-Function OrphanCleanup_SetArrestFactions(Faction dispatchFaction, Faction waitingArrestFaction, Faction arrestedFaction, Faction jailedFaction) Global Native
-{Push the four arrest factions to the stale-membership sweep. Callerless, like
- OrphanCleanup_Initialize. The sweep reports every member ("arrest_faction_sweep"); Arrest's own
- paths clear stale tags through ClearStaleArrestState.}
-
-Function OrphanCleanup_RegisterTraveler(Actor akActor) Global Native
-{Mark a traveller's travel link as tracked, so the scan leaves it alone.}
-
-Function OrphanCleanup_UnregisterTraveler(Actor akActor) Global Native
-
-Function OrphanCleanup_RegisterFollower(Actor akActor) Global Native
-{Mark a follower's follow link as tracked.}
-
-Function OrphanCleanup_MarkRosterSynced() Global Native
-{Release the post-load scan hold. FollowerManager.RunDeferredMaintenance calls it once the
- roster is re-registered; until then (or 120 s) no scan runs, so no real follower is stripped.}
-
-Function OrphanCleanup_UnregisterFollower(Actor akActor) Global Native
-
-Function OrphanCleanup_SetEnabled(Bool enabled) Global Native
-{Turn the scan on or off for this session (off by default). The settings row
- orphanCleanupEnabled is what the Authority replays on load; this is the live lever.}
-
-Bool Function OrphanCleanup_IsEnabled() Global Native
-{True while the scan is on.}
-
-Function OrphanCleanup_ClearTracking() Global Native
-{Forget every registration and hold scans until OrphanCleanup_MarkRosterSynced (120 s cap).}
 
 ; === SKYRIMNET PLUGIN CONFIG (the plugin's WebUI settings; each getter returns defaultVal without it) ===
 
@@ -1384,13 +1342,13 @@ Int Function ArmorCatalog_GetPluginCount() Global Native
 {Number of plugins that contain armor.}
 
 ; === OFF-SCREEN LIFE DATA STORE ('OSLD' cosave) ===
-; Dismissed followers' life events, their consequences, and per-location gossip.
+; Dismissed followers' life events, their consequences, and per-hold gossip.
 
 Function Native_OffScreen_AddEvent(Actor akActor, String summary, String eventType, Float gameTime, Bool hasConsequence, String consequenceType, Int consequenceAmount, String consequenceCrime, String involvedName) Global Native
 {Add a life event (ring buffer, 20 per actor).}
 
 Function Native_OffScreen_AddGossip(String locationName, String gossipText, Float gameTime) Global Native
-{Add a gossip entry (ring buffer, 5 per location).}
+{Add a gossip entry to locationName's hold (the newest 5 unpinned per hold are kept; a town or inn name is kept as the venue).}
 
 Function Native_OffScreen_ClearActor(Actor akActor) Global Native
 {Erase akActor's off-screen life data.}
@@ -1528,7 +1486,7 @@ Function FriendlyFireMonitor_SetEnabled(Bool enabled) Global Native
 Bool Function FriendlyFireMonitor_IsEnabled() Global Native
 
 ; === OUTFIT SLOT SYSTEM ===
-; 100 slots x 8 presets, each an Outfit + LeveledItem + Container triple scaffolded in the ESP
+; 200 slots x 8 presets, each an Outfit + LeveledItem + Container triple scaffolded in the ESP
 ; (GenerateOutfitSlots / esp generate-outfit-slots). The CONTAINER is the wardrobe: a preset is worn
 ; through Native_OutfitSlot_DirectEquipPreset and re-applied on cell load by the OutfitAlias, never
 ; through SetOutfit. SeverActions_OutfitSlot still fills the LeveledItem from the chest (BuildPreset,
@@ -1536,13 +1494,14 @@ Bool Function FriendlyFireMonitor_IsEnabled() Global Native
 ; only way the engine reads it) and Reverts it on release.
 
 Int Function Native_OutfitSlot_AssignSlot(Actor akActor) Global Native
-{akActor's slot, assigning the first free one if needed; -1 when all 100 are taken.}
+{akActor's slot, assigning the first free one if needed; -1 when the actor is outfit-excluded or a child, or all
+ 100 are taken.}
 
 Function Native_OutfitSlot_ReleaseSlot(Actor akActor) Global Native
 {Release the native slot row only (no DefaultOutfit restore, chests untouched). SeverActions_OutfitSlot.ReleaseSlotFromActor is the full teardown and calls this last.}
 
 Int Function Native_OutfitSlot_GetSlot(Actor akActor) Global Native
-{akActor's slot (0-99), or -1.}
+{akActor's slot (0-199), or -1.}
 
 Outfit Function Native_OutfitSlot_GetOutfitForm(Int slotIdx, Int presetIdx) Global Native
 {The slot's Outfit record, or None (out of range, ESP not scaffolded). Nothing is worn through it; ApplyPresetBySlot uses it as a scaffold check.}
@@ -1609,8 +1568,10 @@ Int Function Native_OutfitSlot_DirectEquipPreset(Actor akActor, Int presetIdx) G
  is granted only when the actor holds none, a user-owned piece from the copy they hold (the
  player-modified stack first). A partial apply is still ACTIVE. Leaves a 2 s grace over its own equip
  events, so the caller resumes with Native_Outfit_ResumeLockKeepGrace. Returns the armor count
- verified worn (0 = nothing went on, preset stays inactive) or -1 on a hard error. Call from Papyrus
- or a MutationLane job, never inside an SKSE task.}
+ verified worn (0 = nothing went on, preset stays inactive) or -1: a hard error, or the Tailor mod
+ dresses the actor (outfitDeferTailor on) and presetIdx is not the active preset, so nothing was
+ touched (re-applying the active one still goes on). Call from Papyrus or a MutationLane job, never
+ inside an SKSE task.}
 
 ; --- Catalog-supplied items ---
 ; FormIDs a preset got from the UI catalog rather than from the actor's inventory at build time. A
@@ -1645,7 +1606,7 @@ ReferenceAlias Function Native_OutfitSlot_FindAliasByName(String aliasName) Glob
 {The SeverActions quest alias with this ALID name, or None.}
 
 ReferenceAlias Function Native_OutfitSlot_GetAliasForSlot(Int slotIdx) Global Native
-{The "OutfitSlotNN" alias for a slot (0-99), or None.}
+{The "OutfitSlotNN" alias for a slot; only slots 0-99 have one, so None for 100-199 or an invalid slot.}
 
 Actor[] Function Native_Outfit_GetActorsWithPresets() Global Native
 {Every actor with a user-named preset in OutfitDataStore (the slot migration's source).}

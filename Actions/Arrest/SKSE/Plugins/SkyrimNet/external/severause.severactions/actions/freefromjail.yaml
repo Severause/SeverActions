@@ -1,6 +1,6 @@
 customCategory: arrest
 name: FreeFromJail
-description: "Use when the speaker decides in this line to release a nearby NPC locked in this hold's cells (sentence served, pardon, charges dropped, a favor granted): they walk to the cell, unlock it, and the prisoner returns to their life. Not for a promise to release them later. Paying their bounty (PayNpcBountyToGuard) does not open the cell; this does. A prisoner brought in for judgment is OrderRelease; one being marched to jail is AcceptEscortPlea."
+description: "Use when the speaker decides in this line to release a nearby NPC locked in this hold's cells (sentence served, pardon, charges dropped, a favor granted): they walk to the cell, unlock it, and the prisoner returns to their life. Not for a promise to release them later. Paying their bounty (PayNpcBountyToGuard) does not open the cell; this does. A prisoner brought in for judgment is OrderRelease; one being marched to jail is AcceptEscortPlea; a jarl or housecarl ordering a prisoner freed from afar is PardonPrisoner."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: FreeNPC_Internal

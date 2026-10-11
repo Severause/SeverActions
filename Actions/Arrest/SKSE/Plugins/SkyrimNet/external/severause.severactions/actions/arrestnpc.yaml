@@ -1,6 +1,6 @@
 customCategory: arrest
 name: ArrestNPC
-description: "Use when the speaker, a guard, takes an NPC who is here into custody in this line (caught in a crime, wanted, or on the order of someone with authority) and marches them in cuffs to this hold's jail. Not for warnings, threats of arrest, suspicions, or someone only mentioned. Someone elsewhere is DispatchGuardToArrest; {{ player.name }} is ArrestPlayer. Binding someone to keep at the speaker's side is Captives."
+description: "Use when the speaker, a guard, takes an NPC who is here into custody in this line (caught in a crime, wanted, or on the order of someone with authority) and marches them in cuffs to this hold's jail. Not for warnings, threats of arrest, suspicions, or someone only mentioned. A companion of {{ player.name }} may be stopped for questioning first. Someone elsewhere is DispatchGuardToArrest; {{ player.name }} is ArrestPlayer. Binding someone to keep at the speaker's side is Captives."
 questEditorId: SeverActions
 scriptName: SeverActions_Arrest
 executionFunctionName: ArrestNPC_Internal

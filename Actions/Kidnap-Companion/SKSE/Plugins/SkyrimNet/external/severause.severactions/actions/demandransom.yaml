@@ -59,3 +59,12 @@ eligibilityRules:
         expectedValue: ""
     logicalOperator: "AND"
     required: true
+  - conditions:
+      # Only someone who may handle a captive held now: the holder, one of the player's companions for the
+      # player's side, a jarl or housecarl for their own guards' (sever_holds_captive). "" = none.
+      - decoratorName: "sever_holds_captive"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

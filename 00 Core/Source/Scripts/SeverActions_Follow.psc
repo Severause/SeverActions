@@ -57,9 +57,8 @@ Bool _retainerPersistMissingWarned = false
 
 Keyword Property SeverActions_FollowerFollowKW Auto
 {SA's follow LinkedRef: on a follower SA leads, pointing at the player. No
-package reads it (the follow packages target the player directly); only the
-orphan scanner's follow check keys on it. SA clears it when it releases them, a
-rostered follower's by the next load at the latest.}
+package reads it (the follow packages target the player directly). SA clears it
+when it releases them, a rostered follower's by the next load at the latest.}
 
 Faction Property SeverActions_ActivelyFollowing Auto
 {Held while a follower actively follows; removed on wait, sandbox, stop or
@@ -75,9 +74,9 @@ Package Property SandboxPackage Auto
 and interacts with nearby furniture.}
 
 Package Property SafeInteriorSandboxPackage Auto
-{Package for the AUTO safe-interior sandbox (inns, homes...), distinct from
-SandboxPackage so the two flows can be told apart. Falls back to
-SandboxPackage when unset.}
+{Unused and never filled. The safe-interior relax rides SandboxPackage on
+purpose, the manual wait's package while Wait In Place is off; the wait and
+travel exits allow for that.}
 
 int Property SandboxPackagePriority = 100 AutoReadOnly
 {100 (Hearth's camp sandbox uses the same) wins against typical
@@ -97,6 +96,7 @@ Int Property HELD_TRAVEL_SEAT     = 2 AutoReadOnly
 Int Property HELD_FOLLOW_SEAT     = 4 AutoReadOnly
 Int Property HELD_SANDBOXING      = 8 AutoReadOnly
 Int Property HELD_LINKED_REFS     = 16 AutoReadOnly
+; Retired: never set. Kept so an older frame still resolves it; never reuse the bit.
 Int Property HELD_ORPHAN_REG      = 32 AutoReadOnly
 Int Property HELD_SCHED_SEAT      = 64 AutoReadOnly
 Int Property HELD_GUARD_SEAT      = 128 AutoReadOnly
@@ -147,11 +147,8 @@ Bool Function HeldSure(Int aiHeld, Int aiBit) Global
     Return aiHeld >= 0 && (aiHeld / aiBit) % 2 == 1
 EndFunction
 
-; The auto safe-interior package (see SafeInteriorSandboxPackage).
+; The safe-interior relax's package: SandboxPackage, also the manual wait's while Wait In Place is off.
 Package Function GetSafeInteriorPackage()
-    If SafeInteriorSandboxPackage
-        Return SafeInteriorSandboxPackage
-    EndIf
     Return SandboxPackage
 EndFunction
 
@@ -255,9 +252,9 @@ EndFunction
 
 Int Function VerifyCasualFollowPackages()
     {Load sweep over casual followers: clear stale follow flags (heals what
-     the OnPackageRemoved listener never saw), re-register pool-seated ones
-     with OrphanCleanup, migrate legacy SkyrimNet casuals onto the pool and
-     erase waiting-faction residue. Returns how many flags were cleared.}
+     the OnPackageRemoved listener never saw), migrate legacy SkyrimNet casuals
+     onto the pool and erase waiting-faction residue. Returns how many flags
+     were cleared.}
     Actor[] casuals = SeverActionsNativeExt.Native_GetCasualFollowers()
     If !casuals || casuals.Length == 0
         Return 0
@@ -269,19 +266,13 @@ Int Function VerifyCasualFollowPackages()
         If VerifyCasualFollowPackage(casuals[i])
             cleared += 1
         ElseIf casuals[i] && !SeverActionsNativeExt.Native_GetIsFollower(casuals[i])
-            If IsInFollowerSlot(casuals[i])
-                ; OrphanCleanup's registry is cleared at kPostLoadGame: re-register,
-                ; or with the scanner on (orphanCleanupEnabled) the follow LinkedRef
-                ; is stripped ~5s in.
-                SeverActionsNative.OrphanCleanup_RegisterFollower(casuals[i])
-            ElseIf SkyrimNetApi.HasPackage(casuals[i], "FollowPlayer") > 0
+            If !IsInFollowerSlot(casuals[i]) && SkyrimNetApi.HasPackage(casuals[i], "FollowPlayer") > 0
                 ; Legacy casual on the SkyrimNet override (drops at load doors):
                 ; migrate onto the pool, one mechanism only.
                 If SeverActions_FollowerFollowKW
                     SeverActionsNative.LinkedRef_Set(casuals[i], Game.GetPlayer(), SeverActions_FollowerFollowKW)
                 EndIf
                 AssignFollowerSlot(casuals[i])
-                SeverActionsNative.OrphanCleanup_RegisterFollower(casuals[i])
                 SkyrimNetApi.UnregisterPackage(casuals[i], "FollowPlayer")
                 casuals[i].EvaluatePackage()
                 Debug.Trace("[SeverActions_Follow] Migrated casual follower " + casuals[i].GetDisplayName() + " onto the follow pool")
@@ -477,7 +468,7 @@ EndEvent
 ; =============================================================================
 ; SAFE INTERIOR AUTO-SANDBOX
 ; Fired by native SituationMonitor when a following companion enters/exits
-; a safe interior (inn, home, shop, temple, town interior).
+; a safe interior (a player home: LocTypePlayerHouse, a player-owned cell, or their assigned home).
 ; =============================================================================
 
 Event OnSafeInteriorChanged(String eventName, String strArg, Float numArg, Form sender)
@@ -502,8 +493,12 @@ Event OnSafeInteriorChanged(String eventName, String strArg, Float numArg, Form 
     ; A manual wait wins, and a journey refuses a new relax (its exit still runs, to take
     ; a relax under way off a traveler). The monitor has just claimed them on an enter:
     ; yield the claim, or its exit and rescues would move them. Never over our own live
-    ; relax (flagged), whose claim it is.
-    If akActor.GetAV("WaitingForPlayer") > 0 || (changeType == "enter" && SeverActionsNativeExt2.Travel_GetPhaseByActor(akActor) > 0)
+    ; relax (flagged), whose claim it is. The exit of a relax that wrote no WaitingForPlayer
+    ; goes on: a WaitingForPlayer above 0 there is their framework's wait, which the exit keeps.
+    ; Not every flagged exit: SandboxHeld writes WaitingForPlayer before it clears the relax flag
+    ; (it clears the NoWfp mark first).
+    Bool frameworkWaitExit = changeType == "exit" && StorageUtil.GetIntValue(akActor, "SeverActions_InSafeInteriorSandbox", 0) == 1 && StorageUtil.GetIntValue(akActor, "SeverActions_SafeInteriorNoWfp", 0) == 1
+    If !frameworkWaitExit && (akActor.GetAV("WaitingForPlayer") > 0 || (changeType == "enter" && SeverActionsNativeExt2.Travel_GetPhaseByActor(akActor) > 0))
         If changeType == "enter" && StorageUtil.GetIntValue(akActor, "SeverActions_InSafeInteriorSandbox", 0) != 1
             SeverActionsNativeExt2.SituationMonitor_YieldSafeInterior(akActor)
         EndIf
@@ -611,9 +606,6 @@ Function ExitSafeInteriorSandbox(Actor akActor)
             ; inside. Extra calls are no-ops.
             Int removeIter = 0
             While removeIter < 5
-                If SafeInteriorSandboxPackage
-                    ActorUtil.RemovePackageOverride(akActor, SafeInteriorSandboxPackage)
-                EndIf
                 RemoveWaitSandboxPackages(akActor)
                 removeIter += 1
             EndWhile
@@ -657,12 +649,10 @@ Function ExitSafeInteriorSandbox(Actor akActor)
                 If !IsInFollowerSlot(akActor)
                     SkyrimNetApi.RegisterPackage(akActor, "FollowPlayer", FollowPackagePriority, 0, true)
                 Else
-                    ; Re-set SA's follow LinkedRef and OrphanCleanup entry, as
-                    ; CompanionStartFollowing does.
+                    ; Re-set SA's follow LinkedRef, as CompanionStartFollowing does.
                     If SeverActions_FollowerFollowKW
                         SeverActionsNative.LinkedRef_Set(akActor, Game.GetPlayer(), SeverActions_FollowerFollowKW)
                     EndIf
-                    SeverActionsNative.OrphanCleanup_RegisterFollower(akActor)
                 EndIf
 
                 SetActivelyFollowing(akActor, true)
@@ -702,9 +692,6 @@ Function StripSafeInteriorHeld(Actor akActor, Int aiHeld, Bool abFinish)
     ; Home / work / furniture sandboxes use other packages and are untouched.
     Int removeIter = 0
     While removeIter < 5
-        If SafeInteriorSandboxPackage
-            ActorUtil.RemovePackageOverride(akActor, SafeInteriorSandboxPackage)
-        EndIf
         RemoveWaitSandboxPackages(akActor)
         removeIter += 1
     EndWhile
@@ -742,9 +729,8 @@ Bool Function YieldSafeInteriorToWait(Actor akActor, Package akWaitPackage)
         Return False
     EndIf
     Bool wasFlagged = StorageUtil.GetIntValue(akActor, "SeverActions_InSafeInteriorSandbox", 0) == 1
-    ; The relax can ride SandboxPackage (GetSafeInteriorPackage's fallback), the wide
-    ; wait's own package, which must stay when the wait holds it. Repeated as in
-    ; ExitSafeInteriorSandbox.
+    ; The relax rides SandboxPackage, the wide wait's own package, which must stay when
+    ; the wait holds it. Repeated as in ExitSafeInteriorSandbox.
     Package relaxPkg = GetSafeInteriorPackage()
     If relaxPkg && relaxPkg != akWaitPackage
         Int removeIter = 0
@@ -949,8 +935,8 @@ EndFunction
 
 Function ClearWaitingFaction(Actor akActor)
     {TRUE removal of the waiting faction. RemoveFromFaction only writes rank
-     -1, which rank-blind readers (IsInFaction, GetInFaction package
-     conditions, IntelEngine's wait check) still read as WAITING - casual
+     -1, which rank-blind readers (SkyrimNet's is_in_faction, GetInFaction
+     package conditions, IntelEngine's wait check) still read as WAITING - casual
      followers froze at load doors that way.}
     If !akActor || !SeverActions_WaitingFaction
         Return
@@ -1481,10 +1467,10 @@ EndFunction
 
 Function ReapplyFollowTracking(Actor[] followers)
     {Load re-apply for the roster (FollowerManager.RunDeferredMaintenance).
-     Alias packages persist natively; this re-sets the follow LinkedRef and
-     OrphanCleanup entry, the wait sandbox, the ActivelyFollowing tag and the
-     native follow flag, and takes the flag and LinkedRef off a hands-off
-     follower. Never registers a SkyrimNet package.}
+     Alias packages persist natively; this re-sets the follow LinkedRef, the
+     wait sandbox, the ActivelyFollowing tag and the native follow flag, and
+     takes the flag and LinkedRef off a hands-off follower. Never registers a
+     SkyrimNet package.}
     Actor player = Game.GetPlayer()
     Int i = 0
     While i < followers.Length
@@ -1492,7 +1478,7 @@ Function ReapplyFollowTracking(Actor[] followers)
         Bool skipReapply = false
         If akActor && !akActor.IsDead()
             ; Hands-off (track-only, or anyone in Tracking mode, D45): never set
-            ; SA's LinkedRef / OrphanCleanup entry / hasFollowPkg, and clear a stale
+            ; SA's LinkedRef / hasFollowPkg, and clear a stale
             ; flag (it re-arms FollowDriftMonitor, CellCatchup and SandboxManager
             ; against them) or LinkedRef, every load. No EvaluatePackage: their
             ; framework owns their packages.
@@ -1507,6 +1493,10 @@ Function ReapplyFollowTracking(Actor[] followers)
             ElseIf SeverActionsNativeExt2.Native_GetTravelState(akActor) != ""
                 skipReapply = true
                 Debug.Trace("[SeverActions_Follow] ReapplyFollowTracking: skipped mid-travel " + akActor.GetDisplayName())
+            ; Arrested or jailed: the arrest's packages hold them until the release.
+            ElseIf SeverActionsNativeExt2.Custody_IsHeld(akActor)
+                skipReapply = true
+                Debug.Trace("[SeverActions_Follow] ReapplyFollowTracking: skipped in custody " + akActor.GetDisplayName())
             EndIf
         EndIf
         If akActor && !akActor.IsDead() && !skipReapply
@@ -1521,10 +1511,6 @@ Function ReapplyFollowTracking(Actor[] followers)
             ; 30-day prune stamp.
             If SeverActions_FollowerFollowKW
                 SeverActionsNative.LinkedRef_Set(akActor, player, SeverActions_FollowerFollowKW)
-                ; OrphanCleanup's registry is cleared at every kPostLoadGame; with
-                ; the scanner on (orphanCleanupEnabled) an unregistered holder's
-                ; LinkedRef is stripped ~5s after load.
-                SeverActionsNative.OrphanCleanup_RegisterFollower(akActor)
             EndIf
 
             ; Either signal means waiting: external AI (Serana's DLC scripts) can
@@ -1700,10 +1686,6 @@ Function StartFollowing(Actor akActor)
         Debug.Trace("[SeverActions_Follow] WARNING: FollowerFollowKW not set!")
     EndIf
     AssignFollowerSlot(akActor)
-    ; Register with OrphanCleanup: with the scanner on (orphanCleanupEnabled) it
-    ; strips an unregistered holder's LinkedRef (its registry clears on load;
-    ; VerifyCasualFollowPackages re-registers seated casuals).
-    SeverActionsNative.OrphanCleanup_RegisterFollower(akActor)
     SeverActionsNative.Native_SetPackageState(akActor, true, false, false)
     akActor.EvaluatePackage()
 
@@ -1729,7 +1711,6 @@ Function StopFollowing(Actor akActor)
     ; and the LLM can fire this verb at anyone.
     If !SeverActionsNativeExt.Native_GetIsFollower(akActor)
         ClearFollowerSlot(akActor)
-        SeverActionsNative.OrphanCleanup_UnregisterFollower(akActor)
         If SeverActions_FollowerFollowKW
             SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_FollowerFollowKW)
         EndIf
@@ -1810,11 +1791,6 @@ Function CompanionStartFollowingHeld(Actor akActor, Int aiHeld)
     ; hasFollowPkg: SA drives this follow (drift monitor, cell catch-up, UI badge).
     SeverActionsNative.Native_SetPackageState(akActor, true, false, false)
 
-    ; See StartFollowing. Registering is idempotent; skipped only when already registered.
-    If !HeldSure(aiHeld, HELD_ORPHAN_REG)
-        SeverActionsNative.OrphanCleanup_RegisterFollower(akActor)
-    EndIf
-
     akActor.EvaluatePackage()
 EndFunction
 
@@ -1836,9 +1812,6 @@ Function ReleaseFollowHold(Actor akActor, Int aiHeld, Bool abRefill)
     Else
         ; The overflow pair holds no seat; its own StorageUtil mark gates it.
         RemoveOverflowFollow(akActor)
-    EndIf
-    If Held(aiHeld, HELD_ORPHAN_REG)
-        SeverActionsNative.OrphanCleanup_UnregisterFollower(akActor)
     EndIf
     ; ALL tracked LinkedRefs, not just follow: travel, furniture or arrest refs an
     ; interrupted system left would stay in the cosave and restore on load. Each
@@ -1916,6 +1889,11 @@ Function SandboxHeld(Actor akActor, Int aiHeld, Bool abStateEvent)
 
     ; Now the follow can drop: the sandbox already covers them.
     SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
+    ; Before the WaitingForPlayer write: a relax exit marked NoWfp takes it for their framework's
+    ; wait and strips this one's package.
+    If Held(aiHeld, HELD_SANDBOXING) || Held(aiHeld, HELD_WAITING_FACTION)
+        StorageUtil.UnsetIntValue(akActor, "SeverActions_SafeInteriorNoWfp")
+    EndIf
     akActor.SetAV("WaitingForPlayer", 1)
 
     ; After the WaitingForPlayer write, which is what stops SituationMonitor claiming

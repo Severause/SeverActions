@@ -67,9 +67,19 @@ EndFunction
 Function _AbandonStandoffOnLoad()
     {The native thug roster (VentureMonitor m_ambushThugs) is cleared on every load, so a
      standoff saved mid-flight can never resolve: strip packages, undo the faction swap
-     and despawn the thugs. R23: no global thug clear; only the lead's persuasion window ends.}
+     and despawn the thugs. R23: no global thug clear; only the lead's persuasion window ends.
+     A kidnap search party may come again, and so may a grudge's blades, after the usual delay.}
     If !AmbushActive && !AmbushApproaching
         Return
+    EndIf
+    ; 3 = held, 4 = the search flag (SeverActions_Kidnap.KIDNAP_FLAG_SEARCH).
+    If AmbushDeserter != None && SeverActionsNativeExt.Native_Kidnap_GetPhase(AmbushDeserter) == 3
+        SeverActionsNativeExt.Native_Kidnap_SetFlag(AmbushDeserter, 4, false)
+        StorageUtil.UnsetFloatValue(AmbushDeserter, "SA_KidnapSearchSentGT")
+    ElseIf AmbushDeserter != None
+        If SeverActionsNativeExt2.Venture_RearmAbandonedGrudge(AmbushDeserter)
+            Debug.Trace("[SeverActions_Ambush] re-armed the grudge of " + AmbushDeserter.GetDisplayName())
+        EndIf
     EndIf
     SeverActionsNativeExt2.Native_Persuasion_EndFor(AmbushLead)
     Faction bladeFaction = GetHiredBladeFaction()
@@ -269,6 +279,14 @@ Event OnVentureAmbush(string eventName, string strArg, float numArg, Form sender
 
     AmbushLead = AmbushThugs[0]
     AmbushDeserter = deserter
+    ; A held captive's search party is spent once it stands here (3 = held, 4 = the search
+    ; flag, SeverActions_Kidnap.KIDNAP_FLAG_SEARCH); until then the kidnap tick may ask again.
+    ; The native never sends a grudge from a captive, so a held sender is a search. The stamp
+    ; times the kidnap tick's lost-search fallback.
+    If deserter != None && SeverActionsNativeExt.Native_Kidnap_GetPhase(deserter) == 3
+        SeverActionsNativeExt.Native_Kidnap_SetFlag(deserter, 4, true)
+        StorageUtil.SetFloatValue(deserter, "SA_KidnapSearchSentGT", Utility.GetCurrentGameTime())
+    EndIf
 
     If fromAfar
         ; Jog in on the SA travel package (linked-ref target) without the orchestrator,
@@ -282,9 +300,6 @@ Event OnVentureAmbush(string eventName, string strArg, float numArg, Form sender
             Actor t = AmbushThugs[k]
             If t
                 SeverActionsNative.LinkedRef_Set(t, player, _TravelKW())
-                ; Registered: with orphanCleanupEnabled on, OrphanCleanup strips an unregistered
-                ; travel LinkedRef mid-approach. Unregistered when the approach resolves.
-                SeverActionsNative.OrphanCleanup_RegisterTraveler(t)
                 If jog != None
                     ; A hostile leader's prio-110 work package would beat the jog (85),
                     ; so theirs goes in at 120. Removal is by package, so it strips clean.
@@ -396,8 +411,6 @@ Function BeginAmbushStandoff()
                 ActorUtil.RemovePackageOverride(t, jog)
             EndIf
             SeverActionsNative.LinkedRef_Clear(t, _TravelKW())
-            ; pairs with the approach's RegisterTraveler
-            SeverActionsNative.OrphanCleanup_UnregisterTraveler(t)
             SkyrimNetApi.RegisterPackage(t, "FollowPlayer", _HoldPriority(t), 0, true)
             t.EvaluatePackage()
             SeverActionsNativeExt2.Venture_RegisterAmbushThug(t)        ; gates the standoff actions
@@ -473,8 +486,8 @@ Faction Function GetHiredBladeFaction()
 EndFunction
 
 Function StripThugPackages(Actor t)
-    {Clears the approach jog, its linked ref and orphan registration, and the SkyrimNet
-     packages, so a resolve starts from a clean AI slate.}
+    {Clears the approach jog, its travel linked ref and the SkyrimNet packages, so a
+     resolve starts from a clean AI slate.}
     If t == None
         Return
     EndIf
@@ -483,7 +496,6 @@ Function StripThugPackages(Actor t)
         ActorUtil.RemovePackageOverride(t, jog)
     EndIf
     SeverActionsNative.LinkedRef_Clear(t, _TravelKW())
-    SeverActionsNative.OrphanCleanup_UnregisterTraveler(t)
     SkyrimNetApi.UnregisterPackage(t, "TalkToPlayer")
     SkyrimNetApi.UnregisterPackage(t, "FollowPlayer")
 EndFunction
@@ -546,9 +558,6 @@ Function ThugStandDown_Execute(Actor akActor)
             If awayMarker != None && leavePkg != None
                 ; The courier walk: SA travel package, linked-ref target.
                 SeverActionsNative.LinkedRef_Set(t, awayMarker, _TravelKW())
-                ; Registered: with orphanCleanupEnabled on, the orphan scan strips an unregistered
-                ; thug's walk-off package.
-                SeverActionsNative.OrphanCleanup_RegisterTraveler(t)
                 ActorUtil.AddPackageOverride(t, leavePkg, TRAVEL_PACKAGE_PRIORITY, 1)
             EndIf
             StorageUtil.FormListAdd(self, "SeverTravel_DepartingThugs", t, false)
@@ -594,7 +603,6 @@ Function ProcessDepartingThugs()
                 t.EvaluatePackage()
                 gone = True
             ElseIf (elapsed >= 20.0 && outOfSight) || elapsed >= 300.0
-                SeverActionsNative.OrphanCleanup_UnregisterTraveler(t)
                 t.Disable()
                 t.Delete()
                 gone = True

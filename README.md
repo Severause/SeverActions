@@ -106,7 +106,7 @@ nothing.
 | **Arrest Actions** | No | 15 | Guards arrest, are dispatched across cells, search homes for evidence and escort prisoners to jail (a prisoner can plead once on the way); jarls and housecarls order arrests rather than making them; delivered prisoners are judged |
 | **Follower Actions** | Yes | 6 | Recruit a companion, dismiss them, tell them to wait or follow again, and assign a home; a badly treated companion may leave on their own |
 | **Kidnap and Captive Actions** | No | 8 | Any NPC can restrain someone and lead them, tie a captive to furniture or release them; your companions can also move, untie and interrogate captives, and kidnap for ransom (with Enable Kidnap Actions, off by default) |
-| **OSL Aroused - Modify Arousal Action** / **SL Aroused - Modify Arousal Action** | No | 1 + 1 | Adjust an NPC's arousal (pick one of the two, or none) |
+| **OSL Aroused - Modify Arousal Action** / **SL Aroused - Modify Arousal Action** | No | 1 + 1 | Adjust an NPC's arousal (pick one of the two, or none). "SL Aroused" means SLO Aroused (SexLabAroused.esm), which works with OStim or SexLab |
 | **Sever's Hearth (Camp System)** | Yes | 7 | Make and break camp, promote a camp to the base, upgrade or break the base, and go to the camp or the base |
 
 118 actions in all. The two arousal actions are alternatives, so a single install offers at most 117.
@@ -296,8 +296,11 @@ Opens). Every page has a **?** button that explains it.
 
 ### Languages
 
-The menu follows the game's language. French, Russian and Japanese have the menu, the MCM and the notices translated;
-other languages show English. Page help and many setting descriptions are in English everywhere.
+The menu follows the game's language unless you pick another in Settings → Interface → UI Display → Language
+(English, French, Russian or Japanese). French, Russian and Japanese have the menu with its page help and setting
+descriptions, the popups, the quick wheel, the MCM and the notices translated; other languages show English. The MCM
+stays in the game's language, and notices follow your pick only when the game's font can draw it. Names that come from
+the game (people, places, items, quests) appear as the game shows them.
 
 ---
 

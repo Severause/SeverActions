@@ -126,6 +126,13 @@ HELD IN A CELL RIGHT NOW — treat as CANON; none of them is about town:
 {% endfor %}
 If the event or the townRumor touches any of them (a neighbor, a drinking companion, a rival, someone in the social connections above), it must reflect the cell: their empty place, a visit to the jail, word passed through a guard, their affairs in someone else's hands. Never write them working, trading, drinking or walking about.
 {% endif %}
+{% if length(default(captives, [])) > 0 %}
+HELD CAPTIVE RIGHT NOW, bound and kept by force — treat as CANON; none of them is free or about town:
+{% for c in captives %}
+- {{ c.name }}, {% if c.restraint %}held bound{% else %}taken captive{% endif %}{% if c.heldBy != "" %} by {{ c.heldBy }}{% endif %}{% if c.sinceDays > 0 %}, {{ c.sinceDays }} {% if c.sinceDays == 1 %}day{% else %}days{% endif %} ago{% endif %}{% if c.guardedBy != "" %}, kept under guard by {{ c.guardedBy }}{% endif %}
+{% endfor %}
+If the event or the townRumor touches any of them, it must reflect the captivity: their empty place, worry or talk about where they went, their affairs in someone else's hands. Never write them working, trading, drinking or walking about, and never write them freed or rescued: that is decided elsewhere.
+{% endif %}
 
 {% if length(default(nearbyFollowers, [])) > 0 %}
 Other dismissed companions living nearby:

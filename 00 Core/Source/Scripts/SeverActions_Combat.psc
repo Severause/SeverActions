@@ -488,12 +488,18 @@ Function ForceAttack(Actor akAttacker, Actor akTarget)
     akAttacker.SetRelationshipRank(akTarget, -4)
     akTarget.SetRelationshipRank(akAttacker, -4)
     
-    akAttacker.StartCombat(akTarget)
-    
+    ; The engine refuses StartCombat on the player; the NPC side alone starts the fight.
+    Actor player = Game.GetPlayer()
+    If akAttacker != player
+        akAttacker.StartCombat(akTarget)
+    EndIf
+
     ; Make victim fight back
-    Utility.Wait(0.2)
-    akTarget.StartCombat(akAttacker)
-    
+    If akTarget != player
+        Utility.Wait(0.2)
+        akTarget.StartCombat(akAttacker)
+    EndIf
+
     Debug.Trace("[SeverCombat] AttackTarget complete")
 EndFunction
 

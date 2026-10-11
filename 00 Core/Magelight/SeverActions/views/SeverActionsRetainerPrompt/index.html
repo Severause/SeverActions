@@ -346,38 +346,40 @@
     </style>
   </head>
   <body>
-    <div id="overlay" class="ret-overlay" role="dialog" aria-modal="false" aria-label="Assign Retainer">
+    <div id="overlay" class="ret-overlay" role="dialog" aria-modal="false" aria-label="Assign Retainer"
+         data-i18n="ariaLabel" data-i18n-attr="aria-label">
       <div class="ret-card">
-        <div class="ret-header" id="hdr">TAKE ON A RETAINER?</div>
+        <div class="ret-header" id="hdr" data-i18n="header">TAKE ON A RETAINER?</div>
         <div class="ret-body" id="body">
           Put <span id="npc" class="ret-name">this one</span> on your books?
         </div>
         <div class="ret-fields">
           <div class="ret-row">
-            <span class="ret-label">Work spot</span>
+            <span class="ret-label" data-i18n="workSpot">Work spot</span>
             <div class="ret-pills" id="markerToggle"></div>
           </div>
           <div class="ret-row" id="workplaceRow">
-            <span class="ret-label">Workplace</span>
+            <span class="ret-label" data-i18n="workplace">Workplace</span>
             <div class="ret-loc-wrap">
               <input id="loc" class="ret-loc" type="text" autocomplete="off" spellcheck="false" />
               <div id="loc-suggest" class="ret-suggest"></div>
             </div>
           </div>
-          <div class="ret-hint" id="locHint">Blank = here, where you're standing. Or start typing a place and pick a match.</div>
+          <div class="ret-hint" id="locHint" data-i18n="locHint">Blank = here, where you're standing. Or start typing a place and pick a match.</div>
           <div class="ret-row">
-            <span class="ret-label">Trade</span>
+            <span class="ret-label" data-i18n="trade">Trade</span>
             <div class="ret-pills" id="jobPills"></div>
           </div>
           <div class="ret-row" id="customNameRow">
-            <span class="ret-label">Trade name</span>
+            <span class="ret-label" data-i18n="tradeName">Trade name</span>
             <div class="ret-loc-wrap">
               <input id="customName" class="ret-loc" type="text" autocomplete="off" spellcheck="false"
-                     maxlength="40" placeholder="name this line of work (e.g. Stablehand, Scribe)" />
+                     maxlength="40" placeholder="name this line of work (e.g. Stablehand, Scribe)"
+                     data-i18n="tradeNamePlaceholder" data-i18n-attr="placeholder" />
             </div>
           </div>
           <div class="ret-row">
-            <span class="ret-label">Terms</span>
+            <span class="ret-label" data-i18n="terms">Terms</span>
             <div class="ret-pills" id="arrPills"></div>
           </div>
           <div class="ret-row">
@@ -386,14 +388,14 @@
             <span class="ret-wage-hint" id="wageHint">blank = standard wage</span>
           </div>
           <div class="ret-row">
-            <span class="ret-label">How the work goes</span>
+            <span class="ret-label" data-i18n="howWorkGoes">How the work goes</span>
             <textarea id="note" class="ret-note" rows="2"></textarea>
           </div>
-          <div class="ret-hint" id="noteHint">Story flavor only — colors their weekly tales. Blank = the default for the trade.</div>
+          <div class="ret-hint" id="noteHint" data-i18n="noteHint">Story flavor only — colors their weekly tales. Blank = the default for the trade.</div>
         </div>
         <div class="ret-actions" id="actions">
-          <button type="button" class="ret-btn ret-btn--confirm" id="btn-confirm">Hire</button>
-          <button type="button" class="ret-btn" id="btn-decline">Not now</button>
+          <button type="button" class="ret-btn ret-btn--confirm" id="btn-confirm" data-i18n="hire">Hire</button>
+          <button type="button" class="ret-btn" id="btn-decline" data-i18n="notNow">Not now</button>
         </div>
         <div class="ret-timer" aria-hidden="true">
           <div id="timer-fill" class="ret-timer-fill"></div>
@@ -406,9 +408,11 @@
       //
       // IN  -- window.receiveRetainerPromptData({
       //          npcName, namedPlace, jobs:[...], jobDescs:[...],
-      //          arrangements:[...], allLocations:[...], timeoutMs })
+      //          arrangements:[...], allLocations:[...], timeoutMs, strings })
       //          (namedPlace prefills the Workplace field; allLocations feeds
-      //           the type-ahead autocomplete — the closest few are shown.)
+      //           the type-ahead autocomplete — the closest few are shown;
+      //           strings: the DLL's popup.retainer.* text in the UI language,
+      //           by short key.)
       // OUT -- window.retainerPromptChoice(JSON.stringify({
       //          choice, location, placeName, job, arrangement, wage, cut, note }))
       //         choice in { "confirm", "decline" }
@@ -447,6 +451,29 @@
         var jobDescs = [];          // default "how the work goes" per job (placeholder)
         var allLocations = [];      // full resolvable-location index (autocomplete)
         var placeMarker = true;     // false = hire without a work marker (NPC keeps own AI)
+        var STR = {};
+
+        // A payload string, else the English literal; {name} vars filled in one pass (a value is never rescanned).
+        function S(k, fb, vars) {
+          var s = (typeof STR[k] === 'string' && STR[k]) ? STR[k] : fb;
+          if (!vars) return s;
+          return s.replace(/\{(\w+)\}/g, function (m, n) {
+            return Object.prototype.hasOwnProperty.call(vars, n) ? String(vars[n]) : m;
+          });
+        }
+
+        // data-i18n elements: data-i18n-en keeps the authored English, the fallback on every later receive.
+        function applyStrings() {
+          var els = document.querySelectorAll('[data-i18n]');
+          for (var i = 0; i < els.length; i++) {
+            var el = els[i];
+            var attr = el.getAttribute('data-i18n-attr');
+            if (!el.hasAttribute('data-i18n-en'))
+              el.setAttribute('data-i18n-en', attr ? (el.getAttribute(attr) || '') : el.textContent);
+            var text = S(el.getAttribute('data-i18n'), el.getAttribute('data-i18n-en'));
+            if (attr) el.setAttribute(attr, text); else el.textContent = text;
+          }
+        }
 
         // Employed (0) and Sworn (3) both pay a flat weekly wage; Partnership (1)
         // and Vassalage (2) take a percentage cut instead.
@@ -458,16 +485,16 @@
 
         function syncWageRow() {
           if (needsWage()) {
-            wageLbl.textContent = 'Weekly wage';
-            wageE.placeholder = 'standard';
-            wageHint.textContent = 'blank = standard wage';
+            wageLbl.textContent = S('weeklyWage', 'Weekly wage');
+            wageE.placeholder = S('wagePlaceholder', 'standard');
+            wageHint.textContent = S('wageHint', 'blank = standard wage');
           } else {
             // Default cut: Partnership (1) is near-equals → 50; Vassalage (2,
             // coerced) → 70. Blank routes to the same native default.
             var defCut = (selectedArr === 2) ? '70' : '50';
-            wageLbl.textContent = 'Your cut %';
+            wageLbl.textContent = S('yourCut', 'Your cut %');
             wageE.placeholder = defCut;
-            wageHint.textContent = '5-95, blank = ' + defCut + '%';
+            wageHint.textContent = S('cutHint', '5-95, blank = {cut}%', { cut: defCut });
           }
           wageE.value = '';
         }
@@ -621,23 +648,25 @@
         }
 
         function applyJobPlaceholder() {
-          noteE.placeholder = jobDescs[selectedJob] || 'how their week tends to go (optional)';
+          noteE.placeholder = jobDescs[selectedJob] || S('notePlaceholder', 'how their week tends to go (optional)');
           syncCustomRow();
         }
 
-        function buildJobPills(jobs, activeIdx) {
+        // jobs / arrangements are the canonical names (isCustomJob and matchIndex read them); shown, when the
+        // bridge sends it, is what each pill displays in the UI language.
+        function buildJobPills(jobs, activeIdx, shown) {
           jobLabels = jobs || ['Miner'];
           var defs = jobLabels.map(function (label, idx) {
-            return { label: label, onPick: function () { selectedJob = idx; applyJobPlaceholder(); } };
+            return { label: (shown && shown[idx]) || label, onPick: function () { selectedJob = idx; applyJobPlaceholder(); } };
           });
           selectedJob = activeIdx || 0;
           buildPills(jobPillsE, defs, selectedJob);
           applyJobPlaceholder();   // seed placeholder + custom-row visibility
         }
 
-        function buildArrPills(arrangements, activeIdx) {
+        function buildArrPills(arrangements, activeIdx, shown) {
           var defs = (arrangements || ['Employed']).map(function (label, idx) {
-            return { label: label, onPick: function () { selectedArr = idx; syncWageRow(); } };
+            return { label: (shown && shown[idx]) || label, onPick: function () { selectedArr = idx; syncWageRow(); } };
           });
           selectedArr = activeIdx || 0;
           buildPills(arrPillsE, defs, selectedArr);
@@ -672,31 +701,33 @@
         function buildMarkerToggle() {
           placeMarker = true;
           buildPills(markerToggleE, [
-            { label: 'Drop a marker', onPick: function () { placeMarker = true;  setWorkplaceVisible(true); } },
-            { label: 'Leave them be', onPick: function () { placeMarker = false; setWorkplaceVisible(false); } }
+            { label: S('dropMarker', 'Drop a marker'), onPick: function () { placeMarker = true;  setWorkplaceVisible(true); } },
+            { label: S('leaveThemBe', 'Leave them be'), onPick: function () { placeMarker = false; setWorkplaceVisible(false); } }
           ], 0);
           setWorkplaceVisible(true);
         }
 
         window.receiveRetainerPromptData = function (payload) {
           payload = payload || {};
+          STR = (payload.strings && typeof payload.strings === 'object') ? payload.strings : {};
+          applyStrings();
           var ms = payload.timeoutMs || 90000;
           if (ms < 1000) ms = 1000;
 
-          var name = payload.npcName || 'this one';
+          var name = payload.npcName || S('thisOne', 'this one');
           npcE.textContent = name;
-          bodyE.innerHTML =
-            'Put <span class="ret-name">' + escapeHtml(name) +
-            '</span> on your books? They will tend the work and settle up each week.';
+          var nameHtml = '<span class="ret-name">' + escapeHtml(name) + '</span>';
+          bodyE.innerHTML = S('body', 'Put {name} on your books? They will tend the work and settle up each week.')
+            .split('{name}').map(escapeHtml).join(nameHtml);
 
-          jobDescs = payload.jobDescs || [];
+          jobDescs = payload.jobDescLabels || payload.jobDescs || [];
           allLocations = payload.allLocations || [];
           noteE.value = '';
           customNameE.value = '';
 
           // Workplace: prefill with the LLM's named place (if any); blank = here.
           locE.value = (payload.namedPlace || '').toString();
-          locE.placeholder = 'Here (where you stand) — or type a place';
+          locE.placeholder = S('locPlaceholder', 'Here (where you stand) — or type a place');
           hideSuggest();
 
           // Work-spot toggle (defaults to "Drop a marker", workplace shown).
@@ -706,8 +737,8 @@
           // job/arrangement (HireRetainer), else default to the first.
           var jobs = payload.jobs || ['Miner'];
           var arrs = payload.arrangements || ['Employed'];
-          buildJobPills(jobs, matchIndex(jobs, payload.prefillJob));
-          buildArrPills(arrs, matchIndex(arrs, payload.prefillArrangement));
+          buildJobPills(jobs, matchIndex(jobs, payload.prefillJob), payload.jobLabels);
+          buildArrPills(arrs, matchIndex(arrs, payload.prefillArrangement), payload.arrangementLabels);
           syncWageRow();
 
           // Restart drain bar.

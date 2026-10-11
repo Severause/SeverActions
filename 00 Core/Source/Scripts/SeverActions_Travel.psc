@@ -378,7 +378,6 @@ Function AbandonAmbushOnLoad()
                     ActorUtil.RemovePackageOverride(t, jog)
                 EndIf
                 SeverActionsNative.LinkedRef_Clear(t, TravelTargetKeyword)
-                SeverActionsNative.OrphanCleanup_UnregisterTraveler(t)
                 SkyrimNetApi.UnregisterPackage(t, "TalkToPlayer")
                 SkyrimNetApi.UnregisterPackage(t, "FollowPlayer")
                 If bladeFaction != None

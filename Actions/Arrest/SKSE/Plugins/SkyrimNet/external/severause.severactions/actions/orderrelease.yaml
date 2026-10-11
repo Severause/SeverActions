@@ -1,6 +1,6 @@
 customCategory: arrest
 name: OrderRelease
-description: "Only during a judgment, with a prisoner brought before the speaker in restraints: the charge looks thin or the plea convinces, and the prisoner is set free on the spot. If {{ player.name }} ordered the arrest, the escorting guard speaks this verdict on {{ player.name }}'s word. Decide once the prisoner has been heard; while still listening, just talk. Guilty: OrderJailed. Someone already in a cell: FreeFromJail."
+description: "Only during a judgment, with a prisoner brought before the speaker in restraints: the charge looks thin or the plea convinces, and the prisoner is set free on the spot. If {{ player.name }} ordered the arrest, the escorting guard speaks this verdict on {{ player.name }}'s word. Decide once the prisoner has been heard; while still listening, just talk. Guilty: OrderJailed. Someone already in a cell: FreeFromJail at the cell, or PardonPrisoner from wherever the speaker is."
 questEditorId: SeverActions
 scriptName: SeverActions_ArrestJudgment
 executionFunctionName: OrderRelease_Execute

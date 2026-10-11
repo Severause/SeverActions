@@ -1,6 +1,6 @@
 customCategory: economy
 name: CollectPayment
-description: "Use when money owed to the speaker is paid now: a tab settled, a fee for a job or service, or coin {{ player.name }} has just offered or agreed to hand over (their words alone move nothing, so this collects it). Coin goes from the payer to the speaker. Not for naming a price or demanding payment before they agree, not after BuyItem or SellItem (the trade already took the coin), and not for coin someone already handed over with their own action. Never when the speaker pays (GiveGold, RepayDebt, BuyItem) or sells an item (SellItem). A bounty is Arrest."
+description: "Use when money owed to the speaker is paid now: a tab settled, a fee for a job or service, or coin {{ player.name }} has just offered or agreed to hand over (their words alone move nothing, so this collects it). Coin goes from the payer to the speaker; {{ player.name }} is asked to confirm, so they may be billed unasked. Not for naming a price or demanding payment from anyone else before they agree, not after BuyItem or SellItem (the trade took the coin), and not for coin already handed over with someone's own action. Never when the speaker pays (GiveGold, RepayDebt, BuyItem) or sells an item (SellItem). A bounty is Arrest."
 questEditorId: SeverActions
 scriptName: SeverActions_Currency
 executionFunctionName: CollectPayment_Execute

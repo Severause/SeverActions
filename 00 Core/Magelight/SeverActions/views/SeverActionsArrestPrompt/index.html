@@ -13,7 +13,7 @@
            green  -- Pay Fine, Bribe (transactional, ends peacefully)
            red    -- Resist, Refuse (turns hostile)
            tan    -- Persuade (speech check, neutral)
-           brass  -- Submit (default / auto-fire on timeout/Escape) */
+           brass  -- Submit (default / auto-fire on timeout) */
 
       /* Default values: the main UI's tokens, then this card's own with their gen_themes.py roles. */
       :root {
@@ -264,7 +264,7 @@
     </style>
   </head>
   <body>
-    <div id="overlay" class="arrest-overlay" role="dialog" aria-modal="false" aria-label="Arrest">
+    <div id="overlay" class="arrest-overlay" role="dialog" aria-modal="false" aria-label="Arrest" data-i18n="ariaLabel" data-i18n-attr="aria-label">
       <div class="arrest-card">
         <div class="arrest-header" id="hdr">ARREST</div>
         <div class="arrest-body" id="body">
@@ -284,13 +284,14 @@
       //
       // IN  -- window.receiveArrestPromptData({
       //          guardName, holdName, bounty, bribeCost,
-      //          paymentFailed, persuadeAttempted, lowBounty, timeoutMs })
+      //          paymentFailed, persuadeAttempted, lowBounty, timeoutMs,
+      //          strings })   // popup.arrest.* in the UI language, prefix stripped
       // OUT -- window.arrestPromptChoice(JSON.stringify({choice}))
       //         choice in { "submit", "resist", "pay_fine", "bribe", "persuade" }
       //
-      // Timeout / Escape -> auto-fires "submit". Submit is the safe default;
-      // the player just walks into a cell rather than triggering an
-      // unintended kill-on-sight from a stalled prompt.
+      // Timeout -> auto-fires "submit", the safe default: the player walks into
+      // a cell rather than triggering an unintended kill-on-sight from a stalled
+      // prompt. Escape posts "dismiss" and the script's watchdog reopens the card.
 
       (function () {
         var overlay   = document.getElementById('overlay');
@@ -301,6 +302,37 @@
         var actionsE  = document.getElementById('actions');
         var timerFill = document.getElementById('timer-fill');
         var autoHandle = null;
+        var STR = {};
+
+        function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+
+        // The payload's string for `k`, else the English `fb`; {name} vars filled in one pass.
+        function S(k, fb, vars) {
+          var s = (has(STR, k) && typeof STR[k] === 'string' && STR[k]) ? STR[k] : fb;
+          if (!vars) return s;
+          return s.replace(/\{(\w+)\}/g, function (m, n) { return has(vars, n) ? String(vars[n]) : m; });
+        }
+
+        // S() as HTML: the text is escaped, each var is inserted as given (already HTML).
+        function SHtml(k, fb, htmlVars) {
+          return escapeHtml(S(k, fb)).replace(/\{(\w+)\}/g, function (m, n) {
+            return has(htmlVars, n) ? htmlVars[n] : m;
+          });
+        }
+
+        function applyStatic() {
+          var els = document.querySelectorAll('[data-i18n]');
+          for (var i = 0; i < els.length; i++) {
+            var el = els[i];
+            var attr = el.getAttribute('data-i18n-attr');
+            if (!el.hasAttribute('data-i18n-en')) {
+              el.setAttribute('data-i18n-en', attr ? (el.getAttribute(attr) || '') : el.textContent);
+            }
+            var text = S(el.getAttribute('data-i18n'), el.getAttribute('data-i18n-en'));
+            if (attr) el.setAttribute(attr, text);
+            else el.textContent = text;
+          }
+        }
 
         function postChoice(choice) {
           var body = JSON.stringify({ choice: choice });
@@ -349,36 +381,40 @@
           // Clear existing buttons.
           while (actionsE.firstChild) actionsE.removeChild(actionsE.firstChild);
 
-          var bribeLabel = 'Bribe (' + p.bribeCost + ' gold)';
-          var fineLabel  = 'Pay Fine (' + p.bounty + ' gold)';
+          var bribeLabel   = S('bribe', 'Bribe ({amount} gold)', { amount: p.bribeCost });
+          var fineLabel    = S('payFine', 'Pay Fine ({amount} gold)', { amount: p.bounty });
+          var submitLabel  = S('submit', 'Submit to Arrest');
+          var refuseLabel  = S('refuse', 'Refuse');
+          var resistLabel  = S('resist', 'Resist Arrest');
+          var persuadeLabel = S('persuade', 'Persuade');
 
           if (p.lowBounty) {
             // Minor offense -- fine or refuse only (no jail).
             if (p.paymentFailed) {
-              actionsE.appendChild(makeBtn('Submit to Arrest', 'submit', 'submit'));
-              actionsE.appendChild(makeBtn('Refuse',           'resist', 'resist'));
+              actionsE.appendChild(makeBtn(submitLabel, 'submit', 'submit'));
+              actionsE.appendChild(makeBtn(refuseLabel, 'resist', 'resist'));
             } else {
-              actionsE.appendChild(makeBtn(fineLabel, 'pay_fine', 'pay'));
-              actionsE.appendChild(makeBtn('Refuse',  'resist',   'resist'));
+              actionsE.appendChild(makeBtn(fineLabel,   'pay_fine', 'pay'));
+              actionsE.appendChild(makeBtn(refuseLabel, 'resist',   'resist'));
             }
           } else {
             // Major offense -- arrest options.
             if (p.paymentFailed && p.persuadeAttempted) {
-              actionsE.appendChild(makeBtn('Submit to Arrest', 'submit', 'submit'));
-              actionsE.appendChild(makeBtn('Resist Arrest',    'resist', 'resist'));
+              actionsE.appendChild(makeBtn(submitLabel, 'submit', 'submit'));
+              actionsE.appendChild(makeBtn(resistLabel, 'resist', 'resist'));
             } else if (p.paymentFailed && !p.persuadeAttempted) {
-              actionsE.appendChild(makeBtn('Submit to Arrest', 'submit',   'submit'));
-              actionsE.appendChild(makeBtn('Resist Arrest',    'resist',   'resist'));
-              actionsE.appendChild(makeBtn('Persuade',         'persuade', 'persuade'));
+              actionsE.appendChild(makeBtn(submitLabel,   'submit',   'submit'));
+              actionsE.appendChild(makeBtn(resistLabel,   'resist',   'resist'));
+              actionsE.appendChild(makeBtn(persuadeLabel, 'persuade', 'persuade'));
             } else if (!p.paymentFailed && p.persuadeAttempted) {
-              actionsE.appendChild(makeBtn('Submit to Arrest', 'submit', 'submit'));
-              actionsE.appendChild(makeBtn('Resist Arrest',    'resist', 'resist'));
-              actionsE.appendChild(makeBtn(bribeLabel,         'bribe',  'pay'));
+              actionsE.appendChild(makeBtn(submitLabel, 'submit', 'submit'));
+              actionsE.appendChild(makeBtn(resistLabel, 'resist', 'resist'));
+              actionsE.appendChild(makeBtn(bribeLabel,  'bribe',  'pay'));
             } else {
-              actionsE.appendChild(makeBtn('Submit to Arrest', 'submit',   'submit'));
-              actionsE.appendChild(makeBtn('Resist Arrest',    'resist',   'resist'));
-              actionsE.appendChild(makeBtn(bribeLabel,         'bribe',    'pay'));
-              actionsE.appendChild(makeBtn('Persuade',         'persuade', 'persuade'));
+              actionsE.appendChild(makeBtn(submitLabel,   'submit',   'submit'));
+              actionsE.appendChild(makeBtn(resistLabel,   'resist',   'resist'));
+              actionsE.appendChild(makeBtn(bribeLabel,    'bribe',    'pay'));
+              actionsE.appendChild(makeBtn(persuadeLabel, 'persuade', 'persuade'));
             }
           }
         }
@@ -386,34 +422,43 @@
         function renderBody(p) {
           // Header reads "ARREST IN <HOLD>" when we have a hold name.
           var hold = (p.holdName || '').toString().trim();
-          hdrE.textContent = hold ? ('ARREST IN ' + hold.toUpperCase()) : 'ARREST';
+          hdrE.textContent = hold
+            ? S('headerIn', 'ARREST IN {hold}', { hold: hold.toUpperCase() })
+            : S('header', 'ARREST');
 
-          guardE.textContent  = p.guardName || 'A guard';
-          bountyE.textContent = (p.bounty != null ? p.bounty : 0).toString();
+          var guardName = p.guardName || S('aGuard', 'A guard');
+          var bountyText = (p.bounty != null ? p.bounty : 0).toString();
+          guardE.textContent  = guardName;
+          bountyE.textContent = bountyText;
 
           // Contextual flavor line -- mirrors the SkyMessage text in
           // SeverActions_ArrestPlayer.psc::ShowPlayerArrestMenu.
-          var holdPhrase = hold ? (' in ' + hold) : '';
           var lead = '';
           if (p.lowBounty) {
             lead = p.paymentFailed
-              ? ' The guard won’t accept payment attempts anymore.'
-              : ' Pay your fine or face the consequences.';
+              ? S('leadLowNoPayment', 'The guard won’t accept payment attempts anymore.')
+              : S('leadLow', 'Pay your fine or face the consequences.');
           } else if (p.paymentFailed && p.persuadeAttempted) {
-            lead = ' The guard has lost all patience. Submit or resist.';
+            lead = S('leadNoPatience', 'The guard has lost all patience. Submit or resist.');
           } else if (p.paymentFailed) {
-            lead = ' The guard won’t accept payment anymore.';
+            lead = S('leadNoPayment', 'The guard won’t accept payment anymore.');
           } else if (p.persuadeAttempted) {
-            lead = ' The guard has lost patience. Make your choice now.';
+            lead = S('leadLostPatience', 'The guard has lost patience. Make your choice now.');
           } else {
-            lead = ' Submit to arrest or face the consequences.';
+            lead = S('leadDefault', 'Submit to arrest or face the consequences.');
           }
 
-          bodyE.innerHTML =
-            '<span class="arrest-name">' + escapeHtml(p.guardName || 'A guard') + '</span>' +
-            ' stops you. Bounty: <span class="arrest-bounty">' +
-            escapeHtml((p.bounty != null ? p.bounty : 0).toString()) +
-            '</span> gold' + escapeHtml(holdPhrase) + '.' + escapeHtml(lead);
+          var parts = {
+            guard:  '<span class="arrest-name">' + escapeHtml(guardName) + '</span>',
+            bounty: '<span class="arrest-bounty">' + escapeHtml(bountyText) + '</span>',
+            hold:   escapeHtml(hold)
+          };
+          var stops = hold
+            ? SHtml('bodyIn', '{guard} stops you. Bounty: {bounty} gold in {hold}.', parts)
+            : SHtml('body', '{guard} stops you. Bounty: {bounty} gold.', parts);
+          // No space after a CJK full stop.
+          var gap = /[。！？]$/.test(stops) ? '' : ' ';
+          bodyE.innerHTML = stops + gap + escapeHtml(lead);
         }
 
         function escapeHtml(s) {
@@ -427,9 +472,11 @@
 
         window.receiveArrestPromptData = function (payload) {
           payload = payload || {};
+          STR = (payload.strings && typeof payload.strings === 'object') ? payload.strings : {};
           var ms = payload.timeoutMs || 60000;
           if (ms < 1000) ms = 1000;
 
+          applyStatic();
           renderBody(payload);
           renderButtons(payload);
 

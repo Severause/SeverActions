@@ -11,6 +11,10 @@ SeverActions_Arrest Property ArrestScript Auto
 
 ; --- Lifecycle ---
 
+; AddBountyToNPC: the most one charge may add, and the real seconds before the same suspect can be charged again.
+Int Property NPC_CHARGE_MAX = 5000 AutoReadOnly
+Float Property NPC_CHARGE_COOLDOWN = 60.0 AutoReadOnly
+
 Function Maintenance()
     {Resolves ArrestScript and registers the bounty-pay popup listener. Called
      from SeverActions_Arrest.Maintenance, which calls MigrateLegacyStorage itself.}
@@ -154,19 +158,20 @@ EndFunction
 ; --- SkyrimNet action (addbountytoplayer.yaml) ---
 
 String Function NormalizeCrimeType(String asRaw)
-    {Maps an LLM crime label onto addbountytoplayer.yaml's enum (assault, theft,
-     murder, trespass, pickpocket, contempt, abuse_of_power) so qualifiers such
-     as "murder spree" never reach persistent memory. Substring match; anything
-     unrecognised becomes "assault".}
+    {Maps an LLM crime label onto addbountytoplayer.yaml's seven crimes (assault,
+     theft, murder, trespass, pickpocket, contempt, abuse_of_power), so a qualifier
+     such as "murder spree" is stored as the crime. Substring match on unambiguous
+     words only: any other crime ("arson", "killing livestock") is returned as
+     given for Bounty_CleanCrime. "" becomes "assault".}
 
     If asRaw == "" || asRaw == "None"
         Return "assault"
     EndIf
     String lc = asRaw  ; no ToLower: each token is tested lower-case and capitalised
-    If StringUtil.Find(lc, "abuse") >= 0 || StringUtil.Find(lc, "Abuse") >= 0
+    If StringUtil.Find(lc, "of power") >= 0 || StringUtil.Find(lc, "of Power") >= 0 || StringUtil.Find(lc, "abuse_of_power") >= 0
         Return "abuse_of_power"
     EndIf
-    If StringUtil.Find(lc, "murder") >= 0 || StringUtil.Find(lc, "Murder") >= 0 || StringUtil.Find(lc, "kill") >= 0 || StringUtil.Find(lc, "Kill") >= 0
+    If StringUtil.Find(lc, "murder") >= 0 || StringUtil.Find(lc, "Murder") >= 0 || StringUtil.Find(lc, "manslaughter") >= 0 || StringUtil.Find(lc, "Manslaughter") >= 0
         Return "murder"
     EndIf
     If StringUtil.Find(lc, "pickpocket") >= 0 || StringUtil.Find(lc, "Pickpocket") >= 0
@@ -184,13 +189,14 @@ String Function NormalizeCrimeType(String asRaw)
     If StringUtil.Find(lc, "assault") >= 0 || StringUtil.Find(lc, "Assault") >= 0 || StringUtil.Find(lc, "attack") >= 0 || StringUtil.Find(lc, "Attack") >= 0 || StringUtil.Find(lc, "batter") >= 0 || StringUtil.Find(lc, "Batter") >= 0
         Return "assault"
     EndIf
-    Return "assault"
+    Return asRaw
 EndFunction
 
 Function AddBountyToPlayer_Internal(Actor akGuard, Int bountyAmount, String crimeType)
     {A guard adds bounty for a crime they saw. Uses the tracked bounty, not
      vanilla crime gold, so vanilla arrest dialogue stays quiet. crimeType goes
-     through NormalizeCrimeType.}
+     through NormalizeCrimeType and Bounty_CleanCrime, and that one label is
+     stored, logged and narrated.}
 
     If !ArrestScript
         ; The rest logs through ArrestScript.DebugMsg: fail loudly so a missing
@@ -216,7 +222,11 @@ Function AddBountyToPlayer_Internal(Actor akGuard, Int bountyAmount, String crim
         Return
     EndIf
 
-    String normalizedCrime = NormalizeCrimeType(crimeType)
+    ; One label for the store, the log and the persistent event. An older DLL leaves the native unbound ("").
+    String normalizedCrime = SeverActionsNativeExt2.Bounty_CleanCrime(NormalizeCrimeType(crimeType))
+    If normalizedCrime == ""
+        normalizedCrime = "assault"
+    EndIf
 
     ModTrackedBounty(crimeFaction, bountyAmount)
 
@@ -234,6 +244,74 @@ Function AddBountyToPlayer_Internal(Actor akGuard, Int bountyAmount, String crim
 
     String eventMsg = akGuard.GetDisplayName() + " witnessed " + Game.GetPlayer().GetDisplayName() + " commit " + normalizedCrime + " and added " + bountyAmount + " gold to their bounty in " + holdName + ". Total bounty is now " + totalBounty + " gold."
     SkyrimNetApi.RegisterPersistentEvent(eventMsg, akGuard, Game.GetPlayer())
+EndFunction
+
+Function AddBountyToNPC_Internal(Actor akGuard, Actor akSuspect, Int bountyAmount, String crimeType)
+    {A guard charges someone other than the player with a crime they saw: the suspect's own tracked
+     bounty in the guard's hold (BountyStore's offender axis). The label goes through NormalizeCrimeType
+     and Bounty_CleanCrime. One charge per suspect a minute, so a repeating model cannot pile them up.}
+
+    If !ArrestScript
+        Debug.Trace("[SeverActions_ArrestBounty] ERROR: ArrestScript reference is None")
+        Return
+    EndIf
+    If akGuard == None || akSuspect == None
+        ArrestScript.DebugMsg("ERROR: AddBountyToNPC called with None guard or suspect")
+        Return
+    EndIf
+    If akSuspect == Game.GetPlayer()
+        ArrestScript.DebugMsg("AddBountyToNPC: the suspect is the player - that charge is AddBountyToPlayer")
+        Return
+    EndIf
+    If akSuspect == akGuard || akSuspect.IsDead()
+        Return
+    EndIf
+    If bountyAmount <= 0
+        ArrestScript.DebugMsg("ERROR: Invalid bounty amount")
+        Return
+    EndIf
+    If bountyAmount > NPC_CHARGE_MAX
+        bountyAmount = NPC_CHARGE_MAX
+    EndIf
+
+    Float now = SeverActionsNativeExt2.Kernel_RealTime()
+    Float last = StorageUtil.GetFloatValue(akSuspect, "SeverActions_NpcChargeAt", -1000.0)
+    If now >= last && now - last < NPC_CHARGE_COOLDOWN
+        ArrestScript.DebugMsg("AddBountyToNPC: " + akSuspect.GetDisplayName() + " was charged moments ago - skipped")
+        Return
+    EndIf
+
+    Faction crimeFaction = SeverActionsNativeExt.Hold_GetCrimeFaction(akGuard)
+    If crimeFaction == None
+        crimeFaction = SeverActionsNativeExt2.Hold_GetCrimeFactionForRef(akGuard)
+    EndIf
+    If crimeFaction == None
+        ArrestScript.DebugMsg("WARNING: Could not determine guard's crime faction")
+        Return
+    EndIf
+
+    String crime = SeverActionsNativeExt2.Bounty_CleanCrime(NormalizeCrimeType(crimeType))
+    If crime == ""
+        crime = "assault"
+    EndIf
+    String holdName = SeverActionsNativeExt2.Hold_GetHoldNameForCrime(crimeFaction)
+    If holdName == ""
+        holdName = SeverActionsNativeExt.Hold_GetHoldName(akGuard)
+    EndIf
+
+    SeverActionsNativeExt.Native_Bounty_ModFor(akSuspect, crimeFaction, bountyAmount)
+    SeverActionsNativeExt.Native_Bounty_AddEventFor(akSuspect, crimeFaction, bountyAmount, crime, holdName)
+    StorageUtil.SetFloatValue(akSuspect, "SeverActions_NpcChargeAt", now)
+
+    Int total = SeverActionsNativeExt.Native_Bounty_GetFor(akSuspect, crimeFaction)
+    ArrestScript.DebugMsg("Charged " + akSuspect.GetDisplayName() + " " + bountyAmount + " for " + crime + " in " + holdName + " (total: " + total + ")")
+    ; Only the player's people: a guard charging a stranger needs no notice on the player's screen.
+    If SeverActionsNativeExt2.FriendlyFire_IsProtected(akSuspect)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrestbounty.npcBountyAdded", akSuspect.GetDisplayName(), ("" + bountyAmount)))
+    EndIf
+
+    String eventMsg = akGuard.GetDisplayName() + " witnessed " + akSuspect.GetDisplayName() + " commit " + crime + " and added " + bountyAmount + " gold to their bounty in " + holdName + ". Their bounty there is now " + total + " gold."
+    SkyrimNetApi.RegisterPersistentEvent(eventMsg, akGuard, akSuspect)
 EndFunction
 
 Function PayNpcBountyToGuard_Internal(Actor akGuard, String offenderName)

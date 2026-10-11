@@ -50,7 +50,8 @@ Bool Function ServiceBool(String asSvc, Form akA, Form akB, String asArg, Float 
      or its wait, torn down synchronously because the caller puts its own package on next
      (DR13). afArg 0.0 (dismiss / wait / follow) leaves follower status alone; 1.0 restores it.
      "stripTravelOverrides": SeverActions_TravelCore.StripTravelOverrides(akA) - every travel
-     package override a journey may have left on akA, for the orphan-cleanup travel branch.
+     package override a journey may have left on akA. No caller in this build; kept for a
+     resumed older frame.
      An unanswered name gets the base default, never another service's work.}
     If asSvc != "cancelJourney" && asSvc != "stripTravelOverrides"
         Return Parent.ServiceBool(asSvc, akA, akB, asArg, afArg)

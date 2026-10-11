@@ -1,6 +1,6 @@
 customCategory: sa_captives
 name: ReleaseCaptive
-description: "Use when {{ player.name }} orders a captive set free, or the speaker decides in this line to free one out of mercy, a bargain or a change of heart. Their bonds are cut and they return to their life, remembering who held them; a seizure still under way is called off. Only for someone the speaker's side holds, never the speaker themself. Not for 'maybe we let her go later'; to keep them but loosen their bonds, UntieCaptive."
+description: "Use when {{ player.name }} orders a captive set free, or the speaker decides in this line to free one out of mercy, a bargain or a change of heart. Their bonds are cut and they return to their life, remembering who held them; a seizure still under way is called off. Only for someone the speaker's side holds, never the speaker themself. Not for 'maybe we let her go later'; to keep them but loosen their bonds, UntieCaptive. A prisoner in a jail cell is the Arrest category."
 questEditorId: SeverActions
 scriptName: SeverActions_Kidnap
 executionFunctionName: ReleaseCaptive
@@ -40,6 +40,15 @@ eligibilityRules:
       - decoratorName: "sever_in_scene"
         arguments: ["currentActor"]
         comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Only someone who may handle a captive held now: the holder, one of the player's companions for the
+      # player's side, a jarl or housecarl for their own guards' (sever_holds_captive). "" = none.
+      - decoratorName: "sever_holds_captive"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
         expectedValue: ""
     logicalOperator: "AND"
     required: true

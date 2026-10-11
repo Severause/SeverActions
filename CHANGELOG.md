@@ -1,5 +1,36 @@
 # SeverActions Changelog
 
+## v4.3.0 - Law and Language
+
+Magelight UI 1.0.0 is bundled (`98 Magelight UI`), the first stable version. Since 0.31.2:
+
+- Behind an ENB, ReShade or another `d3d11.dll` / `dxgi.dll` wrapper, menus no longer open invisible: they draw in the game's own interface pass without editing `Magelight.json`.
+- Changing UI Scale in Settings rebuilds the menu at the new size, so the text stays sharp instead of blurring until a restart.
+- Typing into a menu no longer sets off other mods' hotkeys that read the keyboard directly.
+- A PC whose fallback font cannot load no longer loses every menu, and fonts in folders with non-English names load.
+- VR: closing a page with a controller button no longer passes that button to the game.
+- `Magelight.log` starts with what the game runs on (game, SKSE, Windows, graphics card) and writes your Windows user folder as `%USERPROFILE%`.
+
+World > Law & Crime replaces the Arrests tab and brings bounties and arrests onto one page: your bounty in each of the nine holds (with Clear, Clear All and Add bounty, a bounty you put on yourself for roleplay), arrests under way, the jail roster beside your people who are wanted, and captives. Enterprises keeps the debts, on a tab now called Debts. Every guard, jarl, housecarl and steward of a hold knows what you are wanted for there, not just the amount. Guards can charge an NPC with a crime, the jail roster remembers what each prisoner was jailed for, a jarl or housecarl can pardon a prisoner held anywhere in their hold, and a guard freeing a prisoner unlocks the cell door. An arrest is jailed in the hold where it happens instead of falling back to Whiterun; an arrest in a hold SeverActions cannot place (Solstheim, a modded hold) is refused.
+
+A guard who tries to arrest one of your followers, or a retainer on guard duty, talks to them first. They can pay the charge (a fine, or a bribe for a large bounty), go quietly or refuse; the guard can drop the charge, press it or take them in. The talk keeps going on its own and ends after a time limit (150 seconds by default) with a verdict. Refusing is a real fight: the guard beats them into submission and takes them in, or they get away, and if you hit the guard yourself the fight becomes yours and they rejoin you. An arrested follower stays arrested: nothing pulls them back to you, they keep their own clothes in jail, and they serve a set time (one day by default, or until you free them). The settings are in Settings > Arrest.
+
+Settings > UI Display has a Language setting: the game's language (the default), English, French, Russian or Japanese, whatever language the game is in. Every page, popup and the quick wheel is translated into French, Russian and Japanese, and the payment, debt, trade and letter cards no longer show in English on a translated game. Messages at the top of the screen follow the setting where the game's font can draw it. Names from the game and other mods, text already saved in a save file and some notifications stay as they are.
+
+Outfits for you: the Outfits page has a You entry. Save what you are wearing, map outfits to situations (combat, sleep, rain, snow, home, town, adventure) and your own auto-switch changes you when the situation does, or put one on with Wear Now. It only swaps your own gear: it never adds, removes or copies an item, and it never takes off something you put on yourself unless the new outfit needs the slot. A mirror shows you, and Try On dresses you in an outfit you are building, lending catalog pieces you do not own until you close the menu.
+
+For NPCs, the auto-switch can borrow a related outfit for a situation with none mapped (Outfits > Outfit Settings > Borrow Related Outfits, off by default), puts back what they wore before a fight, and changes at doors and beds without the usual delay. With the Tailor mod installed, SeverActions leaves the NPCs Tailor dresses to it (a setting on the Outfits page). Children are never dressed or undressed. An NPC's own default outfit can be cleared and restored from their wardrobe, and outfit pieces another mod forces on them come off. Saved presets on non-followers survive a force-remove, and there are 200 outfit slots instead of 100. Taking a piece of an NPC's active preset off them leaves them one copy, so it no longer duplicates. Hair in the mirror looks as full as in game.
+
+Bio Blocks come in two starter packs, General (113 blocks, with religion, dislikes, phobias and vices new) and Adult (67), added or removed on the Bio Blocks page. Adult tabs sit under a folded Adult heading and stay out of All blocks and searches. A tab can be set to one block per NPC, so applying a block replaces the other one from that tab. Libraries from before 3.9.13 get no duplicates: your old copies of the shipped blocks are recognised and take the cleaned wording, and nothing you wrote or edited is touched. For mod authors, the Bio Blocks API (v4) lists the blocks an NPC carries and every block in the library, announces changes, and reaches SeverActions' own blocks by key.
+
+NPCs move money on their own again: a merchant or innkeeper bills you for what they just did (you confirm it), and a grateful NPC tips or rewards you now and then. Merchants recite their shop stock only at their shop and during opening hours, judged from the game's merchant records, so it works on a translated game and with modded merchants. A follower eats from their pack as soon as they would start complaining of hunger, Force Feed counts the food's own value, and a fed follower stops bringing up an old complaint. An NPC who writes to ask for work remembers writing the letter. Rumours are kept one list per hold, and a pinned rumour no longer reaches every NPC in Skyrim.
+
+Outlaw camps: the camp challenge waits until someone in the camp actually spots you, so sneaking through unseen is never challenged, and sneaking near outlaws who have not seen you no longer breaks the truce. With the truce off, wild camps go quiet and camps sworn to you keep the peace; turning off necromancers or the Forsworn releases those already calmed. A vampire follower no longer reads the bandit standoff text. A deserter's grudge ambush and a captive's search party count only once they actually come, a reload gives them back, and a refused ransom stuck on a lost search reopens. Only fences serve jail terms; other retainers taken by the guards wait in jail until you bail them.
+
+Also: on Skyrim AE a travelling follower is no longer stopped as "dead", a companion making an arrest is no longer pulled back to you through a door, the stall after loading a save is shorter on large load orders, a follower relaxing at home is released properly when you leave, and the AttackTarget error in the Papyrus log on the player is gone. The old orphan-cleanup scanner is removed, with its setting.
+
+Installing this version: install it over 4.2.x with Replace. The installer's pages and choices are the same, and saves load as they are. Two descriptions are reworded: the SL Aroused options now say they are for SLO Aroused (SexLabAroused.esm) and work with OStim or SexLab. Replace every file: the plugin and the scripts are checked against each other at load, and a mix from two versions stops with a message.
+
 ## v4.2.0 - Colours and Clarity
 
 Magelight UI 0.31.2 is bundled (`98 Magelight UI`):

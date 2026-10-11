@@ -1,6 +1,6 @@
 customCategory: outfit
 name: ClearSituationOutfit
-description: "Use when the speaker is told, or decides, in this line to stop changing outfit by themselves in one situation. Drops that one standing rule; they keep wearing whatever they have on now. Not for changing clothes now (ApplyOutfitPreset) or setting a new rule (SetSituationOutfit)."
+description: "Use when the speaker is told, or decides, in this line to stop changing outfit by themselves in one situation. Drops that situation's own outfit rule; they keep wearing whatever they have on now. Not for changing clothes now (ApplyOutfitPreset) or setting a new rule (SetSituationOutfit)."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: ClearSituationPreset_Execute

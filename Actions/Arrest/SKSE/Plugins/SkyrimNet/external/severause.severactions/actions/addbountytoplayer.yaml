@@ -10,10 +10,10 @@ parameterMapping:
     description: the guard writing the charge into the books
   - type: dynamic
     name: bountyAmount
-    description: "gold to add for the charge: assault 40-200, theft 75-300, murder 1000-3000, trespass 75-150, pickpocket 25-175, contempt 25-100, abuse_of_power 50-250"
+    description: "gold to add for the charge: assault 40-200, theft 75-300, murder 1000-3000, trespass 75-150, pickpocket 25-175, contempt 25-100, abuse_of_power 50-250; another crime by its severity, 25 for a petty one to 3000 for the gravest"
   - type: dynamic
     name: crimeType
-    description: "the charge, one of: assault, theft, murder, trespass, pickpocket, contempt (open defiance of the speaker), abuse_of_power"
+    description: "the charge: one of assault, theft, murder, trespass, pickpocket, contempt (open defiance of the speaker), abuse_of_power; only when none of these fits, the crime in one to three words (arson, smuggling, necromancy)"
 enabled: true
 defaultPriority: 7
 eligibilityRules:

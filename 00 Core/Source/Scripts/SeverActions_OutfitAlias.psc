@@ -60,7 +60,7 @@ Event OnObjectUnequipped(Form akBaseObject, ObjectReference akReference)
         If SeverActionsNative.Native_Outfit_IsNativeSuspended(follower)
             Return
         EndIf
-        ; Defer to bondage mods (DOM/PAH) — a captured/tied NPC's gear is theirs
+        ; Someone else owns the gear (OutfitDataStore::IsExternallyOwned)
         If SeverActionsNativeExt.Native_Outfit_IsExternallyControlled(follower)
             Return
         EndIf
@@ -113,7 +113,7 @@ Event OnObjectEquipped(Form akBaseObject, ObjectReference akReference)
     If SeverActionsNative.Native_Outfit_IsNativeSuspended(follower)
         Return
     EndIf
-    ; Defer to bondage mods (DOM/PAH) — a captured/tied NPC's gear is theirs
+    ; Someone else owns the gear (OutfitDataStore::IsExternallyOwned)
     If SeverActionsNativeExt.Native_Outfit_IsExternallyControlled(follower)
         Return
     EndIf
@@ -168,7 +168,7 @@ Event OnUpdate()
         Return
     EndIf
 
-    ; Defer to bondage mods (DOM/PAH) — don't re-equip over restraints / a strip
+    ; Someone else owns the gear (OutfitDataStore::IsExternallyOwned)
     If SeverActionsNativeExt.Native_Outfit_IsExternallyControlled(follower)
         Return
     EndIf
@@ -260,7 +260,7 @@ Function ReequipIfLocked()
         Return
     EndIf
 
-    ; Defer to bondage mods (DOM/PAH) — a captured/tied NPC stays as they are
+    ; Someone else owns the gear (OutfitDataStore::IsExternallyOwned)
     If SeverActionsNativeExt.Native_Outfit_IsExternallyControlled(follower)
         Return
     EndIf

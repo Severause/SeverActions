@@ -298,6 +298,7 @@ Actor CurrentGuard
 Actor CurrentPrisoner
 ObjectReference CurrentJailMarker
 String CurrentJailName
+Faction CurrentCrimeFaction ; the arrest's jurisdiction (ResolveArrestJurisdiction); the marker, name, session and jailing follow it
 Int ArrestState ; 0=none, 1=approaching, 2=arresting, 3=escorting, 4=escort plea (NPC pleading mid-march), 5=arrived (transient, OnArrivedAtJail in progress)
 
 ; Escort plea (ArrestState 4): its start time, and the one-plea-per-arrest gate
@@ -338,6 +339,7 @@ Float DispatchReturnTimeStart           ; Game time when the return leg (phase 5
 Float DispatchInitialDistance           ; Distance (units) between guard and target at dispatch start (for time-skip calc when cross-cell)
 Bool DispatchGuardOffScreen             ; True if guard is currently off-screen
 String DispatchTargetLocation           ; Cached location name for the target
+Faction DispatchCrimeFaction            ; The dispatch's jurisdiction, resolved once at its start and carried on the target's session
 
 ; Phase-6 judgment state lives in SeverActions_ArrestJudgment (StartJudgment / ResetState /
 ; CheckJudgmentProgress).
@@ -432,8 +434,6 @@ Function Maintenance()
     ; SandboxManager's cell-change cleanup (see OnNativeSandboxCleanup).
     RegisterForModEvent("SeverActionsNative_SandboxCleanup", "OnNativeSandboxCleanup")
 
-    ; The native OrphanCleanup scanner's arrest events (off by default; see OnOrphanCleanup).
-    RegisterForModEvent("SeverActions_OrphanCleanup", "OnOrphanCleanup")
     ; The arrest module's verb event (M-V): arrest, bounty, surrender and the eight kidnap
     ; verbs (OnVerb_Arrest forwards those to SeverActions_Kidnap).
     RegisterForModEvent("SeverActions_Verb_Arrest", "OnVerb_Arrest")
@@ -746,6 +746,13 @@ Event OnArrestSessionTimeout(string eventName, string strArg, float numArg, Form
         Return
     EndIf
 
+    ; A parley the driver never ended (its backstop): stand down.
+    If PlayerScript != None && PlayerScript.IsParleySuspect(akPrisoner)
+        DebugMsg("ArrestSessionTimeout: parley over " + akPrisoner.GetDisplayName() + " - standing down")
+        PlayerScript.EndParley("watchdog")
+        Return
+    EndIf
+
     ; No live slot: a native session a teardown failed to End(). Close it.
     DebugMsg("ArrestSessionTimeout: stale session for " + akPrisoner.GetDisplayName() + " - closing")
     SeverActionsNative.Native_ArrestSession_End(akPrisoner)
@@ -782,6 +789,12 @@ Event OnPrismaCancelArrest(string eventName, string strArg, float numArg, Form s
     If DispatchTarget == akPrisoner && DispatchPhase > 0
         DebugMsg("Magelight cancel: dispatch for " + akPrisoner.GetDisplayName())
         CancelDispatch()
+        Return
+    EndIf
+
+    If PlayerScript != None && PlayerScript.IsParleySuspect(akPrisoner)
+        DebugMsg("Magelight cancel: parley over " + akPrisoner.GetDisplayName())
+        PlayerScript.EndParley("cancelled")
         Return
     EndIf
 
@@ -827,6 +840,11 @@ Event OnFenceArrest(string eventName, string strArg, float numArg, Form sender)
     If fence.IsInFaction(SeverActions_Arrested) || fence.IsInFaction(SeverActions_Jailed)
         Return
     EndIf
+    ; A dead fence or one held captive is never jailed, by either path below.
+    If fence.IsDead() || SeverActionsNativeExt.Native_Kidnap_GetPhase(fence) != 0
+        DebugMsg("FenceArrest: " + fence.GetDisplayName() + " is dead or held captive - not jailed")
+        Return
+    EndIf
 
     ; Signed decimal is exact at any load-order slot; the float numArg only below 2^24.
     Faction crimeFac = None
@@ -843,10 +861,11 @@ Event OnFenceArrest(string eventName, string strArg, float numArg, Form sender)
         Actor guard = SeverActionsNative.FindNearestGuard(fence, 4000.0)
         If guard
             DebugMsg("FenceArrest (on-screen): " + guard.GetDisplayName() + " arresting " + fence.GetDisplayName())
-            ArrestNPC_Internal(guard, fence)
-            Return
+            If ArrestNPC_Internal(guard, fence)
+                Return
+            EndIf
         EndIf
-        ; Loaded but no guard nearby — fall through to a direct teleport-to-jail.
+        ; No guard nearby, or no jail where they stand: the venture is already Jailed, so jail directly.
     EndIf
     DebugMsg("FenceArrest (off-screen): jailing " + fence.GetDisplayName())
     JailFenceDirect(fence, crimeFac)
@@ -873,19 +892,27 @@ Function JailFenceDirect(Actor akFence, Faction akCrime)
     If akFence == None
         Return
     EndIf
+    ; Only a registered hold jails: the venture's hold, the fence's own crime faction, then the
+    ; hold they stand in.
     Faction crime = akCrime
-    If !crime
+    If crime != None && SeverActionsNativeExt2.Hold_GetJailNameForCrime(crime) == ""
+        crime = None
+    EndIf
+    If crime == None
         crime = akFence.GetCrimeFaction()
+        If crime != None && SeverActionsNativeExt2.Hold_GetJailNameForCrime(crime) == ""
+            crime = None
+        EndIf
+    EndIf
+    If crime == None
+        crime = SeverActionsNativeExt2.Hold_GetCrimeFactionForRef(akFence)
     EndIf
     ObjectReference jail = None
     If crime
         jail = SeverActionsNativeExt.Hold_GetJailMarkerForCrime(crime)
     EndIf
     If !jail
-        jail = JailMarker_Whiterun   ; last-resort fallback (same as GetJailMarkerForGuard)
-    EndIf
-    If !jail
-        DebugMsg("JailFenceDirect: no jail marker for " + akFence.GetDisplayName())
+        DebugMsg("JailFenceDirect: no registered hold to jail " + akFence.GetDisplayName() + " in - not jailed")
         Return
     EndIf
 
@@ -907,31 +934,43 @@ Bool Function ClearStaleArrestState(Actor akActor, String asWhy)
     {Clear a crashed arrest's residue from an actor: the four arrest factions (a stale Arrested /
      Jailed tag makes ArrestNPC_Internal refuse them), both keyword links, every arrest package
      override and the SkyrimNet busy lock. Called at arrest and dispatch start for guard and
-     suspect and at load for the FSM's slot actors. Refuses (false) while any live claim exists
-     (OnOrphanCleanup's exemptions, which it explains). True when it cleared something.}
+     suspect and at load for the FSM's slot actors. Refuses (false) while any live claim exists:
+     jail, a live arrest, or a system that reuses the arrest links and tears them down itself.
+     True when it cleared something.}
     If akActor == None || akActor == Game.GetPlayer()
         Return false
     EndIf
+    ; A jailed prisoner keeps the SandboxAnchorKW link, the PrisonerSandBox override and the
+    ; Jailed faction on purpose.
     If IsNPCJailed(akActor)
         Return false
     EndIf
+    ; A camp challenger holds FollowTargetKW on the player for the walk and the parley.
     If SeverActionsNativeExt2.Camp_ChallengeIsPending(akActor)
         Return false
     EndIf
+    ; The Final Audit's battlemages follow the Legate on FollowTargetKW.
     If SeverActionsNativeExt2.Venture_Audit_IsCollector(akActor)
         Return false
     EndIf
+    ; A bodyguard (an Actor work location) holds FollowTargetKW to their charge.
     If SeverActionsNative.Native_GetWorkLoc(akActor) as Actor
         Return false
     EndIf
+    ; Kidnap: the victim trails on FollowTargetKW and is held on SandboxAnchorKW; a kidnapper
+    ; on guard keeps SandboxAnchorKW.
     If SeverActionsNativeExt.Native_Kidnap_GetPhase(akActor) != 0 || SeverActionsNativeExt.Native_Kidnap_FindVictimOf(akActor) != None
         Return false
     EndIf
+    ; A brawl challenger trails their target on FollowTargetKW.
     If SeverActionsNative.Native_BrawlChallenge_IsActive(akActor)
         Return false
     EndIf
     If PlayerScript != None && akActor == PlayerScript.GetConfrontingGuard()
         Return false ; the confrontation holds FollowTargetKW on the player whatever ArrestState says
+    EndIf
+    If PlayerScript != None && (PlayerScript.IsParleyGuard(akActor) || PlayerScript.IsParleySuspect(akActor))
+        Return false ; the parley guard holds FollowTargetKW on the suspect
     EndIf
     Bool isActiveSlot = (akActor == CurrentGuard || akActor == CurrentPrisoner \
         || akActor == DispatchTarget || akActor == DispatchGuard)
@@ -980,15 +1019,9 @@ Bool Function ClearStaleArrestState(Actor akActor, String asWhy)
     If SeverActions_SandboxAnchorKW
         SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_SandboxAnchorKW)
     EndIf
-    If akActor.IsInFaction(SeverActions_WaitingArrest)
-        akActor.RemoveFromFaction(SeverActions_WaitingArrest)
-    EndIf
-    If akActor.IsInFaction(SeverActions_Arrested)
-        akActor.RemoveFromFaction(SeverActions_Arrested)
-    EndIf
-    If akActor.IsInFaction(SeverActions_Jailed)
-        akActor.RemoveFromFaction(SeverActions_Jailed)
-    EndIf
+    _LeaveFactionClean(akActor, SeverActions_WaitingArrest)
+    _LeaveFactionClean(akActor, SeverActions_Arrested)
+    _LeaveFactionClean(akActor, SeverActions_Jailed)
     _LeaveTaskFaction(akActor)
     SeverActionsNative.Native_SkyrimNet_ClearActorBusy(akActor)
     akActor.EvaluatePackage()
@@ -1010,156 +1043,50 @@ Function _BeginGuardTask(Actor akGuard)
 EndFunction
 
 Function _GuardOffSchedule(Actor akGuard)
-    {Takes a retainer guard off their schedule: a work shift outranks the arrest packages (100),
-     the guard pool by its quest priority 105 and the work overrides at 110. Call it only once
-     the arrest's native claim exists (PersistArrestState / ArrestSession_Begin,
-     PersistDispatchState): FollowerManager's schedule gates (_IsMakingArrest) read that claim to
-     keep the schedule off them until their part ends, and a schedule tick between an earlier
-     strip and the claim would seat them again.}
+    {Takes a retainer guard off their schedule: the schedule's work and guard-duty fallback
+     overrides (110) outrank the arrest packages (100); its aliases never do, since any override
+     outranks every alias. Call it only once the arrest's native claim exists
+     (PersistArrestState / ArrestSession_Begin, PersistDispatchState): FollowerManager's schedule
+     gates (_IsMakingArrest) read that claim to keep the schedule off them until their part ends,
+     and a schedule tick between an earlier strip and the claim would seat them again. A guard
+     with no work spot holds at most a home or relax hold, which the schedule tick releases
+     (Sched_HoldYield).}
     If akGuard && SeverActionsNative.Native_GetWorkLoc(akGuard)
         SeverActions_ModuleBase.CallBool("followers", "jailStrip", akGuard)
     EndIf
 EndFunction
 
-Function _LeaveTaskFaction(Actor akActor)
-    {Takes akActor off the on-task faction without the rank -1 residue RemoveFromFaction leaves,
-     which the stale sweeps' rank-blind IsInFaction reads as membership. A no-op for a non-member.}
-    If akActor == None || SeverActions_DispatchFaction == None
-        Return
-    EndIf
-    SeverActionsNativeExt2.Faction_RemoveClean(akActor, SeverActions_DispatchFaction)
-    ; A membership that survives the erase falls back to RemoveFromFaction. Its -1 residue cannot
-    ; block the guard's actions: sever_is_dispatched reads the native claim, not this faction.
-    If akActor.GetFactionRank(SeverActions_DispatchFaction) >= 0
-        DebugMsg("WARNING: DispatchFaction survived Faction_RemoveClean on " + akActor.GetDisplayName() + " - RemoveFromFaction fallback applied")
-        akActor.RemoveFromFaction(SeverActions_DispatchFaction)
+Function _PrisonerOffSchedule(Actor akPrisoner)
+    {Takes the prisoner off their schedule now, once their session is in custody: the schedule's
+     fallback overrides (100-110) tie or outrank the arrest's follow packages (100). The schedule
+     keeps off them while the custody lasts (Sched_HoldYield) and takes them back on its own after a
+     release; a jailing strips it until the jail release (StripScheduleForJail).}
+    If akPrisoner
+        SeverActions_ModuleBase.CallBool("followers", "leaveSchedule", akPrisoner)
     EndIf
 EndFunction
 
-Event OnOrphanCleanup(string eventName, string strArg, float numArg, Form sender)
-    {The native OrphanCleanup scanner's report (off by default; ClearStaleArrestState is the primary
-     sweep). strArg arrest_follow / arrest_sandbox = a holder of FollowTargetKW / SandboxAnchorKW,
-     arrest_faction_sweep = a member of an arrest faction; every one is reported, live arrests
-     included. Other strArgs are other scripts'. With no live claim on the actor, strips the link,
-     its packages and the stale factions.}
+Function _LeaveTaskFaction(Actor akActor)
+    {Takes akActor off the on-task faction (_LeaveFactionClean). A leftover -1 cannot block the
+     guard's actions: sever_is_dispatched reads the native claim, not this faction.}
+    _LeaveFactionClean(akActor, SeverActions_DispatchFaction)
+EndFunction
 
-    Actor akActor = sender as Actor
-    If !akActor
+Function _LeaveFactionClean(Actor akActor, Faction akFaction)
+    {Takes akActor off one of the arrest's own factions without the rank -1 entry RemoveFromFaction
+     leaves, which piles up beside the next membership and which rank-blind readers (SkyrimNet's
+     is_in_faction) count as membership. Only for a faction no NPC base authors (FactionUtils.h).
+     A no-op for a non-member.}
+    If akActor == None || akFaction == None
         Return
     EndIf
-
-    If strArg != "arrest_follow" && strArg != "arrest_sandbox" && strArg != "arrest_faction_sweep"
-        Return
+    SeverActionsNativeExt2.Faction_RemoveClean(akActor, akFaction)
+    ; A membership that survives the erase falls back to RemoveFromFaction.
+    If akActor.GetFactionRank(akFaction) >= 0
+        DebugMsg("WARNING: " + akFaction + " survived Faction_RemoveClean on " + akActor.GetDisplayName() + " - RemoveFromFaction fallback applied")
+        akActor.RemoveFromFaction(akFaction)
     EndIf
-
-    ; A jailed prisoner keeps the SandboxAnchorKW link, the PrisonerSandBox override and the
-    ; Jailed faction on purpose; test FIRST, or the sweep walks them out of jail.
-    If IsNPCJailed(akActor)
-        Return
-    EndIf
-
-    ; Exemptions: actors that reuse the arrest apparatus and tear it down themselves.
-    ; Camp challenger: FollowTargetKW on the player for the walk and the parley.
-    If SeverActionsNativeExt2.Camp_ChallengeIsPending(akActor)
-        Return
-    EndIf
-
-    ; Final Audit: the battlemages follow the Legate on FollowTargetKW; the Legate holds
-    ; his own anchor link.
-    If SeverActionsNativeExt2.Venture_Audit_IsCollector(akActor)
-        Return
-    EndIf
-
-    ; Bodyguard (Native_GetWorkLoc is an Actor): FollowTargetKW to their charge, with
-    ; FollowGuard_Prisoner as the follow.
-    If SeverActionsNative.Native_GetWorkLoc(akActor) as Actor
-        Return
-    EndIf
-
-    ; Kidnap: the victim trails the kidnapper on FollowTargetKW and is held on SandboxAnchorKW;
-    ; the kidnapper keeps SandboxAnchorKW while on guard (FindVictimOf, below).
-    If SeverActionsNativeExt.Native_Kidnap_GetPhase(akActor) != 0
-        Return
-    EndIf
-
-    ; Brawl challenger: trails their target on FollowTargetKW + GuardFollowPlayer.
-    If SeverActionsNative.Native_BrawlChallenge_IsActive(akActor)
-        Return
-    EndIf
-    If SeverActionsNativeExt.Native_Kidnap_FindVictimOf(akActor) != None
-        Return
-    EndIf
-
-    ; A live FSM slot or native session means an arrest in flight. A faction is no proof:
-    ; a crashed arrest's faction tag survives save/load.
-    Bool isActiveSlot = (akActor == CurrentGuard || akActor == CurrentPrisoner \
-        || akActor == DispatchTarget || akActor == DispatchGuard \
-        || (PlayerScript != None && akActor == PlayerScript.GetConfrontingGuard()))
-    Bool hasNativeSession = SeverActionsNative.Native_ArrestSession_HasSession(akActor)
-
-    If isActiveSlot || hasNativeSession
-        ; In flight: the FSM clears the link when it completes.
-        Return
-    EndIf
-
-    ; An orphan: clean up.
-    Bool inStaleArrestFaction = (akActor.IsInFaction(SeverActions_WaitingArrest) \
-        || akActor.IsInFaction(SeverActions_Arrested) \
-        || akActor.IsInFaction(SeverActions_Jailed) \
-        || (SeverActions_DispatchFaction != None && akActor.IsInFaction(SeverActions_DispatchFaction)))
-
-    ; A faction sweep that finds no stale faction lost a race with the arrest's own teardown:
-    ; nothing to do (and no EvaluatePackage on a healthy actor every scan).
-    If strArg == "arrest_faction_sweep" && !inStaleArrestFaction
-        Return
-    EndIf
-
-    DebugMsg("Orphan cleanup for " + akActor.GetDisplayName() + " (type=" + strArg \
-        + ", staleFaction=" + inStaleArrestFaction + ")")
-
-    If strArg == "arrest_follow"
-        ; The link's two follow packages and the guard's two alias-targeted travel packages.
-        If SeverActions_GuardEscortPackage
-            ActorUtil.RemovePackageOverride(akActor, SeverActions_GuardEscortPackage)
-        EndIf
-        If SeverActions_GuardApproachTarget
-            ActorUtil.RemovePackageOverride(akActor, SeverActions_GuardApproachTarget)
-        EndIf
-        If SeverActions_FollowGuard_Prisoner
-            ActorUtil.RemovePackageOverride(akActor, SeverActions_FollowGuard_Prisoner)
-        EndIf
-        If SeverActions_GuardFollowPlayer
-            ActorUtil.RemovePackageOverride(akActor, SeverActions_GuardFollowPlayer)
-        EndIf
-        SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_FollowTargetKW)
-    ElseIf strArg == "arrest_sandbox"
-        If SeverActions_PrisonerSandBox
-            ActorUtil.RemovePackageOverride(akActor, SeverActions_PrisonerSandBox)
-        EndIf
-        SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_SandboxAnchorKW)
-    EndIf
-
-    ; The stale factions go too (ClearStaleArrestState also clears them at arrest and dispatch start).
-    If inStaleArrestFaction
-        If akActor.IsInFaction(SeverActions_WaitingArrest)
-            akActor.RemoveFromFaction(SeverActions_WaitingArrest)
-        EndIf
-        If akActor.IsInFaction(SeverActions_Arrested)
-            akActor.RemoveFromFaction(SeverActions_Arrested)
-        EndIf
-        If akActor.IsInFaction(SeverActions_Jailed)
-            akActor.RemoveFromFaction(SeverActions_Jailed)
-        EndIf
-        _LeaveTaskFaction(akActor)
-        DebugMsg("Orphan cleanup removed stale arrest factions from " + akActor.GetDisplayName())
-    EndIf
-
-    ; Release the SkyrimNet busy lock a crashed arrest left, which would otherwise block other
-    ; plugins' multi-step actions on the actor for good (idempotent).
-    SeverActionsNative.Native_SkyrimNet_ClearActorBusy(akActor)
-
-    akActor.EvaluatePackage()
-EndEvent
+EndFunction
 
 Event OnEscortReapplyPackages(string eventName, string strArg, float numArg, Form sender)
     {EscortPackageReapplier's signal after a cell transition (strArg "cellAttach") or combat end
@@ -1352,6 +1279,64 @@ Bool Function ArrestNPC_Internal(Actor akGuard, Actor akTarget)
     ; No scene preflight: most town NPCs are in some BGSScene at any moment, so rejecting on
     ; GetCurrentScene() blocks nearly every arrest.
 
+    ; The jail is the one of the hold the arrest happens in; resolved before a running arrest is
+    ; cancelled, so a refusal leaves that one alone.
+    Faction crimeFaction = ResolveArrestJurisdiction(akGuard, akTarget)
+    ObjectReference jailMarker = None
+    If crimeFaction != None
+        jailMarker = SeverActionsNativeExt.Hold_GetJailMarkerForCrime(crimeFaction)
+    EndIf
+    If jailMarker == None
+        _RegisterNoJurisdiction(akGuard, akTarget)
+        Return false
+    EndIf
+    String jailName = JailNameForCrime(crimeFaction)
+
+    ; A parley holds the one same-cell arrest slot until it ends.
+    If PlayerScript != None && PlayerScript.IsParleyLive()
+        DebugMsg("ArrestNPC rejected: a parley is in progress")
+        SkyrimNetApi.RegisterEvent("arrest_failed", akGuard.GetDisplayName() + " cannot make an arrest right now - a guard is already questioning someone.", akGuard, None)
+        Return false
+    EndIf
+    ; One of the player's people is questioned first (SeverActions_ArrestPlayer's parley lane).
+    If PlayerScript != None && SeverActionsNativeExt2.Settings_GetBool("followerParleyEnabled") && SeverActionsNativeExt2.FriendlyFire_IsProtected(akTarget) && !SeverActionsNativeExt2.FriendlyFire_IsProtected(akGuard)
+        Return PlayerScript.BeginParley(akGuard, akTarget, crimeFaction, jailMarker)
+    EndIf
+    Return _StartArrest(akGuard, akTarget, crimeFaction, jailMarker, jailName)
+EndFunction
+
+Bool Function _ParleyBlocksDispatch(Actor akGuard, Actor akTarget)
+    {True, with an arrest_failed event, when a dispatch would take over a parley: its suspect, or its
+     guard, is busy with the questioning (a dispatch session would replace the parley's).}
+    If PlayerScript == None || !PlayerScript.IsParleyLive()
+        Return false
+    EndIf
+    If !PlayerScript.IsParleySuspect(akTarget) && !PlayerScript.IsParleyGuard(akTarget) && !PlayerScript.IsParleyGuard(akGuard)
+        Return false
+    EndIf
+    DebugMsg("Dispatch rejected: a parley holds " + akTarget.GetDisplayName())
+    Actor teller = akGuard
+    If teller == None
+        teller = akTarget
+    EndIf
+    SkyrimNetApi.RegisterEvent("arrest_failed", "A guard cannot be sent after " + akTarget.GetDisplayName() + " now - the questioning under way comes first.", teller, None)
+    Return true
+EndFunction
+
+Bool Function StartArrestFromParley(Actor akGuard, Actor akTarget, Faction akCrimeFaction, ObjectReference akJailMarker)
+    {The parley's custody: the same-cell arrest of one of the player's people, with no second parley.
+     True when the arrest started.}
+    If akGuard == None || akTarget == None || akCrimeFaction == None || akJailMarker == None
+        Return false
+    EndIf
+    If akGuard.IsDead() || akTarget.IsDead()
+        Return false
+    EndIf
+    Return _StartArrest(akGuard, akTarget, akCrimeFaction, akJailMarker, JailNameForCrime(akCrimeFaction))
+EndFunction
+
+Bool Function _StartArrest(Actor akGuard, Actor akTarget, Faction crimeFaction, ObjectReference jailMarker, String jailName)
+    {ArrestNPC_Internal past its refusals: take the slot, then walk the guard up or arrest at once.}
     If ArrestState != 0
         DebugMsg("WARNING: Already processing an arrest, canceling previous")
         CancelCurrentArrest()
@@ -1367,15 +1352,6 @@ Bool Function ArrestNPC_Internal(Actor akGuard, Actor akTarget)
         Return false
     EndIf
 
-    ; Determine jail destination based on guard's crime faction
-    ObjectReference jailMarker = GetJailMarkerForGuard(akGuard)
-    String jailName = GetJailNameForGuard(akGuard)
-
-    If jailMarker == None
-        DebugMsg("ERROR: Could not determine jail marker for guard - check properties!")
-        Return false
-    EndIf
-
     DebugMsg("Starting arrest: " + akGuard.GetDisplayName() + " arresting " + akTarget.GetDisplayName())
     DebugMsg("Destination: " + jailName)
 
@@ -1383,6 +1359,7 @@ Bool Function ArrestNPC_Internal(Actor akGuard, Actor akTarget)
     CurrentPrisoner = akTarget
     CurrentJailMarker = jailMarker
     CurrentJailName = jailName
+    CurrentCrimeFaction = crimeFaction
     ArrestState = 1 ; approaching
 
     ; On task (_BeginGuardTask); every exit of the arrest takes them off (_LeaveTaskFaction).
@@ -1445,8 +1422,7 @@ Function StartApproachPhase()
     PersistArrestState()
 
     ; Native session in kApproach (1): its watchdog times the approach out after 1 game hour.
-    Faction approachCrimeFaction = GetCrimeFactionForGuard(CurrentGuard)
-    SeverActionsNative.Native_ArrestSession_Begin(CurrentPrisoner, CurrentGuard, CurrentJailMarker, approachCrimeFaction, 1, 0, 0)
+    SeverActionsNative.Native_ArrestSession_Begin(CurrentPrisoner, CurrentGuard, CurrentJailMarker, _CurrentJurisdiction(), 1, 0, 0)
     _GuardOffSchedule(CurrentGuard)
 
     ; ArrivalMonitor fires OnArrival -> PerformArrest at ApproachDistance; the tick below handles
@@ -1655,9 +1631,10 @@ Function PerformArrest()
 
     ; EnsureBegin, not UpdateState: a guard already in range skipped StartApproachPhase, which opens the
     ; session; without an entry CaptureAVs below is a no-op and release falls back to vanilla defaults.
-    SeverActionsNative.Native_ArrestSession_EnsureBegin(prisoner, guard, CurrentJailMarker, GetCrimeFactionForGuard(guard), 2, 0, 0)
+    SeverActionsNative.Native_ArrestSession_EnsureBegin(prisoner, guard, CurrentJailMarker, _CurrentJurisdiction(), 2, 0, 0)
     ; A guard already in range skipped StartApproachPhase's strip (it is idempotent).
     _GuardOffSchedule(guard)
+    _PrisonerOffSchedule(prisoner)
 
     DebugMsg("Performing arrest on " + prisoner.GetDisplayName())
 
@@ -1669,6 +1646,17 @@ Function PerformArrest()
 
     ; So a travel errand doesn't fight the escort.
     CancelTravelFor(prisoner)
+    ; The faction before the hold: a release reads it (wasHeld), so a cancel landing during the hold
+    ; still gives a follower back. The hold after the travel cancel, which returns the teammate flag.
+    prisoner.AddToFaction(dunPrisonerFaction)      ; Guards won't attack
+    _CustodyHold(prisoner)
+    If CurrentPrisoner != prisoner || ArrestState != 2
+        ; Cancelled during the hold, whose release may have come first.
+        prisoner.RemoveFromFaction(dunPrisonerFaction)
+        _CustodyRelease(prisoner)
+        Return
+    EndIf
+    SeverActions_ArrestPlayer.TakeParleySuspect(prisoner)
 
     ; Capture the originals on the session BEFORE zeroing, or the prisoner leaves jail permanently
     ; pacified. CaptureAVs only fills fields still at the -1 sentinel, so a second PerformArrest
@@ -1677,7 +1665,6 @@ Function PerformArrest()
     prisoner.SetAV("Aggression", 0)
     prisoner.SetAV("Confidence", 0)
 
-    prisoner.AddToFaction(dunPrisonerFaction)      ; Guards won't attack
     prisoner.AddToFaction(SeverActions_Arrested)   ; Triggers follow package
 
     If SeverActions_PrisonerCuffs
@@ -1759,8 +1746,7 @@ Function StartEscortPhase()
     ; kEscort (3), a 6-game-hour watchdog. EnsureBegin, not UpdateState: the judgment -> jail
     ; handoff (EndJudgment -> ClearDispatchState) has already ended the session, and UpdateState
     ; would no-op, leaving the escort with no watchdog and no Magelight row.
-    Faction escortCrimeFaction = GetCrimeFactionForGuard(CurrentGuard)
-    SeverActionsNative.Native_ArrestSession_EnsureBegin(CurrentPrisoner, CurrentGuard, CurrentJailMarker, escortCrimeFaction, 3, 0, 0)
+    SeverActionsNative.Native_ArrestSession_EnsureBegin(CurrentPrisoner, CurrentGuard, CurrentJailMarker, _CurrentJurisdiction(), 3, 0, 0)
 
     ; The native EscortPackageReapplier re-applies our overrides (OnEscortReapplyPackages) when a
     ; cell attach or combat end drops them.
@@ -1961,10 +1947,15 @@ Bool Function AppealDuringEscort_Internal(Actor akPrisoner)
     SeverActionsNative.Native_ArrestSession_UpdateState(CurrentPrisoner, 8, 0)
 
     ; --- Set context for SkyrimNet so the LLM has the full picture ---
-    String holdName = GetHoldNameForGuard(CurrentGuard)
+    ; The prisoner's own bounty in the hold that is jailing them.
+    Faction pleaCrime = _CurrentJurisdiction()
+    String holdName = SeverActionsNativeExt2.Hold_GetHoldNameForCrime(pleaCrime)
+    If holdName == ""
+        holdName = "unknown hold"
+    EndIf
     Int bounty = 0
-    If BountyScript
-        bounty = BountyScript.GetTrackedBountyForGuard(CurrentGuard)
+    If pleaCrime != None
+        bounty = SeverActionsNativeExt.Native_Bounty_GetFor(akPrisoner, pleaCrime)
     EndIf
 
     String narration = "*" + CurrentGuard.GetDisplayName() + " halts the march, weapon still in hand, willing to hear what " + akPrisoner.GetDisplayName() + " has to say.*"
@@ -2206,13 +2197,19 @@ Function OnArrivedAtJail()
     SeverActionsNativeExt.Arrival_Cancel(CurrentGuard)
 
     ArrestState = 5 ; arrived (transient; 4 is the escort plea, which the tick routes)
-    JailPrisonerAt(CurrentGuard, CurrentPrisoner, CurrentJailMarker, CurrentJailName, true)
+    JailPrisonerAtFor(CurrentGuard, CurrentPrisoner, CurrentJailMarker, CurrentJailName, true, _CurrentJurisdiction())
 EndFunction
 
 Function JailPrisonerAt(Actor guard, Actor prisoner, ObjectReference jailMarker, String jailName, Bool abSameCell)
+    {JailPrisonerAtFor in the prisoner's session jurisdiction, else the guard's hold.}
+    JailPrisonerAtFor(guard, prisoner, jailMarker, jailName, abSameCell, SessionOrGuardJurisdiction(prisoner, guard))
+EndFunction
+
+Function JailPrisonerAtFor(Actor guard, Actor prisoner, ObjectReference jailMarker, String jailName, Bool abSameCell, Faction akCrimeFaction)
     {Put prisoner in the cell at jailMarker and finish the arrest. abSameCell: the same-cell arrest's
      (OnArrivedAtJail), whose aliases and slots this clears; false for a dispatch's delivery, which
-     leaves both to a same-cell arrest that may be running.}
+     leaves both to a same-cell arrest that may be running. akCrimeFaction: the arrest's
+     jurisdiction, which the jail outfit, the jailed record and its bounty discharge follow.}
 
     DebugMsg("Processing prisoner at jail: " + prisoner.GetDisplayName())
 
@@ -2228,7 +2225,7 @@ Function JailPrisonerAt(Actor guard, Actor prisoner, ObjectReference jailMarker,
         ClearAllArrestAliases(DispatchPhase > 0)
     EndIf
 
-    prisoner.RemoveFromFaction(SeverActions_Arrested)
+    _LeaveFactionClean(prisoner, SeverActions_Arrested)
     prisoner.AddToFaction(SeverActions_Jailed)
 
     ; MoveTo, then a navmesh snap. Never Disable/Enable to re-place an actor: it breaks alias
@@ -2258,13 +2255,11 @@ Function JailPrisonerAt(Actor guard, Actor prisoner, ObjectReference jailMarker,
     EndIf
 
     ; Change to prison clothes (use faction's jail outfit if available)
-    Faction crimeFaction = GetCrimeFactionForGuard(guard)
-    ChangeToJailClothes(prisoner, crimeFaction)
+    ChangeToJailClothes(prisoner, akCrimeFaction)
 
     ; JailedNPCStore is the only record. The marker is passed in: the store has no entry for a new
     ; prisoner yet, so reading it back would store 0 and leave the load-time reposition no target.
-    ; The faction of the local guard: CurrentGuard may be another arrest's by now.
-    AddJailedNPCAt(prisoner, jailMarker, crimeFaction)
+    AddJailedNPCAt(prisoner, jailMarker, akCrimeFaction)
 
     If DisablePrisonerOnArrival
         ; "In jail" means removed from the world.
@@ -2339,8 +2334,9 @@ EndFunction
 
 Function ChangeToJailClothes(Actor akPrisoner, Faction akCrimeFaction)
     {Cuffs off and SetOutfit the faction's jail outfit (else the property), which persists through
-     cell loads. The outfit lock is suspended around it so a follower's OutfitAlias doesn't fight the
-     SetOutfit; the lock is the kernel's, so this holds without the Outfit module.}
+     cell loads; over another mod's runtime outfit the rags go on directly instead, and a rostered
+     follower keeps their own clothes. The outfit lock is suspended around it so an OutfitAlias doesn't
+     fight the SetOutfit; the lock is the kernel's, so this holds without the Outfit module.}
 
     SeverActionsNativeExt.Native_Outfit_SuspendLock(akPrisoner)
 
@@ -2348,6 +2344,15 @@ Function ChangeToJailClothes(Actor akPrisoner, Faction akCrimeFaction)
     If SeverActions_PrisonerCuffs
         akPrisoner.UnequipItem(SeverActions_PrisonerCuffs, false, true)
         akPrisoner.RemoveItem(SeverActions_PrisonerCuffs, 1, true)
+    EndIf
+
+    ; One of the player's people keeps their own clothes: their outfit may be the outfit system's
+    ; (a nulled default outfit leaves no original to restore, so the rags would stay their outfit).
+    If SeverActionsNativeExt.Native_GetIsFollower(akPrisoner)
+        DebugMsg(akPrisoner.GetDisplayName() + " is a follower - keeps their own clothes in jail")
+        SeverActionsNativeExt.Native_Outfit_ResumeLock(akPrisoner)
+        SeverActionsNative.Native_Outfit_ClearBurstSuppression(akPrisoner)
+        Return
     EndIf
 
     ; Try to get the faction's jail outfit first (from crime data)
@@ -2364,9 +2369,17 @@ Function ChangeToJailClothes(Actor akPrisoner, Faction akCrimeFaction)
         jailOutfit = SeverActions_PrisonerOutfit
     EndIf
 
+    ; Another mod's runtime outfit (FormID 0xFF......) dresses this base: SetOutfit would replace it, and it cannot be
+    ; kept for the release, so the rags go on directly and that mod re-dresses them afterwards.
+    Outfit originalOutfit = None
+    Bool runtimeOutfit = false
     If jailOutfit
+        originalOutfit = akPrisoner.GetActorBase().GetOutfit()
+        runtimeOutfit = originalOutfit && Math.RightShift(originalOutfit.GetFormID(), 24) == 255
+    EndIf
+
+    If jailOutfit && !runtimeOutfit
         ; The original outfit goes on the ArrestSession (v3) for the release.
-        Outfit originalOutfit = akPrisoner.GetActorBase().GetOutfit()
         If originalOutfit
             SeverActionsNativeExt.Native_ArrestSession_SetOriginalOutfit(akPrisoner, originalOutfit)
             DebugMsg("Stored original outfit for " + akPrisoner.GetDisplayName())
@@ -2375,10 +2388,14 @@ Function ChangeToJailClothes(Actor akPrisoner, Faction akCrimeFaction)
         akPrisoner.SetOutfit(jailOutfit)
         DebugMsg("Set prisoner outfit on " + akPrisoner.GetDisplayName())
     ElseIf SeverActions_PrisonerRags
-        ; Fallback: just equip the armor directly (won't persist)
+        ; Direct equip (won't persist): no jail outfit, or another mod's runtime outfit on the base.
         akPrisoner.UnequipAll()
         akPrisoner.EquipItem(SeverActions_PrisonerRags, false, true)
-        DebugMsg("WARNING: No jail outfit available, using direct equip (won't persist)")
+        If runtimeOutfit
+            DebugMsg(akPrisoner.GetDisplayName() + " wears another mod's runtime outfit - jail rags equipped directly")
+        Else
+            DebugMsg("WARNING: No jail outfit available, using direct equip (won't persist)")
+        EndIf
     EndIf
 
     SeverActionsNativeExt.Native_Outfit_ResumeLock(akPrisoner)
@@ -2386,19 +2403,117 @@ Function ChangeToJailClothes(Actor akPrisoner, Faction akCrimeFaction)
 EndFunction
 
 ; =============================================================================
-; JAIL LOOKUP - Determine jail from guard's crime faction
+; JURISDICTION - the hold an arrest happens in decides its jail
+; =============================================================================
+
+Faction Function ResolveArrestJurisdiction(Actor akGuard, Actor akTarget, Actor akSender = None)
+    {The arrest's jurisdiction, always a registered hold's crime faction; None refuses the arrest.
+     Tried in order: the sender's place (a dispatch someone ordered is judged and jailed at their
+     court), the target's, the guard's, then the guard's own registered hold. The first place that
+     is in a hold decides, and a hold no jail is registered for refuses.}
+    ObjectReference[] places = new ObjectReference[3]
+    places[0] = akSender
+    places[1] = akTarget
+    places[2] = akGuard
+    String[] labels = new String[3]
+    labels[0] = "sender's place"
+    labels[1] = "target's place"
+    labels[2] = "guard's place"
+    Int i = 0
+    While i < 3
+        ObjectReference place = places[i]
+        If place != None
+            Faction site = SeverActionsNativeExt2.Hold_GetCrimeFactionForRef(place)
+            If site != None
+                DebugMsg("Jurisdiction: " + SeverActionsNativeExt2.Hold_GetHoldNameForCrime(site) + " (the " + labels[i] + ")")
+                Return site
+            EndIf
+            ; 2 = a hold SA cannot map (SeverActionsNativeExt2.Hold_SiteStatusForRef).
+            If SeverActionsNativeExt2.Hold_SiteStatusForRef(place) == 2
+                DebugMsg("Jurisdiction refused: the " + labels[i] + " is in a hold no jail is registered for")
+                Return None
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+    Faction home = GetCrimeFactionForGuard(akGuard)
+    If home != None
+        DebugMsg("Jurisdiction: " + SeverActionsNativeExt2.Hold_GetHoldNameForCrime(home) + " (no hold at the site; the guard's own hold)")
+        Return home
+    EndIf
+    DebugMsg("Jurisdiction refused: no hold at the site and the guard has no registered hold")
+    Return None
+EndFunction
+
+Bool Function _HasJurisdictionJail(Actor akGuard, Actor akTarget, Actor akSender = None)
+    {True when ResolveArrestJurisdiction finds a hold with a jail marker for this arrest.}
+    Faction crime = ResolveArrestJurisdiction(akGuard, akTarget, akSender)
+    Return crime != None && SeverActionsNativeExt.Hold_GetJailMarkerForCrime(crime) != None
+EndFunction
+
+Function _RegisterNoJurisdiction(Actor akGuard, Actor akTarget)
+    {The arrest_failed event of a refused jurisdiction.}
+    String guardName = "The guard"
+    If akGuard != None
+        guardName = akGuard.GetDisplayName()
+    EndIf
+    String targetName = "them"
+    If akTarget != None
+        targetName = akTarget.GetDisplayName()
+    EndIf
+    SkyrimNetApi.RegisterEvent("arrest_failed", guardName + " cannot arrest " + targetName + " - there is no jail here they have the authority to take them to.", akGuard, None)
+EndFunction
+
+String Function JailNameForCrime(Faction akCrimeFaction)
+    {The registered jail name of a jurisdiction, "jail" when it has none.}
+    String name = SeverActionsNativeExt2.Hold_GetJailNameForCrime(akCrimeFaction)
+    If name != ""
+        Return name
+    EndIf
+    Return "jail"
+EndFunction
+
+Faction Function _CurrentJurisdiction()
+    {The same-cell arrest's jurisdiction. Unset (slots filled without one): the prisoner's session
+     faction, then the guard's hold, kept for the rest of the arrest.}
+    If CurrentCrimeFaction == None
+        CurrentCrimeFaction = SessionOrGuardJurisdiction(CurrentPrisoner, CurrentGuard)
+    EndIf
+    Return CurrentCrimeFaction
+EndFunction
+
+Faction Function _DispatchJurisdiction()
+    {The dispatch's jurisdiction, as _CurrentJurisdiction for the dispatch's own actors.}
+    If DispatchCrimeFaction == None
+        DispatchCrimeFaction = SessionOrGuardJurisdiction(DispatchTarget, DispatchGuard)
+    EndIf
+    Return DispatchCrimeFaction
+EndFunction
+
+Faction Function SessionOrGuardJurisdiction(Actor akPrisoner, Actor akGuard)
+    {The prisoner's arrest-session faction, else the guard's registered hold; None for neither.}
+    Faction crime = None
+    If akPrisoner != None
+        crime = SeverActionsNativeExt2.Native_ArrestSession_GetCrimeFaction(akPrisoner)
+    EndIf
+    If crime == None && akGuard != None
+        crime = GetCrimeFactionForGuard(akGuard)
+    EndIf
+    Return crime
+EndFunction
+
+; =============================================================================
+; JAIL LOOKUP - by the guard's own hold
 ; =============================================================================
 
 ObjectReference Function GetJailMarkerForGuard(Actor akGuard)
-    {Get the interior jail cell marker based on guard's crime faction.
-     Resolved natively via HoldResolver; falls back to Whiterun if no hold matches.}
+    {The interior jail cell marker of the guard's registered hold; None when they have none.}
 
     ObjectReference marker = SeverActionsNativeExt.Hold_GetJailMarker(akGuard)
-    If marker != None
-        Return marker
+    If marker == None
+        DebugMsg("WARNING: could not determine the guard's hold - no jail")
     EndIf
-    DebugMsg("WARNING: Could not determine guard's hold, defaulting to Whiterun")
-    Return JailMarker_Whiterun
+    Return marker
 EndFunction
 
 String Function GetJailNameForGuard(Actor akGuard)
@@ -2457,6 +2572,8 @@ Function CancelCurrentArrest()
         ; Approach (1): no ReleasePrisoner here, so clear the busy lock ArrestNPC_Internal set. In state 5
         ; the jailed prisoner keeps it (OnArrivedAtJail).
         SeverActionsNative.Native_SkyrimNet_ClearActorBusy(CurrentPrisoner)
+        ; A suspect a resisted parley handed over still held goes back to the player.
+        SeverActions_ArrestPlayer.ReturnParleySuspect(CurrentPrisoner)
     EndIf
 
     ; Drop the save/load recovery state.
@@ -2487,7 +2604,11 @@ Function ClearPrisonerCommonArtifacts(Actor akActor)
      the JailedNPCStore row, restores Aggression/Confidence, then ends the session. Phase-specific work
      (cuffs, mid-arrest factions, follow link; the outfit restore) stays in the callers.}
 
-    akActor.RemoveFromFaction(SeverActions_Jailed)
+    ; Only someone actually taken in (cuffed, or jailed) leaves custody: read before the strips below. A
+    ; second release of the same prisoner, or a dispatch cancelled before the arrest, finds neither.
+    Bool wasHeld = (dunPrisonerFaction && akActor.IsInFaction(dunPrisonerFaction)) || (SeverActions_Jailed && akActor.IsInFaction(SeverActions_Jailed))
+
+    _LeaveFactionClean(akActor, SeverActions_Jailed)
     akActor.RemoveFromFaction(dunPrisonerFaction)
 
     If SeverActions_PrisonerSandBox
@@ -2504,6 +2625,31 @@ Function ClearPrisonerCommonArtifacts(Actor akActor)
 
     ; Only after RestorePrisonerStats has read the session. Idempotent (a mid-arrest path may have ended it).
     SeverActionsNative.Native_ArrestSession_End(akActor)
+
+    ; Last: with the session and the jail row gone, custody no longer holds them.
+    If wasHeld
+        If _CustodyRelease(akActor)
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("custody.released", akActor.GetDisplayName()))
+        EndIf
+        SeverActions_ArrestPlayer.TakeParleySuspect(akActor)
+    Else
+        ; Never cuffed: a resisted parley's handover still holds them.
+        SeverActions_ArrestPlayer.ReturnParleySuspect(akActor)
+    EndIf
+    SeverActions_ArrestPlayer.ReleaseParleyProtection(akActor)
+EndFunction
+
+Bool Function _CustodyRelease(Actor akActor)
+    {The followers module gives back a follower the arrest held (custodyRelease). True when rostered.}
+    Return akActor && SeverActionsNativeExt.Native_GetIsFollower(akActor) && SeverActions_ModuleBase.CallBool("followers", "custodyRelease", akActor)
+EndFunction
+
+Function _CustodyHold(Actor akPrisoner)
+    {One of the player's people taken in: the followers module parks them (custodyHold), and the
+     native custody gates keep SA's catch-up and follow upkeep off them until the release.}
+    If akPrisoner && SeverActionsNativeExt2.FriendlyFire_IsProtected(akPrisoner)
+        SeverActions_ModuleBase.CallBool("followers", "custodyHold", akPrisoner)
+    EndIf
 EndFunction
 
 Function ReleasePrisoner(Actor akPrisoner)
@@ -2517,8 +2663,8 @@ Function ReleasePrisoner(Actor akPrisoner)
     DebugMsg("Releasing prisoner: " + akPrisoner.GetDisplayName())
 
     ; Mid-arrest factions — only on this path.
-    akPrisoner.RemoveFromFaction(SeverActions_WaitingArrest)
-    akPrisoner.RemoveFromFaction(SeverActions_Arrested)
+    _LeaveFactionClean(akPrisoner, SeverActions_WaitingArrest)
+    _LeaveFactionClean(akPrisoner, SeverActions_Arrested)
 
     If SeverActions_PrisonerCuffs
         akPrisoner.UnequipItem(SeverActions_PrisonerCuffs, false, true)
@@ -2556,10 +2702,29 @@ Function ReleaseFromJailCore(Actor akTarget)
     ElseIf SeverActions_PrisonerRags
         akTarget.UnequipItem(SeverActions_PrisonerRags, false, true)
         akTarget.RemoveItem(SeverActions_PrisonerRags, 1, true)
+        _ReequipHeldRuntimeOutfit(akTarget)
     EndIf
 
     SeverActionsNativeExt.Native_Outfit_ResumeLock(akTarget)
     SeverActionsNative.Native_Outfit_ClearBurstSuppression(akTarget)
+EndFunction
+
+Function _ReequipHeldRuntimeOutfit(Actor akActor)
+    {When another mod's runtime outfit (FormID 0xFF......) dresses the base, put back the pieces of it
+     the prisoner holds: ChangeToJailClothes kept no original for them. No SetOutfit and no new copies.}
+    Outfit current = akActor.GetLeveledActorBase().GetOutfit(false)
+    if !current || Math.RightShift(current.GetFormID(), 24) != 255
+        return
+    endif
+    Int n = current.GetNumParts()
+    Int i = 0
+    While i < n
+        Armor piece = current.GetNthPart(i) as Armor
+        if piece && akActor.GetItemCount(piece) > 0
+            SeverActionsNativeExt.Native_EquipItemNow(akActor, piece)
+        endif
+        i += 1
+    EndWhile
 EndFunction
 
 Function RestorePrisonerStats(Actor akActor)
@@ -2622,12 +2787,25 @@ Int Function GetDispatchPhase()
     Return DispatchPhase
 EndFunction
 
+Int Function GetArrestState()
+    {The same-cell arrest's state (0 = no arrest; see ArrestState).}
+    Return ArrestState
+EndFunction
+
 Function SetCurrentArrestSlots(Actor akGuard, Actor akPrisoner, ObjectReference akJailMarker, String asJailName)
-    {Set the four same-cell arrest slots: JudgmentScript's judgment (dispatch phase 6) -> escort handoff.}
+    {SetCurrentArrestSlotsFor with the jurisdiction left to _CurrentJurisdiction.}
+    SetCurrentArrestSlotsFor(akGuard, akPrisoner, akJailMarker, asJailName, None)
+EndFunction
+
+Function SetCurrentArrestSlotsFor(Actor akGuard, Actor akPrisoner, ObjectReference akJailMarker, String asJailName, Faction akCrimeFaction)
+    {Set the same-cell arrest slots: JudgmentScript's judgment (dispatch phase 6) -> escort handoff.
+     akCrimeFaction: the arrest's jurisdiction; None leaves it to _CurrentJurisdiction (the session's
+     faction, then the guard's hold).}
     CurrentGuard = akGuard
     CurrentPrisoner = akPrisoner
     CurrentJailMarker = akJailMarker
     CurrentJailName = asJailName
+    CurrentCrimeFaction = akCrimeFaction
 EndFunction
 
 Function ClearArrestState()
@@ -2637,6 +2815,7 @@ Function ClearArrestState()
     CurrentPrisoner = None
     CurrentJailMarker = None
     CurrentJailName = ""
+    CurrentCrimeFaction = None
     ArrestState = 0
     ; The next arrest gets a fresh plea.
     EscortPleaStartTime = 0.0
@@ -2724,8 +2903,13 @@ Function ClearDispatchExitAliases()
 EndFunction
 
 Function JailDispatchPrisonerNow(Actor akGuard, Actor akPrisoner, ObjectReference akJailMarker, String asJailName)
+    {JailDispatchPrisonerNowFor in the prisoner's session jurisdiction, else the guard's hold.}
+    JailDispatchPrisonerNowFor(akGuard, akPrisoner, akJailMarker, asJailName, SessionOrGuardJurisdiction(akPrisoner, akGuard))
+EndFunction
+
+Function JailDispatchPrisonerNowFor(Actor akGuard, Actor akPrisoner, ObjectReference akJailMarker, String asJailName, Faction akCrimeFaction)
     {The judgment's jail order while a same-cell arrest holds the escort slots: the dispatch state is
-     cleared, then the prisoner goes straight to the cell.}
+     cleared, then the prisoner goes straight to the cell in the akCrimeFaction jurisdiction.}
     ; Cleared first: the judgment's tick would otherwise run during the jailing's waits and re-apply
     ; the prisoner's follow package or jail them again. The session must survive (release reads it),
     ; so ClearDispatchState must not end it.
@@ -2733,7 +2917,7 @@ Function JailDispatchPrisonerNow(Actor akGuard, Actor akPrisoner, ObjectReferenc
     ClearDispatchExitAliases()
     ClearPersistedDispatchState()
     ClearDispatchState()
-    JailPrisonerAt(akGuard, akPrisoner, akJailMarker, asJailName, false)
+    JailPrisonerAtFor(akGuard, akPrisoner, akJailMarker, asJailName, false, akCrimeFaction)
 EndFunction
 
 Function ClearAllArrestAliases(Bool abKeepDispatch = false)
@@ -2853,6 +3037,7 @@ Function ClearDispatchState()
     DispatchReturnMarker = None
     DispatchGuardOffScreen = false
     DispatchTargetLocation = ""
+    DispatchCrimeFaction = None
     DispatchGameTimeStart = 0.0
     DispatchReturnTimeStart = 0.0
     DispatchInitialDistance = 0.0
@@ -2963,11 +3148,29 @@ Function ApplyDispatchArrestEffects()
      OnArrival dispatch_p2_arrived). Leaves ArrestState / CurrentGuard / CurrentPrisoner alone:
      they belong to the same-cell arrest on the shared tick.}
 
+    Actor target = DispatchTarget
     DispatchTarget.StopCombat()
     DispatchTarget.StopCombatAlarm()
 
     ; A travel errand would fight the escort for the actor's packages.
-    CancelTravelFor(DispatchTarget)
+    CancelTravelFor(target)
+    ; Custody counts a dispatch target from phase 2 (ArrestSessionStore::IsPrisoner); an off-screen
+    ; arrest comes straight from phase 1.
+    If DispatchPhase < 2
+        SeverActionsNative.Native_ArrestSession_UpdateState(target, 5, 2)
+    EndIf
+    ; The faction before the hold, as in PerformArrest.
+    If dunPrisonerFaction
+        target.AddToFaction(dunPrisonerFaction)
+    EndIf
+    _CustodyHold(target)
+    If DispatchTarget != target
+        If dunPrisonerFaction
+            target.RemoveFromFaction(dunPrisonerFaction)
+        EndIf
+        _CustodyRelease(target)
+        Return
+    EndIf
 
     ; Capture the originals on the ArrestSession before pacifying, as PerformArrest does: release
     ; restores them from there.
@@ -2978,11 +3181,8 @@ Function ApplyDispatchArrestEffects()
     If SeverActions_Arrested
         DispatchTarget.AddToFaction(SeverActions_Arrested)
     EndIf
-    If dunPrisonerFaction
-        DispatchTarget.AddToFaction(dunPrisonerFaction)
-    EndIf
     If SeverActions_WaitingArrest
-        DispatchTarget.RemoveFromFaction(SeverActions_WaitingArrest)
+        _LeaveFactionClean(DispatchTarget, SeverActions_WaitingArrest)
     EndIf
 
     If SeverActions_PrisonerCuffs
@@ -3081,6 +3281,7 @@ Bool Function FreeNPC_Internal(Actor akGuard, Actor akTarget)
         Utility.Wait(1.5)
     EndIf
 
+    _UnlockCellDoorNear(akTarget) ; the narration below says the cell is opened
     ReleaseFromJailCore(akTarget)
 
     akTarget.EvaluatePackage()
@@ -3095,6 +3296,93 @@ Bool Function FreeNPC_Internal(Actor akGuard, Actor akTarget)
     DebugMsg("Prisoner freed: " + akTarget.GetDisplayName())
 
     Return true
+EndFunction
+
+Bool Function PardonPrisoner_Internal(Actor akAuthority, String prisonerName)
+    {PardonPrisoner: a jarl or housecarl orders a prisoner in their hold's cells set free, from
+     wherever they are. The name resolves against the hold's jail roster, so the prisoner need not be near.
+     False when nobody of that name is held there.}
+    If akAuthority == None || prisonerName == ""
+        Return false
+    EndIf
+    Faction crime = SeverActionsNativeExt.Hold_GetCrimeFaction(akAuthority)
+    If crime == None
+        crime = SeverActionsNativeExt2.Hold_GetCrimeFactionForRef(akAuthority)
+    EndIf
+    String holdName = SeverActionsNativeExt2.Hold_GetHoldNameForCrime(crime)
+    Actor prisoner = _FindJailedInHold(crime, prisonerName)
+    If prisoner == None
+        DebugMsg("PardonPrisoner: no one named '" + prisonerName + "' is jailed in " + holdName)
+        SkyrimNetApi.RegisterEvent("arrest_failed", akAuthority.GetDisplayName() + " sends word to the cells, but no one named " + prisonerName + " is held in the jail of " + holdName + ".", akAuthority, None)
+        Return false
+    EndIf
+    String jailName = SeverActionsNativeExt2.Hold_GetJailNameForCrime(crime)
+    DebugMsg(akAuthority.GetDisplayName() + " pardons " + prisoner.GetDisplayName() + " (" + jailName + ")")
+    ; A prisoner in sight walks out of their cell; one out of sight is sent home by FreePrisonerDirect.
+    If prisoner.Is3DLoaded()
+        _UnlockCellDoorNear(prisoner)
+    EndIf
+    FreePrisonerDirect(prisoner)
+    SkyrimNetApi.RegisterPersistentEvent(akAuthority.GetDisplayName() + " ordered " + prisoner.GetDisplayName() + " released from " + jailName + ".", akAuthority, prisoner)
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.hasBeenFreedFromJail", ("" + prisoner.GetDisplayName())))
+    Return true
+EndFunction
+
+Actor Function _FindJailedInHold(Faction akCrime, String asName)
+    {The prisoner on that hold's jail roster whose name is asName (Papyrus compares case-insensitively), else
+     the only one whose name contains it, or is contained in it. None when nobody, or several, match.}
+    If akCrime == None || asName == ""
+        Return None
+    EndIf
+    Actor[] roster = SeverActionsNativeExt.Native_Jailed_GetAll()
+    Actor partial = None
+    Int partials = 0
+    Int i = 0
+    While i < roster.Length
+        Actor p = roster[i]
+        If p != None && !p.IsDead() && SeverActionsNativeExt.Native_Jailed_GetCrimeFaction(p) == akCrime
+            String nm = p.GetDisplayName()
+            If nm == asName
+                Return p
+            ElseIf StringUtil.Find(nm, asName) >= 0 || StringUtil.Find(asName, nm) >= 0
+                partial = p
+                partials += 1
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+    If partials == 1
+        Return partial
+    EndIf
+    Return None
+EndFunction
+
+Function _UnlockCellDoorNear(Actor akPrisoner)
+    {Unlock the locked door nearest the prisoner in their cell, within 600 units: their cell door. A release
+     that leaves it locked strands them behind it. Needs the cell loaded (its refs).}
+    Cell here = akPrisoner.GetParentCell()
+    If here == None
+        Return
+    EndIf
+    ObjectReference best = None
+    Float bestDist = 600.0
+    Int n = here.GetNumRefs(29) ; kDoor
+    Int i = 0
+    While i < n
+        ObjectReference d = here.GetNthRef(i, 29)
+        If d && d.IsLocked()
+            Float dist = d.GetDistance(akPrisoner)
+            If dist < bestDist
+                best = d
+                bestDist = dist
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+    If best
+        best.Lock(false)
+        DebugMsg("Unlocked the cell door nearest " + akPrisoner.GetDisplayName() + " (" + bestDist + " units)")
+    EndIf
 EndFunction
 
 Function FreePrisonerDirect(Actor akTarget)
@@ -3115,9 +3403,10 @@ Function FreePrisonerDirect(Actor akTarget)
     ; Outside the player's cell, send them to their editor placement: jail doors are locked, so
     ; their own packages could leave them stuck in the cell for days. MoveToMyEditorLocation
     ; needs no 3D, no-ops on an actor with no placement, and may wait for a paused menu to close.
+    ; Not a follower: the release gave them back their follow, and the catch-up brings them to the player.
     Actor releasePC = Game.GetPlayer()
     Bool sameCell = akTarget.Is3DLoaded() && releasePC && akTarget.GetParentCell() == releasePC.GetParentCell()
-    If !sameCell
+    If !sameCell && !SeverActionsNativeExt.Native_GetIsFollower(akTarget)
         akTarget.MoveToMyEditorLocation()
         DebugMsg("Off-screen release: sent " + akTarget.GetDisplayName() + " to editor location")
     EndIf
@@ -3212,9 +3501,12 @@ Function AddJailedNPCAt(Actor akNPC, ObjectReference akJailMarker, Faction akCri
     If marker == None
         marker = StorageUtil.GetFormValue(akNPC, "SeverActions_JailMarker") as ObjectReference
     EndIf
-    ; The caller's faction first: off-screen sentencing has no CurrentGuard, and with no crime faction the
-    ; bounty is never discharged and the prisoner is missing from the hold's jail roster.
+    ; The caller's faction first, then the NPC's arrest session: with no crime faction the bounty is
+    ; never discharged and the prisoner is missing from the hold's jail roster.
     Faction crime = akCrimeFaction
+    If crime == None
+        crime = SeverActionsNativeExt2.Native_ArrestSession_GetCrimeFaction(akNPC)
+    EndIf
     If crime == None && CurrentGuard != None
         crime = GetCrimeFactionForGuard(CurrentGuard)
     EndIf
@@ -3264,8 +3556,9 @@ EndFunction
 
 Function VerifyJailedNPCs()
     {Move any jailed NPC farther than JailMarkerVerifyDistance from their jail marker back to it
-     (fast travel and waiting can displace them). Runs on load and from OnTrackedStatsEvent. The
-     native roster is pruned of the dead by TESDeathEvent.}
+     (fast travel and waiting can displace them), and release a follower whose sentence is served.
+     Runs on load and from OnTrackedStatsEvent. The native roster is pruned of the dead by
+     TESDeathEvent.}
 
     Actor[] roster = SeverActionsNativeExt.Native_Jailed_GetAll()
     Int count = roster.Length
@@ -3293,10 +3586,16 @@ Function VerifyJailedNPCs()
         DebugMsg("Pruned " + prunedCount + " dead / invalid jailed NPCs from tracking")
     EndIf
 
+    ; One of the player's people serves followerJailDays game days (0 = until released by hand).
+    Int jailDays = SeverActionsNativeExt2.Settings_GetInt("followerJailDays")
     Int i = 0
     While i < count
         Actor prisoner = roster[i]
-        If prisoner != None && !prisoner.IsDead()
+        Bool follower = prisoner != None && SeverActionsNativeExt.Native_GetIsFollower(prisoner)
+        If follower && jailDays > 0 && !prisoner.IsDead() && SeverActionsNativeExt.Native_Jailed_GetAgeHours(prisoner) >= jailDays * 24.0
+            DebugMsg("Sentence served: " + prisoner.GetDisplayName())
+            FreePrisonerDirect(prisoner)
+        ElseIf prisoner != None && !prisoner.IsDead()
             ObjectReference jailMarker = SeverActionsNativeExt.Native_Jailed_GetMarker(prisoner)
             Bool fromAnchor = false
             If jailMarker == None
@@ -3314,11 +3613,16 @@ Function VerifyJailedNPCs()
                 If distance > JailMarkerVerifyDistance
                     DebugMsg("Prisoner " + prisoner.GetDisplayName() + " is " + distance + " units from jail, fixing...")
 
-                    prisoner.Disable()
-                    Utility.Wait(0.1)
-                    prisoner.MoveTo(jailMarker, 0.0, 0.0, 0.0)
-                    Utility.Wait(0.1)
-                    prisoner.Enable()
+                    ; A follower keeps their follow-pool seat: Disable/Enable would break it.
+                    If follower
+                        prisoner.MoveTo(jailMarker, 0.0, 0.0, 0.0)
+                    Else
+                        prisoner.Disable()
+                        Utility.Wait(0.1)
+                        prisoner.MoveTo(jailMarker, 0.0, 0.0, 0.0)
+                        Utility.Wait(0.1)
+                        prisoner.Enable()
+                    EndIf
 
                     If SeverActions_PrisonerSandBox
                         ; Permanent (LREF v3), as at the jailing site.
@@ -3347,7 +3651,8 @@ EndFunction
 
 ; Player confrontation and persuasion FSM: SeverActions_ArrestPlayer.psc (PlayerScript, with its
 ; own chronometer tick). Outside code uses its public queries: IsPlayerInConfrontation,
-; IsPlayerInPersuasion, CancelPlayerConfrontation.
+; IsPlayerInPersuasion, CancelPlayerConfrontation, and the parley's IsParleyLive, IsParleyGuard,
+; IsParleySuspect, BeginParley and EndParley.
 
 ; =============================================================================
 ; GUARD DISPATCH - find and arrest an NPC anywhere, or search their home
@@ -3405,6 +3710,10 @@ Bool Function DispatchGuardToArrest(Actor akGuard, String targetName, Actor akSe
         Return false
     EndIf
 
+    If _ParleyBlocksDispatch(akGuard, target)
+        Return false
+    EndIf
+
     ; A crashed earlier arrest's residue on the suspect must not block this dispatch for good. The
     ; helper refuses a genuinely held prisoner, so the rejection below still fires for them.
     ClearStaleArrestState(target, "dispatch start")
@@ -3422,6 +3731,9 @@ Bool Function DispatchGuardToArrest(Actor akGuard, String targetName, Actor akSe
             Return false
         EndIf
     EndIf
+    If _ParleyBlocksDispatch(akGuard, target)
+        Return false
+    EndIf
     ; The guard too: a crashed phase-1 dispatch can leave its faction, links and packages on them.
     ClearStaleArrestState(akGuard, "dispatch start")
 
@@ -3429,6 +3741,18 @@ Bool Function DispatchGuardToArrest(Actor akGuard, String targetName, Actor akSe
     If akGuard.GetParentCell() == target.GetParentCell() && akGuard.GetDistance(target) <= ArrivalDistance
         DebugMsg("Guard already close to target in same cell, starting direct arrest")
         Return ArrestNPC_Internal(akGuard, target)
+    EndIf
+
+    ; Resolved once, before anything starts: an ordered arrest is judged and jailed at the
+    ; sender's court, a plain one where the target is collared.
+    Faction crimeFaction = ResolveArrestJurisdiction(akGuard, target, akSender)
+    ObjectReference jailMarker = None
+    If crimeFaction != None
+        jailMarker = SeverActionsNativeExt.Hold_GetJailMarkerForCrime(crimeFaction)
+    EndIf
+    If jailMarker == None
+        _RegisterNoJurisdiction(akGuard, target)
+        Return false
     EndIf
 
     targetLocation = SeverActionsNative.GetActorLocationName(target)
@@ -3443,6 +3767,7 @@ Bool Function DispatchGuardToArrest(Actor akGuard, String targetName, Actor akSe
     DispatchTarget = target
     DispatchGuard = akGuard
     DispatchTargetLocation = targetLocation
+    DispatchCrimeFaction = crimeFaction
     DispatchGuardOffScreen = false
     DispatchOffScreenStartTime = 0.0
     DispatchGameTimeStart = Utility.GetCurrentGameTime()
@@ -3465,7 +3790,6 @@ Bool Function DispatchGuardToArrest(Actor akGuard, String targetName, Actor akSe
         DebugMsg("Prisoner will be brought back to " + akSender.GetDisplayName())
     Else
         DispatchSender = None
-        ObjectReference jailMarker = GetJailMarkerForGuard(akGuard)
         DispatchReturnMarker = jailMarker
         DebugMsg("Prisoner will be taken to jail")
     EndIf
@@ -3478,9 +3802,7 @@ Bool Function DispatchGuardToArrest(Actor akGuard, String targetName, Actor akSe
 
     ; ArrestSession entry for the Magelight arrests page: state 5 = kDispatch (ArrestSessionStore.h),
     ; dispatch phase 1, flag 0 = arrest (1 = home investigation, DispatchGuardToHome).
-    ObjectReference cosaveJailMarker = GetJailMarkerForGuard(akGuard)
-    Faction cosaveCrimeFaction = GetCrimeFactionForGuard(akGuard)
-    SeverActionsNative.Native_ArrestSession_Begin(target, akGuard, cosaveJailMarker, cosaveCrimeFaction, 5, 1, 0)
+    SeverActionsNative.Native_ArrestSession_Begin(target, akGuard, jailMarker, crimeFaction, 5, 1, 0)
 
     Return true
 EndFunction
@@ -3510,6 +3832,18 @@ Bool Function OrderArrest_Execute(Actor akAuthority, String targetName)
     Else
         target = SeverActionsNative.FindActorByName(targetName)
     EndIf
+    ; A refused jurisdiction is told before the order, so no arrest_ordered event precedes it.
+    Bool loaded = target != None && target != player && SeverActionsNative.Native_GetActorProcessLevel(target) >= 0
+    If target != None && target != player
+        Actor orderedBy = None
+        If !loaded
+            orderedBy = akAuthority
+        EndIf
+        If !_HasJurisdictionJail(guard, target, orderedBy)
+            _RegisterNoJurisdiction(guard, target)
+            Return false
+        EndIf
+    EndIf
     String order = akAuthority.GetDisplayName() + " orders " + guard.GetDisplayName() + " to arrest " + targetLabel
     If target == player
         SkyrimNetApi.RegisterEvent("arrest_ordered", order, akAuthority, guard)
@@ -3518,7 +3852,7 @@ Bool Function OrderArrest_Execute(Actor akAuthority, String targetName)
         EndIf
         Return false
     EndIf
-    If target != None && SeverActionsNative.Native_GetActorProcessLevel(target) >= 0
+    If loaded
         SkyrimNetApi.RegisterEvent("arrest_ordered", order, akAuthority, guard)
         Return ArrestNPC_Internal(guard, target)
     EndIf
@@ -3606,6 +3940,9 @@ Bool Function DispatchGuardToHome(Actor akGuard, String targetName, Actor akSend
             Return false
         EndIf
     EndIf
+    If _ParleyBlocksDispatch(akGuard, target)
+        Return false
+    EndIf
 
     guardName = akGuard.GetDisplayName()
 
@@ -3691,9 +4028,14 @@ Bool Function DispatchGuardToHome(Actor akGuard, String targetName, Actor akSend
     InitDispatchCommon(akGuard, finalDest)
 
     ; ArrestSession entry as in DispatchGuardToArrest, flag 1 = home investigation.
-    ObjectReference cosaveHomeJailMarker = GetJailMarkerForGuard(akGuard)
-    Faction cosaveHomeCrimeFaction = GetCrimeFactionForGuard(akGuard)
-    SeverActionsNative.Native_ArrestSession_Begin(target, akGuard, cosaveHomeJailMarker, cosaveHomeCrimeFaction, 5, 1, 1)
+    ; The search jails nobody: its jurisdiction only names the hold on the arrests page, so a
+    ; refusal leaves it blank rather than stopping the search.
+    DispatchCrimeFaction = ResolveArrestJurisdiction(akGuard, target, akSender)
+    ObjectReference cosaveHomeJailMarker = None
+    If DispatchCrimeFaction != None
+        cosaveHomeJailMarker = SeverActionsNativeExt.Hold_GetJailMarkerForCrime(DispatchCrimeFaction)
+    EndIf
+    SeverActionsNative.Native_ArrestSession_Begin(target, akGuard, cosaveHomeJailMarker, DispatchCrimeFaction, 5, 1, 1)
 
     Return true
 EndFunction
@@ -4036,6 +4378,10 @@ Function StartDispatchReturnPhase()
     DispatchPhase = 5
     SeverActionsNativeExt.Native_Arrest_SetDispatchPhase(DispatchGuard, DispatchPhase)
     SeverActionsNative.Native_ArrestSession_UpdateState(DispatchTarget, 5, 5)
+    ; A home investigation brings back evidence, not its target.
+    If !DispatchIsHomeInvestigation
+        _PrisonerOffSchedule(DispatchTarget)
+    EndIf
     DispatchGuardOffScreen = false
     DispatchOffScreenStartTime = 0.0
     DispatchReturnOffScreenCycle = 0
@@ -5323,13 +5669,14 @@ Function CompleteDispatch()
         ; same-cell arrest's.
         If DispatchGuard != None && DispatchTarget != None
             _ArrestLeash(DispatchTarget, DispatchGuard, false)
-            JailPrisonerAt(DispatchGuard, DispatchTarget, DispatchReturnMarker, GetJailNameForGuard(DispatchGuard), false)
+            Faction dispatchCrime = _DispatchJurisdiction()
+            JailPrisonerAtFor(DispatchGuard, DispatchTarget, DispatchReturnMarker, JailNameForCrime(dispatchCrime), false, dispatchCrime)
         EndIf
-        ; JailPrisonerAt moved the ArrestSession to kJailed, and that entry must survive: release reads
+        ; JailPrisonerAtFor moved the ArrestSession to kJailed, and that entry must survive: release reads
         ; the captured AVs and OriginalOutfit from it (without it the prisoner keeps the prison outfit for
         ; good). ClearDispatchState ends DispatchTarget's session, so null the target first; the rest of
         ; it needs only DispatchGuard. (The judgment -> jail paths keep it too: the escort through
-        ; EnsureBegin, JailDispatchPrisonerNow the same way as here.)
+        ; EnsureBegin, JailDispatchPrisonerNowFor the same way as here.)
         DispatchTarget = None
     EndIf
 
@@ -5514,6 +5861,8 @@ Function RecoverActiveArrest()
     If CurrentJailName == ""
         CurrentJailName = "jail"
     EndIf
+    ; The session keeps the jurisdiction the arrest resolved.
+    CurrentCrimeFaction = SessionOrGuardJurisdiction(prisoner, guard)
     ArrestState = savedState
     ; Real time is session-relative, so the saved timers are stale: restart the windows from now.
     ApproachStartTime = Utility.GetCurrentRealTime()
@@ -5628,6 +5977,7 @@ Function RecoverActiveDispatch()
     DispatchHomeMarker = SeverActionsNativeExt.Native_Arrest_GetDispatchHomeMarker(guard)
     DispatchGuardOrigAggression = SeverActionsNativeExt.Native_Arrest_GetDispatchOrigAggro(guard)
     DispatchGuardOrigConfidence = SeverActionsNativeExt.Native_Arrest_GetDispatchOrigConf(guard)
+    DispatchCrimeFaction = SessionOrGuardJurisdiction(DispatchTarget, guard)
     DispatchPhase = phase
 
     ; Real time is session-relative, so the saved timers would fire the timeout / stuck / freeze
@@ -5894,6 +6244,13 @@ Event OnVerb_Arrest(String eventName, String strArg, Float numArg, Form sender)
             bountySys.PayNpcBountyToGuard_Internal(target, target2Name)
         EndIf
 
+    ElseIf actionId == "addBountyToNpc"
+        ; target = the guard writing the charge, target2 = the suspect, intParam = gold, strParam = the crime.
+        SeverActions_ArrestBounty chargeSys = (Self as Quest) as SeverActions_ArrestBounty
+        If chargeSys && target2
+            chargeSys.AddBountyToNPC_Internal(target, target2, intParam, strParam)
+        EndIf
+
     ElseIf actionId == "turnMeIn"
         ; The guard (target) arrests the PLAYER: surrender to clear a bounty.
         SeverActions_ArrestPlayer surrenderSys = (Self as Quest) as SeverActions_ArrestPlayer
@@ -6045,11 +6402,16 @@ Function OffScreenJail(Actor akNPC, String asHome)
     {Jail a dismissed companion an off-screen life event arrested in the hold it named
      (asHome): jailed faction, cell, jail clothes, tracking row and sandbox pin. Reached by
      the verb arrest.offscreenJail from SeverActions_CompanionLife, which already recorded
-     the bounty. No-op when already jailed or the hold has no crime faction or jail marker.}
+     the bounty. No-op when already jailed, held captive, or the hold has no crime faction or
+     jail marker.}
     If !akNPC || akNPC.IsDead()
         Return
     EndIf
     String actorName = akNPC.GetDisplayName()
+    If SeverActionsNativeExt.Native_Kidnap_GetPhase(akNPC) != 0
+        DebugMsg("OffScreenJail: " + actorName + " is held captive, not jailing")
+        Return
+    EndIf
     If IsNPCJailed(akNPC)
         DebugMsg("OffScreenJail: " + actorName + " is already jailed, skipping placement")
         Return

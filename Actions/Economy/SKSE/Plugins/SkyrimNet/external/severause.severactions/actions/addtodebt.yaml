@@ -1,6 +1,6 @@
 customCategory: economy
 name: AddToDebt
-description: "Use when the speaker adds a new charge to a tab this person already owes them (another round, another repair, a fee) and the charge is accepted in this exchange. Not to open a first tab (CreateDebt). Not for an item handed over on credit: giving the item adds its value to the tab by itself, so charging it here bills it twice."
+description: "Use when the speaker adds a new charge to a tab this person already owes them (another round, another repair, a fee) in this exchange: another NPC must accept it, while {{ player.name }} is asked to confirm, so the speaker may charge their tab unasked. Not to open a first tab (CreateDebt). Not for an item handed over on credit: giving the item adds its value to the tab by itself, so charging it here bills it twice."
 questEditorId: SeverActions
 scriptName: SeverActions_Debt
 executionFunctionName: AddToDebt_Execute

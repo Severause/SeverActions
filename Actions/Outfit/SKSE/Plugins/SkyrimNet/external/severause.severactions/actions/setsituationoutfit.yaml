@@ -1,6 +1,6 @@
 customCategory: outfit
 name: SetSituationOutfit
-description: "Use when {{ player.name }} tells the speaker to always wear one of their saved outfits in a situation, or the speaker settles on that rule, in this line. From then on they change into it by themselves whenever that situation begins. Their saved outfits: {{ sever_outfit_presets(npc.UUID) }}. Not for changing clothes this moment (ApplyOutfitPreset) or a passing remark about what suits the weather."
+description: "Use when {{ player.name }} tells the speaker to always wear one of their saved outfits in a situation, or the speaker settles on that rule, in this line. From then on they change into it by themselves whenever that situation begins. A situation with no outfit of its own may borrow a related one; what applies is listed with their outfits. Their saved outfits: {{ sever_outfit_presets(npc.UUID) }}. Not for changing clothes this moment (ApplyOutfitPreset) or a passing remark about what suits the weather."
 questEditorId: SeverActions
 scriptName: SeverActions_Outfit
 executionFunctionName: SetSituationPreset_Execute

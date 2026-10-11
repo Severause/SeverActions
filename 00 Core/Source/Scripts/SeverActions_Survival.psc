@@ -33,7 +33,7 @@ Float Property FatigueRate = 1.0 Auto
 Float Property ColdRate = 1.0 Auto
 {Multiplier for cold accumulation rate}
 
-Int Property AutoEatThreshold = 50 Auto
+Int Property AutoEatThreshold = 25 Auto
 {Hunger level at which followers will automatically eat (0-100). 0 disables auto-eat.}
 
 Bool Property ShowNotifications = true Auto
@@ -132,6 +132,7 @@ Function Maintenance()
 
     ; Before the disabled early-out: the penalties it removes outlive the switch.
     _ClearHomedStrangerPenalties()
+    _LowerAutoEatDefault()
 
     If !Enabled
         Debug.Trace("[SeverActions_Survival] System disabled, skipping maintenance")
@@ -1421,6 +1422,21 @@ Event OnVerb_Survival(String eventName, String strArg, Float numArg, Form sender
     EndIf
 EndEvent
 
+Function _LowerAutoEatDefault()
+    {One-shot: the auto-eat default fell from 50 to 25, the level at which 0170 starts narrating hunger, so a
+     follower eats from their pack before they complain. A save still on the old default moves; any other value
+     is the player's.}
+    String kClaim = "SurvivalAutoEatDefault25"
+    If !SeverActionsNativeExt2.Migration_TryClaim(kClaim, 1)
+        Return
+    EndIf
+    If AutoEatThreshold == 50
+        AutoEatThreshold = 25
+        Debug.Trace("[SeverActions_Survival] auto-eat threshold moved from the old default 50 to 25")
+    EndIf
+    SeverActionsNativeExt2.Migration_MarkDone(kClaim, 1)
+EndFunction
+
 Function _ClearHomedStrangerPenalties()
     {One-shot: Track Dismissed survival once ticked anyone with a home, not only former followers,
      and nothing re-evaluates those NPCs now, so their stat penalties and SURV rows would stay.}
@@ -1471,6 +1487,17 @@ Int Function HungerRestoreFor(Form akFood)
     Return HUNGER_COOKED_MEAL
 EndFunction
 
+Bool Function MealCounts(Actor akActor)
+    {True when a meal reported for akActor may move survival state: a player teammate or a
+     former follower (a dismissed homed one is fed by TryAutoEat), and not excluded. Loot reports
+     every UseItem meal, a stranger's too, and SetFollowerHunger would give a stranger a
+     permanent SURV row.}
+    If IsFollowerExcluded(akActor)
+        Return False
+    EndIf
+    Return akActor.IsPlayerTeammate() || SeverActionsNativeExt2.Native_WasEverFollower(akActor)
+EndFunction
+
 Function OnFollowerAteFood(Actor akFollower, Form akFood = None)
     {A follower ate outside TryAutoEat's direct path (the ateFood verb, the native food event).
      Lowers hunger by the food's type (a cooked meal when akFood is None), resets the auto-eat
@@ -1480,7 +1507,7 @@ Function OnFollowerAteFood(Actor akFollower, Form akFood = None)
         Return
     EndIf
 
-    If !akFollower
+    If !MealCounts(akFollower)
         Return
     EndIf
 
@@ -1515,7 +1542,7 @@ Function OnFollowerDrank(Actor akFollower, Form akPotion = None)
         Return
     EndIf
 
-    If !akFollower
+    If !MealCounts(akFollower)
         Return
     EndIf
 

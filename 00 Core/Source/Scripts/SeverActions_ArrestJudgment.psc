@@ -307,12 +307,17 @@ Function EndJudgment(Bool released)
             SeverActionsNative.LinkedRef_Clear(guard, ArrestScript.SeverActions_FollowTargetKW)
         EndIf
 
-        ObjectReference jailMarker = ArrestScript.GetJailMarkerForGuard(guard)
-        String jailName = ArrestScript.GetJailNameForGuard(guard)
+        ; The dispatch's jurisdiction, read before ClearDispatchState ends the prisoner's session.
+        Faction crimeFaction = ArrestScript.SessionOrGuardJurisdiction(prisoner, guard)
+        ObjectReference jailMarker = None
+        If crimeFaction != None
+            jailMarker = SeverActionsNativeExt.Hold_GetJailMarkerForCrime(crimeFaction)
+        EndIf
+        String jailName = ArrestScript.JailNameForCrime(crimeFaction)
 
         If jailMarker != None && guard != None && prisoner != None && ArrestScript.IsSameCellArrestActive()
             ; The escort would take a running same-cell arrest's slots: jail straight away instead.
-            ArrestScript.JailDispatchPrisonerNow(guard, prisoner, jailMarker, jailName)
+            ArrestScript.JailDispatchPrisonerNowFor(guard, prisoner, jailMarker, jailName, crimeFaction)
         ElseIf jailMarker != None && guard != None && prisoner != None
             ; Persisted context first (see the release branch).
             ArrestScript.ClearPersistedDispatchState()
@@ -348,14 +353,14 @@ Function EndJudgment(Bool released)
             ; The slots are claimed only now: the waits above let a same-cell arrest start, and
             ; its slots are then not ours to take.
             If ArrestScript.IsSameCellArrestActive()
-                ArrestScript.JailPrisonerAt(guard, prisoner, jailMarker, jailName, false)
+                ArrestScript.JailPrisonerAtFor(guard, prisoner, jailMarker, jailName, false, crimeFaction)
             Else
-                ArrestScript.SetCurrentArrestSlots(guard, prisoner, jailMarker, jailName)
+                ArrestScript.SetCurrentArrestSlotsFor(guard, prisoner, jailMarker, jailName, crimeFaction)
                 ArrestScript.StartEscortPhase()
             EndIf
         Else
             ; No jail marker, or the guard or prisoner is gone: release instead.
-            ArrestScript.DebugMsg("ERROR: Could not determine jail for guard, releasing prisoner")
+            ArrestScript.DebugMsg("ERROR: no jail for this arrest's jurisdiction, or the guard or prisoner is gone - releasing prisoner")
             If prisoner != None
                 ArrestScript.ReleasePrisoner(prisoner)
             EndIf

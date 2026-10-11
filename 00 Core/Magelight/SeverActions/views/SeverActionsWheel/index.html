@@ -180,14 +180,15 @@
 </head>
 <body>
   <div id="overlay" data-ml-sound="cancel">
-    <svg id="wheel" viewBox="0 0 412 412" xmlns="http://www.w3.org/2000/svg" aria-label="Quick actions"></svg>
+    <svg id="wheel" viewBox="0 0 412 412" xmlns="http://www.w3.org/2000/svg" aria-label="Quick actions" data-i18n="quickActions" data-i18n-attr="aria-label"></svg>
   </div>
 
 <script>
   // Quick wheel frontend — the host draws it, the DLL drives it.
-  //  IN  -- window.receiveWheelData({ targetFid, targetName, options:[{id,text,label,disabled?,note?} x0..SLOT_COUNT] })
+  //  IN  -- window.receiveWheelData({ targetFid, targetName, options:[{id,text,label,disabled?,note?} x0..SLOT_COUNT], strings })
   //         the player's non-empty slots in slot order, drawn from the top, clockwise; id is the
-  //         slot's hotkey id (hotkey_table.json), which picks its pigment and glyph (TONES)
+  //         slot's hotkey id (hotkey_table.json), which picks its pigment and glyph (TONES);
+  //         strings = the popup.wheel.* keys of SeverActions_L10n.json in the UI language, prefix stripped (S)
   //         window.resetWheel()   a close the page did not post: nothing drawn stays pickable
   //  OUT -- window.wheelChoice(JSON.stringify({ choice:"select", index }))   pick
   //         window.wheelChoice(JSON.stringify({ choice:"dismiss" }))         cancel
@@ -230,6 +231,24 @@
     };
     var TONE_DEFAULT = ['var(--tone-default)', '\u2726'], TONE_GREYED = 'var(--tone-greyed)';
     function toneOf(o) { return TONES[String(o.id || '').toLowerCase()] || TONE_DEFAULT; }
+    // The page's own text: the payload's strings, the English literal as each one's fallback.
+    var STR = {};
+    function S(k, fb, vars) {
+      var s = (STR && typeof STR[k] === 'string' && STR[k]) ? STR[k] : fb;
+      if (vars) s = s.replace(/\{(\w+)\}/g, function (m, v) { return vars.hasOwnProperty(v) ? String(vars[v]) : m; });
+      return s;
+    }
+    // Static markup: data-i18n names the key, data-i18n-attr the attribute it fills (else the text);
+    // data-i18n-en keeps the English the page shipped with, the fallback on every later receive.
+    function applyStatic() {
+      var nodes = document.querySelectorAll('[data-i18n]');
+      for (var i = 0; i < nodes.length; i++) {
+        var nd = nodes[i], attr = nd.getAttribute('data-i18n-attr');
+        if (!nd.hasAttribute('data-i18n-en')) nd.setAttribute('data-i18n-en', attr ? (nd.getAttribute(attr) || '') : nd.textContent);
+        var txt = S(nd.getAttribute('data-i18n'), nd.getAttribute('data-i18n-en'));
+        if (attr) nd.setAttribute(attr, txt); else nd.textContent = txt;
+      }
+    }
     var sectors = [];
     var sectorText = [];   // each sector's name lines, which brighten with it
     var curOpts = [];
@@ -389,7 +408,7 @@
         hintEl.setAttribute('lengthAdjust', 'spacingAndGlyphs');
       }
     }
-    function restoreHint() { setHint(hot >= 0 && isDisabled(hot) ? noteOf(hot) : 'cancel'); }
+    function restoreHint() { setHint(hot >= 0 && isDisabled(hot) ? noteOf(hot) : S('cancel', 'cancel')); }
     function setHot(i) {
       if (hot >= 0 && sectors[hot]) {
         sectors[hot].classList.remove('hot');
@@ -478,7 +497,7 @@
       svg.appendChild(hub);
       svg.appendChild(el('circle', { cx: CX, cy: CY, r: R_IN - 13 }, 'hub-ring'));
       var name = el('text', { id: 'hub-name', x: CX, y: CY - 2 });
-      var nm = (data.targetName || 'No target');
+      var nm = (data.targetName || S('noTarget', 'No target'));
       name.textContent = nm;
       // A long name (two-word NPCs) must stay inside the hub: squeeze the
       // glyphs to the hub's width rather than spilling into the slots.
@@ -488,7 +507,7 @@
       }
       svg.appendChild(name);
       var hint = el('text', { id: 'hub-hint', x: CX, y: CY + 16 });
-      hint.textContent = 'cancel';
+      hint.textContent = S('cancel', 'cancel');
       svg.appendChild(hint);
       hintEl = hint;
     }
@@ -517,6 +536,8 @@
     window.receiveWheelData = function (data) {
       data = data || {};
       posted = false;
+      STR = (data.strings && typeof data.strings === 'object') ? data.strings : {};
+      applyStatic();
       render(data);
       overlay.classList.add('show');
     };

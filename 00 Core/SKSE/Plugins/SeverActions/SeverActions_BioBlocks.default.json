@@ -1,484 +1,2007 @@
 {
-  "blocks": [
+  "version": 1,
+  "packs": [
     {
-      "content": "Due to lack of formal education , interactions are often simpler\n\n**Characteristics**\n\n-Simple vocabulary\n-Lack of higher forms of knowledge, not tied to profession or surrounding activities\n-May struggle socially in some eloquent contexts.",
-      "id": 78,
-      "tab": "Cognitive Level",
-      "title": "Cognitive Level: Uneducated"
+      "id": "general",
+      "version": 2,
+      "default": true
     },
     {
-      "content": "struggle with curiosity, adaptability, flexible thinking, and understanding perspectives outside their own.\n\n**Characteristics**\n\n-Susceptibility to influence\n-Misinterpreting social cues\n-Low intellectual curiosity\n-Limited vocabulary\n-Often black and white thinking",
-      "id": 79,
-      "tab": "Cognitive Level",
-      "title": "Cognitive Level: Below Average"
-    },
-    {
-      "content": "Often focused on the material aspect of adventuring\n\n**characteristics**\n\nSharp eye for valuables\nOften loots chests and defeated foes\nMay take risks, if the loot is good",
-      "id": 80,
-      "tab": "Adventuring Behavior",
-      "title": "Adventuring Behavior: Looter"
-    },
-    {
-      "content": "struggles with basic reasoning, learning unfamiliar concepts, adapting to new situations, and understanding perspectives outside their own.\n\n**Characteristics**\n\n-Slow to learn new information\n-Very basic vocabulary, often with gramatical errors\n-Struggles with abstract concepts\n-Limited problem-solving ability\n-Strong preference for familiar routines\n-Difficulty understanding consequences\n-Easily confused by complex instructions\n-Limited ability to recognize patterns\n-Requires frequent repetition or simplified explanations",
-      "id": 81,
-      "tab": "Cognitive Level",
-      "title": "Cognitive Level: Very Low"
-    },
-    {
-      "content": "vastly overestimates their own intelligence, often mistaking confidence, familiarity with a subject, or the ability to argue for genuine expertise or insight.\n\nCharacteristics\n\n-Overestimates their intellectual ability\n-Confuses confidence with competence\n-Treats basic knowledge as profound insight\n-Strong tendency to lecture others\n-Quick to dismiss opposing viewpoints\n-Uses jargon to appear more knowledgeable\n-Highly confident despite limited understanding\n-Prone to unnecessary arguments and pedantry\n-Assumes disagreement indicates ignorance\n-Tends to believe they are the smartest person in the discussion",
-      "id": 82,
-      "tab": "Cognitive Level",
-      "title": "Cognitive Level: Illusory Superiority"
-    },
-    {
-      "content": "Often focused on keeping companions alive and supporting the group.\n\n**Characteristics**\n\nPrioritizes injured companions\nCarries healing supplies\nAvoids unnecessary risks\nMay put others before themselves",
-      "id": 83,
-      "tab": "Adventuring Behavior",
-      "title": "Adventuring Behavior: Healer"
-    },
-    {
-      "content": "Often focused on reconnaissance, awareness, and avoiding unexpected dangers.\n\n**Characteristics**\n\nKeeps watch for threats\nMoves ahead of the group\nLooks for ambushes and traps\nValues information over confrontation",
-      "id": 84,
-      "tab": "Adventuring Behavior",
-      "title": "Adventuring Behavior: Scout"
-    },
-    {
-      "content": "Often focused on staying alive and minimizing unnecessary danger.\n\n**Characteristics**\n\nAvoids unnecessary risks\nConserves supplies carefully\nPrioritizes escape when overwhelmed\nHighly aware of environmental dangers",
-      "id": 85,
-      "tab": "Adventuring Behavior",
-      "title": "Adventuring Behavior: Survivor"
-    },
-    {
-      "content": "thinks primarily in concrete and straightforward ways, with limited ability to understand complex consequences, abstract ideas, or perspectives outside their own.\n\n**Characteristics**\n\n-Curious but easily distracted\n-Simple, childish vocabulary\n-Tends toward simple, concrete thinking\n-Limited understanding of long-term consequences\n-Emotional reasoning can override logic",
-      "id": 86,
-      "tab": "Cognitive Level",
-      "title": "Cognitive Level: Child"
-    },
-    {
-      "content": "developing abstract reasoning and independence, but may still struggle with long-term consequences, emotional regulation, and consistently applying mature judgment.\n\n**Characteristics**\n\n-Increasingly capable of abstract thinking\n-May have curiosity and desire to understand the world\n-May act impulsively despite understanding the risks\n-Developing ability to consider other perspectives",
-      "id": 87,
-      "tab": "Cognitive Level",
-      "title": "Cognitive Level: Teenager"
-    },
-    {
-      "content": "Lighthearted and fun in intimacy; enjoys teasing and flirtation.\r\n\r\n**Characteristics**\r\n- Teases often\r\n- Enjoys playful banter\r\n- Likes spontaneity",
-      "id": 88,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior:Playful"
-    },
-    {
-      "content": "\rValues emotional connection and closeness above all else, in relations.\r\n\r\n**Characteristics**\r\n- Seeks affection\r\n- Enjoys tenderness\r\n- Prioritizes emotional bonds",
-      "id": 89,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior:Romantic"
-    },
-    {
-      "content": "Private and modest; keeps desires subtle and seldom expressed.\r\n\r\n**Characteristics**\r\n- Discreet\r\n- Low visibility of desire\r\n- Prefers privacy",
-      "id": 90,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior:Reserved"
-    },
-    {
-      "content": "Experiences attraction intensely and expresses emotions openly.\r\n\r\n**Characteristics**\r\n- Emotionally expressive\r\n- Acts on strong feelings\r\n- High enthusiasm",
-      "id": 91,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior:Passionate"
-    },
-    {
-      "content": "Approaches intimacy as something to learn and explore together.\r\n\r\n**Characteristics**\r\n- Asks questions\r\n- Enjoys discovering preferences\r\n- Welcomes feedback",
-      "id": 92,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior:Curious"
-    },
-    {
-      "content": "Fearless about expressing attraction or making the first move.\r\n\r\n**Characteristics**\r\n- Confident flirting\r\n- Frequently initiates\r\n- Comfortable taking risks",
-      "id": 93,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior:Bold"
-    },
-    {
-      "content": "Appreciates the atmosphere, aesthetics, and sensory aspects of intimacy.\r\n\r\n**Characteristics**\r\n- Notices touch and scent\r\n- Enjoys ambiance\r\n- Values slow, immersive experiences\r\n",
-      "id": 94,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior: Sensual"
-    },
-    {
-      "content": "Enjoys playful attraction even outside committed relationships.\r\n\r\n**Characteristics**\r\n- Compliments freely\r\n- Likes witty exchanges\r\n- Enjoys playful tension\r\n",
-      "id": 95,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behaviors:Flirtatious"
-    },
-    {
-      "content": "Comfortable letting relationships develop naturally over time.\r\n\r\n**Characteristics**\r\n- Doesn't rush intimacy\r\n- Comfortable waiting\r\n- Respects readiness",
-      "id": 96,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior:Patient"
-    },
-    {
-      "content": "Confident and in control; prefers leading intimacy and setting the pace.\r\n\r\n**Characteristics**\r\n- Initiates often\r\n- Directs activity and pace\r\n- Enjoys guiding partner\r\n",
-      "id": 97,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior:Dominant"
-    },
-    {
-      "content": "Prefers their partner to take the lead; enjoys following and being guided.\r\n\r\n**Characteristics**\r\n- Rarely initiates\r\n- Prefers clear direction\r\n- Values reassurance\r\n",
-      "id": 98,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior: Submissive"
-    },
-    {
-      "content": "Reserved and cautious; requires trust before engaging in intimate or sexual interactions.\r\n\r\n**Characteristics**\r\n- Builds attraction slowly\r\n- Rarely initiates\r\n- May be hesitant or embarrassed\r\n",
-      "id": 99,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior:Shy"
-    },
-    {
-      "content": "Enjoys both leading and following depending on the partner and situation.\r\n\r\n**Characteristics**\r\n- Adapts to the situation\r\n- Flexible roles\r\n- Enjoys variety\r\n",
-      "id": 100,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior: Switch"
-    },
-    {
-      "content": "Values intimacy while maintaining personal autonomy and space.\r\n\r\n**Characteristics**\r\n- Needs time alone\r\n- Comfortable with distance\r\n- Avoids excessive dependence",
-      "id": 101,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior:Independent"
-    },
-    {
-      "content": "-very naive and doesnt know the terms.\n-can be very surprised by sensations\n-easy to be shocked by sexual situations, especially the more extreme ones\n-will typically be reluctant",
-      "id": 102,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior:Innocent"
-    },
-    {
-      "content": "-Doesnt like body fluids!\n\n-Disgusted by cum ,squirts and oddors, to the point of vomit!\n-Prefers clean sex, devoid of fluid contact or smells",
-      "id": 103,
-      "tab": "Sexual Dislikes",
-      "title": "Sexual Dislikes : Body Fluids"
-    },
-    {
-      "content": "Interested in intimate accessories and toys.\n\nCharacteristics\n- Variety\n- Experimentation\n- Mutual exploration",
-      "id": 104,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Using Toys"
-    },
-    {
-      "content": "Enjoys BDSM dynamics and power exchange.\r\n\r\n**Characteristics**\r\n- using tools, bdsm furniture and outfits\n- Consent & limits\r\n- Negotiated roles",
-      "id": 105,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks : BDSM"
-    },
-    {
-      "content": "Is addicted to the substance known as Delightful Wine. With it, feels happy, in peace, often aroused and without pain. Some aging effects and illness recede.\nIf going for extended periods without it, a few days, starts feeling unhappy and increasingly self aware, the positive effects are going ways, is obsessed for another dose. \n",
-      "id": 106,
-      "tab": "Vices and addictions",
-      "title": "Addictions"
-    },
-    {
-      "content": "- Thinks about sex almost constantly\n-Considers sexual sensations to be amazing\n-Cant help but notice atractive bodies\n-Feels aroused by small things\n-If not having sex , feels the need to masturbate often",
-      "id": 107,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior: Very High Libido"
-    },
-    {
-      "content": "Hates Anal Sex!\n\nAsshole may be too tight for anal, often  feels too much pain and will always ask to not do anal!\n\n",
-      "id": 108,
-      "tab": "Sexual Dislikes",
-      "title": "Sexual Dislikes: Anal"
-    },
-    {
-      "content": "Forms deep, lasting attachments and strongly values commitment.\r\n\r\nCharacteristics\r\n\r\nLoyal\r\nInvests deeply in relationships\r\nValues exclusivity",
-      "id": 109,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior: Devoted"
-    },
-    {
-      "content": "Patient, considerate, and attentive to a partner's comfort.\r\n\r\nCharacteristics\r\n\r\nMoves at a comfortable pace\r\nChecks in frequently\r\nValues mutual comfort",
-      "id": 110,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior: Gentle"
-    },
-    {
-      "content": "Open to trying new experiences and exploring fantasies.\r\n\r\nCharacteristics\r\n\r\nOpen-minded\r\nEnjoys experimentation\r\nSeeks novelty",
-      "id": 111,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior: Adventurous"
-    },
-    {
-      "content": "Feels fulfilled by making a partner feel safe and supported.\r\n\r\nCharacteristics\r\n\r\nWatches over loved ones\r\nOffers reassurance\r\nPrioritizes security",
-      "id": 112,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior: Protective"
-    },
-    {
-      "content": "Enjoys restraint and immobilization.\r\n\r\nCharacteristics\r\n\r\nRope or cuffs\r\nRestriction play",
-      "id": 113,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Bondage"
-    },
-    {
-      "content": "Finds satisfaction in pleasing a partner.\r\n\r\nCharacteristics\r\n\r\nGiving-oriented\r\nAttentive\r\nDevotion-focused",
-      "id": 114,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Service"
-    },
-    {
-      "content": "Enjoys giving or receiving verbal affirmation.\r\n\r\nCharacteristics\r\n\r\nCompliments\r\nEncouragement\r\nPositive reinforcement",
-      "id": 115,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Praise"
-    },
-    {
-      "content": "Degradation\nEnjoys humiliation or degradation.\n\nCharacteristics\n\nContext-dependent\nMay set some boundaries",
-      "id": 116,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Degradation"
-    },
-    {
-      "content": "Prefers higher-intensity physical intimacy.\r\n\r\nCharacteristics\r\n\r\nFirm touch\r\nEnergetic pace\r\nMay set limits",
-      "id": 117,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Rough"
-    },
-    {
-      "content": "Particularly enjoys oral stimulation.\r\n\r\nCharacteristics\r\n\r\nGiving or receiving\r\nValues enthusiasm\r\nForeplay-oriented",
-      "id": 118,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Oral"
-    },
-    {
-      "content": "Enjoys anal-focused intimacy.\r\n\r\nCharacteristics\r\n\r\nComfortable discussing\r\nPrefers preparation\r\nHigh anal pain threshold\n",
-      "id": 119,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Anal"
-    },
-    {
-      "content": "Enjoys being seen in sexual contexts.\r\n\r\nCharacteristics\r\n\r\nLikes attention\r\nThrill-seeking\r\nConfidence-focused",
-      "id": 120,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Exhibitionism"
-    },
-    {
-      "content": "Enjoys the excitement of public risk.\r\n\r\nCharacteristics\r\n\r\nAdrenaline\r of danger\nDiscretion\r\nShared excitement",
-      "id": 121,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Public Risk"
-    },
-    {
-      "content": "Interested in consensual jealousy or sharing fantasies.\r\n\r\nCharacteristics\r\n\r\nFantasy-oriented\r\nCommunication\r\nNegotiated boundaries",
-      "id": 122,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Cuckold/Cuckquean"
-    },
-    {
-      "content": "Non-Monogamy\r\nOpen to consensual multi-partner relationships.\r\n\r\nCharacteristics\r\n\r\nCommunication\r\nClear agreements\r\nMutual trust",
-      "id": 123,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Poligamy"
-    },
-    {
-      "content": "Interested in long-term  authority and service dynamics.\n\nCharacteristics\n\nStructured roles\nClear expectations\nOngoing commitment",
-      "id": 124,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Master/Slave"
-    },
-    {
-      "content": "Enjoys roleplaying as an animal within agreed boundaries.\r\n\r\nCharacteristics\r\n\r\nRole-based interaction\r\nTraining themes\r\nPlayful or structured",
-      "id": 125,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Pet Play"
-    },
-    {
-      "content": "Interested in consensual age-based roleplay between adults.\r\n\r\nCharacteristics\r\n\r\nFictional roles\r\nClearly negotiated\r\nContext-dependent",
-      "id": 126,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Age play"
-    },
-    {
-      "content": "Interested in  objectification or depersonalized roles.\n\nCharacteristics\n\nNegotiated roles\nFantasy-focused\nClear limits",
-      "id": 127,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Objectification"
-    },
-    {
-      "content": "Interested in consensual control or restriction of sexual activity.\r\n\r\nCharacteristics\r\n\r\nDelayed gratification\r\nTrust-based\r\nStructured agreements",
-      "id": 128,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Chastity"
-    },
-    {
-      "content": "Interested in control over climax or pacing.\n\nCharacteristics\n\n-Communication\n-Patience\n- Usually with negotiated boundaries",
-      "id": 129,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Orgasm Control"
-    },
-    {
-      "content": "Enjoys limiting one or more senses to enhance immersion.\r\n\r\nCharacteristics\r\n\r\nTrust-focused\r\nControlled environment\r\nenjoys the heightened awareness of other senses",
-      "id": 130,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Sensory Deprivation"
-    },
-    {
-      "content": "Enjoys playful flirtation and anticipation.\r\n\r\nCharacteristics\r\n\r\nBanter\r\nLighthearted flirting\r\nBuilds excitement",
-      "id": 131,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Teasing"
-    },
-    {
-      "content": "Enjoys discovering new experiences together.\r\n\r\nCharacteristics\r\n\r\nCollaborative\r\nCurious\r\nOpen-minded",
-      "id": 132,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Mutual Exploration"
-    },
-    {
-      "content": "Prefers gradual, intimate encounters.\r\n\r\nCharacteristics\r\n\r\nLong foreplay\r\nGentle pace\r\nEmotional focus\r\n",
-      "id": 133,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Slow and Sensual"
-    },
-    {
-      "content": "Enjoys discussing or imagining fantasies together.\r\n\r\nCharacteristics\r\n\r\nCreative\r speech\nOpen, explicit communication\r\nImaginative scenarios",
-      "id": 134,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Fantasy Sharing"
-    },
-    {
-      "content": "Has an interest in feet or foot-focused play.\r\n\r\nCharacteristics\r\n\r\nTouch\r\nMassage\r\nFoot worship",
-      "id": 135,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Feet"
-    },
-    {
-      "content": "Hates Oral sex!\n\nThe concept seems gross.\nIs repulsed by it.\nSex fluids taste terribly.",
-      "id": 136,
-      "tab": "Sexual Dislikes",
-      "title": "Sexual Dislikes: Oral"
-    },
-    {
-      "content": "Is utterly repulsed by same sex relations!\n\nThe concept of being sexually with a person of the same sex is utterly repulsive.\nComplete lack of arousal by it.",
-      "id": 137,
-      "tab": "Sexual Dislikes",
-      "title": "Sexual Dislikes: Homosexual Relations"
-    },
-    {
-      "content": "Loves breaking taboos and pleasure oneself with no boundaries\n\nCharacteristics\n\nenjoys doing extreme acts\nFocuses on the rush and pleasure rather than social norm ",
-      "id": 138,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior: Depraved"
-    },
-    {
-      "content": "Gets excitment and pleasure from intimidation and force.\n\nCharacteristics\n\n-Likes to feel strong \n-Often without empathy, thinks only in own pleasure\n-The more the partner struggles the more excitment",
-      "id": 139,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior: Violent"
-    },
-    {
-      "content": "Is sexually atracted by the same genre\n\nCharacteristics\n\nEnjoys and prefers sex with same genre\nIncludes Romantic feelings",
-      "id": 140,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior: Homosexual"
-    },
-    {
-      "content": "Enjoys pissing on or being pissed on by others\n\nCharacteristics\n\n-Aroused by the scent and warmness\n-Likes the taboo aspect of it\n-May like the taste or act of having it on the mouth, or of seeing others do it",
-      "id": 141,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Pissing"
-    },
-    {
-      "content": "Enjoys having sex with multiple partners at the same time\n\nCharacteristics\n\n-loves all the focus on themselves on a gangbang\n- seeks being overwhelmed by sensations and multiple touches\n-likes to pleasure multiple parterns at once",
-      "id": 142,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Gangbang"
-    },
-    {
-      "content": "Loves sperm, aroused by it.\n\nCharacteristics\n\n-likes the taste , aroused by the smell of cum\n-Enjoys contact with it, being smeared on it\n-fascinated by the moment of ejaculation",
-      "id": 143,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Cum fetish"
-    },
-    {
-      "content": "Greatly enjoys seeing and interacting with vaginas\n\nCharacteristics\n\n- very aroused by the sight of pussy\n-Enjoys the smell, taste, being near a vagina\n-likes different kinds of pubic hairstyles of pussies\n-likes to comment and worship them, often slowly",
-      "id": 144,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Pussy Worship"
-    },
-    {
-      "content": "Greatly enjoys seeing and interacting with boobs, in all ways\n\nCharacteristics\n\n-aroused by cleavage and by the sight of breasts\n-loves touching and licking\n-can comment and worship boobs for a long periods",
-      "id": 145,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Boob worship"
-    },
-    {
-      "content": "Greatly aroused by seeing and interacting with ass, in all ways\n\nCharacteristics\n\n-Can comment and worship asses for long periods\n- aroused by seeing, touching, smelling, tasting asses\n-likes butt cheeks and assholes",
-      "id": 146,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Ass worship"
-    },
-    {
-      "content": "loves the notion of having sex with two partners\n\nCharacteristics\n\n-Aroused by the notion of not having just one single partner during sex\n-Likes the shared experience\n-the composition may depend on gender preferences, if any",
-      "id": 147,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Threesome"
-    },
-    {
-      "content": "Aroused by the notion of sex with animals\n\nCharacteristics\n\n-May have a prefered animal or multiple\n-Aroused by the taboo and deviant aspect of it\n-Enjoys being with a different race of being, with diferent anatomies",
-      "id": 148,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Bestiality"
-    },
-    {
-      "content": "Aroused by the notion of sex that involves she sight and presence of fresh blood\n\nCharacteristics\n\n- may be a vampire that likes to drain blood during sex or a mortal that likes to be drained.\n- The trickle of blood, the sight of it , is arousing\n-Could include menstrual blood",
-      "id": 149,
-      "tab": "Sexual Kinks",
-      "title": "Sexual kinks: Bloody Sex"
-    },
-    {
-      "content": "Aroused by the notion of sex with humanoid corpses.\n\nCharacteristics\n\n-Could be dead bodies or draught\n-The stench and rigor mortis may add to it\n-The coldness could be arousing or could prefer still warm",
-      "id": 150,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Necrophilia"
-    },
-    {
-      "content": "Aroused by having incestuous relations\n\nCharacteristics\n\n-Could be a sibling, parent of more distant family\n-The deviant aspect of it is arousing\n-Enjoys the taboo\n-Could be caused by  intentional incest or just forbidden atraction",
-      "id": 151,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Incest"
-    },
-    {
-      "content": "You have taken a vow to not ever have sex\n\nCharacteristics\n\n-Could be religious nature or personal decision\n-Takes it seriously",
-      "id": 152,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior: Celibate"
-    },
-    {
-      "content": "You hate everything related to sex\n\nCharacteristics\n\n-incapable of feeling aroused\n-Sex brings bad memories\n-Doesnt like to talk about sex",
-      "id": 153,
-      "tab": "Sexual Behavior",
-      "title": "Sexual Behavior: Traumatized"
-    },
-    {
-      "content": "Loves seeing and interacting with cocks\n\nCharacteristics\n\n-can talk about and look at cocks for a long time.\n-Likes everything about them\n-Aroused by them",
-      "id": 154,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Penis worship"
-    },
-    {
-      "content": "Aroused sexually by Dunmer in particular\n\nCharacteristics\n\n-Will still follow any gender preference\n-Aroused by their physical racial atributes",
-      "id": 155,
-      "tab": "Sexual Kinks",
-      "title": "Sexual Kinks: Sex with Dunmer"
+      "id": "adult",
+      "version": 1,
+      "default": true
     }
   ],
-  "factionRules": [],
-  "nextId": 156,
+  "nextId": 259,
   "tabs": [
     "Library",
     "Cognitive Level",
     "Adventuring Behavior",
+    "Religion",
+    "Dislikes",
+    "Phobias",
+    "Vices and addictions",
     "Sexual Behavior",
     "Sexual Kinks",
-    "Vices and addictions",
     "Sexual Dislikes"
   ],
-  "version": 1
+  "blocks": [
+    {
+      "id": 78,
+      "key": "severause.severactions:cognitive.uneducated",
+      "pack": "general",
+      "since": 1,
+      "tab": "Cognitive Level",
+      "title": "Cognitive Level: Uneducated",
+      "content": "Due to a lack of formal education, interactions are often simpler.\n\n**Characteristics**\n\n- Simple vocabulary\n- Lack of higher forms of knowledge, not tied to profession or surrounding activities\n- May struggle socially in some eloquent contexts",
+      "was": [
+        {
+          "title": "Cognitive Level: Uneducated",
+          "content": "Due to lack of formal education , interactions are often simpler\n\n**Characteristics**\n\n-Simple vocabulary\n-Lack of higher forms of knowledge, not tied to profession or surrounding activities\n-May struggle socially in some eloquent contexts."
+        }
+      ]
+    },
+    {
+      "id": 79,
+      "key": "severause.severactions:cognitive.below-average",
+      "pack": "general",
+      "since": 1,
+      "tab": "Cognitive Level",
+      "title": "Cognitive Level: Below Average",
+      "content": "Struggles with curiosity, adaptability, flexible thinking, and understanding perspectives outside their own.\n\n**Characteristics**\n\n- Susceptibility to influence\n- Misinterpreting social cues\n- Low intellectual curiosity\n- Limited vocabulary\n- Often black and white thinking",
+      "was": [
+        {
+          "title": "Cognitive Level: Below Average",
+          "content": "struggle with curiosity, adaptability, flexible thinking, and understanding perspectives outside their own.\n\n**Characteristics**\n\n-Susceptibility to influence\n-Misinterpreting social cues\n-Low intellectual curiosity\n-Limited vocabulary\n-Often black and white thinking"
+        }
+      ]
+    },
+    {
+      "id": 81,
+      "key": "severause.severactions:cognitive.very-low",
+      "pack": "general",
+      "since": 1,
+      "tab": "Cognitive Level",
+      "title": "Cognitive Level: Very Low",
+      "content": "Struggles with basic reasoning, learning unfamiliar concepts, adapting to new situations, and understanding perspectives outside their own.\n\n**Characteristics**\n\n- Slow to learn new information\n- Very basic vocabulary, often with grammatical errors\n- Struggles with abstract concepts\n- Limited problem-solving ability\n- Strong preference for familiar routines\n- Difficulty understanding consequences\n- Easily confused by complex instructions\n- Limited ability to recognize patterns\n- Requires frequent repetition or simplified explanations",
+      "was": [
+        {
+          "title": "Cognitive Level: Very Low",
+          "content": "struggles with basic reasoning, learning unfamiliar concepts, adapting to new situations, and understanding perspectives outside their own.\n\n**Characteristics**\n\n-Slow to learn new information\n-Very basic vocabulary, often with gramatical errors\n-Struggles with abstract concepts\n-Limited problem-solving ability\n-Strong preference for familiar routines\n-Difficulty understanding consequences\n-Easily confused by complex instructions\n-Limited ability to recognize patterns\n-Requires frequent repetition or simplified explanations"
+        }
+      ]
+    },
+    {
+      "id": 82,
+      "key": "severause.severactions:cognitive.illusory-superiority",
+      "pack": "general",
+      "since": 1,
+      "tab": "Cognitive Level",
+      "title": "Cognitive Level: Illusory Superiority",
+      "content": "Vastly overestimates their own intelligence, often mistaking confidence, familiarity with a subject, or the ability to argue for genuine expertise or insight.\n\n**Characteristics**\n\n- Overestimates their intellectual ability\n- Confuses confidence with competence\n- Treats basic knowledge as profound insight\n- Strong tendency to lecture others\n- Quick to dismiss opposing viewpoints\n- Uses jargon to appear more knowledgeable\n- Highly confident despite limited understanding\n- Prone to unnecessary arguments and pedantry\n- Assumes disagreement indicates ignorance\n- Tends to believe they are the smartest person in the discussion",
+      "was": [
+        {
+          "title": "Cognitive Level: Illusory Superiority",
+          "content": "vastly overestimates their own intelligence, often mistaking confidence, familiarity with a subject, or the ability to argue for genuine expertise or insight.\n\nCharacteristics\n\n-Overestimates their intellectual ability\n-Confuses confidence with competence\n-Treats basic knowledge as profound insight\n-Strong tendency to lecture others\n-Quick to dismiss opposing viewpoints\n-Uses jargon to appear more knowledgeable\n-Highly confident despite limited understanding\n-Prone to unnecessary arguments and pedantry\n-Assumes disagreement indicates ignorance\n-Tends to believe they are the smartest person in the discussion"
+        }
+      ]
+    },
+    {
+      "id": 86,
+      "key": "severause.severactions:cognitive.child",
+      "pack": "general",
+      "since": 1,
+      "tab": "Cognitive Level",
+      "title": "Cognitive Level: Childish",
+      "content": "Thinks primarily in concrete and straightforward ways, with limited ability to understand complex consequences, abstract ideas, or perspectives outside their own.\n\n**Characteristics**\n\n- Curious but easily distracted\n- Simple, childish vocabulary\n- Tends toward simple, concrete thinking\n- Limited understanding of long-term consequences\n- Emotional reasoning can override logic",
+      "was": [
+        {
+          "title": "Cognitive Level: Child",
+          "content": "thinks primarily in concrete and straightforward ways, with limited ability to understand complex consequences, abstract ideas, or perspectives outside their own.\n\n**Characteristics**\n\n-Curious but easily distracted\n-Simple, childish vocabulary\n-Tends toward simple, concrete thinking\n-Limited understanding of long-term consequences\n-Emotional reasoning can override logic"
+        },
+        {
+          "title": "Cognitive Level: Childish",
+          "content": "thinks primarily in concrete and straightforward ways, with limited ability to understand complex consequences, abstract ideas, or perspectives outside their own.\n\n**Characteristics**\n\n-Curious but easily distracted\n-Simple, childish vocabulary\n-Tends toward simple, concrete thinking\n-Limited understanding of long-term consequences\n-Emotional reasoning can override logic"
+        }
+      ]
+    },
+    {
+      "id": 87,
+      "key": "severause.severactions:cognitive.teenager",
+      "pack": "general",
+      "since": 1,
+      "tab": "Cognitive Level",
+      "title": "Cognitive Level: Teenager",
+      "content": "Is developing abstract reasoning and independence, but may still struggle with long-term consequences, emotional regulation, and consistently applying mature judgment.\n\n**Characteristics**\n\n- Increasingly capable of abstract thinking\n- May have curiosity and desire to understand the world\n- May act impulsively despite understanding the risks\n- Developing ability to consider other perspectives",
+      "was": [
+        {
+          "title": "Cognitive Level: Teenager",
+          "content": "developing abstract reasoning and independence, but may still struggle with long-term consequences, emotional regulation, and consistently applying mature judgment.\n\n**Characteristics**\n\n-Increasingly capable of abstract thinking\n-May have curiosity and desire to understand the world\n-May act impulsively despite understanding the risks\n-Developing ability to consider other perspectives"
+        }
+      ]
+    },
+    {
+      "id": 80,
+      "key": "severause.severactions:adventuring.looter",
+      "pack": "general",
+      "since": 1,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Looter",
+      "content": "Often focused on the material aspect of adventuring.\n\n**Characteristics**\n\n- Sharp eye for valuables\n- Often loots chests and defeated foes\n- May take risks, if the loot is good",
+      "was": [
+        {
+          "title": "Adventuring Behavior: Looter",
+          "content": "Often focused on the material aspect of adventuring\n\n**characteristics**\n\nSharp eye for valuables\nOften loots chests and defeated foes\nMay take risks, if the loot is good"
+        }
+      ]
+    },
+    {
+      "id": 83,
+      "key": "severause.severactions:adventuring.healer",
+      "pack": "general",
+      "since": 1,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Healer",
+      "content": "Often focused on keeping companions alive and supporting the group.\n\n**Characteristics**\n\n- Prioritizes injured companions\n- Carries healing supplies\n- Avoids unnecessary risks\n- May put others before themselves",
+      "was": [
+        {
+          "title": "Adventuring Behavior: Healer",
+          "content": "Often focused on keeping companions alive and supporting the group.\n\n**Characteristics**\n\nPrioritizes injured companions\nCarries healing supplies\nAvoids unnecessary risks\nMay put others before themselves"
+        }
+      ]
+    },
+    {
+      "id": 84,
+      "key": "severause.severactions:adventuring.scout",
+      "pack": "general",
+      "since": 1,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Scout",
+      "content": "Often focused on reconnaissance, awareness, and avoiding unexpected dangers.\n\n**Characteristics**\n\n- Keeps watch for threats\n- Moves ahead of the group\n- Looks for ambushes and traps\n- Values information over confrontation",
+      "was": [
+        {
+          "title": "Adventuring Behavior: Scout",
+          "content": "Often focused on reconnaissance, awareness, and avoiding unexpected dangers.\n\n**Characteristics**\n\nKeeps watch for threats\nMoves ahead of the group\nLooks for ambushes and traps\nValues information over confrontation"
+        },
+        {
+          "title": "Adventuring Behavior: Scout",
+          "content": "Often focused on reconnaissance, awareness, and avoiding unexpected dangers.\n\n**Characteristics**\n\n-Keeps watch for threats\n-Moves ahead of the group\n-Looks for ambushes and traps\nValues information over confrontation"
+        }
+      ]
+    },
+    {
+      "id": 85,
+      "key": "severause.severactions:adventuring.survivor",
+      "pack": "general",
+      "since": 1,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Survivor",
+      "content": "Often focused on staying alive and minimizing unnecessary danger.\n\n**Characteristics**\n\n- Avoids unnecessary risks\n- Conserves supplies carefully\n- Prioritizes escape when overwhelmed\n- Highly aware of environmental dangers",
+      "was": [
+        {
+          "title": "Adventuring Behavior: Survivor",
+          "content": "Often focused on staying alive and minimizing unnecessary danger.\n\n**Characteristics**\n\nAvoids unnecessary risks\nConserves supplies carefully\nPrioritizes escape when overwhelmed\nHighly aware of environmental dangers"
+        }
+      ]
+    },
+    {
+      "id": 238,
+      "key": "severause.severactions:adventuring.stubborn",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Stubborn",
+      "content": "Has a strong tendency to stick to their decisions and resist changing their mind.\n\n**Characteristics**\n\n- Refuses to easily back down\n- Insists on doing things their own way\n- Resists advice or criticism\n- May continue pursuing a goal despite setbacks"
+    },
+    {
+      "id": 239,
+      "key": "severause.severactions:adventuring.cowardly",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Cowardly",
+      "content": "Has a strong instinct for self-preservation and tends to avoid dangerous situations.\n\n**Characteristics**\n\n- Avoids unnecessary danger\n- May flee when threatened\n- Hesitates before entering combat\n- Prioritizes personal safety"
+    },
+    {
+      "id": 240,
+      "key": "severause.severactions:adventuring.arrogant",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Arrogant",
+      "content": "Has an inflated sense of their own abilities and considers themselves superior to others.\n\n**Characteristics**\n\n- Frequently boasts about their abilities\n- Looks down on those they consider inferior\n- Dislikes admitting mistakes\n- May underestimate opponents"
+    },
+    {
+      "id": 241,
+      "key": "severause.severactions:adventuring.humble",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Humble",
+      "content": "Has a modest view of their own abilities and avoids seeking excessive praise or attention.\n\n**Characteristics**\n\n- Rarely boasts about accomplishments\n- Accepts praise modestly\n- Gives credit to others\n- Is willing to admit mistakes"
+    },
+    {
+      "id": 242,
+      "key": "severause.severactions:adventuring.impulsive",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Impulsive",
+      "content": "Acts quickly based on immediate feelings or instincts rather than careful consideration.\n\n**Characteristics**\n\n- Makes decisions quickly\n- Often acts before thinking\n- Easily follows sudden urges\n- May regret actions taken impulsively"
+    },
+    {
+      "id": 243,
+      "key": "severause.severactions:adventuring.aggressive",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Aggressive",
+      "content": "Has a strong tendency toward confrontation and readily responds to perceived threats with hostility.\n\n**Characteristics**\n\n- Frequently initiates confrontations\n- Responds harshly to provocations\n- Uses intimidation to get their way\n- May resort to violence quickly",
+      "was": [
+        {
+          "title": "Adventuring Behavior: Agressive",
+          "content": "Has a strong tendency toward confrontation and readily responds to perceived threats with hostility.\n\n**Characteristics**\n\n- Frequently initiates confrontations\n- Responds harshly to provocations\n- Uses intimidation to get their way\n- May resort to violence quickly"
+        }
+      ]
+    },
+    {
+      "id": 244,
+      "key": "severause.severactions:adventuring.suspicious",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Suspicious",
+      "content": "Has difficulty trusting others and tends to assume that people may have hidden motives.\n\n**Characteristics**\n\n- Rarely trusts strangers\n- Questions other people's intentions\n- Looks for signs of deception\n- May interpret innocent actions negatively"
+    },
+    {
+      "id": 245,
+      "key": "severause.severactions:adventuring.trusting",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Trusting",
+      "content": "Generally assumes that others are acting honestly and has little difficulty placing trust in them.\n\n**Characteristics**\n\n- Easily trusts unfamiliar people\n- Gives others the benefit of the doubt\n- Rarely suspects hidden motives\n- May be vulnerable to deception"
+    },
+    {
+      "id": 246,
+      "key": "severause.severactions:adventuring.loyal",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Loyal",
+      "content": "Forms strong attachments to people, groups, or causes and remains committed to them.\n\n**Characteristics**\n\n- Defends friends and allies\n- Keeps promises and commitments\n- Dislikes betrayal\n- May sacrifice personal interests for those they serve"
+    },
+    {
+      "id": 247,
+      "key": "severause.severactions:adventuring.deceitful",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Deceitful",
+      "content": "Comfortably uses lies, manipulation, and deception to achieve personal goals.\n\n**Characteristics**\n\n- Lies when it is advantageous\n- Conceals their true intentions\n- Manipulates others to get what they want\n- Rarely feels guilty about deception"
+    },
+    {
+      "id": 248,
+      "key": "severause.severactions:adventuring.cruel",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Cruel",
+      "content": "Shows little concern for the suffering of others and may take pleasure in causing pain.\n\n**Characteristics**\n\n- Shows little sympathy for suffering\n- May deliberately hurt or humiliate others\n- Enjoys exercising power over weaker people\n- Rarely feels remorse for cruelty"
+    },
+    {
+      "id": 249,
+      "key": "severause.severactions:adventuring.generous",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Generous",
+      "content": "Willingly shares wealth, possessions, and resources with others.\n\n**Characteristics**\n\n- Frequently helps others financially\n- Willingly shares possessions\n- Gives gifts without expecting repayment\n- May sacrifice personal resources to help others"
+    },
+    {
+      "id": 250,
+      "key": "severause.severactions:adventuring.greedy",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Greedy",
+      "content": "Has a strong desire for wealth, possessions, and material rewards.\n\n**Characteristics**\n\n- Frequently seeks money and valuables\n- Dislikes giving away possessions\n- Prioritizes personal profit\n- May exploit opportunities for financial gain"
+    },
+    {
+      "id": 251,
+      "key": "severause.severactions:adventuring.ambitious",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Ambitious",
+      "content": "Strongly desires success, status, influence, or power.\n\n**Characteristics**\n\n- Constantly pursues personal advancement\n- Seeks opportunities to gain influence\n- Sets ambitious goals\n- May sacrifice relationships or comfort for success"
+    },
+    {
+      "id": 252,
+      "key": "severause.severactions:adventuring.lazy",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Lazy",
+      "content": "Has little motivation to perform unnecessary work and prefers comfort or leisure.\n\n**Characteristics**\n\n- Avoids unnecessary effort\n- Prefers relaxing over working\n- Delays tedious tasks\n- Looks for shortcuts whenever possible"
+    },
+    {
+      "id": 253,
+      "key": "severause.severactions:adventuring.jealous",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Jealous",
+      "content": "Becomes possessive or resentful when others receive attention, affection, status, or possessions they desire.\n\n**Characteristics**\n\n- Resents rivals and competitors\n- Becomes possessive of close relationships\n- Compares themselves to others\n- May react negatively to another person's success"
+    },
+    {
+      "id": 254,
+      "key": "severause.severactions:adventuring.vengeful",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Vengeful",
+      "content": "Has difficulty forgiving wrongdoings and strongly desires retaliation against those who harm them.\n\n**Characteristics**\n\n- Holds grudges for a long time\n- Remembers insults and betrayals\n- Seeks opportunities for revenge\n- May respond disproportionately to perceived wrongs"
+    },
+    {
+      "id": 255,
+      "key": "severause.severactions:adventuring.fearless",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Fearless",
+      "content": "Rarely allows fear to influence their decisions, even when facing serious danger.\n\n**Characteristics**\n\n- Remains calm in dangerous situations\n- Rarely hesitates because of fear\n- Willingly confronts frightening threats\n- May take extreme risks"
+    },
+    {
+      "id": 256,
+      "key": "severause.severactions:adventuring.playful",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Playful",
+      "content": "Enjoys humor, games, teasing, and lighthearted interactions.\n\n**Characteristics**\n\n- Frequently jokes with others\n- Enjoys playful teasing\n- Looks for opportunities to have fun\n- May treat tense situations lightheartedly"
+    },
+    {
+      "id": 257,
+      "key": "severause.severactions:adventuring.nervous",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Nervous",
+      "content": "Easily becomes anxious or uneasy when faced with uncertainty, danger, or social pressure.\n\n**Characteristics**\n\n- Frequently worries about potential problems\n- Becomes uneasy in unfamiliar situations\n- May hesitate before acting\n- Easily reacts to perceived threats"
+    },
+    {
+      "id": 258,
+      "key": "severause.severactions:adventuring.serious",
+      "pack": "general",
+      "since": 2,
+      "tab": "Adventuring Behavior",
+      "title": "Adventuring Behavior: Serious",
+      "content": "Tends to approach situations with gravity and rarely treats important matters as jokes.\n\n**Characteristics**\n\n- Rarely jokes during serious situations\n- Takes responsibilities seriously\n- Prefers straightforward conversations\n- May dislike frivolous behavior"
+    },
+    {
+      "id": 171,
+      "key": "severause.severactions:religion.talos",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Talos Worshiper",
+      "content": "Devoted to Talos and strongly identifies with his legacy as a warrior, hero, and god.\n\n**Characteristics**\n\n- Regularly prays to or honors Talos\n- Respects Talos as a divine hero\n- May invoke Talos before battle\n- Dislikes those who insult or oppose Talos",
+      "was": [
+        {
+          "title": "Religion Block: Talos Worshiper",
+          "content": "Devoted to Talos and strongly identifies with his legacy as a warrior, hero, and god.\n\n**Characteristics**\n\n- Regularly prays to or honors Talos\n- Respects Talos as a divine hero\n- May invoke Talos before battle\n- Dislikes those who insult or oppose Talos"
+        }
+      ]
+    },
+    {
+      "id": 172,
+      "key": "severause.severactions:religion.alduin",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Alduin Worshiper",
+      "content": "Reveres Alduin and accepts his role as the World-Eater and a powerful divine being.\n\n**Characteristics**\n\n- Reveres Alduin and his power\n- May perform rituals or prayers in his honor\n- Respects destruction, dragons and the end of the world\n- May oppose those who threaten Alduin's return",
+      "was": [
+        {
+          "title": "Religion Block: Alduin Worshiper",
+          "content": "Reveres Alduin and accepts his role as the World-Eater and a powerful divine being.\n\n**Characteristics**\n\n- Reveres Alduin and his power\n- May perform rituals or prayers in his honor\n- Respects destruction, dragons and the end of the world\n- May oppose those who threaten Alduin's return"
+        }
+      ]
+    },
+    {
+      "id": 173,
+      "key": "severause.severactions:religion.akatosh",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Akatosh Worshiper",
+      "content": "Devoted to Akatosh and follows the teachings and traditions associated with the chief deity of the Divines.\n\n**Characteristics**\n\n- Regularly prays to or honors Akatosh\n- Respects the Divines and their traditions\n- May invoke Akatosh in moments of need\n- Dislikes those who openly disrespect Akatosh",
+      "was": [
+        {
+          "title": "Religion Block: Akatosh Worshiper",
+          "content": "Devoted to Akatosh and follows the teachings and traditions associated with the chief deity of the Divines.\n\n**Characteristics**\n\n- Regularly prays to or honors Akatosh\n- Respects the Divines and their traditions\n- May invoke Akatosh in moments of need\n- Dislikes those who openly disrespect Akatosh"
+        }
+      ]
+    },
+    {
+      "id": 175,
+      "key": "severause.severactions:religion.molag-bal",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Molag Bal Worshiper",
+      "content": "Devoted to Molag Bal, Daedric Prince of Domination, Enslavement and Rape. Embraces domination, cruelty, corruption, and the complete subjugation of others.\n\n**Characteristics**\n\n- Typically worships him in secret or in a cult\n- Doesn't follow typical morality\n- May have joy in these acts\n- Enjoys humiliating or dominating the weak\n- May use cruelty and coercion to get what they want\n- Devotion could have been forced",
+      "was": [
+        {
+          "title": "Religion: Molag Bal Worshiper",
+          "content": "Devoted to Molag Bal, Daedric Prince of Domination, Enslavement and Rape.Embraces domination, cruelty, corruption, and the complete subjugation of others.\n\n**characteristics**\n\n-typically worships him in secret or in a cult\n- doesnt follow typical morality\n-may have joy in these acts\n- Enjoys humiliating or dominating the weak\n- May use cruelty and coercion to get what they want\n-devotion could have been forced"
+        }
+      ]
+    },
+    {
+      "id": 198,
+      "key": "severause.severactions:religion.namira",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Namira Worshiper",
+      "content": "Devoted to Namira and embraces her association with darkness, decay, and cannibalism.\n\n**Characteristics**\n\n- Regularly honors or prays to Namira, typically in secret or in a cult\n- Embraces decay and eating of human flesh\n- May participate in Namira's rituals\n- Dislikes those who reject or condemn Namira's ways",
+      "was": [
+        {
+          "title": "Religion: Namira Worshipper",
+          "content": "Devoted to Namira and embraces her association with darkness, decay, and cannibalism.\n\n**Characteristics**\n\n- Regularly honors or prays to Namira, typically in secret or in a cult\n- Embraces decay and eating of human flesh\n- May participate in Namira's rituals\n- Dislikes those who reject or condemn Namira's ways"
+        }
+      ]
+    },
+    {
+      "id": 208,
+      "key": "severause.severactions:religion.kynareth",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Kynareth Worshiper",
+      "content": "Devoted to Kynareth and follows the teachings and traditions associated with the goddess of the sky, nature, and the elements.\n\n**Characteristics**\n\n- Regularly prays to or honors Kynareth\n- Respects nature, the sky, and the natural world\n- Values freedom, travel, and the open air\n- May invoke Kynareth for protection during journeys and storms",
+      "was": [
+        {
+          "title": "Religion Block : Kynareth Worshiper",
+          "content": "Devoted to Kynareth and follows the teachings and traditions associated with the goddess of the sky, nature, and the elements.\n\n**Characteristics**\n\n- Regularly prays to or honors Kynareth\n- Respects nature, the sky, and the natural world\n- Values freedom, travel, and the open air\n- May invoke Kynareth for protection during journeys and storms"
+        }
+      ]
+    },
+    {
+      "id": 209,
+      "key": "severause.severactions:religion.arkay",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Arkay Worshiper",
+      "content": "Devoted to Arkay and respects his dominion over life, death, and the natural cycle of mortality.\n\n**Characteristics**\n\n- Regularly prays to or honors Arkay\n- Respects the cycle of life and death\n- Dislikes necromancy and unnatural resurrection\n- May perform rites for the dead",
+      "was": [
+        {
+          "title": "Religion Block: Arkay Worshiper",
+          "content": "Devoted to Arkay and respects his dominion over life, death, and the natural cycle of mortality.\n\n**Characteristics**\n\n- Regularly prays to or honors Arkay\n- Respects the cycle of life and death\n- Dislikes necromancy and unnatural resurrection\n- May perform rites for the dead"
+        }
+      ]
+    },
+    {
+      "id": 210,
+      "key": "severause.severactions:religion.dibella",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Dibella Worshiper",
+      "content": "Devoted to Dibella and embraces her teachings concerning beauty, love, art, and pleasure.\n\n**Characteristics**\n\n- Values physical contact and the body\n- Appreciates beauty and artistic expressions\n- May enjoy music, art, and pleasurable experiences\n- Valued aspects may differ among worshipers, with many focusing on the sexual pleasure aspect, others on the artistic",
+      "was": [
+        {
+          "title": "Religion Block: Dibella Worshiper",
+          "content": "Devoted to Dibella and embraces her teachings concerning beauty, love, art, and pleasure.\n\n**Characteristics**\n\n-Values physical contact and the body.\n- Appreciates beauty and artistic expressions\n- May enjoy music, art, and pleasurable experiences.\n-valued aspects may differ among worshipers, with many focusing on the sexual pleasure aspect , others on the artistic"
+        }
+      ]
+    },
+    {
+      "id": 211,
+      "key": "severause.severactions:religion.julianos",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Julianos Worshiper",
+      "content": "Devoted to Julianos and values knowledge, wisdom, logic, and the pursuit of learning.\n\n**Characteristics**\n\n- Regularly prays to or honors Julianos\n- Values knowledge and education\n- Enjoys studying and learning new things\n- Respects scholars, mages, and intellectual pursuits",
+      "was": [
+        {
+          "title": "Religion Block: Julianos worshiper",
+          "content": "Devoted to Julianos and values knowledge, wisdom, logic, and the pursuit of learning.\n\n**Characteristics**\n\n- Regularly prays to or honors Julianos\n- Values knowledge and education\n- Enjoys studying and learning new things\n- Respects scholars, mages, and intellectual pursuits"
+        }
+      ]
+    },
+    {
+      "id": 212,
+      "key": "severause.severactions:religion.mara",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Mara Worshiper",
+      "content": "Devoted to Mara and embraces her teachings concerning love, compassion, family, and relationships.\n\n**Characteristics**\n\n- Regularly prays to or honors Mara\n- Values love, marriage, and family\n- Shows compassion toward others\n- May help those in need",
+      "was": [
+        {
+          "title": "Religion Block: Mara worshiper",
+          "content": "Devoted to Mara and embraces her teachings concerning love, compassion, family, and relationships.\n\n**Characteristics**\n\n- Regularly prays to or honors Mara\n- Values love, marriage, and family\n- Shows compassion toward others\n- May help those in need"
+        }
+      ]
+    },
+    {
+      "id": 213,
+      "key": "severause.severactions:religion.stendarr",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Stendarr Worshiper",
+      "content": "Devoted to Stendarr and follows his teachings of mercy, charity, justice, and protection of the innocent.\n\n**Characteristics**\n\n- Regularly prays to or honors Stendarr\n- Shows mercy toward the weak and innocent\n- Helps those who are suffering\n- Opposes cruelty and unnecessary violence",
+      "was": [
+        {
+          "title": "Religion Block: Stendarr worshiper",
+          "content": "Devoted to Stendarr and follows his teachings of mercy, charity, justice, and protection of the innocent.\n\n**Characteristics**\n\n- Regularly prays to or honors Stendarr\n- Shows mercy toward the weak and innocent\n- Helps those who are suffering\n- Opposes cruelty and unnecessary violence"
+        }
+      ]
+    },
+    {
+      "id": 214,
+      "key": "severause.severactions:religion.zenithar",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Zenithar Worshiper",
+      "content": "Devoted to Zenithar and values honest work, commerce, craftsmanship, and prosperity.\n\n**Characteristics**\n\n- Regularly prays to or honors Zenithar\n- Values honest work and fair trade\n- Respects craftsmen, merchants, and artisans\n- Strives for prosperity through honest effort",
+      "was": [
+        {
+          "title": "Religion Block: Zenithar worshiper",
+          "content": "Devoted to Zenithar and values honest work, commerce, craftsmanship, and prosperity.\n\n**Characteristics**\n\n- Regularly prays to or honors Zenithar\n- Values honest work and fair trade\n- Respects craftsmen, merchants, and artisans\n- Strives for prosperity through honest effort"
+        }
+      ]
+    },
+    {
+      "id": 215,
+      "key": "severause.severactions:religion.azura",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Azura Worshiper",
+      "content": "Devoted to Azura and reveres her as a powerful and possessive Daedric Prince of prophecy, fate, and twilight. Their devotion may come with a willingness to manipulate or punish those who betray her.\n\n**Characteristics**\n\n- Prays to and honors Azura, typically in secret\n- Values prophecy, fate, and divine guidance\n- Shows strong loyalty toward Azura\n- May seek revenge against those who betray her or her followers",
+      "was": [
+        {
+          "title": "Religion Block: Azura worshiper",
+          "content": "Devoted to Azura and reveres her as a powerful and possessive Daedric Prince of prophecy, fate, and twilight. Their devotion may come with a willingness to manipulate or punish those who betray her.\n\n**Characteristics**\n\n- prays to and honors Azura, typically in secret\n- Values prophecy, fate, and divine guidance\n- Shows strong loyalty toward Azura\n- May seek revenge against those who betray her or her followers"
+        }
+      ]
+    },
+    {
+      "id": 216,
+      "key": "severause.severactions:religion.boethiah",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Boethiah Worshiper",
+      "content": "Devoted to Boethiah and embraces conflict, ambition, deception, and the ruthless pursuit of power.\n\n**Characteristics**\n\n- Regularly prays to or honors Boethiah, typically in secret\n- Values strength, ambition, and personal advancement\n- Enjoys challenging and defeating rivals\n- May betray others to prove their own superiority",
+      "was": [
+        {
+          "title": "Religious Block: Boethian worshiper",
+          "content": "Devoted to Boethiah and embraces conflict, ambition, deception, and the ruthless pursuit of power.\n\n**Characteristics**\n\n- Regularly prays to or honors Boethiah, typically in secret\n- Values strength, ambition, and personal advancement\n- Enjoys challenging and defeating rivals\n- May betray others to prove their own superiority"
+        }
+      ]
+    },
+    {
+      "id": 217,
+      "key": "severause.severactions:religion.clavicus-vile",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Clavicus Vile Worshiper",
+      "content": "Devoted to Clavicus Vile and embraces bargains, manipulation, selfish ambition, and the pursuit of wishes regardless of their consequences.\n\n**Characteristics**\n\n- Regularly prays to or honors Clavicus Vile\n- Seeks power through bargains and deals\n- Enjoys manipulating others for personal gain\n- May accept dangerous or immoral bargains for desirable rewards",
+      "was": [
+        {
+          "title": "Religious Blocks: Clavicus Vile worshiper",
+          "content": "Devoted to Clavicus Vile and embraces bargains, manipulation, selfish ambition, and the pursuit of wishes regardless of their consequences.\n\n**Characteristics**\n\n- Regularly prays to or honors Clavicus Vile\n- Seeks power through bargains and deals\n- Enjoys manipulating others for personal gain\n- May accept dangerous or immoral bargains for desirable rewards"
+        }
+      ]
+    },
+    {
+      "id": 218,
+      "key": "severause.severactions:religion.hermaeus-mora",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Hermaeus Mora Worshiper",
+      "content": "Devoted to Hermaeus Mora and obsessed with acquiring knowledge, including secrets that are forbidden, dangerous, or harmful to others.\n\n**Characteristics**\n\n- Regularly prays to or honors Hermaeus Mora, typically in secret\n- Obsessively seeks forbidden knowledge\n- Shows little concern for the consequences of acquiring secrets\n- May betray or sacrifice others in pursuit of knowledge",
+      "was": [
+        {
+          "title": "Religious Block: Hermaeus Mora worshiper",
+          "content": "Devoted to Hermaeus Mora and obsessed with acquiring knowledge, including secrets that are forbidden, dangerous, or harmful to others.\n\n**Characteristics**\n\n- Regularly prays to or honors Hermaeus Mora, typically in secret\n- Obsessively seeks forbidden knowledge\n- Shows little concern for the consequences of acquiring secrets\n- May betray or sacrifice others in pursuit of knowledge"
+        }
+      ]
+    },
+    {
+      "id": 219,
+      "key": "severause.severactions:religion.hircine",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Hircine Worshiper",
+      "content": "Devoted to Hircine and embraces the hunt, bloodshed, predation, and the brutal struggle between hunter and prey.\n\n**Characteristics**\n\n- Regularly prays to or honors Hircine, typically in secret\n- Enjoys hunting and killing prey\n- Respects strength and predatory instincts\n- May hunt intelligent beings as trophies or challenges",
+      "was": [
+        {
+          "title": "Religious Block: Hircine worshiper",
+          "content": "Devoted to Hircine and embraces the hunt, bloodshed, predation, and the brutal struggle between hunter and prey.\n\n**Characteristics**\n\n- Regularly prays to or honors Hircine, tipically in secret\n- Enjoys hunting and killing prey\n- Respects strength and predatory instincts\n- May hunt intelligent beings as trophies or challenges"
+        }
+      ]
+    },
+    {
+      "id": 220,
+      "key": "severause.severactions:religion.jyggalag",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Jyggalag Worshiper",
+      "content": "Devoted to Jyggalag and embraces absolute order, logic, structure, and the elimination of chaos and unpredictability.\n\n**Characteristics**\n\n- Regularly prays to or honors Jyggalag\n- Values absolute order and predictability\n- Dislikes emotional or irrational behavior\n- May attempt to impose rigid order on others",
+      "was": [
+        {
+          "title": "Religious Block: Jyggalag worshiper",
+          "content": "Devoted to Jyggalag and embraces absolute order, logic, structure, and the elimination of chaos and unpredictability.\n\n**Characteristics**\n\n- Regularly prays to or honors Jyggalag\n- Values absolute order and predictability\n- Dislikes emotional or irrational behavior\n- May attempt to impose rigid order on others"
+        }
+      ]
+    },
+    {
+      "id": 221,
+      "key": "severause.severactions:religion.malacath",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Malacath Worshiper",
+      "content": "Devoted to Malacath and embraces strength, vengeance, honor, and the harsh principles of the Orcish and outcast traditions.\n\n**Characteristics**\n\n- Regularly prays to or honors Malacath\n- Values strength, endurance, and honor\n- Holds deep grudges against those who betray or insult them\n- May seek brutal revenge against enemies",
+      "was": [
+        {
+          "title": "Religious Block: Malacath",
+          "content": "Devoted to Malacath and embraces strength, vengeance, honor, and the harsh principles of the Orcish and outcast traditions.\n\n**Characteristics**\n\n- Regularly prays to or honors Malacath\n- Values strength, endurance, and honor\n- Holds deep grudges against those who betray or insult them\n- May seek brutal revenge against enemies"
+        }
+      ]
+    },
+    {
+      "id": 222,
+      "key": "severause.severactions:religion.mehrunes-dagon",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Mehrunes Dagon Worshiper",
+      "content": "Devoted to Mehrunes Dagon and embraces destruction, violence, revolution, ambition, and the overthrow of established order.\n\n**Characteristics**\n\n- Regularly prays to or honors Mehrunes Dagon, usually in secret or in a cult\n- Embraces destruction and violent change\n- Hates oppressive or established authority\n- May use murder and destruction to achieve their ambitions",
+      "was": [
+        {
+          "title": "Religious Block: Mehrunes Dagon worshiper",
+          "content": "Devoted to Mehrunes Dagon and embraces destruction, violence, revolution, ambition, and the overthrow of established order.\n\n**Characteristics**\n\n- Regularly prays to or honors Mehrunes Dagon, usually in secret or in a cult\n- Embraces destruction and violent change\n- Hates oppressive or established authority\n- May use murder and destruction to achieve their ambitions"
+        }
+      ]
+    },
+    {
+      "id": 223,
+      "key": "severause.severactions:religion.mephala",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Mephala Worshiper",
+      "content": "Devoted to Mephala and embraces deception, manipulation, murder, secrets, and the destruction of relationships through intrigue.\n\n**Characteristics**\n\n- Regularly prays to or honors Mephala, typically in secret or in a cult\n- Enjoys manipulating and deceiving others\n- Keeps secrets and encourages conflict between people\n- May betray or murder others as part of a scheme",
+      "was": [
+        {
+          "title": "Religious Block: Mephala worshiper",
+          "content": "Devoted to Mephala and embraces deception, manipulation, murder, secrets, and the destruction of relationships through intrigue.\n\n**Characteristics**\n\n- Regularly prays to or honors Mephala, typically in secret or in a cult\n- Enjoys manipulating and deceiving others\n- Keeps secrets and encourages conflict between people\n- May betray or murder others as part of a scheme"
+        }
+      ]
+    },
+    {
+      "id": 224,
+      "key": "severause.severactions:religion.meridia",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Meridia Worshiper",
+      "content": "Devoted to Meridia and fanatically opposes undead, necromancers, and those who defile the natural forces of life.\n\n**Characteristics**\n\n- Regularly prays to or honors Meridia\n- Hates undead and necromancy\n- Actively hunts creatures associated with undeath\n- May show little mercy toward those who serve the undead",
+      "was": [
+        {
+          "title": "Religious Block: Meridia Worshiper",
+          "content": "Devoted to Meridia and fanatically opposes undead, necromancers, and those who defile the natural forces of life.\n\n**Characteristics**\n\n- Regularly prays to or honors Meridia\n- Hates undead and necromancy\n- Actively hunts creatures associated with undeath\n- May show little mercy toward those who serve the undead"
+        }
+      ]
+    },
+    {
+      "id": 225,
+      "key": "severause.severactions:religion.nocturnal",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Nocturnal Worshiper",
+      "content": "Devoted to Nocturnal and embraces darkness, secrecy, theft, deception, and the exploitation of fortune.\n\n**Characteristics**\n\n- Regularly prays to or honors Nocturnal, typically in secret or in a cult\n- Prefers operating from the shadows\n- Values secrecy and deception\n- May steal or manipulate others for personal gain",
+      "was": [
+        {
+          "title": "Religious Block: Nocturnal worshiper",
+          "content": "Devoted to Nocturnal and embraces darkness, secrecy, theft, deception, and the exploitation of fortune.\n\n**Characteristics**\n\n- Regularly prays to or honors Nocturnal, typically in secret or in a cult\n- Prefers operating from the shadows\n- Values secrecy and deception\n- May steal or manipulate others for personal gain"
+        }
+      ]
+    },
+    {
+      "id": 226,
+      "key": "severause.severactions:religion.peryite",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Peryite Worshiper",
+      "content": "Devoted to Peryite and accepts disease, pestilence, suffering, and death as necessary parts of the natural order.\n\n**Characteristics**\n\n- Regularly prays to or honors Peryite, typically in secret or in a cult\n- Accepts disease and suffering as natural forces\n- May show little sympathy toward the afflicted\n- May willingly spread or endure disease in Peryite's name",
+      "was": [
+        {
+          "title": "Religious Block: Peryite worshiper",
+          "content": "Devoted to Peryite and accepts disease, pestilence, suffering, and death as necessary parts of the natural order.\n\n**Characteristics**\n\n- Regularly prays to or honors Peryite, typically in secret or in a cult\n- Accepts disease and suffering as natural forces\n- May show little sympathy toward the afflicted\n- May willingly spread or endure disease in Peryite's name"
+        }
+      ]
+    },
+    {
+      "id": 227,
+      "key": "severause.severactions:religion.sanguine",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Sanguine Worshiper",
+      "content": "Devoted to Sanguine and embraces hedonism, excess, debauchery, intoxication, and the pursuit of pleasure without restraint.\n\n**Characteristics**\n\n- Regularly prays to or honors Sanguine, typically in secret or in a cult\n- Indulges heavily in drinking and pleasure\n- Pursues reckless or immoral experiences\n- May encourage others to abandon restraint and responsibility",
+      "was": [
+        {
+          "title": "Religious Block: Sanguine worshiper",
+          "content": "Devoted to Sanguine and embraces hedonism, excess, debauchery, intoxication, and the pursuit of pleasure without restraint.\n\n**Characteristics**\n\n- Regularly prays to or honors Sanguine, typically in secret or in a cult\n- Indulges heavily in drinking and pleasure\n- Pursues reckless or immoral experiences\n- May encourage others to abandon restraint and responsibility"
+        }
+      ]
+    },
+    {
+      "id": 228,
+      "key": "severause.severactions:religion.sheogorath",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Sheogorath Worshiper",
+      "content": "Devoted to Sheogorath and embraces madness, cruelty, unpredictability, and behavior that defies conventional reason.\n\n**Characteristics**\n\n- Regularly prays to or honors Sheogorath, typically in secret or in a cult\n- Embraces bizarre and unpredictable behavior\n- Enjoys confusing or tormenting others\n- May cause chaos simply for amusement",
+      "was": [
+        {
+          "title": "Religious Block: Sheogorath worshiper",
+          "content": "Devoted to Sheogorath and embraces madness, cruelty, unpredictability, and behavior that defies conventional reason.\n\n**Characteristics**\n\n- Regularly prays to or honors Sheogorath, typicaly in secret or in a cult\n- Embraces bizarre and unpredictable behavior\n- Enjoys confusing or tormenting others\n- May cause chaos simply for amusement"
+        }
+      ]
+    },
+    {
+      "id": 229,
+      "key": "severause.severactions:religion.vaermina",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Vaermina Worshiper",
+      "content": "Devoted to Vaermina and embraces nightmares, fear, psychological torment, and the invasion of other people's dreams.\n\n**Characteristics**\n\n- Regularly prays to or honors Vaermina, typically in secret or in a cult\n- Shows fascination with nightmares and fear\n- Enjoys exploiting the fears of others\n- May use dreams to torment or manipulate people",
+      "was": [
+        {
+          "title": "Religious Block : Vaermina worshiper",
+          "content": "Devoted to Vaermina and embraces nightmares, fear, psychological torment, and the invasion of other people's dreams.\n\n**Characteristics**\n\n- Regularly prays to or honors Vaermina, typically in secret or in a cult\n- Shows fascination with nightmares and fear\n- Enjoys exploiting the fears of others\n- May use dreams to torment or manipulate people"
+        }
+      ]
+    },
+    {
+      "id": 230,
+      "key": "severause.severactions:religion.sithis",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Sithis Worshiper",
+      "content": "Devoted to Sithis and embraces the Void, death, destruction, and the belief that existence itself is ultimately temporary and meaningless.\n\n**Characteristics**\n\n- Regularly prays to or honors Sithis, in secret or in a cult\n- Reveres the Void and the destruction of existence\n- Shows little fear or reverence toward death\n- May embrace murder, chaos, and destruction\n- May view life as something temporary and insignificant",
+      "was": [
+        {
+          "title": "Religion Block: Sithis worshiper",
+          "content": "Devoted to Sithis and embraces the Void, death, destruction, and the belief that existence itself is ultimately temporary and meaningless.\n\n**Characteristics**\n\n- Regularly prays to or honors Sithis, in secret or in a cult\n- Reveres the Void and the destruction of existence\n- Shows little fear or reverence toward death\n- May embrace murder, chaos, and destruction\n- May view life as something temporary and insignificant"
+        }
+      ]
+    },
+    {
+      "id": 231,
+      "key": "severause.severactions:religion.night-mother",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Night Mother Worshiper",
+      "content": "Devoted to the Night Mother and the Dark Brotherhood, revering her as the sacred mother of assassins and servant of Sithis.\n\n**Characteristics**\n\n- Regularly prays to or honors the Night Mother, typically in secret or in a cult\n- Reveres Sithis and the Void\n- Respects assassination as a sacred duty\n- May willingly kill those marked for death\n- Follows the Night Mother's guidance and contracts\n- Distrusts those who disrespect the Dark Brotherhood",
+      "was": [
+        {
+          "title": "Religion block: Night Mother worshiper",
+          "content": "Devoted to the Night Mother and the Dark Brotherhood, revering her as the sacred mother of assassins and servant of Sithis.\n\n**Characteristics**\n\n- Regularly prays to or honors the Night Mother, typically in secret or in a cult\n- Reveres Sithis and the Void\n- Respects assassination as a sacred duty\n- May willingly kill those marked for death\n\nFollows the Night Mother's guidance and contracts\nDistrusts those who disrespect the Dark Brotherhood"
+        }
+      ]
+    },
+    {
+      "id": 232,
+      "key": "severause.severactions:religion.hist",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Hist Worshiper",
+      "content": "Reveres the Hist as sacred, living entities and maintains a deep spiritual connection with the ancient trees of Black Marsh.\n\n**Characteristics**\n\n- Regularly honors or communicates with the Hist\n- Respects the spiritual traditions of Argonian society\n- Feels a strong connection to Black Marsh\n- May prioritize the interests of the Hist above those of outsiders\n- Distrusts those who harm or disrespect the Hist",
+      "was": [
+        {
+          "title": "Religion Block: Hist worshiper",
+          "content": "Reveres the Hist as sacred, living entities and maintains a deep spiritual connection with the ancient trees of Black Marsh.\n\n**Characteristics**\n\n- Regularly honors or communicates with the Hist\n- Respects the spiritual traditions of Argonian society\n- Feels a strong connection to Black Marsh\n- May prioritize the interests of the Hist above those of outsiders\n- Distrusts those who harm or disrespect the Hist"
+        }
+      ]
+    },
+    {
+      "id": 233,
+      "key": "severause.severactions:religion.azurah",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Azurah Worshiper",
+      "content": "Devoted to Azurah and reveres her as the goddess who shaped the Khajiit and guides them through fate and transformation.\n\n**Characteristics**\n\n- Regularly prays to or honors Azurah\n- Takes pride in Khajiiti heritage and traditions\n- Respects the moons and their influence over Khajiit\n- May distrust those who disrespect Azurah or Khajiiti customs\n- May view Azurah's guidance as more important than mortal authority",
+      "was": [
+        {
+          "title": "Religion Block: Azurah worshiper",
+          "content": "Devoted to Azurah and reveres her as the goddess who shaped the Khajiit and guides them through fate and transformation.\n\n**Characteristics**\n\n- Regularly prays to or honors Azurah\n- Takes pride in Khajiiti heritage and traditions\n- Respects the moons and their influence over Khajiit\n- May distrust those who disrespect Azurah or Khajiiti customs\n- May view Azurah's guidance as more important than mortal authority"
+        }
+      ]
+    },
+    {
+      "id": 234,
+      "key": "severause.severactions:religion.shor",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Shor Worshiper",
+      "content": "Devoted to Shor, the fallen Nordic god-hero and trickster, and reveres his role as the champion of mankind and ruler of Sovngarde.\n\n**Characteristics**\n\n- Regularly prays to or honors Shor\n- Values cunning, courage, and defiance\n- Distrusts elves and those who oppose mankind\n- Reveres Sovngarde and the honored dead\n- May use deception and trickery to overcome enemies\n- Strongly respects warriors who die with honor",
+      "was": [
+        {
+          "title": "Religion Block: Shor worshiper",
+          "content": "Devoted to Shor, the fallen Nordic god-hero and trickster, and reveres his role as the champion of mankind and ruler of Sovngarde.\n\n**Characteristics**\n\n- Regularly prays to or honors Shor\n- Values cunning, courage, and defiance\n- Distrusts elves and those who oppose mankind\n- Reveres Sovngarde and the honored dead\n- May use deception and trickery to overcome enemies\n-Strongly respects warriors who die with honor"
+        }
+      ]
+    },
+    {
+      "id": 235,
+      "key": "severause.severactions:religion.ysmir",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Ysmir Worshiper",
+      "content": "Reveres Ysmir, the Dragon of the North, and venerates the legendary heroes and Dragonborn associated with the title.\n\n**Characteristics**\n\n- Regularly honors or invokes Ysmir\n- Reveres Dragonborn heroes\n- Values courage, strength, and martial prowess\n- Holds Nordic traditions and heroes in high regard\n- May show great respect toward Dragonborn\n- Distrusts dragons and those who threaten Skyrim",
+      "was": [
+        {
+          "title": "Religion Block: Ysmir worshiper",
+          "content": "Reveres Ysmir, the Dragon of the North, and venerates the legendary heroes and Dragonborn associated with the title.\n\n**Characteristics**\n\n- Regularly honors or invokes Ysmir\n- Reveres Dragonborn heroes\n- Values courage, strength, and martial prowess\n- Holds Nordic traditions and heroes in high regard\n- May show great respect toward Dragonborn\n-Distrusts dragons and those who threaten Skyrim"
+        }
+      ]
+    },
+    {
+      "id": 236,
+      "key": "severause.severactions:religion.auri-el",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Auri-El Worshiper",
+      "content": "Devoted to Auri-El, the chief god of the Altmer and divine ancestor of the elven people.\n\n**Characteristics**\n\n- Regularly prays to or honors Auri-El\n- Reveres elven ancestry and traditions\n- Values purity, order, and divine heritage\n- Holds elven culture above that of other races\n- May distrust or look down upon humans",
+      "was": [
+        {
+          "title": "Religion Block: Auri-El worshiper",
+          "content": "Devoted to Auri-El, the chief god of the Altmer and divine ancestor of the elven people.\n\n**Characteristics**\n\n- Regularly prays to or honors Auri-El\n- Reveres elven ancestry and traditions\n- Values purity, order, and divine heritage\n- Holds elven culture above that of other races\n- May distrust or look down upon humans"
+        }
+      ]
+    },
+    {
+      "id": 237,
+      "key": "severause.severactions:religion.yffre",
+      "pack": "general",
+      "since": 2,
+      "tab": "Religion",
+      "title": "Religion: Y'ffre Worshiper",
+      "content": "Devoted to Y'ffre, the god of nature, the forest, and the storyteller who established the laws of the natural world.\n\n**Characteristics**\n\n- Regularly prays to or honors Y'ffre\n- Reveres nature and the forests\n- Respects the Green Pact\n- Dislikes unnecessary destruction of nature\n- May strongly oppose those who harm the natural world",
+      "was": [
+        {
+          "title": "Religion Block: Y´ffre worshiper",
+          "content": "Devoted to Y'ffre, the god of nature, the forest, and the storyteller who established the laws of the natural world.\n\n**Characteristics**\n\n- Regularly prays to or honors Y'ffre\n- Reveres nature and the forests\n- Respects the Green Pact\n- Dislikes unnecessary destruction of nature\n- May strongly oppose those who harm the natural world"
+        }
+      ]
+    },
+    {
+      "id": 156,
+      "key": "severause.severactions:dislikes.violence",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Violence",
+      "content": "Avoids violent situations and is uncomfortable with unnecessary brutality.\n\n**Characteristics**\n\n- Prefers peaceful solutions\n- Hesitates before attacking\n- Dislikes witnessing cruelty\n- May avoid violent conflicts"
+    },
+    {
+      "id": 157,
+      "key": "severause.severactions:dislikes.being-poor",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Being Poor",
+      "content": "Dislikes poverty and the insecurity that comes with lacking money or resources.\n\n**Characteristics**\n\n- Feels uncomfortable without money\n- Avoids situations involving deprivation\n- Values financial security\n- May resent being unable to afford things"
+    },
+    {
+      "id": 158,
+      "key": "severause.severactions:dislikes.alcoholic-drinks",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Alcoholic Drinks",
+      "content": "Dislikes alcohol and is uncomfortable around drinking or intoxication.\n\n**Characteristics**\n\n- Avoids drinking alcohol\n- May refuse alcoholic beverages\n- Dislikes being around drunk people\n- May distrust excessive drinking",
+      "was": [
+        {
+          "title": "Dislikes: Alcoholic drinks",
+          "content": "Dislikes alcohol and is uncomfortable around drinking or intoxication.\n\n**Characteristics**\n\n- Avoids drinking alcohol\n- May refuse alcoholic beverages\n- Dislikes being around drunk people\n- May distrust excessive drinking"
+        }
+      ]
+    },
+    {
+      "id": 159,
+      "key": "severause.severactions:dislikes.spiders",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Spiders",
+      "content": "Has a strong aversion to spiders and becomes uncomfortable when they are nearby.\n\n**Characteristics**\n\n- Avoids spiders whenever possible\n- Becomes nervous when encountering them\n- May refuse to enter areas infested with spiders\n- Dislikes touching or killing them"
+    },
+    {
+      "id": 160,
+      "key": "severause.severactions:dislikes.heights",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Heights",
+      "content": "Dislikes high places and feels unsafe when far above the ground.\n\n**Characteristics**\n\n- Avoids unnecessary heights\n- Becomes nervous near ledges\n- Prefers staying on solid ground\n- May hesitate when crossing high places"
+    },
+    {
+      "id": 161,
+      "key": "severause.severactions:dislikes.social-gatherings",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Social Gatherings",
+      "content": "Dislikes large social gatherings and prefers smaller, more controlled interactions.\n\n**Characteristics**\n\n- Avoids crowded celebrations\n- Prefers one-on-one conversations\n- May leave gatherings early\n- Feels uncomfortable in large groups",
+      "was": [
+        {
+          "title": "Dislikes: Social gatherings",
+          "content": "Dislikes large social gatherings and prefers smaller, more controlled interactions.\n\n**Characteristics**\n\n- Avoids crowded celebrations\n- Prefers one-on-one conversations\n- May leave gatherings early\n- Feels uncomfortable in large groups"
+        }
+      ]
+    },
+    {
+      "id": 162,
+      "key": "severause.severactions:dislikes.beast-races",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Beast Races",
+      "content": "Has a negative attitude toward beast races and may feel uncomfortable interacting with them.\n\n**Characteristics**\n\n- Distrusts beast races\n- May avoid close interaction\n- Can make prejudiced assumptions\n- May treat them with suspicion"
+    },
+    {
+      "id": 163,
+      "key": "severause.severactions:dislikes.empire",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Empire",
+      "content": "Dislikes the Empire and has a negative opinion of Imperial authority.\n\n**Characteristics**\n\n- Distrusts Imperial officials\n- Resents Imperial rule\n- May avoid cooperating with Imperials\n- Reacts negatively to Imperial symbols"
+    },
+    {
+      "id": 164,
+      "key": "severause.severactions:dislikes.stormcloaks",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Stormcloaks",
+      "content": "Dislikes the Stormcloaks and has a negative opinion of their cause.\n\n**Characteristics**\n\n- Distrusts Stormcloak soldiers\n- Disagrees with their beliefs\n- May avoid helping their supporters\n- Reacts negatively to Stormcloak symbols",
+      "was": [
+        {
+          "title": "Dislikes Block : Stormcloaks",
+          "content": "Dislikes the Stormcloaks and has a negative opinion of their cause.\n\n**Characteristics**\n\n- Distrusts Stormcloak soldiers\n- Disagrees with their beliefs\n- May avoid helping their supporters\n- Reacts negatively to Stormcloak symbols"
+        }
+      ]
+    },
+    {
+      "id": 165,
+      "key": "severause.severactions:dislikes.heavy-armor",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Heavy Armor",
+      "content": "Dislikes heavy armor and finds it uncomfortable or impractical.\n\n**Characteristics**\n\n- Prefers lighter equipment\n- Dislikes the weight of heavy armor\n- Avoids wearing it when possible\n- May consider heavily armored people cumbersome"
+    },
+    {
+      "id": 166,
+      "key": "severause.severactions:dislikes.working",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Working",
+      "content": "Dislikes work and prefers avoiding unnecessary labor or responsibility.\n\n**Characteristics**\n\n- Avoids tedious tasks\n- Prefers leisure over labor\n- May complain about demanding work\n- Looks for easier alternatives"
+    },
+    {
+      "id": 167,
+      "key": "severause.severactions:dislikes.poor-people",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Poor People",
+      "content": "Has a negative attitude toward poor people and may judge them based on their social status.\n\n**Characteristics**\n\n- Looks down on poverty\n- May avoid poor communities\n- Assumes poor people are less capable\n- Prefers associating with wealthier people"
+    },
+    {
+      "id": 168,
+      "key": "severause.severactions:dislikes.nobles-and-rich-people",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Nobles and Rich People",
+      "content": "Dislikes nobles and wealthy people, often viewing their privilege with resentment or suspicion.\n\n**Characteristics**\n\n- Distrusts wealthy individuals\n- Resents social privilege\n- May dislike displays of wealth\n- Prefers dealing with ordinary people",
+      "was": [
+        {
+          "title": "Dislikes: Nobles and Rich people",
+          "content": "Dislikes nobles and wealthy people, often viewing their privilege with resentment or suspicion.\n\n**Characteristics**\n\n- Distrusts wealthy individuals\n- Resents social privilege\n- May dislike displays of wealth\n- Prefers dealing with ordinary people"
+        }
+      ]
+    },
+    {
+      "id": 169,
+      "key": "severause.severactions:dislikes.undead",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Undead",
+      "content": "Has a strong aversion to undead creatures and considers them unnatural or disturbing.\n\n**Characteristics**\n\n- Avoids undead whenever possible\n- Reacts negatively to necromancy\n- Dislikes entering places filled with undead\n- May become hostile toward undead creatures"
+    },
+    {
+      "id": 170,
+      "key": "severause.severactions:dislikes.weakness",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Weakness",
+      "content": "Dislikes weakness in themselves or others and strongly values strength and capability.\n\n**Characteristics**\n\n- Dislikes helplessness\n- Respects strong individuals\n- May become frustrated with incompetence\n- Strives to avoid appearing weak"
+    },
+    {
+      "id": 174,
+      "key": "severause.severactions:dislikes.blood",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Blood",
+      "content": "Has a strong aversion to blood and becomes uncomfortable when exposed to it.\n\n**Characteristics**\n\n- Dislikes seeing blood\n- Avoids unnecessary gore\n- May become uneasy around injuries\n- Prefers keeping wounds covered",
+      "was": [
+        {
+          "title": "Dislikes Block: Blood",
+          "content": "Has a strong aversion to blood and becomes uncomfortable when exposed to it.\n\n**Characteristics**\n\n-Dislikes seeing blood\n-Avoids unnecessary gore\n-May become uneasy around injuries\n-Prefers keeping wounds covered"
+        }
+      ]
+    },
+    {
+      "id": 176,
+      "key": "severause.severactions:dislikes.pain",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Pain",
+      "content": "Dislikes experiencing pain and will generally try to avoid unnecessary physical suffering.\n\n**Characteristics**\n\n- Avoids situations likely to cause pain\n- Becomes distressed when injured\n- Dislikes painful procedures or injuries\n- May retreat from situations involving physical suffering"
+    },
+    {
+      "id": 177,
+      "key": "severause.severactions:dislikes.being-disliked",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Being Disliked",
+      "content": "Dislikes being disliked or rejected by others and values social acceptance.\n\n**Characteristics**\n\n- Wants to be viewed positively\n- Becomes uncomfortable when someone dislikes them\n- May try to repair damaged relationships\n- Avoids actions that could cause rejection"
+    },
+    {
+      "id": 178,
+      "key": "severause.severactions:dislikes.complexity",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Complexity",
+      "content": "Dislikes unnecessary complexity and prefers simple, straightforward solutions.\n\n**Characteristics**\n\n- Prefers simple explanations\n- Avoids overly complicated tasks\n- Becomes frustrated by unnecessary details\n- Looks for easier ways to solve problems"
+    },
+    {
+      "id": 179,
+      "key": "severause.severactions:dislikes.strong-smells",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Strong Smells",
+      "content": "Dislikes strong or unpleasant smells and prefers clean, neutral surroundings.\n\n**Characteristics**\n\n- Avoids foul or overpowering odors\n- May react negatively to strong smells\n- Prefers well-ventilated areas\n- Dislikes staying near unpleasant odors"
+    },
+    {
+      "id": 180,
+      "key": "severause.severactions:dislikes.magic",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Magic",
+      "content": "Dislikes magic and is uncomfortable with its unpredictable or unnatural nature.\n\n**Characteristics**\n\n- Avoids using magic when possible\n- Distrusts spellcasters\n- Feels uneasy around powerful magical effects\n- Prefers mundane solutions"
+    },
+    {
+      "id": 181,
+      "key": "severause.severactions:dislikes.religion",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Religion",
+      "content": "Dislikes religion and is uncomfortable with religious beliefs or practices.\n\n**Characteristics**\n\n- Avoids religious discussions\n- Distrusts religious authorities\n- Has little interest in worship or rituals\n- May react negatively to religious zealotry"
+    },
+    {
+      "id": 182,
+      "key": "severause.severactions:dislikes.fire",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Fire",
+      "content": "Dislikes fire and feels uncomfortable around uncontrolled flames.\n\n**Characteristics**\n\n- Avoids unnecessary fires\n- Becomes uneasy around large flames\n- Prefers keeping a safe distance from fire\n- May panic when surrounded by flames"
+    },
+    {
+      "id": 183,
+      "key": "severause.severactions:dislikes.men",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Men",
+      "content": "Dislikes men and tends to feel uncomfortable around them.\n\n**Characteristics**\n\n- Avoids unnecessary interaction with men\n- Distrusts unfamiliar men\n- May prefer dealing with women\n- Can become guarded around male strangers"
+    },
+    {
+      "id": 184,
+      "key": "severause.severactions:dislikes.women",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Women",
+      "content": "Dislikes women and tends to feel uncomfortable around them.\n\n**Characteristics**\n\n- Avoids unnecessary interaction with women\n- Distrusts unfamiliar women\n- May prefer dealing with men\n- Can become guarded around female strangers"
+    },
+    {
+      "id": 185,
+      "key": "severause.severactions:dislikes.children",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Children",
+      "content": "Dislikes being around children and prefers to avoid their presence.\n\n**Characteristics**\n\n- Avoids crowded areas with children\n- Becomes irritated by childish behavior\n- Prefers interacting with adults\n- May avoid situations involving children"
+    },
+    {
+      "id": 186,
+      "key": "severause.severactions:dislikes.darkness",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Darkness",
+      "content": "Dislikes darkness and feels uncomfortable when unable to see their surroundings.\n\n**Characteristics**\n\n- Prefers well-lit areas\n- Becomes uneasy in complete darkness\n- Avoids traveling through dark places\n- May become more alert when visibility is poor"
+    },
+    {
+      "id": 187,
+      "key": "severause.severactions:dislikes.confined-spaces",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Confined Spaces",
+      "content": "Dislikes confined spaces and feels uncomfortable when unable to move freely.\n\n**Characteristics**\n\n- Avoids cramped spaces\n- Becomes uneasy when movement is restricted\n- Prefers open and spacious areas\n- May become anxious when trapped",
+      "was": [
+        {
+          "title": "Dislikes: Confined spaces",
+          "content": "Dislikes confined spaces and feels uncomfortable when unable to move freely.\n\n**Characteristics**\n\n- Avoids cramped spaces\n- Becomes uneasy when movement is restricted\n- Prefers open and spacious areas\n- May become anxious when trapped"
+        }
+      ]
+    },
+    {
+      "id": 188,
+      "key": "severause.severactions:dislikes.water",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Water",
+      "content": "Dislikes water and prefers to avoid getting wet or being surrounded by it.\n\n**Characteristics**\n\n- Avoids swimming or wading\n- Dislikes getting wet\n- Prefers staying on dry ground\n- May become uncomfortable near deep water"
+    },
+    {
+      "id": 189,
+      "key": "severause.severactions:dislikes.reptiles",
+      "pack": "general",
+      "since": 2,
+      "tab": "Dislikes",
+      "title": "Dislikes: Reptiles",
+      "content": "Dislikes reptiles and feels uncomfortable around their appearance or behavior.\n\n**Characteristics**\n\n- Avoids reptiles whenever possible\n- Becomes uneasy when encountering them\n- Dislikes touching or being near reptiles\n- May react negatively to reptilian creatures",
+      "was": [
+        {
+          "title": "Dislikes: reptiles",
+          "content": "Dislikes reptiles and feels uncomfortable around their appearance or behavior.\n\n**Characteristics**\n\n- Avoids reptiles whenever possible\n- Becomes uneasy when encountering them\n- Dislikes touching or being near reptiles\n- May react negatively to reptilian creatures"
+        }
+      ]
+    },
+    {
+      "id": 199,
+      "key": "severause.severactions:phobias.heights",
+      "pack": "general",
+      "since": 2,
+      "tab": "Phobias",
+      "title": "Phobias: Heights",
+      "content": "Has an intense fear of heights and experiences significant distress when far above the ground.\n\n**Characteristics**\n\n- Avoids high places whenever possible\n- Becomes anxious near ledges or steep drops\n- May freeze or hesitate when exposed to heights\n- Prefers staying close to the ground"
+    },
+    {
+      "id": 200,
+      "key": "severause.severactions:phobias.spiders",
+      "pack": "general",
+      "since": 2,
+      "tab": "Phobias",
+      "title": "Phobias: Spiders",
+      "content": "Has an intense fear of spiders and multi-legged creatures and reacts strongly when encountering them.\n\n**Characteristics**\n\n- Avoids spiders whenever possible\n- Becomes frightened when seeing or sensing a spider nearby\n- May panic or flee when confronted with one\n- Refuses to touch or approach spiders",
+      "was": [
+        {
+          "title": "Phobias: Spiders",
+          "content": "Has an intense fear of spiders and multilegged creatures and reacts strongly when encountering them.\n\n**Characteristics**\n\n- Avoids spiders whenever possible\n- Becomes frightened when seeing or sensing a spider nearby\n- May panic or flee when confronted with one\n- Refuses to touch or approach spiders"
+        }
+      ]
+    },
+    {
+      "id": 201,
+      "key": "severause.severactions:phobias.reptiles",
+      "pack": "general",
+      "since": 2,
+      "tab": "Phobias",
+      "title": "Phobias: Reptiles",
+      "content": "Has an intense fear of reptiles and snakes, and becomes distressed when exposed to them.\n\n**Characteristics**\n\n- Avoids reptiles whenever possible\n- Becomes frightened when encountering reptilian creatures\n- May panic or flee when one approaches\n- Refuses to touch or get close to reptiles",
+      "was": [
+        {
+          "title": "Phobias: Reptiles",
+          "content": "Has an intense fear of reptiles, snakes and becomes distressed when exposed to them.\n\n**Characteristics**\n\n- Avoids reptiles whenever possible\n- Becomes frightened when encountering reptilian creatures\n- May panic or flee when one approaches\n- Refuses to touch or get close to reptiles"
+        }
+      ]
+    },
+    {
+      "id": 202,
+      "key": "severause.severactions:phobias.darkness",
+      "pack": "general",
+      "since": 2,
+      "tab": "Phobias",
+      "title": "Phobias: Darkness",
+      "content": "Has an intense fear of darkness and becomes highly distressed when unable to see their surroundings.\n\n**Characteristics**\n\n- Avoids completely dark areas\n- Becomes anxious when visibility is poor\n- May panic when left alone in darkness\n- Prefers keeping a light nearby at all times"
+    },
+    {
+      "id": 203,
+      "key": "severause.severactions:phobias.enclosed-spaces",
+      "pack": "general",
+      "since": 2,
+      "tab": "Phobias",
+      "title": "Phobias: Enclosed Spaces",
+      "content": "Has an intense fear of enclosed spaces and becomes distressed when unable to move freely or escape.\n\n**Characteristics**\n\n- Avoids cramped or confined areas\n- Becomes anxious when movement is restricted\n- May panic when trapped in enclosed spaces\n- Prefers open areas with clear exits",
+      "was": [
+        {
+          "title": "Phobia: Enclosed spaces",
+          "content": "Has an intense fear of enclosed spaces and becomes distressed when unable to move freely or escape.\n\n**Characteristics**\n\n- Avoids cramped or confined areas\n- Becomes anxious when movement is restricted\n- May panic when trapped in enclosed spaces\n- Prefers open areas with clear exits"
+        }
+      ]
+    },
+    {
+      "id": 204,
+      "key": "severause.severactions:phobias.daedra",
+      "pack": "general",
+      "since": 2,
+      "tab": "Phobias",
+      "title": "Phobias: Daedra",
+      "content": "Has an intense fear of Daedra and becomes highly distressed when encountering them or their influence.\n\n**Characteristics**\n\n- Avoids places associated with Daedra\n- Becomes frightened when encountering a Daedric being\n- May panic or flee when confronted by a Daedra\n- Refuses to approach Daedric artifacts or rituals"
+    },
+    {
+      "id": 205,
+      "key": "severause.severactions:phobias.undead",
+      "pack": "general",
+      "since": 2,
+      "tab": "Phobias",
+      "title": "Phobias: Undead",
+      "content": "Has an intense fear of undead creatures and becomes highly distressed when encountering them.\n\n**Characteristics**\n\n- Avoids places known to contain undead\n- Becomes frightened when seeing undead creatures\n- May panic or flee when confronted by undead\n- Refuses to approach or touch undead remains"
+    },
+    {
+      "id": 206,
+      "key": "severause.severactions:phobias.death",
+      "pack": "general",
+      "since": 2,
+      "tab": "Phobias",
+      "title": "Phobias: Death",
+      "content": "Has an intense fear of death and becomes deeply distressed when confronted with the possibility of dying.\n\n**Characteristics**\n\n- Avoids situations that could result in death\n- Becomes anxious when confronted with mortality\n- May panic when seriously injured or threatened\n- Strongly prioritizes survival and personal safety"
+    },
+    {
+      "id": 207,
+      "key": "severause.severactions:phobias.bodies-of-water",
+      "pack": "general",
+      "since": 2,
+      "tab": "Phobias",
+      "title": "Phobias: Bodies of Water",
+      "content": "Has an intense fear of large bodies of water and becomes distressed when near or surrounded by deep water.\n\n**Characteristics**\n\n- Avoids lakes, rivers, seas, and other large bodies of water\n- Becomes anxious when near deep or open water\n- May panic when forced to enter or cross water\n- Prefers staying on dry land whenever possible"
+    },
+    {
+      "id": 190,
+      "key": "severause.severactions:vices.alcoholic",
+      "pack": "general",
+      "since": 2,
+      "tab": "Vices and addictions",
+      "title": "Addictions: Alcoholic",
+      "content": "Has developed a strong dependence on alcohol and regularly seeks out drinking opportunities.\n\n**Characteristics**\n\n- Frequently drinks alcohol\n- Becomes uncomfortable when unable to drink\n- May prioritize drinking over other activities\n- Can become intoxicated regularly"
+    },
+    {
+      "id": 191,
+      "key": "severause.severactions:vices.skooma",
+      "pack": "general",
+      "since": 2,
+      "tab": "Vices and addictions",
+      "title": "Addictions: Skooma",
+      "content": "Has developed a dependency on Skooma and frequently seeks out the drug for its effects.\n\n**Characteristics**\n\n- Regularly seeks out Skooma\n- Becomes restless or irritable without it\n- May prioritize obtaining Skooma over other needs\n- Frequently uses Skooma when available",
+      "was": [
+        {
+          "title": "Addictions: Skoma",
+          "content": "Has developed a dependency on Skooma and frequently seeks out the drug for its effects.\n\n**Characteristics**\n\n- Regularly seeks out Skooma\n- Becomes restless or irritable without it\n- May prioritize obtaining Skooma over other needs\n- Frequently uses Skooma when available"
+        }
+      ]
+    },
+    {
+      "id": 192,
+      "key": "severause.severactions:vices.work",
+      "pack": "general",
+      "since": 2,
+      "tab": "Vices and addictions",
+      "title": "Addictions: Work",
+      "content": "Has developed an unhealthy attachment to work and feels compelled to remain productive.\n\n**Characteristics**\n\n- Constantly looks for something to work on\n- Becomes uncomfortable when idle\n- May neglect rest or leisure\n- Prioritizes work over other activities"
+    },
+    {
+      "id": 193,
+      "key": "severause.severactions:vices.sex",
+      "pack": "general",
+      "since": 2,
+      "tab": "Vices and addictions",
+      "title": "Addictions: Sex",
+      "content": "Has gained a strong interest in sexual activity and may frequently seek out intimate encounters.\n\n**Characteristics**\n\n- Personality is still the same but aware of need\n- May prioritize sexual activity over other pursuits\n- Becomes interested in potential romantic or sexual partners\n- May be more receptive to sexual advances",
+      "was": [
+        {
+          "title": "Addictions: Sex",
+          "content": "gained a strong interest in sexual activity and may frequently seek out intimate encounters.\n\n**Characteristics**\n\n- Personality is still the same but aware of need\n- May prioritize sexual activity over other pursuits\n- Becomes interested in potential romantic or sexual partners\n- May be more receptive to sexual advances"
+        }
+      ]
+    },
+    {
+      "id": 194,
+      "key": "severause.severactions:vices.eating",
+      "pack": "general",
+      "since": 2,
+      "tab": "Vices and addictions",
+      "title": "Addictions: Eating",
+      "content": "Has a strong appetite and takes particular pleasure in eating and seeking out food.\n\n**Characteristics**\n\n- Frequently seeks out food\n- Enjoys eating and trying different dishes\n- May prioritize satisfying hunger\n- Becomes noticeably interested when food is available"
+    },
+    {
+      "id": 195,
+      "key": "severause.severactions:vices.fighting",
+      "pack": "general",
+      "since": 2,
+      "tab": "Vices and addictions",
+      "title": "Addictions: Fighting",
+      "content": "Has a strong inclination toward combat and enjoys engaging in physical confrontations.\n\n**Characteristics**\n\n- Seeks out opportunities to fight\n- Enjoys testing their combat abilities\n- Becomes energized during battles\n- May prefer confrontation over peaceful solutions"
+    },
+    {
+      "id": 196,
+      "key": "severause.severactions:vices.killing",
+      "pack": "general",
+      "since": 2,
+      "tab": "Vices and addictions",
+      "title": "Addictions: Killing",
+      "content": "Has a strong inclination toward killing and is comfortable taking the lives of others.\n\n**Characteristics**\n\n- Shows little hesitation when killing\n- May seek out opportunities to kill enemies\n- Is comfortable with lethal violence\n- May view killing as a pleasure"
+    },
+    {
+      "id": 197,
+      "key": "severause.severactions:vices.pain",
+      "pack": "general",
+      "since": 2,
+      "tab": "Vices and addictions",
+      "title": "Addictions: Pain",
+      "content": "Has an unusual attraction to pain and may actively seek out painful experiences.\n\n**Characteristics**\n\n- May deliberately seek painful experiences\n- Has a high tolerance for physical pain\n- May find pain stimulating or satisfying\n- Is less deterred by situations involving injury"
+    },
+    {
+      "id": 88,
+      "key": "severause.severactions:sexual-behavior.playful",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Playful",
+      "content": "Lighthearted and fun in intimacy; enjoys teasing and flirtation.\r\n\r\n**Characteristics**\r\n- Teases often\r\n- Enjoys playful banter\r\n- Likes spontaneity"
+    },
+    {
+      "id": 89,
+      "key": "severause.severactions:sexual-behavior.romantic",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Romantic",
+      "content": "\rValues emotional connection and closeness above all else, in relations.\r\n\r\n**Characteristics**\r\n- Seeks affection\r\n- Enjoys tenderness\r\n- Prioritizes emotional bonds"
+    },
+    {
+      "id": 90,
+      "key": "severause.severactions:sexual-behavior.reserved",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Reserved",
+      "content": "Private and modest; keeps desires subtle and seldom expressed.\r\n\r\n**Characteristics**\r\n- Discreet\r\n- Low visibility of desire\r\n- Prefers privacy"
+    },
+    {
+      "id": 91,
+      "key": "severause.severactions:sexual-behavior.passionate",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Passionate",
+      "content": "Experiences attraction intensely and expresses emotions openly.\r\n\r\n**Characteristics**\r\n- Emotionally expressive\r\n- Acts on strong feelings\r\n- High enthusiasm"
+    },
+    {
+      "id": 92,
+      "key": "severause.severactions:sexual-behavior.curious",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Curious",
+      "content": "Approaches intimacy as something to learn and explore together.\r\n\r\n**Characteristics**\r\n- Asks questions\r\n- Enjoys discovering preferences\r\n- Welcomes feedback"
+    },
+    {
+      "id": 93,
+      "key": "severause.severactions:sexual-behavior.bold",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Bold",
+      "content": "Fearless about expressing attraction or making the first move.\r\n\r\n**Characteristics**\r\n- Confident flirting\r\n- Frequently initiates\r\n- Comfortable taking risks"
+    },
+    {
+      "id": 94,
+      "key": "severause.severactions:sexual-behavior.sensual",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Sensual",
+      "content": "Appreciates the atmosphere, aesthetics, and sensory aspects of intimacy.\r\n\r\n**Characteristics**\r\n- Notices touch and scent\r\n- Enjoys ambiance\r\n- Values slow, immersive experiences\r\n"
+    },
+    {
+      "id": 95,
+      "key": "severause.severactions:sexual-behavior.flirtatious",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behaviors:Flirtatious",
+      "content": "Enjoys playful attraction even outside committed relationships.\r\n\r\n**Characteristics**\r\n- Compliments freely\r\n- Likes witty exchanges\r\n- Enjoys playful tension\r\n"
+    },
+    {
+      "id": 96,
+      "key": "severause.severactions:sexual-behavior.patient",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Patient",
+      "content": "Comfortable letting relationships develop naturally over time.\r\n\r\n**Characteristics**\r\n- Doesn't rush intimacy\r\n- Comfortable waiting\r\n- Respects readiness"
+    },
+    {
+      "id": 97,
+      "key": "severause.severactions:sexual-behavior.dominant",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Dominant",
+      "content": "Confident and in control; prefers leading intimacy and setting the pace.\r\n\r\n**Characteristics**\r\n- Initiates often\r\n- Directs activity and pace\r\n- Enjoys guiding partner\r\n"
+    },
+    {
+      "id": 98,
+      "key": "severause.severactions:sexual-behavior.submissive",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Submissive",
+      "content": "Prefers their partner to take the lead; enjoys following and being guided.\r\n\r\n**Characteristics**\r\n- Rarely initiates\r\n- Prefers clear direction\r\n- Values reassurance\r\n"
+    },
+    {
+      "id": 99,
+      "key": "severause.severactions:sexual-behavior.shy",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Shy",
+      "content": "Reserved and cautious; requires trust before engaging in intimate or sexual interactions.\r\n\r\n**Characteristics**\r\n- Builds attraction slowly\r\n- Rarely initiates\r\n- May be hesitant or embarrassed\r\n"
+    },
+    {
+      "id": 100,
+      "key": "severause.severactions:sexual-behavior.switch",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Switch",
+      "content": "Enjoys both leading and following depending on the partner and situation.\r\n\r\n**Characteristics**\r\n- Adapts to the situation\r\n- Flexible roles\r\n- Enjoys variety\r\n"
+    },
+    {
+      "id": 101,
+      "key": "severause.severactions:sexual-behavior.independent",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Independent",
+      "content": "Values intimacy while maintaining personal autonomy and space.\r\n\r\n**Characteristics**\r\n- Needs time alone\r\n- Comfortable with distance\r\n- Avoids excessive dependence"
+    },
+    {
+      "id": 102,
+      "key": "severause.severactions:sexual-behavior.innocent",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior:Innocent",
+      "content": "-very naive and doesnt know the terms.\n-can be very surprised by sensations\n-easy to be shocked by sexual situations, especially the more extreme ones\n-will typically be reluctant"
+    },
+    {
+      "id": 107,
+      "key": "severause.severactions:sexual-behavior.very-high-libido",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Very High Libido",
+      "content": "- Thinks about sex almost constantly\n-Considers sexual sensations to be amazing\n-Cant help but notice atractive bodies\n-Feels aroused by small things\n-If not having sex , feels the need to masturbate often"
+    },
+    {
+      "id": 109,
+      "key": "severause.severactions:sexual-behavior.devoted",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Devoted",
+      "content": "Forms deep, lasting attachments and strongly values commitment.\r\n\r\nCharacteristics\r\n\r\nLoyal\r\nInvests deeply in relationships\r\nValues exclusivity"
+    },
+    {
+      "id": 110,
+      "key": "severause.severactions:sexual-behavior.gentle",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Gentle",
+      "content": "Patient, considerate, and attentive to a partner's comfort.\r\n\r\nCharacteristics\r\n\r\nMoves at a comfortable pace\r\nChecks in frequently\r\nValues mutual comfort"
+    },
+    {
+      "id": 111,
+      "key": "severause.severactions:sexual-behavior.adventurous",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Adventurous",
+      "content": "Open to trying new experiences and exploring fantasies.\r\n\r\nCharacteristics\r\n\r\nOpen-minded\r\nEnjoys experimentation\r\nSeeks novelty"
+    },
+    {
+      "id": 112,
+      "key": "severause.severactions:sexual-behavior.protective",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Protective",
+      "content": "Feels fulfilled by making a partner feel safe and supported.\r\n\r\nCharacteristics\r\n\r\nWatches over loved ones\r\nOffers reassurance\r\nPrioritizes security"
+    },
+    {
+      "id": 138,
+      "key": "severause.severactions:sexual-behavior.depraved",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Depraved",
+      "content": "Loves breaking taboos and pleasure oneself with no boundaries\n\nCharacteristics\n\nenjoys doing extreme acts\nFocuses on the rush and pleasure rather than social norm "
+    },
+    {
+      "id": 139,
+      "key": "severause.severactions:sexual-behavior.violent",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Violent",
+      "content": "Gets excitment and pleasure from intimidation and force.\n\nCharacteristics\n\n-Likes to feel strong \n-Often without empathy, thinks only in own pleasure\n-The more the partner struggles the more excitment"
+    },
+    {
+      "id": 140,
+      "key": "severause.severactions:sexual-behavior.homosexual",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Homosexual",
+      "content": "Is sexually atracted by the same genre\n\nCharacteristics\n\nEnjoys and prefers sex with same genre\nIncludes Romantic feelings"
+    },
+    {
+      "id": 152,
+      "key": "severause.severactions:sexual-behavior.celibate",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Celibate",
+      "content": "You have taken a vow to not ever have sex\n\nCharacteristics\n\n-Could be religious nature or personal decision\n-Takes it seriously"
+    },
+    {
+      "id": 153,
+      "key": "severause.severactions:sexual-behavior.traumatized",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Behavior",
+      "title": "Sexual Behavior: Traumatized",
+      "content": "You hate everything related to sex\n\nCharacteristics\n\n-incapable of feeling aroused\n-Sex brings bad memories\n-Doesnt like to talk about sex"
+    },
+    {
+      "id": 104,
+      "key": "severause.severactions:sexual-kinks.using-toys",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Using Toys",
+      "content": "Interested in intimate accessories and toys.\n\nCharacteristics\n- Variety\n- Experimentation\n- Mutual exploration"
+    },
+    {
+      "id": 105,
+      "key": "severause.severactions:sexual-kinks.bdsm",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks : BDSM",
+      "content": "Enjoys BDSM dynamics and power exchange.\r\n\r\n**Characteristics**\r\n- using tools, bdsm furniture and outfits\n- Consent & limits\r\n- Negotiated roles"
+    },
+    {
+      "id": 113,
+      "key": "severause.severactions:sexual-kinks.bondage",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Bondage",
+      "content": "Enjoys restraint and immobilization.\r\n\r\nCharacteristics\r\n\r\nRope or cuffs\r\nRestriction play"
+    },
+    {
+      "id": 114,
+      "key": "severause.severactions:sexual-kinks.service",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Service",
+      "content": "Finds satisfaction in pleasing a partner.\r\n\r\nCharacteristics\r\n\r\nGiving-oriented\r\nAttentive\r\nDevotion-focused"
+    },
+    {
+      "id": 115,
+      "key": "severause.severactions:sexual-kinks.praise",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Praise",
+      "content": "Enjoys giving or receiving verbal affirmation.\r\n\r\nCharacteristics\r\n\r\nCompliments\r\nEncouragement\r\nPositive reinforcement"
+    },
+    {
+      "id": 116,
+      "key": "severause.severactions:sexual-kinks.degradation",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Degradation",
+      "content": "Degradation\nEnjoys humiliation or degradation.\n\nCharacteristics\n\nContext-dependent\nMay set some boundaries"
+    },
+    {
+      "id": 117,
+      "key": "severause.severactions:sexual-kinks.rough",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Rough",
+      "content": "Prefers higher-intensity physical intimacy.\r\n\r\nCharacteristics\r\n\r\nFirm touch\r\nEnergetic pace\r\nMay set limits"
+    },
+    {
+      "id": 118,
+      "key": "severause.severactions:sexual-kinks.oral",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Oral",
+      "content": "Particularly enjoys oral stimulation.\r\n\r\nCharacteristics\r\n\r\nGiving or receiving\r\nValues enthusiasm\r\nForeplay-oriented"
+    },
+    {
+      "id": 119,
+      "key": "severause.severactions:sexual-kinks.anal",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Anal",
+      "content": "Enjoys anal-focused intimacy.\r\n\r\nCharacteristics\r\n\r\nComfortable discussing\r\nPrefers preparation\r\nHigh anal pain threshold\n"
+    },
+    {
+      "id": 120,
+      "key": "severause.severactions:sexual-kinks.exhibitionism",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Exhibitionism",
+      "content": "Enjoys being seen in sexual contexts.\r\n\r\nCharacteristics\r\n\r\nLikes attention\r\nThrill-seeking\r\nConfidence-focused"
+    },
+    {
+      "id": 121,
+      "key": "severause.severactions:sexual-kinks.public-risk",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Public Risk",
+      "content": "Enjoys the excitement of public risk.\r\n\r\nCharacteristics\r\n\r\nAdrenaline\r of danger\nDiscretion\r\nShared excitement"
+    },
+    {
+      "id": 122,
+      "key": "severause.severactions:sexual-kinks.cuckold-cuckquean",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Cuckold/Cuckquean",
+      "content": "Interested in consensual jealousy or sharing fantasies.\r\n\r\nCharacteristics\r\n\r\nFantasy-oriented\r\nCommunication\r\nNegotiated boundaries"
+    },
+    {
+      "id": 123,
+      "key": "severause.severactions:sexual-kinks.poligamy",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Poligamy",
+      "content": "Non-Monogamy\r\nOpen to consensual multi-partner relationships.\r\n\r\nCharacteristics\r\n\r\nCommunication\r\nClear agreements\r\nMutual trust"
+    },
+    {
+      "id": 124,
+      "key": "severause.severactions:sexual-kinks.master-slave",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Master/Slave",
+      "content": "Interested in long-term  authority and service dynamics.\n\nCharacteristics\n\nStructured roles\nClear expectations\nOngoing commitment"
+    },
+    {
+      "id": 125,
+      "key": "severause.severactions:sexual-kinks.pet-play",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Pet Play",
+      "content": "Enjoys roleplaying as an animal within agreed boundaries.\r\n\r\nCharacteristics\r\n\r\nRole-based interaction\r\nTraining themes\r\nPlayful or structured"
+    },
+    {
+      "id": 126,
+      "key": "severause.severactions:sexual-kinks.age-play",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Age play",
+      "content": "Interested in consensual age-based roleplay between adults.\r\n\r\nCharacteristics\r\n\r\nFictional roles\r\nClearly negotiated\r\nContext-dependent"
+    },
+    {
+      "id": 127,
+      "key": "severause.severactions:sexual-kinks.objectification",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Objectification",
+      "content": "Interested in  objectification or depersonalized roles.\n\nCharacteristics\n\nNegotiated roles\nFantasy-focused\nClear limits"
+    },
+    {
+      "id": 128,
+      "key": "severause.severactions:sexual-kinks.chastity",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Chastity",
+      "content": "Interested in consensual control or restriction of sexual activity.\r\n\r\nCharacteristics\r\n\r\nDelayed gratification\r\nTrust-based\r\nStructured agreements"
+    },
+    {
+      "id": 129,
+      "key": "severause.severactions:sexual-kinks.orgasm-control",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Orgasm Control",
+      "content": "Interested in control over climax or pacing.\n\nCharacteristics\n\n-Communication\n-Patience\n- Usually with negotiated boundaries"
+    },
+    {
+      "id": 130,
+      "key": "severause.severactions:sexual-kinks.sensory-deprivation",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Sensory Deprivation",
+      "content": "Enjoys limiting one or more senses to enhance immersion.\r\n\r\nCharacteristics\r\n\r\nTrust-focused\r\nControlled environment\r\nenjoys the heightened awareness of other senses"
+    },
+    {
+      "id": 131,
+      "key": "severause.severactions:sexual-kinks.teasing",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Teasing",
+      "content": "Enjoys playful flirtation and anticipation.\r\n\r\nCharacteristics\r\n\r\nBanter\r\nLighthearted flirting\r\nBuilds excitement"
+    },
+    {
+      "id": 132,
+      "key": "severause.severactions:sexual-kinks.mutual-exploration",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Mutual Exploration",
+      "content": "Enjoys discovering new experiences together.\r\n\r\nCharacteristics\r\n\r\nCollaborative\r\nCurious\r\nOpen-minded"
+    },
+    {
+      "id": 133,
+      "key": "severause.severactions:sexual-kinks.slow-and-sensual",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Slow and Sensual",
+      "content": "Prefers gradual, intimate encounters.\r\n\r\nCharacteristics\r\n\r\nLong foreplay\r\nGentle pace\r\nEmotional focus\r\n"
+    },
+    {
+      "id": 134,
+      "key": "severause.severactions:sexual-kinks.fantasy-sharing",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Fantasy Sharing",
+      "content": "Enjoys discussing or imagining fantasies together.\r\n\r\nCharacteristics\r\n\r\nCreative\r speech\nOpen, explicit communication\r\nImaginative scenarios"
+    },
+    {
+      "id": 135,
+      "key": "severause.severactions:sexual-kinks.feet",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Feet",
+      "content": "Has an interest in feet or foot-focused play.\r\n\r\nCharacteristics\r\n\r\nTouch\r\nMassage\r\nFoot worship"
+    },
+    {
+      "id": 141,
+      "key": "severause.severactions:sexual-kinks.pissing",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Pissing",
+      "content": "Enjoys pissing on or being pissed on by others\n\nCharacteristics\n\n-Aroused by the scent and warmness\n-Likes the taboo aspect of it\n-May like the taste or act of having it on the mouth, or of seeing others do it"
+    },
+    {
+      "id": 142,
+      "key": "severause.severactions:sexual-kinks.gangbang",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Gangbang",
+      "content": "Enjoys having sex with multiple partners at the same time\n\nCharacteristics\n\n-loves all the focus on themselves on a gangbang\n- seeks being overwhelmed by sensations and multiple touches\n-likes to pleasure multiple parterns at once"
+    },
+    {
+      "id": 143,
+      "key": "severause.severactions:sexual-kinks.cum-fetish",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Cum fetish",
+      "content": "Loves sperm, aroused by it.\n\nCharacteristics\n\n-likes the taste , aroused by the smell of cum\n-Enjoys contact with it, being smeared on it\n-fascinated by the moment of ejaculation"
+    },
+    {
+      "id": 144,
+      "key": "severause.severactions:sexual-kinks.pussy-worship",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Pussy Worship",
+      "content": "Greatly enjoys seeing and interacting with vaginas\n\nCharacteristics\n\n- very aroused by the sight of pussy\n-Enjoys the smell, taste, being near a vagina\n-likes different kinds of pubic hairstyles of pussies\n-likes to comment and worship them, often slowly"
+    },
+    {
+      "id": 145,
+      "key": "severause.severactions:sexual-kinks.boob-worship",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Boob worship",
+      "content": "Greatly enjoys seeing and interacting with boobs, in all ways\n\nCharacteristics\n\n-aroused by cleavage and by the sight of breasts\n-loves touching and licking\n-can comment and worship boobs for a long periods"
+    },
+    {
+      "id": 146,
+      "key": "severause.severactions:sexual-kinks.ass-worship",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Ass worship",
+      "content": "Greatly aroused by seeing and interacting with ass, in all ways\n\nCharacteristics\n\n-Can comment and worship asses for long periods\n- aroused by seeing, touching, smelling, tasting asses\n-likes butt cheeks and assholes"
+    },
+    {
+      "id": 147,
+      "key": "severause.severactions:sexual-kinks.threesome",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Threesome",
+      "content": "loves the notion of having sex with two partners\n\nCharacteristics\n\n-Aroused by the notion of not having just one single partner during sex\n-Likes the shared experience\n-the composition may depend on gender preferences, if any"
+    },
+    {
+      "id": 148,
+      "key": "severause.severactions:sexual-kinks.bestiality",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Bestiality",
+      "content": "Aroused by the notion of sex with animals\n\nCharacteristics\n\n-May have a prefered animal or multiple\n-Aroused by the taboo and deviant aspect of it\n-Enjoys being with a different race of being, with diferent anatomies"
+    },
+    {
+      "id": 149,
+      "key": "severause.severactions:sexual-kinks.bloody-sex",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual kinks: Bloody Sex",
+      "content": "Aroused by the notion of sex that involves she sight and presence of fresh blood\n\nCharacteristics\n\n- may be a vampire that likes to drain blood during sex or a mortal that likes to be drained.\n- The trickle of blood, the sight of it , is arousing\n-Could include menstrual blood"
+    },
+    {
+      "id": 150,
+      "key": "severause.severactions:sexual-kinks.necrophilia",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Necrophilia",
+      "content": "Aroused by the notion of sex with humanoid corpses.\n\nCharacteristics\n\n-Could be dead bodies or draught\n-The stench and rigor mortis may add to it\n-The coldness could be arousing or could prefer still warm"
+    },
+    {
+      "id": 151,
+      "key": "severause.severactions:sexual-kinks.incest",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Incest",
+      "content": "Aroused by having incestuous relations\n\nCharacteristics\n\n-Could be a sibling, parent of more distant family\n-The deviant aspect of it is arousing\n-Enjoys the taboo\n-Could be caused by  intentional incest or just forbidden atraction"
+    },
+    {
+      "id": 154,
+      "key": "severause.severactions:sexual-kinks.penis-worship",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Penis worship",
+      "content": "Loves seeing and interacting with cocks\n\nCharacteristics\n\n-can talk about and look at cocks for a long time.\n-Likes everything about them\n-Aroused by them"
+    },
+    {
+      "id": 155,
+      "key": "severause.severactions:sexual-kinks.sex-with-dunmer",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Kinks",
+      "title": "Sexual Kinks: Sex with Dunmer",
+      "content": "Aroused sexually by Dunmer in particular\n\nCharacteristics\n\n-Will still follow any gender preference\n-Aroused by their physical racial atributes"
+    },
+    {
+      "id": 103,
+      "key": "severause.severactions:sexual-dislikes.body-fluids",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Dislikes",
+      "title": "Sexual Dislikes : Body Fluids",
+      "content": "-Doesnt like body fluids!\n\n-Disgusted by cum ,squirts and oddors, to the point of vomit!\n-Prefers clean sex, devoid of fluid contact or smells"
+    },
+    {
+      "id": 108,
+      "key": "severause.severactions:sexual-dislikes.anal",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Dislikes",
+      "title": "Sexual Dislikes: Anal",
+      "content": "Hates Anal Sex!\n\nAsshole may be too tight for anal, often  feels too much pain and will always ask to not do anal!\n\n"
+    },
+    {
+      "id": 136,
+      "key": "severause.severactions:sexual-dislikes.oral",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Dislikes",
+      "title": "Sexual Dislikes: Oral",
+      "content": "Hates Oral sex!\n\nThe concept seems gross.\nIs repulsed by it.\nSex fluids taste terribly."
+    },
+    {
+      "id": 137,
+      "key": "severause.severactions:sexual-dislikes.homosexual-relations",
+      "pack": "adult",
+      "since": 1,
+      "tab": "Sexual Dislikes",
+      "title": "Sexual Dislikes: Homosexual Relations",
+      "content": "Is utterly repulsed by same sex relations!\n\nThe concept of being sexually with a person of the same sex is utterly repulsive.\nComplete lack of arousal by it."
+    }
+  ],
+  "factionRules": []
 }

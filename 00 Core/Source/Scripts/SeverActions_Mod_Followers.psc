@@ -73,8 +73,10 @@ Bool Function ServiceBool(String asSvc, Form akA, Form akB, String asArg, Float 
      "jailStrip" (Arrest): pull akA off the schedule, whose holds would otherwise fight the
      jail sandbox (a just-jailed prisoner) or outrank the arrest packages (a retainer going
      on task as a guard).
-     "leaveSchedule" (SpellCast, Crafting): YieldSchedule(akA) for an NPC the schedule holds, whose
-     alias packages outrank the caller's crafter or caster alias; False when she holds none.
+     "leaveSchedule" (SpellCast, Crafting, Arrest): YieldSchedule(akA) for an NPC the schedule holds,
+     whose alias packages outrank the caller's crafter or caster alias, or whose fallback overrides
+     outrank an arrest's prisoner packages; False when she holds no schedule alias (her fallback
+     overrides still come off).
      "rerecruit" (Brawl, the MCM's Re-Recruit): RegisterFollower(akA). A caller without this
      module reseats them in their own framework instead.
      "sandbox" / "stopSandbox" (Kidnap): Follow's wait sandbox on / off, for a kidnapper
@@ -83,6 +85,8 @@ Bool Function ServiceBool(String asSvc, Form akA, Form akB, String asArg, Float 
      "leaveToAttack" (Combat's AttackTarget, Enterprises' RenounceCampOath): LeaveToAttack(akA,
      akB) - akA leaves the player's service before turning on akB, the player or another
      companion; False when akA was not on the roster.
+     "custodyHold" / "custodyRelease" (Arrest, ArrestPlayer's parley): CustodyHold / CustodyRelease(akA) - the guards take
+     a rostered follower, or let them go; False when akA is not on the roster.
      "assignHome": AssignHome(akA, asArg), asArg the location name; False when it is "".
      "clearHome": ClearHome(akA). "purge": ForceRemoveFollower(akA), the MCM's Force Remove.
      "resetAll" (no actor): UnregisterFollower(x, false) for every follower - the ordinary
@@ -112,7 +116,7 @@ Bool Function ServiceBool(String asSvc, Form akA, Form akB, String asArg, Float 
         EndIf
         Return True
     EndIf
-    If asSvc != "jailStrip" && asSvc != "leaveSchedule" && asSvc != "rerecruit" && asSvc != "sandbox" && asSvc != "stopSandbox" && asSvc != "dismiss" && asSvc != "leaveToAttack" && asSvc != "assignHome" && asSvc != "clearHome" && asSvc != "purge"
+    If asSvc != "jailStrip" && asSvc != "leaveSchedule" && asSvc != "rerecruit" && asSvc != "sandbox" && asSvc != "stopSandbox" && asSvc != "dismiss" && asSvc != "leaveToAttack" && asSvc != "custodyHold" && asSvc != "custodyRelease" && asSvc != "assignHome" && asSvc != "clearHome" && asSvc != "purge"
         Return Parent.ServiceBool(asSvc, akA, akB, asArg, afArg)
     EndIf
     Actor a = akA as Actor
@@ -139,11 +143,9 @@ Bool Function ServiceBool(String asSvc, Form akA, Form akB, String asArg, Float 
         fm.StripScheduleForJail(a)
         Return True
     ElseIf asSvc == "leaveSchedule"
-        If !fm.HoldsAnySchedAlias(a)
-            Return False
-        EndIf
+        Bool held = fm.HoldsAnySchedAlias(a)
         fm.YieldSchedule(a)
-        Return True
+        Return held
     ElseIf asSvc == "rerecruit"
         fm.RegisterFollower(a)
         Return True
@@ -152,6 +154,10 @@ Bool Function ServiceBool(String asSvc, Form akA, Form akB, String asArg, Float 
         Return True
     ElseIf asSvc == "leaveToAttack"
         Return fm.LeaveToAttack(a, akB as Actor)
+    ElseIf asSvc == "custodyHold"
+        Return fm.CustodyHold(a)
+    ElseIf asSvc == "custodyRelease"
+        Return fm.CustodyRelease(a)
     ElseIf asSvc == "assignHome"
         If asArg == ""
             Return False

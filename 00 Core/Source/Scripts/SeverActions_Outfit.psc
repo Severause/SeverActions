@@ -378,12 +378,12 @@ Function Undress_Execute(Actor akActor)
 EndFunction
 
 Bool Function Undress_IsEligible(Actor akActor)
-{Alive, not outfit-excluded, outfit system on. The hotkey's gate: it keeps the
- hotkey from reporting an undress Undress_Execute would refuse.}
+{Alive, not a child, not outfit-excluded, outfit system on. The hotkey's gate: it
+ keeps the hotkey from reporting an undress Undress_Execute would refuse.}
     if !akActor
         return false
     endif
-    if akActor.IsDead()
+    if akActor.IsDead() || akActor.IsChild()
         return false
     endif
     if !SeverActionsNativeExt2.Native_Outfit_IsSystemEnabled()
@@ -398,15 +398,20 @@ EndFunction
 Bool Function RefuseIfOutfitExcluded(Actor akActor, String asOp)
     {True = refused, the caller returns. Called by every entry point right
      after its null check. Refuses an actor with the per-NPC outfit exclusion
-     (FollowerData.outfitExcluded: the whole system leaves them alone) and the
-     player (a target-less Actions-page verb defaults to them, and the lock
-     path would strip their gear; the natives refuse 0x14 too).}
+     (FollowerData.outfitExcluded: the whole system leaves them alone), a child
+     (never dressed; clearing a situation preset stays open) and the player (a
+     target-less Actions-page verb defaults to them, and the lock path would
+     strip their gear; the natives refuse 0x14 too).}
     If akActor == Game.GetPlayer()
         Debug.Trace("[SeverActions_Outfit] " + asOp + " refused - outfit actions never apply to the player")
         Return true
     EndIf
     If !akActor
         Return false
+    EndIf
+    If akActor.IsChild() && asOp != "ClearSituationPreset"
+        Debug.Trace("[SeverActions_Outfit] " + asOp + " refused - " + akActor.GetDisplayName() + " is a child")
+        Return true
     EndIf
     If SeverActionsNative.Native_GetOutfitExcluded(akActor)
         Debug.Trace("[SeverActions_Outfit] " + asOp + " refused - " + akActor.GetDisplayName() + " is excluded from the outfit system")
@@ -666,13 +671,13 @@ Function Dress_Execute(Actor akActor)
 EndFunction
 
 Bool Function Dress_IsEligible(Actor akActor)
-{Alive, not outfit-excluded, outfit system on (see Undress_IsEligible), and
- something to put back: stashed clothing, a held slot preset, the preset an
+{Alive, not a child, not outfit-excluded, outfit system on (see Undress_IsEligible),
+ and something to put back: stashed clothing, a held slot preset, the preset an
  Undress took off, or a saved DefaultOutfit.}
     if !akActor
         return false
     endif
-    if akActor.IsDead()
+    if akActor.IsDead() || akActor.IsChild()
         return false
     endif
     if !SeverActionsNativeExt2.Native_Outfit_IsSystemEnabled()
@@ -1418,9 +1423,9 @@ Function ReapplyLockedOutfit(Actor akActor)
         return
     endif
 
-    ; The OutfitAlias re-equip's other gates, for the pool caller: excluded, a
-    ; bondage mod's hold (DOM/PAH), an active slot preset (held or not, it owns
-    ; the gear).
+    ; The OutfitAlias re-equip's other gates, for the pool caller: excluded,
+    ; someone else owning the gear (OutfitDataStore::IsExternallyOwned), an
+    ; active slot preset (held or not, it owns the gear).
     if SeverActionsNative.Native_GetOutfitExcluded(akActor)
         return
     endif
@@ -1673,7 +1678,7 @@ EndFunction
 ;     fill cannot move, DR6). Seats followers, legacy-locked actors and
 ;     slot-preset actors with no binding of their own.
 ;   * The slot-preset pool: SeverActions_OutfitSlot binds native slot N to
-;     alias OutfitSlotNN (Native_OutfitSlot_GetAliasForSlot), 100 of them.
+;     alias OutfitSlotNN (Native_OutfitSlot_GetAliasForSlot), slots 0-99 only.
 ; Aliases 30-39 are native slots 0-9 (handed out lowest-first) and belong to
 ; the slot's OWNER: this pool never newly claims one (_outfitPoolIsNative),
 ; never clears an owner's, and skips actors bound through their own slot. A
@@ -1758,7 +1763,7 @@ Function EnsureOutfitAliasOwnership(Bool abRebuild = false)
     Bool[] mask = Utility.CreateBoolArray(_outfitPool.Length)
     Int nativeCount = 0
     Int k = 0
-    While k < 100   ; OutfitSlotStore kOutfitSlotCount
+    While k < 100   ; the slots with an alias (OutfitSlotStore: 0-99)
         ReferenceAlias slotAlias = SeverActionsNative.Native_OutfitSlot_GetAliasForSlot(k)
         If slotAlias
             Int i = 0
@@ -1937,7 +1942,7 @@ Event OnRosterChanged_Outfit(String eventName, String strArg, Float numArg, Form
         ; A DEAD purged follower also gives back their outfit slot (its
         ; wardrobe chests and the OutfitSlotNN alias that keeps the corpse
         ; persistent): ReleaseOrphanedSlots keeps any slot with presets, so the
-        ; 100-slot pool would fill with the dead. A LIVING purged actor
+        ; slot pool would fill with the dead. A LIVING purged actor
         ; (force-remove) keeps it; the slot persists through re-recruit.
         If akActor.IsDead()
             SeverActions_OutfitSlot purgeSlotSys = GetSlotScript()
@@ -2951,6 +2956,8 @@ Function Maintenance()
         StorageUtil.SetIntValue(None, "SeverActions_OutfitSuspendCleanupDone", 1)
         Debug.Trace("[SeverActions_Outfit] Phase 5: cleaned " + cleared + " stale StorageUtil suspend key(s) - now using native SuspendUntil")
     endif
+
+    _ReleaseChildOutfitState()
 EndFunction
 
 ; =============================================================================
@@ -3454,12 +3461,7 @@ Event OnPrismaClearLock(String eventName, String strArg, Float numArg, Form send
 EndEvent
 
 Event OnPrismaClearAllPresets(String eventName, String strArg, Float numArg, Form sender)
-    {"Clear All Presets": fully releases the actor's slot (restores the
-     original DefaultOutfit, empties the 8 preset containers, returns and
-     deletes the satchel), clears the legacy lock and ERASES the actor's
-     OutfitDataStore row (presets, situation mappings, active preset name,
-     dress stash) - ClearLock alone would leave mappings the situation monitor
-     re-dresses from. The actor ends at their untouched baseline.}
+    {"Clear All Presets" (_ReleaseAllOutfitState).}
     Int pipePos = StringUtil.Find(strArg, "|")
     If pipePos < 0
         Return
@@ -3468,7 +3470,16 @@ Event OnPrismaClearAllPresets(String eventName, String strArg, Float numArg, For
     If !akActor
         Return
     EndIf
+    _ReleaseAllOutfitState(akActor)
+    Debug.Trace("[SeverActions_Outfit] PrismaClearAllPresets: Fully released " + akActor.GetDisplayName() + " (slot, lock and outfit data)")
+EndEvent
 
+Function _ReleaseAllOutfitState(Actor akActor)
+    {Fully releases the actor's slot (restores the original DefaultOutfit, empties
+     the 8 preset containers, returns and deletes the satchel), clears the legacy
+     lock and ERASES the actor's OutfitDataStore row (presets, situation mappings,
+     active preset name, dress stash) - ClearLock alone would leave mappings the
+     situation monitor re-dresses from. The actor ends at their untouched baseline.}
     SeverActions_OutfitSlot slotSys = GetSlotScript()
     If slotSys
         slotSys.ReleaseSlotFromActor(akActor)
@@ -3486,9 +3497,50 @@ Event OnPrismaClearAllPresets(String eventName, String strArg, Float numArg, For
     ; parked before it erases. LAST, and nothing after it: a native setter
     ; that writes through operator[] would re-create the row.
     SeverActionsNative.Native_Outfit_RemoveActor(akActor)
+EndFunction
 
-    Debug.Trace("[SeverActions_Outfit] PrismaClearAllPresets: Fully released " + akActor.GetDisplayName() + " (slot, lock and outfit data)")
-EndEvent
+Function _ReleaseChildOutfitState()
+    {Once per save (MIGR OutfitChildRelease v1): a child an older build dressed,
+     locked or gave presets is fully released (_ReleaseAllOutfitState). Waits,
+     unclaimed, while the outfit system is off. A child it cannot reach (only a
+     dress stash, or not in memory) stays as it is: every enforcement path skips
+     a child.}
+    If !SeverActionsNativeExt2.Native_Outfit_IsSystemEnabled()
+        Return
+    EndIf
+    If !SeverActionsNativeExt2.Migration_TryClaim("OutfitChildRelease", 1)
+        Return
+    EndIf
+    String names = ""
+    Int released = 0
+    Actor[] tracked = SeverActionsNativeExt.Native_Outfit_GetAllTrackedActors()
+    If tracked
+        Int i = 0
+        While i < tracked.Length
+            If tracked[i] && tracked[i].IsChild()
+                _ReleaseAllOutfitState(tracked[i])
+                names += tracked[i].GetDisplayName() + " "
+                released += 1
+            EndIf
+            i += 1
+        EndWhile
+    EndIf
+    Actor[] slotted = SeverActionsNative.Native_OutfitSlot_GetAssignedActors()
+    If slotted
+        Int s = 0
+        While s < slotted.Length
+            ; A child the first pass released no longer holds a slot.
+            If slotted[s] && slotted[s].IsChild() && SeverActionsNative.Native_OutfitSlot_GetSlot(slotted[s]) >= 0
+                _ReleaseAllOutfitState(slotted[s])
+                names += slotted[s].GetDisplayName() + " "
+                released += 1
+            EndIf
+            s += 1
+        EndWhile
+    EndIf
+    SeverActionsNativeExt2.Migration_MarkDone("OutfitChildRelease", 1)
+    Debug.Trace("[SeverActions_Outfit] OutfitChildRelease: released " + released + " child(ren) from the outfit system " + names)
+EndFunction
 
 Event OnPrismaApplyPresetV2(String eventName, String strArg, Float numArg, Form sender)
     {V2 of the apply event, so an older save's registration of the retired

@@ -2,7 +2,7 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
 
-    <moduleName>SeverActions - SkyrimNet Action Pack v4.2</moduleName>
+    <moduleName>SeverActions - SkyrimNet Action Pack v4.3</moduleName>
 
     <requiredInstallFiles>
         <folder source="00 Core" destination="" priority="0"/>
@@ -543,10 +543,10 @@ Requires OSL Aroused mod.</description>
                         </plugin>
 
                         <plugin name="SL Aroused - Modify Arousal Action">
-                            <description>Arousal action for SexLab Aroused:
+                            <description>Arousal action for SLO Aroused (SexLabAroused.esm):
 • Modify Arousal (SLO) - Adjust NPC arousal levels
 
-Requires SexLab Aroused mod.</description>
+Requires SLO Aroused. Works with OStim or SexLab; SexLab itself is not needed.</description>
                             <conditionFlags>
                                 <flag name="sa_leg_adult_slo_action">On</flag>
                             </conditionFlags>
@@ -575,10 +575,10 @@ Requires OSL Aroused mod.</description>
                         </plugin>
 
                         <plugin name="SL Aroused - Arousal Awareness Prompt">
-                            <description>Arousal awareness for SexLab Aroused:
+                            <description>Arousal awareness for SLO Aroused (SexLabAroused.esm):
 • NPCs aware of their arousal state
 
-Requires SexLab Aroused mod.</description>
+Requires SLO Aroused. Works with OStim or SexLab; SexLab itself is not needed.</description>
                             <conditionFlags>
                                 <flag name="sa_leg_adult_slo_prompt">On</flag>
                             </conditionFlags>

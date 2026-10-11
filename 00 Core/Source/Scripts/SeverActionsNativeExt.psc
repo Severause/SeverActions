@@ -113,8 +113,8 @@ String Function Hold_GetBountyKeyForCrime(Faction akCrimeFaction) Global Native
 {Return the storage key for tracked bounty in a crime faction's hold, or "" if no match.}
 
 ObjectReference Function Hold_GetJailMarkerForCrime(Faction akCrimeFaction) Global Native
-{Jail marker for a crime faction's hold, same fallback as Hold_GetJailMarker.
-For jailing an NPC with no guard at hand.}
+{Jail marker for a crime faction's hold: a registered hold's own marker, else the faction's
+own jail marker. For jailing an NPC with no guard at hand.}
 
 Function Hold_Clear() Global Native
 {Clear every registered hold, for a mod that rebuilds the table. The kDataLoaded
@@ -203,18 +203,23 @@ Bool Function Native_Outfit_IsLockActive(Actor akActor) Global Native
 {True if the actor has an active outfit lock.}
 
 Bool Function Native_Outfit_IsExternallyControlled(Actor akActor) Global Native
-{True while Diary of Mine / Paradise Halls holds the actor captive (their
- factions) and defer-to-bondage is on; outfit enforcement then skips re-equip
- so SA doesn't fight their strip or restraints. False without those mods.}
+{True while someone else owns the actor's gear, so outfit enforcement skips
+ re-equip: a child (never dressed), Diary of Mine / Paradise Halls holding them
+ captive while defer-to-bondage is on, the Tailor mod dressing them while
+ outfitDeferTailor is on (an NPC not asked about since the load counts as
+ Tailor's until asked), a kidnap captive, a jailed prisoner or an arrest in
+ progress.}
 
 Function Native_Outfit_SetDeferBondage(Bool abEnabled) Global Native
-{Toggle for the deferral above (default ON; off = IsExternallyControlled is
- always false). RAM-only: SeverActions_Outfit.Maintenance re-pushes it on load.}
+{Toggle for the Diary of Mine / Paradise Halls deferral above (default ON; off =
+ a bondage-mod hold no longer counts, while the other owners above still do;
+ Tailor's deferral is the outfitDeferTailor setting). RAM-only:
+ SeverActions_Outfit.Maintenance re-pushes it on load.}
 
 Bool Function Native_Outfit_IsActivelyManaged(Actor akActor) Global Native
 {For soft-dep compat patches deciding whether to skip their own outfit
- re-equip: true iff the actor is a recruited SA follower, not outfit-excluded,
- and has an active lock or slot preset (the OutfitAlias's own gate).}
+ re-equip: true iff the actor is a recruited SA follower, not outfit-excluded
+ nor a child, and has an active lock or slot preset (the OutfitAlias's own gate).}
 
 Bool Function Native_IsDeviousDevice(Form akForm) Global Native
 {True for a Devious Devices armor: the rendered device (zad_Lockable /
@@ -971,14 +976,14 @@ Faction[] Function Native_Bounty_GetSnapshotFactions() Global Native
 Int[] Function Native_Bounty_GetSnapshotAmounts() Global Native
 {Read the amounts from the snapshot captured by Native_Bounty_SnapshotAll. Index-aligned with GetSnapshotFactions.}
 
-; --- Bounty event log (the World page Ledger timelines) ---
+; --- Bounty event log (the Law & Crime timelines) ---
 
 Function Native_Bounty_AddEvent(Faction crimeFaction, Int delta, String crimeType, String hold) Global Native
 {Append a crime row to the faction's event ring (32 rows, FIFO). Metadata only:
- call Native_Bounty_Mod with the same delta first. crimeType is canonical
- (ArrestBounty.NormalizeCrimeType: assault / theft / murder / trespass /
- pickpocket / contempt / abuse_of_power); hold is the display name, stored so
- the row renders even if the faction later fails to resolve.}
+ call Native_Bounty_Mod with the same delta first. crimeType is one of the
+ seven crimes (ArrestBounty.NormalizeCrimeType) or any other, stored as a short
+ clean label; hold is the display name, stored so the row renders even if the
+ faction later fails to resolve.}
 
 ; === LOOT THEFT (InventoryUtils.h) ===
 ; ProcessLoot / PickUpItemSilent leave the theft result for the getters below;

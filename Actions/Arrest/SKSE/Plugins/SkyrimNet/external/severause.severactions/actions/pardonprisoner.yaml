@@ -1,0 +1,68 @@
+customCategory: arrest
+name: PardonPrisoner
+description: "Use when the speaker, a jarl or housecarl, orders someone held in this hold's cells set free in this line, wherever the prisoner is (a pardon, charges dropped, a sentence cut short, a favor granted): word goes down to the jailers and the prisoner walks free. Not for a promise to think it over. A prisoner brought before the speaker for judgment is OrderRelease; a guard at the cell lets them out with FreeFromJail."
+questEditorId: SeverActions
+scriptName: SeverActions_Arrest
+executionFunctionName: PardonPrisoner_Internal
+parameterMapping:
+  - type: speaker
+    name: akAuthority
+    description: the jarl or housecarl giving the order
+  - type: dynamic
+    name: prisonerName
+    description: "name of the prisoner to free, as held in the speaker's jail (they need not be nearby); never the player"
+enabled: true
+defaultPriority: 8
+eligibilityRules:
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_busy"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A hold's jarl or housecarl: a guard frees a prisoner at the cell (FreeFromJail).
+      - decoratorName: "is_hold_noble"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Someone is held in the speaker's hold.
+      - decoratorName: "hold_jail_roster"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_is_dispatched"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot act (see the is_kidnap_victim bullet in CLAUDE.md). "" = not a victim.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

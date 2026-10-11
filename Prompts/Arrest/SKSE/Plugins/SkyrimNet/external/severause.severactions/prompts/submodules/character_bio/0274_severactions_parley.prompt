@@ -1,0 +1,38 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# A guard questioning one of the player's companions over a bounty (the parley, ParleyDriver.h): both sides,
+   while it lasts. The stakes come from sever_parley_state, whose markers (ParleyCore.h) decide which actions
+   are offered. A render caches that decorator for 55 s while eligibility reads it live, so the action lines
+   name every action of the side and leave the choice to the list; they render only where an action can be
+   chosen (_actionsOffered: NPC dialogue and the drill-down). #}
+{% set _actionsOffered = render_mode == "action" or (render_mode == "full" and default(responseTarget.type, "none") != "none") %}
+{% if player and player.UUID and actorUUID != player.UUID %}
+{% set parleyRole = sever_parley_role(actorUUID) %}
+{% if parleyRole != "" %}
+{% set actor = decnpc(actorUUID) %}
+{% set playerName = player.name %}
+{% set parleyState = sever_parley_state(actorUUID) %}
+{% if parleyRole == "guard" %}
+## Questioning a Companion
+{{ parleyState }}
+{% if not contains(parleyState, "[PARLEY: RESISTING]") %}
+- {{ actor.name }} speaks to the companion; {{ actor.name }} answers {{ playerName }} only when {{ playerName }} speaks to them.
+- What weighs on the verdict: the crime itself, the companion's account and standing, what they offer, and {{ actor.name }}'s own nature, by the book or flexible.
+{% endif %}
+{% if _actionsOffered %}
+- To settle it, select the **Arrest** action category and take whichever of these it offers now: **DropTheCharge** (let them go), **PressTheCharge** (reject the plea) or **TakeThemIn** (end the talk and take them in). The verdict is not due on the first line.
+- Until it is settled, no other action category.
+{% endif %}
+{% else %}
+## Stopped by the Watch
+{{ parleyState }}
+{% if not contains(parleyState, "[PARLEY: RESISTING]") %}
+- {{ actor.name }} answers the guard; {{ actor.name }} answers {{ playerName }} only when {{ playerName }} speaks to them.
+{% endif %}
+{% if _actionsOffered %}
+- Argue the case, or settle it: select the **Arrest** action category and take whichever of these it offers now: **PayOffCharge**, **GoQuietly** or **RefuseArrest**.
+- Until it is settled, no other action category.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

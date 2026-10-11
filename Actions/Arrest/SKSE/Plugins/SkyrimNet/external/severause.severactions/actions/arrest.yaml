@@ -1,6 +1,6 @@
 customCategory: arrest
 name: Arrest
-description: "Category: the law, when the speaker takes a legal step in this line: charge the player with a crime or confront them over their bounty; arrest someone here, or have a guard do it; send a guard to bring in, or search the home of, someone elsewhere; free someone from the cells; take the player's coin to clear another person's bounty; or give the verdict in a hearing under way (the player arguing off a bounty, a prisoner pleading on the march, a prisoner brought in for judgment). A prisoner on the march picks this once, to plead. Suspicions, warnings and threats of arrest are words. Seizing someone to keep is Captives."
+description: "Category: the law, when the speaker takes a legal step in this line: charge the player or someone else here with a crime, or confront the player over their bounty; arrest someone here, or have a guard do it; send a guard to bring in, or search the home of, someone elsewhere; free someone from the cells; take the player's coin to clear another person's bounty; or give the verdict in a hearing under way (the player arguing off a bounty, a companion answering a guard over theirs, a prisoner pleading on the march, a prisoner brought in for judgment); or, stopped by a guard over one's own bounty, pay it off, give oneself up, or refuse and fight them. A prisoner on the march picks this once, to plead. Suspicions, warnings and threats of arrest are words. Seizing someone to keep is Captives."
 enabled: true
 
 eligibilityRules:

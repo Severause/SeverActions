@@ -435,7 +435,7 @@ Function ApplyTheftBounty(Actor akActor, String asWhat)
     endif
     ; The doer carries the bounty: a follower's theft is theirs, not the player's.
     SeverActionsNativeExt.Native_Bounty_ModFor(akActor, crimeFaction, stolenValue)
-    SeverActionsNativeExt.Native_Bounty_AddEventFor(akActor, crimeFaction, stolenValue, "theft", "")
+    SeverActionsNativeExt.Native_Bounty_AddEventFor(akActor, crimeFaction, stolenValue, "theft", SeverActionsNativeExt2.Hold_GetHoldNameForCrime(crimeFaction))
     Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("loot.bountyGold", ("" + stolenValue), ("" + akActor.GetDisplayName())))
     SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " was seen stealing " + asWhat + ", and now carries a " + stolenValue + " gold bounty for it.", akActor, Game.GetPlayer())
 EndFunction

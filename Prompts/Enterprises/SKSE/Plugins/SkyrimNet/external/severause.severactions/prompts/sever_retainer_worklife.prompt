@@ -128,6 +128,13 @@ Held in a cell right now (canon: none of them walked free this week):
 {% endfor %}
 If the week touches any of them (a crewmate, a customer, a supplier, someone they deal with), the entry must reflect the cell: the gap they left at the work, a visit to the jail, word passed through a guard, their affairs in someone else's hands. Never write them working, trading, drinking or walking about.
 {% endif %}
+{% if length(default(captives, [])) > 0 %}
+Held captive right now, bound and kept by force (canon: none of them is free or at their work):
+{% for c in captives %}
+- {{ c.name }}, {% if c.restraint %}held bound{% else %}taken captive{% endif %}{% if c.heldBy != "" %} by {{ c.heldBy }}{% endif %}{% if c.sinceDays > 0 %}, {{ c.sinceDays }} {% if c.sinceDays == 1 %}day{% else %}days{% endif %} ago{% endif %}{% if c.guardedBy != "" %}, kept under guard by {{ c.guardedBy }}{% endif %}
+{% endfor %}
+If the week touches any of them, the entry must reflect the captivity: the gap they left, worry or talk about where they went, their affairs in someone else's hands, a visit only where they are kept. Never write them working, trading, drinking or walking about, and never write them freed or rescued: that is decided elsewhere.
+{% endif %}
 [ end system ]
 
 [ user ]
@@ -163,6 +170,9 @@ Write {{ retainerName }}'s journal entry for this week of their work ({{ job }})
 - Never name {{ playerName }} or anyone who travels with {{ playerName }}. Prefer minor locals to jarls or quest figures. If nobody fits, leave both empty.
 {% if length(default(prisoners, [])) > 0 %}
 - Someone held in a cell (listed above) can be the encounter only as the cell allows (a visit, a word through the bars), and their "npcMemory" is remembered from inside it.
+{% endif %}
+{% if length(default(captives, [])) > 0 %}
+- Someone held captive (listed above) can be the encounter only as their captivity allows (a visit where they are kept, a word under guard), and their "npcMemory" is remembered as a captive.
 {% endif %}
 
 ## A Letter to {{ playerName }} (optional, rare)

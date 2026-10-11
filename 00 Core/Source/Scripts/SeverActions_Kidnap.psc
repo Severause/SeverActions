@@ -80,12 +80,14 @@ Int Property TIE_HOLD_PKG_FORMID       = 0x0005DA58 AutoReadOnly
 ; ── Captive-hold alias pool (KDNP v6) ──
 ; The kneel hold also seats its sit package through SeverActions_CaptiveQuest aliases: an alias
 ; package re-applies on cell load, where the priority-95 ActorUtil override drops on 3D unload.
-; The override and the tick heals stay as backstops. The restraint hold is not package-driven.
+; The override runs while it is on; the alias and the tick heals hold her once it drops. The
+; restraint hold is not package-driven.
 Int Property CAPTIVE_QUEST_FORMID    = 0x0016A78B AutoReadOnly
 {SeverActions_CaptiveQuest: 16 ReferenceAliases (Captive_00..15), each carrying
  SeverActions_CaptiveSit (0x0016A78C, cloned by GenerateCaptiveAliases.pas). Quest DNAM priority
- 105 sets the alias-package precedence (TES5 PACKs have none): above 100 so foreign overrides
- cannot preempt; SkyrimNet's eval hook still wins.}
+ 105 orders it among quest aliases only (TES5 PACKs have none): it outranks the schedule's 101,
+ but any ActorUtil override, foreign or the kneel's own 95, outranks every alias; SkyrimNet's
+ eval hook still wins.}
 Int Property CAPTIVE_ALIAS_POOL_SIZE = 16 AutoReadOnly
 Quest _captiveQuest = None
 Bool _captiveQuestResolved = false
@@ -147,6 +149,9 @@ Float Property KIDNAP_RANSOM_GRACE_DAYS   = 1.0 AutoReadOnly
 Float Property KIDNAP_RANSOM_REOPEN_DAYS  = 2.0 AutoReadOnly
 {After a refused ransom whose searchers are spent (dead or talked down): game days before the
  court reopens negotiation and the ransom slate resets.}
+Float Property KIDNAP_STEEL_LOST_DAYS     = 3.0 AutoReadOnly
+{Game days after the searchers came (the ransom demand on a save with no search stamp)
+ before a refused ransom's search that never resolved counts as spent steel.}
 
 ; ── Captivity life ──
 Float Property KIDNAP_GUARD_RADIUS     = 1000.0 AutoReadOnly
@@ -846,7 +851,9 @@ Function KidnapTick(Bool abFromLoad = false)
                 ; faction) is tracked to the hold. Fires only while the player is AT the
                 ; site (the standoff spawns around them); the native gates the ambush
                 ; toggle, cooldown and player state. A refused ransom, or a paid one
-                ; still held past the grace window, arms it at once.
+                ; still held past the grace window, arms it at once. The flag is set by
+                ; SeverActions_Ambush once the searchers spawn, so a search lost to a load
+                ; can come again; the native cooldown stops a second request meanwhile.
                 Bool searchDue = heldDays >= KIDNAP_SEARCH_DAYS
                 If !searchDue
                     If rState == KIDNAP_RANSOM_REFUSED
@@ -861,8 +868,7 @@ Function KidnapTick(Bool abFromLoad = false)
                         ObjectReference holdSite = SeverActionsNativeExt.Native_Kidnap_GetMarker(v)
                         If holdSite && Game.GetPlayer().GetParentCell() == holdSite.GetParentCell()
                             If SeverActionsNativeExt2.Venture_FireKidnapSearch(v)
-                                SeverActionsNativeExt.Native_Kidnap_SetFlag(v, KIDNAP_FLAG_SEARCH, true)
-                                Debug.Trace("[SeverActions_Kidnap] Kidnap: search party fired for " + v.GetDisplayName())
+                                Debug.Trace("[SeverActions_Kidnap] Kidnap: search party requested for " + v.GetDisplayName())
                             EndIf
                         EndIf
                     EndIf
@@ -874,6 +880,25 @@ Function KidnapTick(Bool abFromLoad = false)
                 ; so a fresh demand can go out, priced with the desperation premium.
                 If rState == KIDNAP_RANSOM_REFUSED
                     Float steelSpentGT = StorageUtil.GetFloatValue(v, "SA_KidnapSteelSpentGT", 0.0)
+                    ; A search marked sent whose standoff never resolved leaves no stamp, and the
+                    ; ransom would never reopen: KIDNAP_STEEL_LOST_DAYS after the searchers came
+                    ; (SA_KidnapSearchSentGT; a save that marked the search at request time has
+                    ; none, so the ransom time stands in) count the steel spent.
+                    ; SA_KidnapSteelFailed tells it from a written-off ransom (the reopen consumed
+                    ; that stamp) and makes this fire once.
+                    If steelSpentGT <= 0.0 && SeverActionsNativeExt.Native_Kidnap_GetFlag(v, KIDNAP_FLAG_SEARCH) \
+                        && StorageUtil.GetIntValue(v, "SA_KidnapSteelFailed", 0) == 0
+                        Float searchSentGT = StorageUtil.GetFloatValue(v, "SA_KidnapSearchSentGT", 0.0)
+                        If searchSentGT <= 0.0
+                            searchSentGT = SeverActionsNativeExt.Native_Kidnap_GetRansomTime(v)
+                        EndIf
+                        If Utility.GetCurrentGameTime() - searchSentGT >= KIDNAP_STEEL_LOST_DAYS
+                            steelSpentGT = Utility.GetCurrentGameTime()
+                            StorageUtil.SetFloatValue(v, "SA_KidnapSteelSpentGT", steelSpentGT)
+                            StorageUtil.SetIntValue(v, "SA_KidnapSteelFailed", 1)
+                            Debug.Trace("[SeverActions_Kidnap] Kidnap: refused ransom for " + v.GetDisplayName() + " - its search never resolved; hold steel counted spent")
+                        EndIf
+                    EndIf
                     If steelSpentGT > 0.0 && Utility.GetCurrentGameTime() - steelSpentGT >= KIDNAP_RANSOM_REOPEN_DAYS
                         StorageUtil.UnsetFloatValue(v, "SA_KidnapSteelSpentGT")
                         Actor roSteward = _GetHoldSteward(SeverActionsNativeExt.Native_Kidnap_GetGrabFaction(v))
@@ -1149,6 +1174,7 @@ Function KidnapNPC(Actor akKidnapper, String targetName, String destination)
     ; reopen clock or the desperation premium.
     StorageUtil.UnsetFloatValue(victim, "SA_KidnapSteelSpentGT")
     StorageUtil.UnsetIntValue(victim, "SA_KidnapSteelFailed")
+    StorageUtil.UnsetFloatValue(victim, "SA_KidnapSearchSentGT")
     SeverActionsNativeExt.Native_Kidnap_SetDestAnchor(victim, destMarker)
     Debug.Trace("[SeverActions_Kidnap] Kidnap: leg 1 begins - " + akKidnapper.GetDisplayName() + " -> " + victim.GetDisplayName() + " (dest '" + destination + "')")
 
@@ -1200,8 +1226,6 @@ Function _LaunchGrabLeg(Actor akKidnapper, Actor victim, String destination)
         ; off-screen fast-forward.
         SeverActionsNativeExt.Native_Kidnap_SetAliasMode(victim, false)
         Package kidnapTravelPkg = SeverActionsNativeExt.Travel_GetSpeedPackage(SPEED_JOG)
-        ; Registered so the orphan scanner, when on (orphanCleanupEnabled), does not report the travel LinkedRef.
-        SeverActionsNative.OrphanCleanup_RegisterTraveler(akKidnapper)
         ; travelState gates the follower teleport/catch-up systems.
         SeverActionsNative.Native_SetTravelState(akKidnapper, "traveling", destination)
         Int kHandle = SeverActionsNativeExt.Travel_Begin(akKidnapper, victim, Game.GetFormFromFile(TRAVEL_TARGET_KEYWORD_FORMID, "SeverActions.esp") as Keyword, \
@@ -1250,6 +1274,7 @@ Bool Function PlayerRestrainOnSpot(Actor akVictim, Bool abDeferNarration = false
     EndIf
     StorageUtil.UnsetFloatValue(akVictim, "SA_KidnapSteelSpentGT")
     StorageUtil.UnsetIntValue(akVictim, "SA_KidnapSteelFailed")
+    StorageUtil.UnsetFloatValue(akVictim, "SA_KidnapSearchSentGT")
     SeverActionsNativeExt.Native_Kidnap_SetLegDeadline(akVictim, 0.0)
 
     ; Bind flourish, then the shared pacify + bind; TOCTOU re-check after the wait.
@@ -1339,6 +1364,7 @@ Function RestrainNPC(Actor akRestrainer, String targetName)
     EndIf
     StorageUtil.UnsetFloatValue(victim, "SA_KidnapSteelSpentGT")
     StorageUtil.UnsetIntValue(victim, "SA_KidnapSteelFailed")
+    StorageUtil.UnsetFloatValue(victim, "SA_KidnapSearchSentGT")
     ; Recall listener: without it a player recall during the session's first restrain
     ; walk-up is ignored, and the stale approach can bind the target later.
     RegisterForModEvent("SeverActions_FollowerCalledByPlayer", "OnKidnapGuardRecall")
@@ -2181,14 +2207,20 @@ Event OnKidnapGuardRecall(string eventName, string strArg, float numArg, Form se
 EndEvent
 
 Function _EndKidnapTravel(Actor akKidnapper)
-    {Remove the kidnap travel override + orphan-scan traveler registration.
-     Safe no-op when nothing is applied. The follower-registry entry
-     (OrphanCleanup_RegisterFollower) is a separate map and is untouched.}
+    {Remove the kidnap travel override and the fallback leg's travel LinkedRef.
+     Safe no-op when nothing is applied.}
     Package kidnapTravelPkg = SeverActionsNativeExt.Travel_GetSpeedPackage(SPEED_JOG)
     If kidnapTravelPkg
         ActorUtil.RemovePackageOverride(akKidnapper, kidnapTravelPkg)
     EndIf
-    SeverActionsNative.OrphanCleanup_UnregisterTraveler(akKidnapper)
+    ; Only once the orchestrator has let go of the leg. A caller that leaves a live leg
+    ; behind cancels it (_CancelTravel), and TravelCore's teardown clears the link.
+    If SeverActionsNativeExt2.Travel_GetPhaseByActor(akKidnapper) == 0
+        Keyword travelKW = Game.GetFormFromFile(TRAVEL_TARGET_KEYWORD_FORMID, "SeverActions.esp") as Keyword
+        If travelKW
+            SeverActionsNative.LinkedRef_Clear(akKidnapper, travelKW)
+        EndIf
+    EndIf
     ; Clear the traveling mark so the follower teleport/catch-up systems
     ; resume normal handling of this actor.
     SeverActionsNative.Native_SetTravelState(akKidnapper, "", "")
@@ -2211,6 +2243,7 @@ Function _OnKidnapGrabResolved(Actor akKidnapper)
         EndIf
         _EndKidnapTravel(akKidnapper)
         _EndDispatchAliases(akKidnapper, victim)
+        _CancelTravel(akKidnapper)  ; a grab KidnapTick resolved can leave leg 1 live
         Return
     EndIf
 
@@ -2323,7 +2356,7 @@ Function _OnKidnapGrabResolved(Actor akKidnapper)
         ; start. The victim's own journey keeps her high-process (Traveler pool alias),
         ; with the escort override on top. No greet on approach. KidnapTick detects arrival
         ; through Native_GetTravelState ("waiting").
-        _EndKidnapTravel(akKidnapper)  ; strip the leg-1 override/registration
+        _EndKidnapTravel(akKidnapper)  ; strip the leg-1 override and, once the leg has ended, its link
         String destName = SeverActionsNativeExt.Native_Kidnap_GetDestLabel(victim)
         ObjectReference legDest = SeverActionsNativeExt.Native_Kidnap_GetDestAnchor(victim)
         Bool started = false
@@ -2340,7 +2373,9 @@ Function _OnKidnapGrabResolved(Actor akKidnapper)
         EndIf
         Debug.Trace("[SeverActions_Kidnap] Kidnap: leg 2 (journey fallback) started=" + started + " dest '" + destName + "'")
         If !started
-            ; No anchor or label, or the orchestrator refused: bind where they stand.
+            ; No anchor or label, or the orchestrator refused: bind where they stand. End a
+            ; leg 1 KidnapTick resolved while it was still live, or it keeps its link.
+            _CancelTravel(akKidnapper)
             _BindCaptive(victim, akKidnapper)
             Return
         EndIf
@@ -2458,8 +2493,7 @@ Function _BindCaptive(Actor akVictim, Actor akKidnapper, Bool abGuard = true, Bo
 
     ; The BoundCaptiveMarker driven the vanilla way (a pure Sit package on the FurnitureTargetKW
     ; linked ref), so the pose self-restores on cell reload. NOT registered with
-    ; FurnitureManager (its distance auto-cleanup would free the captive); the OnOrphanCleanup
-    ; handlers skip kidnap participants instead.
+    ; FurnitureManager (its distance auto-cleanup would free the captive).
     ObjectReference holdMarker = None
     Keyword furnKW = SeverActions_FurnitureLib.TargetKeyword()
     Furniture markerBase = Game.GetFormFromFile(KIDNAP_MARKER_FORMID, "Skyrim.esm") as Furniture

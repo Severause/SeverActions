@@ -1,0 +1,38 @@
+[ system ]
+You are reading how a guard's questioning of a wanted companion ended, from the conversation alone. Time is up and neither side took a step, so decide what the conversation itself settled. Output ONLY a JSON object.
+
+## The Charge
+
+{{ guard }}, a guard, stopped {{ suspect }}, a companion of {{ player }}, over a {{ bounty }} gold bounty in {{ hold }}{% if charges and charges != "" %} for {{ charges }}{% endif %}.
+{% if bribe %}
+The bounty was too large for a plain fine: the guard would take a bribe of {{ cost }} gold.
+{% else %}
+The fine was {{ cost }} gold.
+{% endif %}
+
+## What Was Said
+
+{% set transcript = default(transcript, []) %}
+{% if length(transcript) > 0 %}
+{% for line in transcript %}
+- {{ line }}
+{% endfor %}
+{% else %}
+(No conversation was captured.)
+{% endif %}
+[ end system ]
+
+[ user ]
+Decide how the conversation ended.
+
+- "waived" - {{ guard }} was convinced, took pity or let it go: {{ suspect }} walks free and the charge is dropped.
+- "paid" - {{ suspect }} agreed to pay the fine or the bribe and {{ guard }} accepted it.
+- "custody" - {{ guard }} insisted on taking {{ suspect }} in, or {{ suspect }} agreed to go. This is the default whenever you are unsure.
+- "refused" - {{ suspect }} openly refused to be taken and was ready to fight.
+
+Respond with ONLY one of these JSON objects. No explanation. One line:
+{% raw %}{"verdict": "waived"}{% endraw %}
+{% raw %}{"verdict": "paid"}{% endraw %}
+{% raw %}{"verdict": "custody"}{% endraw %}
+{% raw %}{"verdict": "refused"}{% endraw %}
+[ end user ]

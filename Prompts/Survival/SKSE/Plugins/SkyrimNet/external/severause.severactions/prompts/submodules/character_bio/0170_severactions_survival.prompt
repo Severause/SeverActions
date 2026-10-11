@@ -4,6 +4,8 @@
 {% set hunger = to_number(sever_hunger(actorUUID)) %}
 {% set fatigue = to_number(sever_fatigue(actorUUID)) %}
 {% set cold = to_number(sever_cold(actorUUID)) %}
+{# sever_recently_fed: they ate in the last few game hours. Below 25 it is the only line, so an earlier complaint in their dialogue does not carry on. #}
+{% set fedRecently = hunger < 25 and sever_recently_fed(actorUUID) != "" %}
 {% if hunger >= 25 or fatigue >= 25 or cold >= 25 %}
 {% if render_mode == "action" %}
 {% set surv_npc = decnpc(actorUUID) %}
@@ -39,9 +41,14 @@ There's a chill in the air. Nothing you can't handle, but you notice it.
 {% endif %}
 {% if hunger >= 25 %}When hungry, eat food you already have in your inventory first. Only look for food elsewhere if you have nothing to eat on you.
 {% endif %}
+{% if fedRecently %}You ate not long ago and you are not hungry. If you complained of hunger earlier, that has passed: do not bring it up again.
+{% endif %}
 {% if hunger < 50 and fatigue < 50 and cold < 50 %}None of this is pressing yet: let it show now and then, when it fits, not in every line.
 {% endif %}
 {% endif %}
+{% elif fedRecently and render_mode != "action" %}
+## How You Feel
+You ate not long ago and you are not hungry. If you complained of hunger earlier, that has passed: do not bring it up again.
 {% endif %}
 {% endif %}
 {% endif %}

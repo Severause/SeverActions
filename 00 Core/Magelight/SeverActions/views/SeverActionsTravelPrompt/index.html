@@ -130,15 +130,15 @@
 <body>
   <div id="overlay">
     <div class="tp-card">
-      <div class="tp-title" id="title">Where to?</div>
-      <div class="tp-sub">Confirm where they're headed — or type a different place.</div>
+      <div class="tp-title" id="title" data-i18n="title">Where to?</div>
+      <div class="tp-sub" data-i18n="sub">Confirm where they're headed — or type a different place.</div>
       <div class="tp-field">
-        <input class="tp-input" id="dest" type="text" placeholder="Type a destination…" autocomplete="off" />
+        <input class="tp-input" id="dest" type="text" placeholder="Type a destination…" data-i18n="destPlaceholder" data-i18n-attr="placeholder" autocomplete="off" />
         <div class="tp-suggest" id="suggest" style="display:none"></div>
       </div>
       <div class="tp-actions">
-        <button type="button" class="tp-btn tp-btn--go" id="btn-go">Go</button>
-        <button type="button" class="tp-btn" id="btn-cancel">Not now</button>
+        <button type="button" class="tp-btn tp-btn--go" id="btn-go" data-i18n="go">Go</button>
+        <button type="button" class="tp-btn" id="btn-cancel" data-i18n="notNow">Not now</button>
       </div>
       <div class="tp-timer" aria-hidden="true"><div id="timer-fill" class="tp-timer-fill"></div></div>
     </div>
@@ -146,7 +146,8 @@
 
 <script>
   // Travel prompt frontend.
-  //  IN  -- window.receiveTravelPromptData({ npcName, namedPlace, allLocations:[...], timeoutMs })
+  //  IN  -- window.receiveTravelPromptData({ npcName, namedPlace, allLocations:[...], timeoutMs, strings })
+  //         strings: the DLL's popup.travel.* text in the UI language, by short key.
   //  OUT -- window.travelPromptChoice(JSON.stringify({ choice, place }))
   //         choice in { "confirm", "decline" }. Only "confirm" with a place travels.
   (function () {
@@ -161,6 +162,29 @@
     var allLocations = [];
     var timerHandle = null;
     var posted = false;
+    var STR = {};
+
+    // A payload string, else the English literal; {name} vars filled in one pass (a value is never rescanned).
+    function S(k, fb, vars) {
+      var s = (typeof STR[k] === 'string' && STR[k]) ? STR[k] : fb;
+      if (!vars) return s;
+      return s.replace(/\{(\w+)\}/g, function (m, n) {
+        return Object.prototype.hasOwnProperty.call(vars, n) ? String(vars[n]) : m;
+      });
+    }
+
+    // data-i18n elements: data-i18n-en keeps the authored English, the fallback on every later receive.
+    function applyStrings() {
+      var els = document.querySelectorAll('[data-i18n]');
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        var attr = el.getAttribute('data-i18n-attr');
+        if (!el.hasAttribute('data-i18n-en'))
+          el.setAttribute('data-i18n-en', attr ? (el.getAttribute(attr) || '') : el.textContent);
+        var text = S(el.getAttribute('data-i18n'), el.getAttribute('data-i18n-en'));
+        if (attr) el.setAttribute(attr, text); else el.textContent = text;
+      }
+    }
 
     function post(choice) {
       if (posted) return;
@@ -260,7 +284,9 @@
       data = data || {};
       posted = false;
       allLocations = data.allLocations || [];
-      titleE.textContent = (data.npcName || 'Someone') + ' — where to?';
+      STR = (data.strings && typeof data.strings === 'object') ? data.strings : {};
+      applyStrings();
+      titleE.textContent = S('titleFor', '{name} — where to?', { name: data.npcName || S('someone', 'Someone') });
       destE.value = (data.namedPlace || '').toString();
       overlay.classList.add('show');
       // Default focus goes to Go, NOT the text box: the destination arrives

@@ -563,9 +563,15 @@ Function AcceptBrawl_Execute(Actor akAccepter, Actor akChallenger = None)
     akAccepter.EvaluatePackage()
 
     ; StartCombat is driven from Papyrus (no CommonLibSSE-NG member for it).
-    challenger.StartCombat(akAccepter)
-    Utility.Wait(0.1)
-    akAccepter.StartCombat(challenger)
+    ; The engine refuses StartCombat on the player; the NPC side alone starts the fight.
+    Actor player = Game.GetPlayer()
+    If challenger != player
+        challenger.StartCombat(akAccepter)
+    EndIf
+    If akAccepter != player
+        Utility.Wait(0.1)
+        akAccepter.StartCombat(challenger)
+    EndIf
 
     SkyrimNetApi.RegisterEvent("brawl_accepted", \
         akAccepter.GetDisplayName() + " accepted " + challenger.GetDisplayName() + "'s brawl challenge", \

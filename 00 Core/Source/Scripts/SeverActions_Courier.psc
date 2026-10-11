@@ -250,10 +250,6 @@ Bool Function TryDispatchQueuedCourier()
         ActorUtil.AddPackageOverride(courier, travelPkg, TRAVEL_PACKAGE_PRIORITY, 1)
         courier.EvaluatePackage()
     EndIf
-    ; Register with OrphanCleanup: the jog spans several of its 5s scans (when
-    ; orphanCleanupEnabled is on), which would strip the travel anchor mid-journey.
-    ; Stays registered until the native despawn (see DeliverCourierLetter).
-    SeverActionsNative.OrphanCleanup_RegisterTraveler(courier)
     DebugMsg("TryDispatchQueuedCourier: courier en route from afar (" \
         + StorageUtil.StringListCount(self, "SeverTravel_CourierQ_Body") + " more letter(s) ride the same delivery)")
     Return true
@@ -336,9 +332,7 @@ Function DeliverCourierLetter(Actor akCourier)
     ; End the travel package and force SkyrimNet's TalkToPlayer package (as SkyrimNet does
     ; for live dialogue): the courier closes the last gap and holds to speak instead of
     ; stopping short.
-    ; Do NOT unregister the traveler: the loiter below re-anchors on the same _TravelKW()
-    ; LinkedRef, and with orphanCleanupEnabled on, OrphanCleanup's scan strips an unregistered
-    ; holder of it (the courier freezes until despawn). CourierManager deregisters at despawn.
+    ; The travel LinkedRef stays: the loiter below re-anchors on the same _TravelKW() link.
     SeverActions_TravelCore.StripTravelOverrides(akCourier)
     If player != None
         SkyrimNetApi.RegisterPackage(akCourier, "TalkToPlayer", 100, 0, false)

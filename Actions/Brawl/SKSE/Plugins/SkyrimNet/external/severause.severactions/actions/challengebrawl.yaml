@@ -68,3 +68,12 @@ eligibilityRules:
         expectedValue: ""
     logicalOperator: "AND"
     required: true
+  - conditions:
+      # Not in a parley (a guard questioning a companion over a bounty): the container's gate is not read
+      # again in the drill-down, and a refusal to be taken is the Arrest category's. "" = no parley.
+      - decoratorName: "sever_parley_role"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

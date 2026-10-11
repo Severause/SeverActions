@@ -1,0 +1,43 @@
+customCategory: arrest
+name: DropTheCharge
+description: "Only for the guard questioning one of {{ player.name }}'s companions over a bounty: the case truly moves them (an honest mistake, a lying witness, a story that holds up), so they let the charge drop and the bounty in this hold is wiped. Give it once the case is made, not on the first line; unmoved: PressTheCharge."
+questEditorId: SeverActions
+scriptName: SeverActions_ArrestPlayer
+executionFunctionName: DropTheCharge_Internal
+parameterMapping:
+  - type: speaker
+    name: akGuard
+    description: the guard questioning the companion
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      # The parley markers (ParleyCore.h, sever_parley_state): keep them byte-identical there.
+      - decoratorName: "sever_parley_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "contains"
+        expectedValue: "[PARLEY: HEARING THE PLEA]"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot act (see the is_kidnap_victim bullet in CLAUDE.md). "" = not a victim.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

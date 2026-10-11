@@ -1,6 +1,6 @@
 customCategory: economy
 name: Economy
-description: "Category: money changing hands right now: buying or selling an item at a set price, paying or collecting coin, a gift or reward, and opening, adding to, paying off, reducing or forgiving a tab or a recurring payment. Only when the exchange happens in this line and the other side has agreed; quoting prices, haggling, asking for or promising money, and a payment already made are words. Not here: an item handed over with no price (Items), a smith's order (Crafting), the player's own retainers and stewards (Employment), bounties (Arrest), the Final Audit (Taxes). In the intent, say who pays whom, how much, for what."
+description: "Category: money changing hands now: buying or selling, paying, tipping, rewarding or refunding someone, collecting what is owed or offered, and opening, adding to, paying off, reducing or forgiving a tab or recurring payment. The speaker choosing to pay, tip or reward counts even unasked, as does billing the player, who is asked to confirm; a sale, a new tab or billing anyone else needs their agreement in this line. Quoted prices, haggling, money asked for or promised, and coin already handed over are words. Not here: unpriced hand-overs (Items), a smith's order (Crafting), retainers (Employment), bounties (Arrest), the Final Audit (Taxes)."
 enabled: true
 
 eligibilityRules:

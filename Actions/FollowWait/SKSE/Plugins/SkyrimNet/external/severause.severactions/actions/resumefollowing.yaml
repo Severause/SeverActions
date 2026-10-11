@@ -63,3 +63,11 @@ eligibilityRules:
         expectedValue: ""
     logicalOperator: "AND"
     required: true
+  - conditions:
+      # Not while the guards hold them (Custody::IsHeld); "" = free.
+      - decoratorName: "sever_in_custody"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

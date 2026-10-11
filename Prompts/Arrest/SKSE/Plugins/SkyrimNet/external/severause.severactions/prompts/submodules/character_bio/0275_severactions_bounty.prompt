@@ -34,6 +34,10 @@
 {% set hasActiveMode = true %}
 {% endif %}
 {% endif %}
+{# A parley (0274) briefs both of its parties instead. #}
+{% if sever_parley_role(actorUUID) != "" %}
+{% set hasActiveMode = true %}
+{% endif %}
 {% if not hasActiveMode %}
 {% set actor = decnpc(actorUUID) %}
 {% set subj = actor.subjectivePronoun %}
@@ -56,7 +60,7 @@
 {% if wantedNpcs != "" %}
 ## Bounties in {{ holdName }}
 {{ actor.name }} knows of standing bounties in {{ holdName }} on: {{ wantedNpcs }}.
-- If one of them stands before {{ actor.name }}, {{ subj }} may confront them about the crime: demand they answer for it, pay it off, or face arrest.
+- If one of them stands before {{ actor.name }}, {{ subj }} may confront them about the crime: demand they answer for it, pay it off, or face arrest.{% if _actionsOffered and is_guard(actorUUID) != "" %} For one of {{ playerName }}'s companions, ArrestNPC (in the **Arrest** action category) is still an arrest, though {{ subj }} may first stop them for questioning.{% endif %}
 {% if is_guard_or_authority(actorUUID) != "" %}
 - If {{ playerName }} offers to pay off any of these bounties on someone's behalf, {{ actor.name }} takes the coin and clears it with the law{% if _actionsOffered %}: select the **Arrest** action category, then **PayNpcBountyToGuard** (naming the wanted person){% endif %}.
 {% if _actionsOffered %}
@@ -66,10 +70,18 @@
 - Bounties are paid to a guard, the jarl or the housecarl, not to {{ actor.name }}; if {{ playerName }} offers the coin, {{ actor.name }} points them to one.
 {% endif %}
 {% endif %}
+{% if _actionsOffered and is_guard(actorUUID) != "" %}
+## Charging Others
+- When {{ actor.name }} sees someone other than {{ playerName }} commit a crime here and now, {{ subj }} can charge them: select the **Arrest** action category, then **AddBountyToNPC**. Taking them in is a separate step.
+{% endif %}
 {% set bounty = to_number(tracked_bounty(actorUUID)) %}
 {% if bounty > 0 %}
 ## Known Criminal Activity
 {{ actor.name }} knows that {{ playerName }} has a bounty of {{ bounty }} gold in {{ holdName }}.
+{% set charges = tracked_bounty_charges(actorUUID) %}
+{% if charges != "" %}
+The charges on file: {{ charges }}. {{ actor.name }} knows what {{ playerName }} is wanted for, whoever witnessed it.
+{% endif %}
 {% if is_guard(actorUUID) != "" %}
 As a guard of {{ holdName }}, {{ subj }} has the authority to confront {{ playerName }} over it.
 {% elif is_hold_noble(actorUUID) != "" %}

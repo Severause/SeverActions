@@ -920,9 +920,6 @@ Event OnStewardVisitTravel(String eventName, String strArg, Float numArg, Form s
         ActorUtil.AddPackageOverride(steward, travelPkg, TRAVEL_PACKAGE_PRIORITY, 1)
         steward.EvaluatePackage()
     EndIf
-    ; A long walk spans many 5s orphan-scan windows; with orphanCleanupEnabled on, the scanner
-    ; strips an unregistered traveler's travel link and package mid-journey.
-    SeverActionsNative.OrphanCleanup_RegisterTraveler(steward)
     DebugMsg("StewardVisit: " + steward.GetDisplayName() + " is walking out to " + target.GetDisplayName())
 EndEvent
 
@@ -946,9 +943,8 @@ Function PostStewardVisit(Actor akSteward, Actor akTarget)
         Debug.Trace("[SeverActions_Enterprises] steward visit: WorkSandbox package/keyword missing - run GenerateWorkSandbox.pas")
         Return
     EndIf
-    ; The leg is over: stop tracking them as a traveler and drop any fallback travel
-    ; override, which would compete with the sandbox. Quietly - it was never announced.
-    SeverActionsNative.OrphanCleanup_UnregisterTraveler(akSteward)
+    ; The leg is over: drop any fallback travel override, which would compete with the
+    ; sandbox. Quietly - it was never announced.
     _ClearTravelQuietly(akSteward)
     ; Permanent, like the workplace link it stands in for: PackageManager's 30-day
     ; prune and LinkedRef_ClearAll both leave it.
@@ -973,7 +969,6 @@ Function EndStewardVisit(Actor akSteward)
     Keyword anchorKw = Game.GetFormFromFile(0x00165675, "SeverActions.esp") as Keyword
     ; An end can land mid-walk (a lost completion, a dismissal, the retainer leaving).
     SeverActionsNativeExt.Travel_CancelByActor(akSteward)
-    SeverActionsNative.OrphanCleanup_UnregisterTraveler(akSteward)
     _ClearTravelQuietly(akSteward)
     If sandboxPkg
         ActorUtil.RemovePackageOverride(akSteward, sandboxPkg)
@@ -1025,7 +1020,6 @@ Event OnFinalAuditTravel(String eventName, String strArg, Float numArg, Form sen
         ActorUtil.AddPackageOverride(legate, travelPkg, TRAVEL_PACKAGE_PRIORITY, 1)
         legate.EvaluatePackage()
     EndIf
-    SeverActionsNative.OrphanCleanup_RegisterTraveler(legate)
     DebugMsg("FinalAudit: the General is on the road to the player")
 EndEvent
 
@@ -1038,7 +1032,6 @@ Event OnFinalAuditTravelAbort(String eventName, String strArg, Float numArg, For
         Return
     EndIf
     SeverActionsNativeExt.Travel_CancelByActor(legate)
-    SeverActionsNative.OrphanCleanup_UnregisterTraveler(legate)
     _ClearTravelQuietly(legate)
     legate.EvaluatePackage()
 EndEvent
@@ -1073,7 +1066,6 @@ Event OnTravelComplete(String eventName, String strArg, Float numArg, Form sende
         If legateNpc
             ; Every terminal status ends the journey: clear it quietly so nothing competes
             ; with the follow package native sends next.
-            SeverActionsNative.OrphanCleanup_UnregisterTraveler(legateNpc)
             _ClearTravelQuietly(legateNpc)
         EndIf
         SeverActionsNativeExt2.Venture_Audit_TravelLegDone(status == "arrived")

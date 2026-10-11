@@ -224,15 +224,15 @@
     </style>
   </head>
   <body>
-    <div id="overlay" class="brawl-overlay" role="dialog" aria-modal="false" aria-label="Brawl challenge">
+    <div id="overlay" class="brawl-overlay" role="dialog" aria-modal="false" aria-label="Brawl challenge" data-i18n="ariaLabel" data-i18n-attr="aria-label">
       <div class="brawl-card">
-        <div class="brawl-header">CHALLENGE</div>
-        <div class="brawl-body">
-          <span id="challenger" class="brawl-name">Someone</span> squares up and challenges you to a fist-fight. No weapons, no spells &mdash; just fists.
+        <div class="brawl-header" data-i18n="header">CHALLENGE</div>
+        <div class="brawl-body" id="body">
+          <span class="brawl-name">Someone</span> squares up and challenges you to a fist-fight. No weapons, no spells &mdash; just fists.
         </div>
         <div class="brawl-actions">
-          <button type="button" class="brawl-btn brawl-btn--accept" id="btn-accept">Accept</button>
-          <button type="button" class="brawl-btn brawl-btn--decline" id="btn-decline">Decline</button>
+          <button type="button" class="brawl-btn brawl-btn--accept" id="btn-accept" data-i18n="accept">Accept</button>
+          <button type="button" class="brawl-btn brawl-btn--decline" id="btn-decline" data-i18n="decline">Decline</button>
         </div>
         <div class="brawl-timer" aria-hidden="true">
           <div id="timer-fill" class="brawl-timer-fill"></div>
@@ -243,10 +243,11 @@
     <script>
       // Brawl prompt frontend script.
       //
-      // IN  -- C++ calls window.receiveBrawlPromptData({challengerName, timeoutMs})
-      //         after Focus()ing the view.
+      // IN  -- C++ calls window.receiveBrawlPromptData({challengerName, timeoutMs, strings})
+      //         after Focus()ing the view. strings: the popup.brawl.* texts in the UI
+      //         language by short key; each English literal here is the fallback.
       // OUT -- window.brawlPromptChoice("JSON") is C++-bound via
-      //         RegisterJSListener in PrismaUIBrawlPromptBridge::OnDomReady.
+      //         RegisterJSListener in MagelightPromptBridgeBase::OnDomReady.
       //         Calling it sends the choice to native. Native then fires
       //         SeverActions_BrawlChallengeChoice ModEvent.
       //
@@ -255,11 +256,56 @@
 
       (function () {
         var overlay     = document.getElementById('overlay');
-        var challengerE = document.getElementById('challenger');
+        var bodyE       = document.getElementById('body');
         var btnAccept   = document.getElementById('btn-accept');
         var btnDecline  = document.getElementById('btn-decline');
         var timerFill   = document.getElementById('timer-fill');
         var autoHandle  = null;
+
+        var STR = {};
+        var BODY_EN = '{name} squares up and challenges you to a fist-fight. No weapons, no spells — just fists.';
+
+        // A payload string by short key, else the English fallback; {var}s filled in one pass.
+        function S(k, fb, vars) {
+          var s = (typeof STR[k] === 'string' && STR[k]) ? STR[k] : fb;
+          if (!vars) return s;
+          return s.replace(/\{(\w+)\}/g, function (m, n) {
+            return Object.prototype.hasOwnProperty.call(vars, n) ? String(vars[n]) : m;
+          });
+        }
+
+        // data-i18n elements: the text, or the attribute data-i18n-attr names. The English
+        // original is kept in data-i18n-en so a later language change still has its fallback.
+        function applyStatic() {
+          var els = document.querySelectorAll('[data-i18n]');
+          for (var i = 0; i < els.length; i++) {
+            var el   = els[i];
+            var attr = el.getAttribute('data-i18n-attr');
+            if (!el.hasAttribute('data-i18n-en')) {
+              el.setAttribute('data-i18n-en', attr ? (el.getAttribute(attr) || '') : el.textContent);
+            }
+            var text = S(el.getAttribute('data-i18n'), el.getAttribute('data-i18n-en'));
+            if (attr) el.setAttribute(attr, text); else el.textContent = text;
+          }
+        }
+
+        // The name is a live bold span, so the sentence is split at {name} rather than
+        // inserted as HTML; a translation without {name} falls back to English.
+        function renderBody(name) {
+          var tpl = S('body', BODY_EN);
+          if (tpl.indexOf('{name}') < 0) tpl = BODY_EN;
+          var parts = tpl.split('{name}');
+          while (bodyE.firstChild) bodyE.removeChild(bodyE.firstChild);
+          for (var i = 0; i < parts.length; i++) {
+            if (parts[i]) bodyE.appendChild(document.createTextNode(parts[i]));
+            if (i < parts.length - 1) {
+              var span = document.createElement('span');
+              span.className = 'brawl-name';
+              span.textContent = name;
+              bodyE.appendChild(span);
+            }
+          }
+        }
 
         function postChoice(choice) {
           var body = JSON.stringify({ choice: choice });
@@ -306,11 +352,13 @@
         // Inbound channel from C++. Replaced on each open call.
         window.receiveBrawlPromptData = function (payload) {
           payload = payload || {};
-          var name = payload.challengerName || 'Someone';
+          STR = (payload.strings && typeof payload.strings === 'object') ? payload.strings : {};
+          applyStatic();
+          var name = payload.challengerName || S('someone', 'Someone');
           var ms   = payload.timeoutMs || 60000;
           if (ms < 1000) ms = 1000;
 
-          challengerE.textContent = name;
+          renderBody(name);
 
           // Restart the drain bar animation by detaching/reattaching the
           // node -- forces CSS to re-run the keyframes from scratch even

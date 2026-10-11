@@ -1,7 +1,7 @@
 Scriptname SeverActions_OutfitSlot extends Quest
 {
     NFF-style outfit slot system (wardrobe pattern). Each managed NPC gets a
-    slot 0-99 (one OutfitSlotNN alias each) with 8 presets; a preset is a
+    slot 0-199 (0-99 with an OutfitSlotNN alias each) with 8 presets; a preset is a
     wardrobe chest, plus a BGSOutfit and a LeveledItem that are vestigial ESP
     scaffolding, never used to equip. One satchel per slot holds stowed
     guardian-container items. SetOutfit is never called on apply: its implicit
@@ -39,10 +39,15 @@ Int Function AssignSlotToActor(Actor akActor)
     if existingSlot >= 0
         return existingSlot
     endif
+    ; The native refuses a child too; refusing here names the reason in the log.
+    if akActor.IsChild()
+        Log("AssignSlotToActor: " + akActor.GetDisplayName() + " is a child - no slot")
+        return -1
+    endif
 
     Int slotIdx = SeverActionsNative.Native_OutfitSlot_AssignSlot(akActor)
     if slotIdx < 0
-        Log("AssignSlotToActor: All 100 slots occupied, cannot assign " + akActor.GetDisplayName())
+        Log("AssignSlotToActor: cannot assign " + akActor.GetDisplayName() + " - outfit-excluded, or every outfit slot occupied")
         return -1
     endif
 
@@ -54,6 +59,8 @@ Int Function AssignSlotToActor(Actor akActor)
     if targetAlias
         BindSlotAlias(akActor, targetAlias)
         Log("Assigned slot " + slotIdx + " to " + akActor.GetDisplayName() + " (alias bound)")
+    elseif slotIdx >= 100
+        Log("Assigned slot " + slotIdx + " to " + akActor.GetDisplayName() + " (slots 100-199 have no alias)")
     else
         Log("WARNING: Slot " + slotIdx + " assigned but alias OutfitSlot" + PadSlotStr(slotIdx) + " not found in ESP")
     endif
@@ -156,8 +163,9 @@ EndFunction
 
 Function ReleaseSlotFromActor(Actor akActor)
     {Full slot release: restores the original outfit, empties and deletes the
-     dynamic refs, clears all preset data. Only for force-remove or "Clear All
-     Presets", never on dismiss (the slot persists through dismiss/re-recruit).}
+     dynamic refs, clears all preset data. Only for "Clear All Presets" and a
+     dead actor's purge, never on dismiss or a living force-remove (the slot
+     persists through re-recruit).}
     if !akActor
         return
     endif
@@ -359,7 +367,8 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
 
         ; (Only with wasActive.) The preset is no longer worn: clear the active
         ; index and OutfitDataStore's name tracker, which follows it. The
-        ; re-apply at the end sets both again.
+        ; re-apply at the end sets both again (unless Tailor dresses them: then
+        ; it is refused and the preset stays inactive).
         SeverActionsNative.Native_OutfitSlot_SetActivePreset(akActor, -1)
         SeverActionsNative.Native_Outfit_SetActivePreset(akActor, "")
         StorageUtil.UnsetIntValue(akActor, KEY_PRESET_ACTIVE)
@@ -735,7 +744,8 @@ Function ApplyPresetBySlot(Actor akActor, Int presetIdx)
     ; item equips the actor's copy (a missing one gets a catalog copy and is
     ; promoted). Synchronous, verifies IsWorn, never touches the chest. Returns
     ; -1 hard error (no chest / no equip manager / empty chest / an apply in
-    ; flight), 0 nothing equipped, < expected partial, == expected success; a
+    ; flight) or refused (Tailor dresses them and this is not the active
+    ; preset), 0 nothing equipped, < expected partial, == expected success; a
     ; re-apply of the active, un-held preset already worn in full returns the
     ; full count and touches nothing.
     ;
@@ -773,7 +783,7 @@ Function ApplyPresetBySlot(Actor akActor, Int presetIdx)
 
     ; A short count is a blacklist-overlap skip (expected) or an engine slot
     ; cascade. > 0 = applied, full or partial (the native marked it active);
-    ; 0 = the actor is naked, recover; < 0 = hard failure, not marked active.
+    ; 0 = the actor is naked, recover; < 0 = hard failure or refused, not marked active.
     if verifiedEquipped > 0
         ; Mirror the native index: active once anything went on, partial included.
         StorageUtil.SetIntValue(akActor, KEY_PRESET_ACTIVE, 1)
@@ -784,7 +794,7 @@ Function ApplyPresetBySlot(Actor akActor, Int presetIdx)
         endif
     elseif verifiedEquipped < 0
         ; Not marked active; the actor stays as they are and the user can retry.
-        Log("ApplyPresetBySlot: HARD FAILURE applying '" + presetName + "' to " + akActor.GetDisplayName() + " - DirectEquip returned " + verifiedEquipped + " - preset NOT marked active")
+        Log("ApplyPresetBySlot: refused or failed applying '" + presetName + "' to " + akActor.GetDisplayName() + " - DirectEquip returned " + verifiedEquipped + " - preset NOT marked active")
     else
         ; Zero equip: the actor is naked, the native index is already -1 and
         ; the copies are in their pack. Tear down BY INDEX (ClearPreset would
@@ -891,6 +901,8 @@ Function _TeardownPresetForIdx(Actor akActor, Int slotIdx, Int presetIdx, Bool a
     ; Restore original outfit if we have one saved
     if origOutfit
         akActor.SetOutfit(origOutfit, false)
+    else
+        _ReequipHeldRuntimeOutfit(akActor)
     endif
 
     Outfit origSleep = SeverActionsNative.Native_OutfitSlot_GetOriginalSleepOutfit(akActor)
@@ -1477,6 +1489,26 @@ Bool Function DeletePresetFromSlot(Actor akActor, String presetName)
 
     Log("DeletePresetFromSlot: removed '" + presetName + "' from slot " + slotIdx + " preset " + presetIdx + " for " + akActor.GetDisplayName())
     return true
+EndFunction
+
+Function _ReequipHeldRuntimeOutfit(Actor akActor)
+    {When another mod's runtime outfit (FormID 0xFF......) dresses the base, put
+     back the pieces of it the actor holds. No SetOutfit (it would write that id
+     into the save) and no new copies; a leveled entry is left to that mod.
+     Pause-safe (Native_EquipItemNow): the teardown runs from the paused wardrobe.}
+    Outfit current = akActor.GetLeveledActorBase().GetOutfit(false)
+    if !current || Math.RightShift(current.GetFormID(), 24) != 255
+        return
+    endif
+    Int n = current.GetNumParts()
+    Int i = 0
+    While i < n
+        Armor piece = current.GetNthPart(i) as Armor
+        if piece && akActor.GetItemCount(piece) > 0
+            SeverActionsNativeExt.Native_EquipItemNow(akActor, piece)
+        endif
+        i += 1
+    EndWhile
 EndFunction
 
 Function UnequipAllExceptBlacklisted(Actor akActor)

@@ -1,0 +1,50 @@
+customCategory: arrest
+name: PayOffCharge
+description: "Only for a companion a guard has stopped over their bounty: in this line the speaker hands over their own coin to settle it, the fine or, when the bounty is large, the bribe the guard will take. Not for offering, bargaining or asking {{ player.name }} for money; only when the coin changes hands now. Short of coin, the offer is gone."
+questEditorId: SeverActions
+scriptName: SeverActions_ArrestPlayer
+executionFunctionName: PayOffCharge_Internal
+parameterMapping:
+  - type: speaker
+    name: akSuspect
+    description: the companion answering the guard
+enabled: true
+defaultPriority: 9
+eligibilityRules:
+  - conditions:
+      # The parley markers (ParleyCore.h, sever_parley_state): keep them byte-identical there.
+      - decoratorName: "sever_parley_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "contains"
+        expectedValue: "[PARLEY: ANSWER THE CHARGE]"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_parley_state"
+        arguments: ["currentActor"]
+        comparisonOperator: "not_contains"
+        expectedValue: "[NO MORE COIN]"
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot act (see the is_kidnap_victim bullet in CLAUDE.md). "" = not a victim.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

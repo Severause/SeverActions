@@ -434,7 +434,9 @@ Function CheckOffScreenLifeEvents()
                             EndIf
                         EndIf
 
-                        If now >= nextEligible
+                        ; A kidnap or restraint captive has no free day to narrate, and an arrest
+                        ; consequence would jail them out of captivity. Asked only of a due NPC: it is a synced call.
+                        If now >= nextEligible && SeverActionsNativeExt.Native_Kidnap_GetPhase(follower) == 0
                             Float overdue = now - nextEligible
                             If !bestCandidate || overdue > bestOverdue
                                 bestCandidate = follower

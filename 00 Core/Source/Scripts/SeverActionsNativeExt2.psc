@@ -176,7 +176,7 @@ Function Venture_DebugRequestLetter(Actor akRetainer) Global Native
 {DEBUG: force an LLM-generated letter from this retainer; a courier goes out when the model returns (the real settle->letter->courier path).}
 
 Bool Function Venture_DebugForceAmbush() Global Native
-{DEBUG: force a retainer-grudge ambush now, skipping the delay/cooldown/location gates (an armed grudge, else one armed on a deserter, else any venture entry). Fires SeverActions_VentureAmbush. False only with no venture entries.}
+{DEBUG: force a retainer-grudge ambush now, skipping the delay/cooldown/location gates (an armed grudge, else one armed on a deserter, else any venture entry; captives and an entry whose ambush letter is still being written are skipped). Fires SeverActions_VentureAmbush once the letter is ready. False with no venture entries; True can still fire nothing.}
 
 Function Venture_RegisterAmbushThug(Actor akThug) Global Native
 {Mark a spawned actor as part of the live ambush standoff, so the is_ambush_thug decorator offers them Stand Down / Attack. Cleared on resolve.}
@@ -234,14 +234,30 @@ Bool Function Camp_IsMustered(Int aiCampId) Global Native
 Bool Function Camp_IsSworn(Int aiCampId) Global Native
 
 ; True removal of a runtime-added faction membership. RemoveFromFaction only
-; writes rank -1, which rank-blind readers (IsInFaction, GetInFaction package
-; conditions) still count as membership. Pass only a faction never authored on
-; an NPC base (see FactionUtils::RemoveClean). True = something was removed.
+; writes rank -1, a second entry beside any later membership, which rank-blind
+; readers (SkyrimNet's is_in_faction, GetInFaction package conditions) still
+; count as membership. Pass only a faction never authored on an NPC base (see
+; FactionUtils::RemoveClean). True = something was removed.
 Bool Function Faction_RemoveClean(Actor akActor, Faction akFaction) Global Native
 ; True while akActor is the guard of a live arrest or dispatch; false once their part
 ; ends (jailing, a release, a cancel), though a jailed prisoner's session still names
 ; them.
 Bool Function Native_ArrestSession_IsGuardOnTask(Actor akActor) Global Native
+; The prisoner's arrest session's crime faction (the jurisdiction the arrest resolved); None
+; without a session.
+Faction Function Native_ArrestSession_GetCrimeFaction(Actor akPrisoner) Global Native
+
+; ── Hold sites: the hold a place belongs to (its location chain's LCTN FNAM) ──
+; The registered hold's crime faction akRef stands in; None when the place maps to no
+; registered hold.
+Faction Function Hold_GetCrimeFactionForRef(ObjectReference akRef) Global Native
+; Where akRef stands: 0 = in no hold, 1 = in a registered hold, 2 = in a hold SA cannot map
+; (Solstheim, an unregistered modded hold).
+Int Function Hold_SiteStatusForRef(ObjectReference akRef) Global Native
+; The registered jail name ("Riften Jail") / hold name ("The Rift") of a crime faction; "" if
+; it is not a registered hold's.
+String Function Hold_GetJailNameForCrime(Faction akCrimeFaction) Global Native
+String Function Hold_GetHoldNameForCrime(Faction akCrimeFaction) Global Native
 ; True for a player teammate, a rostered follower or a retainer on guard duty: the
 ; companions the friendly-fire guard keeps from fighting the player or each other.
 Bool Function FriendlyFire_IsProtected(Actor akActor) Global Native
@@ -350,7 +366,7 @@ Function Sandbox_SetCylinder(Bool abEnabled, Float afHeight) Global Native
 
 ; ── Venture: kidnap search, ambush roster ───────────────────────────────
 Bool Function Venture_FireKidnapSearch(Actor victim) Global Native
-; Fire a search-party standoff for a held captive (event sender = victim; the grudge-ambush machinery, its toggle and global cooldown). True if queued; the caller then marks its once-per-captivity flag.
+; Fire a search-party standoff for a held captive (event sender = victim; the grudge-ambush machinery, its toggle and global cooldown). True if queued. SeverActions_Ambush sets the once-per-captivity search flag when the searchers spawn; the cooldown keeps a second request out meanwhile.
 Bool Function Venture_IsAmbushThug(Actor akActor) Global Native
 {True while the actor is a live Venture ambush thug (mutex-guarded set).}
 
@@ -359,9 +375,13 @@ Int Function Venture_AmbushThugCount() Global Native
  A load-time standoff teardown ends the persuasion window only at 0, so it never
  ends one another owner opened this session (plan R23).}
 
+Bool Function Venture_RearmAbandonedGrudge(Actor akDeserter) Global Native
+{A grudge standoff abandoned across a load: arms the deserter's spent grudge again, due after
+ the usual delay, unless they are back in service or held captive. True if it re-armed.}
+
 ; ── Camp challenge ─────────────────────────────────────────────────────────
-; Entering a WILD camp's interior brings the chief (or nearest outlaw) over to
-; ask the player's business, via the SeverActions_CampChallenge ModEvent
+; In a WILD camp's interior, the first outlaw who detects the player comes over to
+; ask their business, via the SeverActions_CampChallenge ModEvent
 ; (sender = challenger). Papyrus owns the walk and the card and reports the
 ; outcome here.
 
@@ -933,7 +953,9 @@ Actor[] Function Sched_GetSceneSuspendMismatched() Global Native
 Int Function Sched_HoldYield(Actor akActor) Global Native
 {Which other hold the schedule gives way to: 0 none, 1 crafting (CrafterAlias 3 or CrafterApproachAlias 6 of quest
  0x000D62), 2 a spell cast (SpellCastCaster aliases 124-127), 3 a Levy patrol (quest 0x16AC46), 4 Walk With Me leads
- them, 5 a SexLab or OStim scene. The schedule quests outrank each of these. Read-only.}
+ them, 5 a SexLab or OStim scene, 6 an arrest's prisoner in custody, 7 an arrest's guard on task, 8 the owner of a
+ persuasion window. The schedule's aliases (101) would beat 1-5; its fallback overrides (100-110) would beat or tie
+ 6-8, since any override beats every alias. Read-only.}
 
 Int Function Sched_NoteHold(Actor akActor, Int aiReason) Global Native
 {Records why the schedule holds nothing on akActor (FollowerManager's SCHED_HOLD_* codes; 0 drops the note) for the
@@ -976,6 +998,8 @@ Bool Function Magelight_IsDebtPromptOpen() Global Native
 Bool Function Magelight_IsDebtPromptAvailable() Global Native
 
 ; ── Bio Blocks: MCM apply / faction-rule surface (for VR) ───────────────────
+; SeverActions' own MCM natives, not a public API: they may change in any release.
+; Another mod uses the frozen BioApi_* functions below (API/BIO_BLOCKS_API.md).
 ; Authoring stays in the UI/JSON; these apply existing blocks to the crosshair
 ; target and manage faction rules. Titles[] and Ids[] are parallel arrays.
 String[] Function Native_BioBlock_TabList() Global Native
@@ -990,12 +1014,13 @@ Bool Function Native_BioBlock_GrantTargetFaction(Actor akActor, Int factionIndex
 String[] Function Native_BioBlock_FactionRuleNames() Global Native
 Bool Function Native_BioBlock_RemoveFactionRule(Int index) Global Native
 
-; ── Bio Blocks PUBLIC API v1 ──
+; ── Bio Blocks PUBLIC API (v1; v2 added ListApplied and the SeverActions_BioBlockChanged ModEvent; v3 one-block tabs;
+; v4 ListBlocks, GetContent and keys on SeverActions' shipped blocks) ──
 ; For other mods. Frozen: these signatures never change and are never removed (fomod/public_api.json).
 ; A block is named by KEY, "<author>.<mod>:<local>" in a-z 0-9 _ - (the local part may use dots too), e.g.
 ; "jdoe.grumpyguards:grumpy"; "severause.severactions:*" is reserved.
 ; Recipe, rules and caveats: Data/SKSE/Plugins/SeverActions/API/BIO_BLOCKS_API.md.
-; The API version: 1. An older SeverActions has no such native (the call fails and returns 0).
+; The API version: 4. An older SeverActions has no such native (the call fails and returns 0).
 Int Function BioApi_Version() Global Native
 ; Create or update the keyed block; call it on every load (an unchanged call writes nothing). Title and content are
 ; the provider's; asTab applies only when the block is created. False when refused (a malformed or reserved key, an
@@ -1003,13 +1028,30 @@ Int Function BioApi_Version() Global Native
 Bool Function BioApi_Define(String asKey, String asTitle, String asContent, String asTab) Global Native
 ; True while a block with this key is in the player's library.
 Bool Function BioApi_Exists(String asKey) Global Native
-; Apply the keyed block to an NPC; already applied is True, an unknown or deleted key False. Apply ONCE, on your own
-; event, never on every load: the player may remove it from that NPC.
+; Apply the keyed block to an NPC; already applied is True, an unknown or deleted key False. In a one-block tab (v3)
+; it replaces the NPC's other blocks of that tab, already applied or not. Apply ONCE, on your own event, never on
+; every load: the player may remove it from that NPC.
 Bool Function BioApi_Apply(Actor akActor, String asKey) Global Native
 ; Remove the keyed block from an NPC. False when the key is unknown or the block was not applied to them.
 Bool Function BioApi_Unapply(Actor akActor, String asKey) Global Native
 ; True when the keyed block is applied to this NPC (a faction rule's grant does not count).
 Bool Function BioApi_IsApplied(Actor akActor, String asKey) Global Native
+; v2. Every block the NPC's bio shows (v3: one per one-block tab), one TAB-separated record each (split with
+; StringUtil.Split(s, "\t")): "direct" or "faction", the tab, the title, then the key, absent for the player's own
+; block. Faction-rule blocks are matched now.
+String[] Function BioApi_ListApplied(Actor akActor) Global Native
+; v3. Mark a tab one-block: a bio shows at most one block of it, Apply replaces the one the NPC had, and a faction
+; rule grants one. Call it on every load after the Define that creates the tab. False when the tab does not exist or
+; the player set it by hand.
+Bool Function BioApi_SetTabExclusive(String asTab, Bool abExclusive) Global Native
+; v3. True when the tab is one-block.
+Bool Function BioApi_IsTabExclusive(String asTab) Global Native
+; v4. Every block a mod can apply (each with a key: other mods' and SeverActions' shipped ones, never the player's
+; own), one TAB-separated record each: "intimate" or "general" (from the tab's name), the tab, the title, the key.
+; abIncludeIntimate False leaves the intimate ones out.
+String[] Function BioApi_ListBlocks(Bool abIncludeIntimate) Global Native
+; v4. The keyed block's text as the bio shows it, "" when the key names no block.
+String Function BioApi_GetContent(String asKey) Global Native
 
 ; Custom-AI override: classify an NPC as a normal follower even when the curated
 ; custom-AI list matches them. Cosaved in 'CAIO', so the owner verdict is right
@@ -1139,8 +1181,8 @@ Bool Function Native_IsVRRuntime() Global Native
 String Function Native_GetGameLanguage() Global Native
 
 ; String localization (SeverActions_L10n.json) for notification / MessageBox /
-; HUD text SkyUI translation files cannot reach. Resolves game language ->
-; English -> the key. Native_L10nFmt fills {0}/{1} ("" for unused).
+; HUD text SkyUI translation files cannot reach. Resolves the UI language where the game font draws it, else the
+; game's -> English -> the key. Native_L10nFmt fills {0}/{1} ("" for unused).
 String Function Native_L10n(String asKey) Global Native
 String Function Native_L10nFmt(String asKey, String asArg0 = "", String asArg1 = "") Global Native
 ; ── Instance-aware inventory ──────────────────────────────────────────────
@@ -1199,6 +1241,27 @@ String Function Json_GetString(String asJson, String asPointer) Global Native
 Int Function Json_ArrayCount(String asJson, String asPointer) Global Native
 {The element count of the array (or member count of the object) at a JSON
  pointer ("" = the root). 0 when absent.}
+String Function Bounty_CleanCrime(String asCrime) Global Native
+{The label a bounty event stores for this crime: one of the seven tokens
+ (assault, theft, murder, trespass, pickpocket, contempt, abuse_of_power), or
+ any other crime as a short clean label (CrimeTypeCore). "" when nothing is left.}
+Bool Function Custody_IsHeld(Actor akActor) Global Native
+{True while an SA arrest has the actor as suspect or prisoner, or the jailed
+ roster holds them: the follow paths leave such a follower where the arrest put
+ them.}
+Bool Function Parley_Arm(Actor akSuspect, Actor akGuard, Faction akCrimeFaction, Int aiQuote, Int aiCost, Bool abBribe, Int aiFlags) Global Native
+{Start (or, after a load, restart with a fresh time budget) the driver that keeps a parley's guard and
+ suspect talking (ParleyDriver.h); the suspect needs a state-7 arrest session. False when another parley
+ is live, the session is missing or the arrest module is absent. Its SeverActions_Parley events go to
+ SeverActions_ArrestPlayer.OnParleyEvent.}
+Function Parley_Disarm(Actor akSuspect) Global Native
+{Stop the parley's driver. Idempotent.}
+Function Parley_SetFlags(Actor akSuspect, Int aiFlags) Global Native
+{The parley's whole flag set (ParleyCore.h: 1 plea refused, 2 no more coin, 4 demand, 8 resisting).}
+Bool Function Parley_Protect(Actor akActor, Bool abOn) Global Native
+{abOn: make the actor protected on the reference (only the player can kill them) and return true;
+ false, and nothing changed, for one already essential or protected. Off: clear that flag once they
+ have been out of combat a few seconds.}
 Bool Function LLMLane_TryClaim(String asLane, Float afTtlSeconds) Global Native
 {Claim a named in-flight lane for one class of LLM call (M-G); false while a
  live claim holds it. The claim expires after the TTL on a steady clock (0 =
@@ -1267,5 +1330,5 @@ ObjectReference Function Furniture_SeatFor(Actor akActor, ObjectReference akFurn
 
 ; ── Outfit slots (OutfitSlotStore.h) ───────────────────────────────────────
 Bool Function Native_OutfitSlot_UsesPresetOutfit(Actor akActor) Global Native
-{True when akActor's default or sleep outfit is one of the 800 preset BGSOutfits, the only
+{True when akActor's default or sleep outfit is one of the 1600 preset BGSOutfits, the only
  case in which the engine reads a preset's LeveledItem.}

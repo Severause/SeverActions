@@ -153,9 +153,6 @@ Function Maintenance()
         Actor w = waiting[i]
         If w && !w.IsDead()
             _ApplyArrivalSandbox(w)
-            ; Waiting NPCs still hold the travel LinkedRef and OrphanCleanup's registry is
-            ; cleared at load: re-register (the DLL does too; idempotent).
-            SeverActionsNative.OrphanCleanup_RegisterTraveler(w)
             StorageUtil.UnsetFloatValue(w, "SeverTravel_GreetTime")
         EndIf
         i += 1
@@ -348,8 +345,6 @@ Bool Function DoBeginJourney(Actor akNPC, ObjectReference akDest, String asPlace
 
     StorageUtil.SetFormValue(akNPC, "SeverTravel_SandboxOverride", akSandboxOverride)
     StorageUtil.SetIntValue(akNPC, "SeverTravel_Speed", aiSpeed)
-    ; Keep OrphanCleanup's keyword scan off the travel LinkedRef (unregistered at teardown).
-    SeverActionsNative.OrphanCleanup_RegisterTraveler(akNPC)
     ; SeverTravel_State doubles as this script's "journey keys exist" marker; other
     ; code reads the native travel state (M-T).
     StorageUtil.SetStringValue(akNPC, "SeverTravel_State", "traveling")
@@ -602,7 +597,6 @@ Function _Teardown(Actor akNPC, Bool abRestoreFollower)
     If kw
         SeverActionsNative.LinkedRef_Clear(akNPC, kw)
     EndIf
-    SeverActionsNative.OrphanCleanup_UnregisterTraveler(akNPC)
     If abRestoreFollower && StorageUtil.GetIntValue(akNPC, "SeverTravel_WasFollower", 0) != 0
         _ReinstateAfterTrip(akNPC)
     EndIf

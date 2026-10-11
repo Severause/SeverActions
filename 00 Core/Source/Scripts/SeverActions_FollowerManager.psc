@@ -409,7 +409,8 @@ Package Property HomeSandboxPackage_39 Auto
 ; CONSTANTS
 ; =============================================================================
 
-; SeverActions.esp records resolved by FormID (DR2).
+; SeverActions.esp records resolved by FormID (DR2). FID_TRAVEL_TARGET_KW and FID_SANDBOX_PKG have
+; no reader in this build; keep them, a resumed older OnOrphanCleanup frame still reads them.
 Int Property FID_TRAVEL_TARGET_KW = 0x076F5F AutoReadOnly   ; SeverTravelKeyword: the LinkedRef the travel packages chase
 Int Property FID_FOLLOW_KW        = 0x0EB706 AutoReadOnly   ; SeverActions_FollowerFollowKW: SA's follow LinkedRef (see SeverActions_Follow)
 Int Property FID_SANDBOX_PKG      = 0x0BDDFF AutoReadOnly   ; SeverActions_LeisureSandbox: the arrival sandbox
@@ -701,7 +702,6 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_TeammateRemoved", "OnNativeTeammateRemoved")
     RegisterForModEvent("SeverActions_TeammateResumed", "OnNativeTeammateResumed")
 
-    RegisterForModEvent("SeverActions_OrphanCleanup", "OnOrphanCleanup")
     ; The shared native furniture cleanup, under its canonical callback (M-E),
     ; filtered to the bed sleepers ProcessHomeSleep registers and, without the travel
     ; module, every furniture user (only this module registers them then).
@@ -767,9 +767,6 @@ Function Maintenance()
     ; Native HealerPoll fires this (~1s in combat) for a healer that passes its
     ; gates; the handler casts, adds the bonus heal and plays the voice line.
     RegisterForModEvent("SeverActionsNative_HealerCast", "OnHealerCast")
-
-    ; The native orphan scanner arms itself by FormID (M-O) and is off by default
-    ; (issue #561 step 1).
 
     ; The tick guard is save-persisted; clear it so a save made mid-tick cannot
     ; stall the 30s loop. (Each LLM module's Maintenance clears its own flags.)
@@ -865,19 +862,6 @@ Function RunDeferredMaintenance()
 
     ; GetAllFollowers() is a full cell scan; do it once and pass the array down.
     Actor[] cachedFollowers = GetAllFollowers()
-
-    ; Orphan-scanner re-registration FIRST, before anything slow: the native side
-    ; holds every scan until MarkRosterSynced (120 s cap). Only matters with the
-    ; scanner on (orphanCleanupEnabled).
-    Int orphRi = 0
-    While orphRi < cachedFollowers.Length
-        If cachedFollowers[orphRi]
-            SeverActionsNative.OrphanCleanup_RegisterFollower(cachedFollowers[orphRi])
-        EndIf
-        orphRi += 1
-    EndWhile
-    SeverActionsNative.OrphanCleanup_MarkRosterSynced()
-    Debug.Trace("[SeverActions_FollowerManager] Orphan-scanner roster synced (" + cachedFollowers.Length + " followers) - scans released")
 
     ; Re-run the native hydrator for followers the two passes above added after
     ; the kPostLoadGame run (idempotent). DidRun is then true iff anyone was
@@ -1545,59 +1529,6 @@ Event OnVanillaFollowTopic(string eventName, string strArg, float numArg, Form s
     ElseIf strArg == "follow"
         CompanionFollow(npc)
     EndIf
-EndEvent
-
-Event OnOrphanCleanup(string eventName, string keywordType, float numArg, Form sender)
-    {Native OrphanCleanup found an untracked actor holding one of our LinkedRef
-     keywords: clear it, strip our overrides and re-evaluate. Only our types
-     (travel / furniture / follow): the arrest_* types are SeverActions_Arrest's, and
-     re-evaluating a live escort every 5 s scan here would break its package.}
-    If keywordType != "travel" && keywordType != "furniture" && keywordType != "follow"
-        Return
-    EndIf
-
-    Actor npc = sender as Actor
-    If !npc
-        npc = Game.GetFormEx(numArg as Int) as Actor
-    EndIf
-    If !npc
-        Return
-    EndIf
-
-    ; Kidnap participants legitimately hold our keywords (the held victim's
-    ; BoundCaptiveMarker link is deliberately not a FurnitureManager user); the
-    ; kidnap system owns their teardown. Mirrors SeverActions_Arrest.
-    If SeverActionsNativeExt.Native_Kidnap_GetPhase(npc) != 0 \
-        || SeverActionsNativeExt.Native_Kidnap_FindVictimOf(npc) != None
-        Return
-    EndIf
-
-    If keywordType == "travel"
-        ; The travel LinkedRef, every travel package override (the travelcore
-        ; provider's stripTravelOverrides, run fallback 0x07C06A included) and the
-        ; arrival sandbox, all by FormID.
-        Keyword travelKW = Game.GetFormFromFile(FID_TRAVEL_TARGET_KW, "SeverActions.esp") as Keyword
-        If travelKW
-            SeverActionsNative.LinkedRef_Clear(npc, travelKW)
-        EndIf
-        SeverActions_ModuleBase.CallBool("travelcore", "stripTravelOverrides", npc)
-        Package arrivalSandbox = Game.GetFormFromFile(FID_SANDBOX_PKG, "SeverActions.esp") as Package
-        If arrivalSandbox
-            ActorUtil.RemovePackageOverride(npc, arrivalSandbox)
-        EndIf
-    ElseIf keywordType == "furniture"
-        SeverActionsNative.LinkedRef_Clear(npc, SeverActions_FurnitureLib.TargetKeyword())
-        ActorUtil.RemovePackageOverride(npc, SeverActions_FurnitureLib.UsePackage())
-        SeverActionsNative.UnregisterFurnitureUser(npc)
-    ElseIf keywordType == "follow"
-        Keyword followKW = Game.GetFormFromFile(FID_FOLLOW_KW, "SeverActions.esp") as Keyword
-        If followKW
-            SeverActionsNative.LinkedRef_Clear(npc, followKW)
-        EndIf
-    EndIf
-
-    npc.EvaluatePackage()
-    Debug.Trace("[SeverActions_FollowerManager] OrphanCleanup: cleared " + keywordType + " orphan on " + npc.GetDisplayName())
 EndEvent
 
 Function ReposeBoundCaptivesOnCellLoad()
@@ -2412,6 +2343,9 @@ Function _OnUpdatePass()
                     ; (ReinstateFollower restores it on return, and a real mid-trip
                     ; dismiss goes through DismissCompanion, never this queue).
                     DebugMsg("Dismiss skipped (SA travel in progress): " + checkActor.GetDisplayName())
+                ElseIf SeverActionsNativeExt2.Custody_IsHeld(checkActor)
+                    ; Custody suspends the teammate flag too; the release restores it.
+                    DebugMsg("Dismiss skipped (in custody): " + checkActor.GetDisplayName())
                 ElseIf !checkActor.IsPlayerTeammate()
                     ; Usually a plain dismiss, but a custom follower's framework can keep
                     ; them following without the teammate flag: for a hands-off follower,
@@ -2937,7 +2871,10 @@ Function CheckTrackOnlyFollowerStatus()
             If follower.Is3DLoaded()
                 Bool shouldUntrack = false
 
-                If !follower.IsPlayerTeammate()
+                If SeverActionsNativeExt2.Custody_IsHeld(follower)
+                    ; Arrested or jailed: custody parks them through their framework, not a dismiss.
+                    DebugMsg("Track-only untrack SKIPPED: " + follower.GetDisplayName() + " is in custody")
+                ElseIf !follower.IsPlayerTeammate()
                     If SeverActionsNativeExt.Brawl_IsActive(follower)
                         ; Mid-brawl, not a dismiss: the brawl strips the teammate
                         ; flag from both fighters and restores it at the end
@@ -3474,6 +3411,10 @@ Function RegisterFollower(Actor akActor)
     ; is_sever_follower eligibility gates.
     If SeverActionsNativeExt.Native_Kidnap_GetPhase(akActor) >= 2
         SkyrimNetApi.RegisterEvent("follower_recruit_failed",             akActor.GetDisplayName() + " is bound and held captive - they are in no position to follow anyone.",             akActor, None)
+        Return
+    EndIf
+    If _RefuseInCustody(akActor, false)
+        SkyrimNetApi.RegisterEvent("follower_recruit_failed", akActor.GetDisplayName() + " is in the guards' custody and cannot follow anyone until released.", akActor, None)
         Return
     EndIf
 
@@ -4790,10 +4731,11 @@ Function ApplyWorkSandbox(Actor akActor)
     {Applies the work package override (or, with the schedule system active, fills
      the WORK alias). Touches only our own override, so it is safe on track-only
      workers; never applied over an active follower. Undone by RemoveWorkSandbox.}
-    ; Jail gate: the work package ties PrisonerSandBox's priority 110, so a jailed
+    ; Jail gate: the work override (110, below) ties PrisonerSandBox's 110, so a jailed
     ; worker would walk out to work. Work resumes after RemoveJailedNPC. The same for
-    ; a guard making an arrest (_IsMakingArrest), whose packages the work hold outranks,
-    ; and for a traveler (_OnJourney).
+    ; a guard making an arrest (_IsMakingArrest), whose packages (100) that override outranks,
+    ; and for a traveler (_OnJourney). The WORK alias outranks no override, but the schedule
+    ; holds nothing in any of the three (_SchedHoldBlock).
     If akActor && (SeverActionsNativeExt.Native_Jailed_IsJailed(akActor) || _IsMakingArrest(akActor) || _OnJourney(akActor))
         Return
     EndIf
@@ -4889,9 +4831,10 @@ EndFunction
 
 Bool Function _IsMakingArrest(Actor akActor)
     {True while akActor is the guard of a live arrest or dispatch, until their part ends
-     (the jailing, a release, a cancel). The schedule holds nothing then, since a
-     work shift outranks the arrest packages; the prisoner and a dispatch target keep
-     theirs (jail strips it).}
+     (the jailing, a release, a cancel). The schedule holds nothing then: its fallback
+     overrides (work and guard duty 110, relax 105, home 100) outrank or tie the arrest
+     packages (100), though its aliases never would. The prisoner in custody steps aside
+     too (Sched_HoldYield); a dispatch target before the arrest keeps her hold.}
     Return SeverActionsNativeExt2.Native_ArrestSession_IsGuardOnTask(akActor)
 EndFunction
 
@@ -5634,6 +5577,8 @@ Int Property SCHED_HOLD_SCENE            = 15 AutoReadOnly
 Int Property SCHED_HOLD_POOL_FULL        = 16 AutoReadOnly
 Int Property SCHED_HOLD_TEAMMATE_NO_HOME = 17 AutoReadOnly
 Int Property SCHED_HOLD_ANCHOR_MISSING   = 18 AutoReadOnly
+Int Property SCHED_HOLD_ARRESTED         = 19 AutoReadOnly   ; Sched_HoldYield 6 (7 notes ARREST)
+Int Property SCHED_HOLD_CONFRONTING      = 20 AutoReadOnly   ; Sched_HoldYield 8
 
 ; Guard-duty alias pool (FLWD v19): a guard-mode retainer (work target is an Actor)
 ; holds a SeverActions_GuardQuest alias in work hours, because an alias package
@@ -5964,12 +5909,26 @@ Int Function _SchedHoldBlock(Actor akActor, Bool abParkTeammate = false)
     If SeverActionsNativeExt2.Native_IsNFFManaged(akActor)
         Return SCHED_HOLD_NFF
     EndIf
-    ; The schedule quests (101) outrank these holds' packages, so the schedule steps aside while they last.
+    ; Holds the schedule would beat: its aliases (101) beat yields 1-5, and its own fallback overrides (100-110) beat
+    ; or tie the arrest's overrides of yields 6-8 (any override beats every alias). It steps aside while they last.
     Int yieldTo = SeverActionsNativeExt2.Sched_HoldYield(akActor)
     If yieldTo > 0
-        Return 9 + yieldTo
+        Return _NoteForYield(yieldTo)
     EndIf
     Return 0
+EndFunction
+
+Int Function _NoteForYield(Int aiYield)
+    {The SCHED_HOLD_* code a Sched_HoldYield answer above 0 is noted as (HomeHoldCore::NoteForYield). Never 0, so an
+     unknown yield still releases.}
+    If aiYield == 6
+        Return SCHED_HOLD_ARRESTED
+    ElseIf aiYield == 7
+        Return SCHED_HOLD_ARREST
+    ElseIf aiYield == 8
+        Return SCHED_HOLD_CONFRONTING
+    EndIf
+    Return 9 + aiYield
 EndFunction
 
 Bool Function _HasRoutineSpot(Actor akActor)
@@ -6027,6 +5986,10 @@ String Function _SchedHoldText(Int aiWhy)
         Return "not held: a player teammate with no home (skipped)"
     ElseIf aiWhy == SCHED_HOLD_ANCHOR_MISSING
         Return "held, but the spot's anchor link is missing (no marker to re-link)"
+    ElseIf aiWhy == SCHED_HOLD_ARRESTED
+        Return "not held: under arrest (an arrest's prisoner)"
+    ElseIf aiWhy == SCHED_HOLD_CONFRONTING
+        Return "not held: confronting the player (a persuasion window)"
     EndIf
     Return "reason " + aiWhy
 EndFunction
@@ -6105,14 +6068,22 @@ Function _EmptyExtraSchedAliases(Actor akActor, Int aiKeep)
 EndFunction
 
 Function YieldSchedule(Actor akActor)
-    {Empties akActor's schedule aliases now, for a hold whose packages the schedule (quest priority 101) would override:
-     this quest's crafter or caster alias, a SexLab or OStim scene. The followers "leaveSchedule" service and
-     OnSchedYield call it. The reconcile keeps her off while _SchedHoldBlock says so, and re-seats her after.}
-    If !akActor || !HoldsAnySchedAlias(akActor)
+    {Empties akActor's schedule aliases, and with them the schedule's own fallback overrides, now, for a hold the
+     schedule would override (Sched_HoldYield): this quest's crafter or caster alias, a SexLab or OStim scene, an
+     arrest's prisoner. Without an alias only the fallback overrides come off (_DropSchedOverrides). The followers
+     "leaveSchedule" service and OnSchedYield call it. The reconcile keeps her off while _SchedHoldBlock says so, and
+     re-seats her after.}
+    If !akActor
         Return
     EndIf
-    EmptyAllSchedAliases(akActor)
-    akActor.EvaluatePackage()
+    If HoldsAnySchedAlias(akActor)
+        EmptyAllSchedAliases(akActor)
+        akActor.EvaluatePackage()
+    ElseIf _DropSchedOverrides(akActor)
+        akActor.EvaluatePackage()
+    Else
+        Return
+    EndIf
     Int why = _SchedHoldBlock(akActor)
     If why > 0
         _NoteSchedHold(akActor, why)
@@ -6215,7 +6186,8 @@ EndFunction
 Function EmptySchedAlias(Actor akActor, Int aiType)
     {Releases the NPC's alias of this type (index check only, no pool scan) and
      strips the fill-time assists. No EvaluatePackage (the caller batches it).
-     Without an alias only the V2 assist (and, for WORK, the guard alias) comes off.}
+     Without an alias only the V2 assist (and, for WORK, the guard alias and the guard-duty
+     override) comes off.}
     If !akActor
         Return
     EndIf
@@ -6231,6 +6203,13 @@ Function EmptySchedAlias(Actor akActor, Int aiType)
     If v2
         ActorUtil.RemovePackageOverride(akActor, v2)
     EndIf
+    ; The guard-duty override too: ReinforceSchedWorkGuard adds it with no WORK alias when that pool is full.
+    If aiType == SCHEDULE_WORK
+        Package guardPkg = GetWorkGuardPackage()
+        If guardPkg
+            ActorUtil.RemovePackageOverride(akActor, guardPkg)
+        EndIf
+    EndIf
     Int idx = SeverActionsNativeExt.Native_GetSchedAliasIndex(akActor, aiType)
     If idx < 0
         Return
@@ -6241,12 +6220,6 @@ Function EmptySchedAlias(Actor akActor, Int aiType)
     EndIf
     ; Drop the index even if stale; SweepSchedAliasesOnLoad cross-checks the pool.
     SeverActionsNativeExt.Native_SetSchedAliasIndex(akActor, aiType, -1)
-    If aiType == SCHEDULE_WORK
-        Package guardPkg = GetWorkGuardPackage()
-        If guardPkg
-            ActorUtil.RemovePackageOverride(akActor, guardPkg)
-        EndIf
-    EndIf
     ; A home-less NPC left holding no schedule alias drops SA's WaitingForPlayer 2 stamp; a home or another held alias
     ; keeps it.
     If aiType != SCHEDULE_HOME && GetAssignedHome(akActor) == "" && !HoldsAnySchedAlias(akActor)
@@ -6277,6 +6250,11 @@ Int Function ReconcileSchedAliasesFor(Actor akActor)
         If HoldsAnySchedAlias(akActor)
             EmptyAllSchedAliases(akActor)
             akActor.EvaluatePackage()
+        ElseIf why == SCHED_HOLD_ARRESTED || why == SCHED_HOLD_ARREST || why == SCHED_HOLD_CONFRONTING
+            ; The fallback overrides held with no alias outrank the arrest's packages as well.
+            If _DropSchedOverrides(akActor)
+                akActor.EvaluatePackage()
+            EndIf
         EndIf
         If _HasRoutineSpot(akActor)
             _NoteSchedHold(akActor, why)
@@ -6325,6 +6303,28 @@ Int Function ReconcileSchedAliasesFor(Actor akActor)
     Return desired
 EndFunction
 
+Bool Function _DropSchedOverrides(Actor akActor)
+    {Removes the schedule's own fallback overrides from an NPC who holds no schedule alias: the guard-duty override (a
+     guard-mode worker whose WORK pool is full) and a track-only NPC's assists. True when one came off. No
+     EvaluatePackage (the caller's).}
+    Bool dropped = false
+    If SeverActionsNative.Native_GetWorkLoc(akActor) as Actor
+        Package guardPkg = GetWorkGuardPackage()
+        dropped = guardPkg && ActorUtil.RemovePackageOverride(akActor, guardPkg)
+    EndIf
+    If SeverActionsNativeExt2.Native_IsTrackOnlyFollower(akActor)
+        Int t = 0
+        While t < 3
+            Package v2 = GetSchedPackageForType(t)
+            If v2 && ActorUtil.RemovePackageOverride(akActor, v2)
+                dropped = true
+            EndIf
+            t += 1
+        EndWhile
+    EndIf
+    Return dropped
+EndFunction
+
 Function ReinforceSchedWorkGuard(Actor akActor)
     {ReinforceWorkPackage for a bodyguard on the override fallback: a greeting can
      pull them off it. Alias packages need nothing; the engine re-selects them.}
@@ -6346,6 +6346,10 @@ Function ReinforceSchedWorkGuard(Actor akActor)
     EndIf
     Package guardPkg = GetWorkGuardPackage()
     If !guardPkg || akActor.GetCurrentPackage() == guardPkg
+        Return
+    EndIf
+    ; Read last, just before the add: an arrest that began since this tick's reconcile must not get it back.
+    If SeverActionsNativeExt2.Sched_HoldYield(akActor) > 0
         Return
     EndIf
     ActorUtil.AddPackageOverride(akActor, guardPkg, 110, 1)
@@ -7135,13 +7139,19 @@ Function _ReassertSchedAssistsFor(Actor npc)
         Return
     EndIf
     Int workIdx = SeverActionsNativeExt.Native_GetSchedAliasIndex(npc, SCHEDULE_WORK)
-    If workIdx >= 0 && (SeverActionsNative.Native_GetWorkLoc(npc) as Actor)
+    Bool guardDuty = workIdx >= 0 && (SeverActionsNative.Native_GetWorkLoc(npc) as Actor)
+    Bool trackOnly = SeverActionsNativeExt2.Native_IsTrackOnlyFollower(npc)
+    ; A hold the schedule yields to (an arrest begun since the caller's alias check) gets none of them back.
+    If !(guardDuty || trackOnly) || SeverActionsNativeExt2.Sched_HoldYield(npc) > 0
+        Return
+    EndIf
+    If guardDuty
         Package guardPkg = GetWorkGuardPackage()
         If guardPkg
             ActorUtil.AddPackageOverride(npc, guardPkg, 110, 1)
         EndIf
     EndIf
-    If SeverActionsNativeExt2.Native_IsTrackOnlyFollower(npc)
+    If trackOnly
         Int t = 0
         While t < 3
             If SeverActionsNativeExt.Native_GetSchedAliasIndex(npc, t) >= 0
@@ -8761,6 +8771,19 @@ Function CompanionWait(Actor akActor)
     _CompanionWaitCore(akActor, false)
 EndFunction
 
+Bool Function _RefuseInCustody(Actor akActor, Bool abQuiet)
+    {True, with a notice unless abQuiet, while an arrest holds akActor (Custody_IsHeld): the
+     guards' packages hold them until the release, which restores their follow itself.}
+    If !SeverActionsNativeExt2.Custody_IsHeld(akActor)
+        Return False
+    EndIf
+    If !abQuiet
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("custody.held", akActor.GetDisplayName()))
+    EndIf
+    DebugMsg("Refused for " + akActor.GetDisplayName() + ": in custody")
+    Return True
+EndFunction
+
 Function _CompanionWaitCore(Actor akActor, Bool abQuiet)
     {The wait. abQuiet (Wait All) skips only the per-follower notification; the
      follow-state event stays per actor (each bio reads its own).
@@ -8771,7 +8794,7 @@ Function _CompanionWaitCore(Actor akActor, Bool abQuiet)
      - Otherwise SeverActions_Follow.Sandbox() does the package work.
      Stays in Papyrus: Sandbox() writes PapyrusUtil's override store, SkyrimNet's
      package registry and StorageUtil flags, none reachable from C++.}
-    If !akActor
+    If !akActor || _RefuseInCustody(akActor, abQuiet)
         Return
     EndIf
 
@@ -8793,7 +8816,7 @@ Function _CompanionWaitCore(Actor akActor, Bool abQuiet)
         Debug.Trace("[SeverActions] CompanionWait: released stale travel alias for " + akActor.GetDisplayName())
     EndIf
 
-    ; NFF-owned: NFF's own wait (its packages ignore the WaitingForPlayer AV).
+    ; NFF-owned: NFF's own wait (it sets WaitingForPlayer and evaluates its own packages).
     If SeverActions_Follow.Held(held, HELD_NFF_MANAGED) && SeverActionsNativeExt2.Native_IsNFFInstalled() && SeverActions_NFFLib.NFFWait(akActor)
         ; A safe-interior relax under NFF's wait is lifted, or its exit would move the
         ; waiter. A hands-off relax never wrote WaitingForPlayer.
@@ -8893,7 +8916,7 @@ Function _CompanionFollowCore(Actor akActor, Bool abQuiet)
      - Registered companions: CompanionStartFollowing (alias + LinkedRef).
      - Casual followers: StopSandbox + StartFollowing, in Tracking mode too.
      For any other NPC no framework leads in Tracking mode this only ends SA's wait; her schedule takes her back.}
-    If !akActor
+    If !akActor || _RefuseInCustody(akActor, abQuiet)
         Return
     EndIf
     ; What SA holds on them, read once: each step below runs only for state present (-1, unknown: every step).
@@ -8916,7 +8939,7 @@ Function _CompanionFollowCore(Actor akActor, Bool abQuiet)
 
     ; Break out of camp / wait / travel holds before resuming:
     ;  - cancelJourney tears down any journey or wait (the arrival sandbox, the
-    ;    travel LinkedRef, the OrphanCleanup entry); afArg 0.0 = do not restore
+    ;    travel LinkedRef); afArg 0.0 = do not restore
     ;    follow, it is re-applied below.
     ;  - FollowerCalledByPlayer makes Hearth's camp untrack and release the actor,
     ;    so CampTick stops returning them to the fire.
@@ -9057,6 +9080,47 @@ Bool Function LeaveToAttack(Actor akActor, Actor akTarget)
     If akTarget == player && akActor.GetRelationshipRank(player) > 0
         akActor.SetRelationshipRank(player, 0)
     EndIf
+    Return True
+EndFunction
+
+Bool Function CustodyHold(Actor akActor)
+    {The guards take a rostered follower (this module's "custodyHold" service: Arrest at the cuffing, a parley's resist):
+     NFF parks them through its controller; an SA-led follower leaves SA's wait and loses the teammate
+     flag (the travel precedent: the follower faction rank stays, so TeammateMonitor reads no dismissal,
+     and the player's other companions stay out of the arrest); another framework's follower is left to
+     the arrest overrides, which outrank every alias package. The roster row stays. True when rostered.}
+    If !akActor || !IsRegisteredFollower(akActor)
+        Return False
+    EndIf
+    If SeverActionsNativeExt2.Native_IsNFFInstalled() && SeverActionsNativeExt2.Native_IsNFFManaged(akActor)
+        SeverActions_NFFLib.NFFWait(akActor)
+    ElseIf !IsFollowHandsOff(akActor)
+        SeverActions_Follow followSys = GetFollowScript()
+        If followSys
+            followSys.StopSandbox(akActor)
+        EndIf
+        akActor.SetPlayerTeammate(false)
+    EndIf
+    DebugMsg("Custody hold: " + akActor.GetDisplayName())
+    Return True
+EndFunction
+
+Bool Function CustodyRelease(Actor akActor)
+    {The guards let a rostered follower go (this module's "custodyRelease" service: Arrest's release, a parley's end):
+     derived from live state, so nothing stored can strand them. NFF resumes them through its controller;
+     an SA-led follower gets the teammate flag back and follows, and FollowDriftMonitor, CellCatchup and
+     SandboxManager bring them to the player. True when rostered.}
+    If !akActor || akActor.IsDead() || !IsRegisteredFollower(akActor)
+        Return False
+    EndIf
+    If SeverActionsNativeExt2.Native_IsNFFInstalled() && SeverActionsNativeExt2.Native_IsNFFManaged(akActor)
+        SeverActions_NFFLib.NFFResume(akActor)
+    ElseIf !IsFollowHandsOff(akActor)
+        akActor.SetAV("WaitingForPlayer", 0)
+        akActor.SetPlayerTeammate(true)
+        akActor.EvaluatePackage()
+    EndIf
+    DebugMsg("Custody release: " + akActor.GetDisplayName())
     Return True
 EndFunction
 
