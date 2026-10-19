@@ -132,7 +132,7 @@ Function DebugMsg(String msg)
 EndFunction
 
 Quest Function _FollowQuest()
-    {The follow pool quest by FormID (VR strips EditorIDs). None on an ESP without the pool,
+    {The follow pool quest by FormID (EditorIDs need po3 Tweaks). None on an ESP without the pool,
      and the muster then seats nobody.}
     If !_followQuest
         _followQuest = Game.GetFormFromFile(FOLLOW_QUEST_FORMID, "SeverActions.esp") as Quest

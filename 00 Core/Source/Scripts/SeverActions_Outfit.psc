@@ -255,9 +255,9 @@ Function Undress_Execute(Actor akActor)
         Int pwi = 0
         While pwi < preWornArmor.Length
             Armor pwItem = preWornArmor[pwi] as Armor
-            ; A stashed rendered device would be re-equipped outside the DD
-            ; framework.
-            if pwItem && !SeverActionsNative.Native_Blacklist_IsBlacklisted(pwItem) && !SeverActionsNativeExt.Native_IsDeviousDevice(pwItem)
+            ; A guarded piece stays on, so it is not stashed: a stashed rendered
+            ; device would be re-equipped outside the DD framework.
+            if pwItem && SeverActionsNativeExt2.Native_Outfit_PieceGuard(pwItem) == 0
                 if undressPresetChest && undressPresetChest.GetItemCount(pwItem) > 0
                     Debug.Trace("[SeverActions_Outfit] Undress: " + pwItem.GetName() + " belongs to slot preset " + undressPresetIdx + " - not stashed")
                 ; The native stash does not dedupe.
@@ -350,10 +350,9 @@ Function Undress_Execute(Actor akActor)
     while i < slots.Length
         Armor equippedItem = akActor.GetWornForm(slots[i]) as Armor
         if equippedItem
-            If SeverActionsNative.Native_Blacklist_IsBlacklisted(equippedItem)
-                Debug.Trace("[SeverActions_Outfit] Undress: Skipping blacklisted " + equippedItem.GetName())
-            ElseIf SeverActionsNativeExt.Native_IsDeviousDevice(equippedItem)
-                Debug.Trace("[SeverActions_Outfit] Undress: Skipping Devious Device " + equippedItem.GetName())
+            Int undressGuard = SeverActionsNativeExt2.Native_Outfit_PieceGuard(equippedItem)
+            If undressGuard != 0
+                Debug.Trace("[SeverActions_Outfit] Undress: leaving " + equippedItem.GetName() + " on (guard " + undressGuard + ")")
             Else
                 PlayUnequipAnimation(akActor, slotNames[i])
                 ; preventEquip: DefaultOutfit must not re-equip it next AI tick
@@ -473,6 +472,13 @@ Function Dress_Execute(Actor akActor)
     ; Must run BEFORE BeginAdHocOutfitOp, whose teardown takes the held preset
     ; off whole and deletes its catalog copies.
     If SeverActionsNativeExt2.Native_OutfitSlot_IsActivePresetHeld(akActor)
+        ; Held because another mod takes a piece away: the re-apply would be
+        ; refused, so nothing changes (Dress_IsEligible says no).
+        String takenAway = SeverActionsNativeExt2.Native_OutfitSlot_TakenAwayNotice(akActor)
+        If takenAway != ""
+            Debug.Trace("[SeverActions_Outfit] Dress: " + akActor.GetDisplayName() + " - the held preset cannot go back on: " + takenAway)
+            Return
+        EndIf
         Int heldIdx = SeverActionsNative.Native_OutfitSlot_GetActivePreset(akActor)
         SeverActions_OutfitSlot heldSlotSys = GetSlotScript()
         If heldSlotSys && heldIdx >= 0
@@ -673,7 +679,9 @@ EndFunction
 Bool Function Dress_IsEligible(Actor akActor)
 {Alive, not a child, not outfit-excluded, outfit system on (see Undress_IsEligible),
  and something to put back: stashed clothing, a held slot preset, the preset an
- Undress took off, or a saved DefaultOutfit.}
+ Undress took off, or a saved DefaultOutfit. False while a held preset cannot go
+ back on because another mod takes a piece of it away: Dress_Execute changes
+ nothing then.}
     if !akActor
         return false
     endif
@@ -688,7 +696,7 @@ Bool Function Dress_IsEligible(Actor akActor)
     endif
     ; A held slot preset: Dress re-applies it even with an empty stash.
     if SeverActionsNativeExt2.Native_OutfitSlot_IsActivePresetHeld(akActor)
-        return true
+        return SeverActionsNativeExt2.Native_OutfitSlot_TakenAwayNotice(akActor) == ""
     endif
     ; The preset Undress took off, unless one went on since (see Dress_Execute).
     if StorageUtil.GetIntValue(akActor, "SeverActions_DressPresetIdx", -1) >= 0 && SeverActionsNative.Native_OutfitSlot_GetActivePreset(akActor) < 0
@@ -869,16 +877,26 @@ Function SaveOutfitPreset_Execute(Actor akActor, String presetName)
 
     ; ── Slot path (eligible actors): a BGSOutfit+LeveledItem+Container triple ──
     ; On success the preset is ALSO written to the legacy store below as a
-    ; mirror. Legacy only for ineligible actors or when all 8 slots are full.
+    ; mirror. Legacy only for ineligible actors. An eligible NPC with no free
+    ; slot or preset index is refused: a legacy-only preset would be applied as
+    ; a lock the Outfits page does not list.
     SeverActions_OutfitSlot slotSys = GetSlotScript()
     If slotSys && slotSys.IsSlotEligible(akActor)
         Int slotIdx = slotSys.AssignSlotToActor(akActor)
+        If slotIdx < 0
+            Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset(slot): no free outfit slot for " + akActor.GetDisplayName() + " - '" + presetName + "' refused")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("outfits.slotsFullFor", ("" + akActor.GetDisplayName()), presetName))
+            SkyrimNetApi.RegisterEvent("outfit_save_refused", akActor.GetDisplayName() + " could not keep the outfit '" + presetName + "': there is no room left for another person's outfits.", akActor, None)
+            Return
+        EndIf
         If slotIdx >= 0
             Int presetIdx = slotSys.FindFreeOrReusableIndex(akActor, presetName)
             If presetIdx >= 0
                 Form[] slotWorn = SeverActionsNative.Native_Outfit_GetWornArmor(akActor)
                 Int slotKept = FilterDevicesInPlace(slotWorn)
                 If slotWorn && slotKept > 0
+                    ; Before BuildPreset: its re-apply of an active preset would put the old record's copies on.
+                    SeverActionsNativeExt2.Native_OutfitSlot_RememberWornCopies(akActor, presetName)
                     slotSys.BuildPreset(akActor, presetIdx, slotWorn, presetName)
                     Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset(slot): '" + presetName + "' idx=" + presetIdx + " for " + akActor.GetDisplayName())
                 Else
@@ -886,7 +904,10 @@ Function SaveOutfitPreset_Execute(Actor akActor, String presetName)
                     return
                 EndIf
             Else
-                Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset(slot): All 8 slots full for " + akActor.GetDisplayName() + " - legacy path only")
+                Debug.Trace("[SeverActions_Outfit] SaveOutfitPreset(slot): all 8 presets taken for " + akActor.GetDisplayName() + " - '" + presetName + "' refused")
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("outfits.presetsFullFor", ("" + akActor.GetDisplayName()), presetName))
+                SkyrimNetApi.RegisterEvent("outfit_save_refused", akActor.GetDisplayName() + " could not keep the outfit '" + presetName + "': they already keep 8 outfits (" + _SlotPresetNameList(akActor) + "). Keeping it under one of those names replaces that one.", akActor, None)
+                Return
             EndIf
         EndIf
     EndIf
@@ -1027,7 +1048,7 @@ Function _ApplyOutfitPresetResolved(Actor akActor, String presetName)
         Int wi = 0
         While wi < wornArmor.Length
             Armor equippedItem = wornArmor[wi] as Armor
-            if equippedItem && !SeverActionsNative.Native_Blacklist_IsBlacklisted(equippedItem) && !SeverActionsNativeExt.Native_IsDeviousDevice(equippedItem)
+            if equippedItem && SeverActionsNativeExt2.Native_Outfit_PieceGuard(equippedItem) == 0
                 SeverActionsNativeExt.Native_Outfit_DressStashAdd(akActor, equippedItem)
                 ; Pause-safe: Papyrus UnequipItem defers under the menu pause
                 ; and fires at menu close against whatever is worn then.
@@ -1044,8 +1065,13 @@ Function _ApplyOutfitPresetResolved(Actor akActor, String presetName)
     while i < count
         Form item = presetItems[i]
         ; Never mint a Devious Device (an old preset can list one; the native applies refuse too):
-        ; a fresh rendered piece has no key, so nothing could take it off again.
-        if item && akActor.GetItemCount(item) == 0 && SeverActionsNativeExt.Native_IsDeviousDevice(item)
+        ; a fresh rendered piece has no key, so nothing could take it off again. Body-mod gear is
+        ; never put on: its framework does that.
+        Int applyGuard = SeverActionsNativeExt2.Native_Outfit_PieceGuard(item)
+        if Math.LogicalAnd(applyGuard, 4) != 0
+            Debug.Trace("[SeverActions_Outfit] Preset apply: skipping body-mod piece '" + item.GetName() + "' (its framework's)")
+            item = None
+        elseif Math.LogicalAnd(applyGuard, 1) != 0 && akActor.GetItemCount(item) == 0
             Debug.Trace("[SeverActions_Outfit] Preset apply: skipping Devious Device '" + item.GetName() + "' the actor no longer holds")
             item = None
         endif
@@ -1072,10 +1098,14 @@ Function _ApplyOutfitPresetResolved(Actor akActor, String presetName)
 
     ; Applying keeps the lock state: a locked actor's lock becomes the preset
     ; items, an unlocked one stays unlocked (locking is a separate gesture).
+    ; Rewritten whatever the Outfit Lock toggle says: the preset name stamped
+    ; below makes it a legacy-preset lock, which is enforced with the toggle off
+    ; (OutfitDataStore's cell-load rule), so a lock left unrewritten would put
+    ; its OLD items back over this preset at the next load.
     Bool wasLocked = SeverActionsNativeExt.Native_Outfit_IsLockActive(akActor)
     If wasLocked
-        ; Lock from known equipped items (avoids GetWornForm race condition)
-        LockEquippedOutfit(akActor, presetForms, equippedCount)
+        ; From known equipped items (avoids the GetWornForm race)
+        _RewriteExistingLock(akActor, presetForms, equippedCount)
     EndIf
 
     ; Track active preset for prompt context and situation system
@@ -1491,10 +1521,10 @@ Function ReapplyLockedOutfit(Actor akActor)
         if item && !akActor.IsEquipped(item)
             ; Pause-safe SYNCHRONOUS equip: the engine-queued EquipItem's events
             ; would land after the resume and read as an external change (a
-            ; reapply thrash). Native_EquipItemNow applies inline with
-            ; forceEquip, so they fire while suspended and the engine won't
-            ; best-armor re-swap. Non-armor keeps EquipItem; its queued events
-            ; land inside the resume's grace.
+            ; reapply thrash). Native_EquipItemNow applies inline, so they fire
+            ; while suspended, and forced (but a runtime-outfit copy, see its
+            ; doc), so the engine won't best-armor re-swap. Non-armor keeps
+            ; EquipItem; its queued events land inside the resume's grace.
             Armor armorItem = item as Armor
             if armorItem
                 ; A worn blacklisted piece or Devious Device covers this slot:
@@ -1540,10 +1570,12 @@ Function ClearLockedOutfitForUndress(Actor akActor)
 EndFunction
 
 Int Function FilterDevicesInPlace(Form[] aWorn)
-    {Null out Devious Devices in a worn-armor capture; returns the non-device
-     count. A preset or lock must never hold a rendered device: re-applying
-     would equip it outside the DD framework. Consumers (BuildPreset, the
-     AddPresetItem loop, LockEquippedOutfit) skip None entries.}
+    {Null out what an NPC's preset or lock must not hold in a worn-armor capture
+     (a Devious Device or body-mod gear, Native_Outfit_PieceGuard bits 1 and 4);
+     returns the count kept. A rendered device
+     re-applied would be equipped outside the DD framework, and body-mod gear is
+     its framework's. Consumers (BuildPreset, the AddPresetItem loop,
+     LockEquippedOutfit) skip None entries.}
     If !aWorn
         Return 0
     EndIf
@@ -1551,7 +1583,8 @@ Int Function FilterDevicesInPlace(Form[] aWorn)
     Int i = 0
     While i < aWorn.Length
         If aWorn[i]
-            If SeverActionsNativeExt.Native_IsDeviousDevice(aWorn[i])
+            Int captureGuard = SeverActionsNativeExt2.Native_Outfit_PieceGuard(aWorn[i])
+            If Math.LogicalAnd(captureGuard, 5) != 0
                 aWorn[i] = None
             Else
                 kept += 1
@@ -1582,6 +1615,40 @@ Function LockEquippedOutfit(Actor akActor, Form[] equippedItems, Int equippedCou
     SeverActionsNative.Native_Outfit_CommitLock(akActor)
 
     Debug.Trace("[SeverActions_Outfit] Locked outfit for " + akActor.GetDisplayName() + " (" + written + " items)")
+EndFunction
+
+String Function _SlotPresetNameList(Actor akActor)
+    {The actor's slot preset names, comma separated (the LLM's refusal event).}
+    String names = ""
+    Int p = 0
+    While p < 8
+        String nm = SeverActionsNative.Native_OutfitSlot_GetPresetName(akActor, p)
+        if nm != ""
+            if names != ""
+                names += ", "
+            endif
+            names += nm
+        endif
+        p += 1
+    EndWhile
+    return names
+EndFunction
+
+Function _RewriteExistingLock(Actor akActor, Form[] equippedItems, Int equippedCount)
+    {An ACTIVE lock's items become equippedItems, whatever the Outfit Lock toggle says
+     (LockEquippedOutfit, which also creates locks, keeps the toggle gate).}
+    if !akActor || !SeverActionsNativeExt.Native_Outfit_IsLockActive(akActor)
+        return
+    endif
+    SeverActionsNative.Native_Outfit_BeginLock(akActor)
+    Int i = 0
+    While i < equippedCount
+        if equippedItems[i]
+            SeverActionsNative.Native_Outfit_AddLockedItem(akActor, equippedItems[i])
+        endif
+        i += 1
+    EndWhile
+    SeverActionsNative.Native_Outfit_CommitLock(akActor)
 EndFunction
 
 Function MergeIntoLockedOutfit(Actor akActor, Form[] newItems, Int newCount)
@@ -2197,6 +2264,13 @@ Function DeletePreset(Actor akActor, String presetName)
         return
     endif
 
+    ; A deleted preset the player can see ends a non-follower lock once none is
+    ; left (the Outfits page's handler has already removed it from OTFT by now).
+    ; The internal '_default' (OnPrismaBuilderEquip clears it on every per-item
+    ; change, Take Off included) never does: the lock is what holds the rest of
+    ; what they wear.
+    Bool userPreset = StringUtil.GetNthChar(presetName, 0) != "_"
+
     SeverActionsNative.Native_Outfit_DeletePreset(akActor, presetName)
 
     SeverActions_OutfitSlot slotSys = GetSlotScript()
@@ -2204,7 +2278,7 @@ Function DeletePreset(Actor akActor, String presetName)
         slotSys.DeletePresetFromSlot(akActor, presetName)
     endif
 
-    if SeverActionsNative.Native_Outfit_GetPresetCount(akActor) <= 0
+    if userPreset && SeverActionsNative.Native_Outfit_GetPresetCount(akActor) <= 0
         if HasNonFollowerOutfitLock(akActor)
             SetNonFollowerOutfitLock(akActor, false)
         endif
@@ -3262,6 +3336,9 @@ Event OnPrismaBuilderSavePreset(String eventName, String strArg, Float numArg, F
             EndIf
         Else
             SeverActionsNative.Native_OutfitSlot_Log("OnPrismaBuilderSavePreset: No free slot index for " + akActor.GetDisplayName() + " '" + presetName + "' (all 8 full) applyAfter=" + applyAfter)
+            ; The DLL refuses this before writing OTFT; reaching here means another save took the last index in
+            ; between. Drop the OTFT copy it wrote, so it never acts as a hidden ninth preset.
+            SeverActionsNative.Native_Outfit_DeletePreset(akActor, presetName)
             If applyAfter && SeverActionsNativeExt2.Native_Outfit_IsSystemEnabled() && !SeverActionsNative.Native_GetOutfitExcluded(akActor)
                 ; The Equip's pieces are on (the preview committed them) but no
                 ; preset index is free. HOLD the active preset (the ad-hoc
@@ -3954,6 +4031,8 @@ Event OnHotkey_Outfit(String eventName, String strArg, Float numArg, Form sender
         ElseIf Dress_IsEligible(target)
             Dress_Execute(target)
             Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hotkeys.dressed", ("" + target.GetDisplayName())))
+        ElseIf SeverActionsNativeExt2.Native_OutfitSlot_IsActivePresetHeld(target) && SeverActionsNativeExt2.Native_OutfitSlot_TakenAwayNotice(target) != ""
+            Debug.Notification(SeverActionsNativeExt2.Native_OutfitSlot_TakenAwayNotice(target))
         Else
             Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hotkeys.noStoredClothing", ("" + target.GetDisplayName())))
         EndIf

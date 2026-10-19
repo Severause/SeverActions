@@ -6,7 +6,8 @@ You are an internal stance-assessment system for NPCs in Skyrim. You decide how 
 {% set npc = decnpc(npcUUID) %}
 {% set fam = player_familiarity(npcUUID) %}
 {% set recent_events = get_recent_events(30, npcUUID) %}
-{% set memories = get_relevant_memories(npcUUID, 4) %}
+{% set memories = [] %}
+{% if length(default(relevantMemories, [])) == 0 %}{% set memories = get_relevant_memories(npcUUID, 4) %}{% endif %}
 {% set persona_flag = sever_intimate_persona(npcUUID) %}
 {% set persona_trade = sever_intimate_trade(npcUUID) %}
 
@@ -26,17 +27,36 @@ NPC: {{ npc.name }} ({{ npc.race }}{% if npc.class != "" and npc.class != "unkno
 {# ── Standing facts ── #}
 Relationship to the player: {% if get_relationship_rank(npcUUID, player.UUID) >= 4 %}married to them.{% else %}not married.{% endif %}
 How well they know the player: {{ fam.tier }}.
-Current stance: {{ currentStance }}{% if currentReason != "" %} — "{{ currentReason }}"{% endif %}
+Current stance: {{ currentStance }}
 Trigger for this assessment: {{ trigger }}
+{% if default(intimateHistory, "") != "" %}
+Their intimate history with {{ player.name }}, as recorded: {{ intimateHistory }}
+{% endif %}
 
 {# ── What just happened ── #}
+{% set recent_foes = sever_recent_foes(npcUUID) %}
+{% if recent_foes != "" %}
+Recent fights - these were hostile to {{ player.name }} and their companions on their own account and fought them: {{ recent_foes }}. A battle account that calls one of them "not actively engaged in combat" means they fell before striking a blow, not that they were a bystander.
+{% endif %}
+{# After a Start over, nothing up to SkyrimNet's newest event at the reset is read again. #}
+{% set notBefore = to_number(to_string(default(notBeforeEventId, 0))) %}
 {% if length(recent_events) > 0 %}
 Recent events and conversation involving {{ npc.name }} (most relevant to this decision):
 {% for ev in recent_events %}
-- {{ format_event(ev, "recent_events") }}
+{% if to_number(to_string(ev.id)) > notBefore %}
+{# Only a spoken line carries its tag: the reply may cite it in "sources" (ReasonSources). #}
+- {% if existsIn(ev.data, "dialogue") %}[e:{{ ev.id }}] {% endif %}{{ format_event(ev, "recent_events") }}
+{% endif %}
 {% endfor %}
 {% endif %}
-{% if length(memories) > 0 %}
+{# The dispatch's memories carry ids the reply may cite; without them, SkyrimNet's own pick, untagged. #}
+{% set relMemories = default(relevantMemories, []) %}
+{% if length(relMemories) > 0 %}
+Relevant memories:
+{% for m in relMemories %}
+- {% if existsIn(m, "id") %}[m:{{ m.id }}] {% endif %}{{ m.text }}
+{% endfor %}
+{% elif length(memories) > 0 %}
 Relevant memories:
 {% for m in memories %}
 - {{ m.memory.content }}{% if existsIn(m.memory, "emotion") and m.memory.emotion != "" %} ({{ m.memory.emotion }}){% endif %}
@@ -55,7 +75,9 @@ Stances (pick exactly one):
 - "unchanged"  — nothing in the material moves the current stance. Prefer this when the evidence is thin.
 
 Rules:
-- Ground the stance ONLY in the material above. Flirtation the NPC welcomed can raise it, even in a single evening, if that fits who they are. Insults, threats, cruelty, coercion, a clear "leave me alone", or the player forcing the matter LOWER it — possibly straight to "withdrawn", regardless of how open they were before.
+- Ground the stance ONLY in the material above. Flirtation the NPC welcomed can raise it, even in a single evening, if that fits who they are. Insults, threats, cruelty, coercion, a clear "leave me alone", or the player forcing the matter LOWER it.
+- When the trigger is "conversation", cool by one step at a time (willing, then receptive, then uncertain, then unwilling). Skip steps, or answer "withdrawn", only when the recent events show the player personally hurting, threatening, humiliating, betraying, frightening or disgusting {{ npc.name }} — then it may go straight to "withdrawn", however open they were. Something only remembered, rumoured, done by someone else, or a disagreement about a fight is at most one step. Keeping a stance that is already "withdrawn" is not a step.
+- When the trigger is "conversation", memories explain how things stand; they are not new cause. A memory you are shown has almost certainly been weighed already: do not lower the stance again for it.
 - Consent moves in both directions and is never owed: a past yes is not a present yes.
 - Do NOT derive desire from friendship, trust, or relationship rank. Only marriage implies a standing openness, and even a spouse can be "withdrawn" after real harm.
 - Receptivity is the NPC's OWN nature: some would bed a charming stranger the night they meet; others never would without courtship, vows, or years. Read their profile and persona honestly — do not make a chaste or guarded character "willing" on a compliment, and do not make a libertine "unwilling" for lack of ceremony.
@@ -64,7 +86,8 @@ Rules:
 - If the trigger is "scene_consensual", the player and this NPC were just intimate by choice: lean toward "receptive" or "willing" unless the material shows regret or distress afterward.
 - If the trigger is "scene_aggressor", this NPC forced themself on the player: do not reward it — "unwilling" or "unchanged" unless the material clearly shows otherwise.
 - The reason is one short sentence in {{ npc.name }}'s own inner voice naming what, specifically, set this stance (a kindness, a slight, a shared night, a threat). No narration, no stage directions, no quotes inside it. Grounded in Skyrim; no modern language.
-- Output ONLY the JSON object {% raw %}{"stance": "<one of the words above>", "reason": "<one sentence>"}{% endraw %}, with no code fences and no commentary.
+- "sources": the tags of at most 3 lines above that set this stance, written without brackets (like "e:1234" for a spoken line, "m:56" for a memory), the most important first; [] when none applies or the answer is "unchanged". Only a line shown with a tag can be cited; never invent one. Tags go only in "sources", never in the reason.
+- Output ONLY the JSON object {% raw %}{"stance": "<one of the words above>", "reason": "<one sentence>", "sources": []}{% endraw %}, with no code fences and no commentary.
 {% else %}
-{% raw %}{"stance": "unchanged", "reason": ""}{% endraw %}
+{% raw %}{"stance": "unchanged", "reason": "", "sources": []}{% endraw %}
 {% endif %}

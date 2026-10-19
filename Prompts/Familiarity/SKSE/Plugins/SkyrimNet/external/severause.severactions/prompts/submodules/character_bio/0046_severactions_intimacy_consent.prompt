@@ -25,7 +25,9 @@ Intimacy with {{ player.name }}, your spouse, is natural and welcome — the eas
 {% elif render_mode != "transform" %}
 How far you would let things go with {{ player.name }} is your own nature's call, not a rule of acquaintance or rank: some people would take a charming stranger to bed the night they meet, others need courtship, trust, or vows first. If the flirting has been mutual and welcome, you may return it or invite more, given privacy and a setting that fits you; if it is not, or the approach is crude, refuse in keeping with your nature. If someone forces themselves on you, you are being assaulted — resist, call for help, and break away.
 {% endif %}
-{% if reason != "" %}
+{# Not in transform: SA's task prompts read that mode (the stance, bond and reputation assessments, the ambient #}
+{# action director), and a reason fed back into them keeps one event alive long after it should have faded. #}
+{% if reason != "" and render_mode != "transform" %}
 Why you feel this way: {{ reason }}
 {% endif %}
 {% if stance != "withdrawn" and (stance != "none" or married or render_mode != "transform") %}

@@ -1,0 +1,37 @@
+customCategory: sa_companionship
+name: DeclineCompanionRequest
+description: "Only while {{ player.name }} has just asked the speaker to travel with them as a companion and is waiting for an answer: the speaker turns it down in this line, for reasons of their own. Agreeing is SetCompanion; still asking questions or weighing it, just talk."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: DeclineCompanionRequest
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the actor turning down the player's request to travel together
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      # Offered only while the player's request is open (RecruitRequests.h). Custom decorator, so a STRING
+      # compare: "" = nothing to answer.
+      - decoratorName: "sever_recruit_request"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot act (see the is_kidnap_victim bullet in CLAUDE.md).
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

@@ -21,7 +21,38 @@ Function Maintenance()
     ; Fired on a blurb milestone: the first real conversation (10+ lines), every +100
     ; lines after, or a bond rise; at most once a game day (FamiliarityStore decides).
     RegisterForModEvent("SeverActions_ReputationAssess", "OnReputationAssessRequest")
+    ; The impressions an older build kept in StorageUtil, copied into the DLL once per save. On its own
+    ; event so the walk never holds up the other load stages.
+    If !SeverActionsNativeExt2.Migration_IsDone("ReputationBlurbNative", 1)
+        RegisterForModEvent("SeverActions_FamiliarityBlurbImport", "OnFamiliarityBlurbImport")
+        SendModEvent("SeverActions_FamiliarityBlurbImport")
+    EndIf
 EndFunction
+
+Event OnFamiliarityBlurbImport(String eventName, String strArg, Float numArg, Form sender)
+    {Copies every StorageUtil SeverFamiliarity_Blurb into the DLL (ImportBlurb fills only an NPC
+     with none there, so a re-run after a save made mid-walk changes nothing). The StorageUtil copy
+     stays, unread.}
+    UnregisterForModEvent("SeverActions_FamiliarityBlurbImport")
+    If !SeverActionsNativeExt2.Migration_TryClaim("ReputationBlurbNative", 1)
+        Return
+    EndIf
+    Form[] holders = StorageUtil.debug_AllStringObjs()
+    Int imported = 0
+    Int i = 0
+    While i < holders.Length
+        Actor a = holders[i] as Actor
+        If a
+            String text = StorageUtil.GetStringValue(a, "SeverFamiliarity_Blurb", "")
+            If text != "" && SeverActionsNativeExt2.Familiarity_ImportBlurb(a, text)
+                imported += 1
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+    SeverActionsNativeExt2.Migration_MarkDone("ReputationBlurbNative", 1)
+    Debug.Trace("[SeverActions_Familiarity] Imported " + imported + " reputation impressions into the DLL")
+EndEvent
 
 Function DebugMsg(String msg)
     If SeverActionsNativeExt2.Settings_GetBool("debugMode")
@@ -168,10 +199,12 @@ Function OnReputationAssessResult(String response, Int success)
         Return
     EndIf
 
-    ; Read by the character bio (0045) and the next assessment through
-    ; papyrus_util("GetStringValue", <uuid>, "SeverFamiliarity_Blurb", "").
-    StorageUtil.SetStringValue(npcActor, "SeverFamiliarity_Blurb", blurb)
-    Debug.Trace("[SeverActions_Familiarity] Reputation blurb stored for " + npcActor.GetDisplayName())
+    ; Read by the character bio (0045) and the next assessment through sever_reputation_blurb.
+    If SeverActionsNativeExt2.Familiarity_SetBlurb(npcActor, blurb)
+        Debug.Trace("[SeverActions_Familiarity] Reputation blurb stored for " + npcActor.GetDisplayName())
+    Else
+        Debug.Trace("[SeverActions_Familiarity] Reputation blurb for " + npcActor.GetDisplayName() + " not stored: the player keeps theirs")
+    EndIf
 
     ProcessNextReputationAssessment()
 EndFunction

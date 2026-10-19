@@ -308,9 +308,10 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
             if oldItem
                 Int actorHasOld = akActor.GetItemCount(oldItem)
                 if actorHasOld > 0
-                    if SeverActionsNative.Native_Blacklist_IsBlacklisted(oldItem)
-                        ; Blacklist wins. A catalog item surviving the edit still
-                        ; keeps its tag, or its temp copy leaks on the next swap.
+                    if SeverActionsNativeExt2.Native_Outfit_PieceGuard(oldItem) != 0
+                        ; A guarded piece is never taken back. A catalog item surviving
+                        ; the edit still keeps its tag, or its temp copy leaks on the
+                        ; next swap.
                         Bool wasCatalogB = SeverActionsNative.Native_OutfitSlot_IsCatalogSupplied(akActor, presetIdx, oldItem)
                         if wasCatalogB
                             Bool survivesEditB = false
@@ -346,7 +347,8 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
                                 retainedCatalogCount += 1
                                 retainedAcrossEdit += 1
                             else
-                                ; Plain copies only (see RemovePresetItemsFromActor).
+                                ; The copy SA lent, else a plain copy, never a player-modified
+                                ; one (see RemovePresetItemsFromActor).
                                 If SeverActionsNativeExt2.RemovePlainCopies(akActor, oldItem, 1, None) > 0
                                     cleanedCatalog += 1
                                 Else
@@ -374,7 +376,7 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
         StorageUtil.UnsetIntValue(akActor, KEY_PRESET_ACTIVE)
         Log("BuildPreset: cleared active state - overwrite affected the currently-active preset")
 
-        Log("BuildPreset: overwrite deleted " + oldChestCount + " old chest items, cleaned " + cleanedCatalog + " catalog temp-copies, spared " + playerWorkSparedEdit + " player-modified, preserved " + preservedUserOwned + " user-owned items, retained " + retainedAcrossEdit + " across edit, preserved " + blacklistPreserved + " blacklisted (slot=" + slotIdx + " preset=" + presetIdx + ")")
+        Log("BuildPreset: overwrite deleted " + oldChestCount + " old chest items, cleaned " + cleanedCatalog + " catalog temp-copies, spared " + playerWorkSparedEdit + " player-modified, preserved " + preservedUserOwned + " user-owned items, retained " + retainedAcrossEdit + " across edit, preserved " + blacklistPreserved + " guarded (slot=" + slotIdx + " preset=" + presetIdx + ")")
     endif
 
     ; OWNERSHIP-AWARE BUILD. The pending catalog from C++ buildOutfitSavePreset
@@ -438,9 +440,10 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
                     ; Plain copies only: a player-enchanted piece never goes
                     ; into the chest.
                     If SeverActionsNativeExt2.RemovePlainCopies(akActor, items[i], 1, chest) <= 0
-                        ; Only the player's own modified copy is left: record it
-                        ; as USER-OWNED (marker copy, the actor keeps theirs) and
-                        ; do NOT tag it - the catalog tag licenses the teardown
+                        ; Only the player's own modified copy is left, or the copy
+                        ; SA lent has left her and her plain copy is hers: record
+                        ; it as USER-OWNED (marker copy, the actor keeps theirs)
+                        ; and do NOT tag it - the catalog tag licenses the teardown
                         ; to delete a plain copy of the same base form.
                         chest.AddItem(items[i], 1, true)
                         playerWorkSparedBuild += 1
@@ -550,7 +553,8 @@ Function RemovePresetItemsFromActor(Actor akActor, Int slotIdx, Int presetIdx)
      a user-owned item is only unequipped, a blacklisted or Devious Devices
      item is not touched (a catalog copy of it stays in the pack). Catalog
      flags are per (actor, preset, FormID) in OutfitSlotStore; an unflagged
-     item counts as user-owned (the safe default).}
+     item counts as user-owned (the safe default). Body-mod gear is its body
+     framework's and is not touched either.}
     if !akActor || slotIdx < 0 || presetIdx < 0 || presetIdx >= 8
         return
     endif
@@ -572,10 +576,11 @@ Function RemovePresetItemsFromActor(Actor akActor, Int slotIdx, Int presetIdx)
         if item
             Int npcHas = akActor.GetItemCount(item)
             if npcHas > 0
-                if SeverActionsNative.Native_Blacklist_IsBlacklisted(item) || SeverActionsNativeExt.Native_IsDeviousDevice(item)
+                if SeverActionsNativeExt2.Native_Outfit_PieceGuard(item) != 0
                     ; Never delete or unequip. For Devious Devices, removing the
                     ; rendered item outside the DD framework desyncs it from its
-                    ; locked token (invisible but still locked).
+                    ; locked token (invisible but still locked); a body framework
+                    ; puts its own piece straight back on.
                     blacklistSkipped += 1
                 else
                     Bool isCatalog = SeverActionsNative.Native_OutfitSlot_IsCatalogSupplied(akActor, presetIdx, item)
@@ -588,13 +593,15 @@ Function RemovePresetItemsFromActor(Actor akActor, Int slotIdx, Int presetIdx)
                         ; NEVER Actor.RemoveItem: the catalog tag is a bare FormID,
                         ; the player's enchanted/tempered/renamed copy shares the
                         ; base form, and RemoveItem cannot choose the stack.
-                        ; RemovePlainCopies takes only unmodified copies.
+                        ; RemovePlainCopies takes the copy SA lent (by its key),
+                        ; else an unmodified copy.
                         If SeverActionsNativeExt2.RemovePlainCopies(akActor, item, 1, None) > 0
                             deletedCatalog += 1
                         Else
-                            ; Only player-modified copies left: nothing taken. The
-                            ; tag stays (it is per FormID and the clear is
-                            ; whole-list); the next teardown spares it again.
+                            ; Only player-modified copies left, or SA's lent copy
+                            ; has left her: nothing taken. The tag stays (it is per
+                            ; FormID and the clear is whole-list); the next
+                            ; teardown spares it again.
                             playerWorkSpared += 1
                         EndIf
                     else
@@ -613,7 +620,7 @@ Function RemovePresetItemsFromActor(Actor akActor, Int slotIdx, Int presetIdx)
     EndWhile
 
     if deletedCatalog > 0 || unequippedUserOwned > 0 || blacklistSkipped > 0 || playerWorkSpared > 0
-        Log("RemovePresetItemsFromActor: preset " + presetIdx + " - deleted " + deletedCatalog + " catalog temp copies, unequipped " + unequippedUserOwned + " user-owned items, spared " + playerWorkSpared + " player-modified, preserved " + blacklistSkipped + " blacklisted items (chest preserved)")
+        Log("RemovePresetItemsFromActor: preset " + presetIdx + " - deleted " + deletedCatalog + " catalog temp copies, unequipped " + unequippedUserOwned + " user-owned items, spared " + playerWorkSpared + " player-modified, preserved " + blacklistSkipped + " blacklisted/device/body-mod items (chest preserved)")
     endif
 EndFunction
 
@@ -924,8 +931,9 @@ EndFunction
 Int Function _TakeBackGrantedCopies(Actor akActor, Form[] akItems, Int[] aiHeldBefore)
     {Zero-equip take-back after a FRESH apply: for each chest item the actor
      held none of before (aiHeldBefore[i] == 0) and holds now, unequip it
-     (pause-safe) and remove ONE plain copy - DirectEquipPreset grants exactly
-     one, only to an actor holding none. No blacklist or device filter, like
+     (pause-safe) and remove the granted copy (by its key when it has one,
+     else ONE plain copy) - DirectEquipPreset grants exactly one, only to an
+     actor holding none. No blacklist or device filter, like
      the native twin. Returns the count taken.}
     if !akActor || !akItems || !aiHeldBefore
         return 0
@@ -1512,9 +1520,10 @@ Function _ReequipHeldRuntimeOutfit(Actor akActor)
 EndFunction
 
 Function UnequipAllExceptBlacklisted(Actor akActor)
-    {Unequip every worn armor piece except blacklisted items and Devious Devices.
-     Stands in for UnequipAll in the preset teardown: UnequipAll takes no filter
-     and would break the "never touch blacklisted items" contract.}
+    {Unequip every worn armor piece except guarded ones (Native_Outfit_PieceGuard:
+     blacklisted items, Devious Devices, body-mod gear). Stands in for UnequipAll
+     in the preset teardown: UnequipAll takes no filter and would break the
+     "never touch a guarded piece" contract.}
     if !akActor
         return
     endif
@@ -1530,9 +1539,9 @@ Function UnequipAllExceptBlacklisted(Actor akActor)
     While i < worn.Length
         Form item = worn[i]
         if item
-            ; Devious Devices are never stripped: unequipping one outside the DD
-            ; framework leaves it invisible while its locked token stays.
-            if SeverActionsNative.Native_Blacklist_IsBlacklisted(item) || SeverActionsNativeExt.Native_IsDeviousDevice(item)
+            ; A guarded piece is never stripped: unequipping a device outside the
+            ; DD framework leaves it invisible while its locked token stays.
+            if SeverActionsNativeExt2.Native_Outfit_PieceGuard(item) != 0
                 kept += 1
             else
                 ; The pause-safe native: from the paused wardrobe (delete, Clear
@@ -1547,7 +1556,7 @@ Function UnequipAllExceptBlacklisted(Actor akActor)
     EndWhile
 
     if kept > 0
-        Log("UnequipAllExceptBlacklisted: " + akActor.GetDisplayName() + " - unequipped " + unequipped + " items, preserved " + kept + " blacklisted")
+        Log("UnequipAllExceptBlacklisted: " + akActor.GetDisplayName() + " - unequipped " + unequipped + " items, preserved " + kept + " guarded")
     endif
 EndFunction
 
@@ -2100,25 +2109,30 @@ Function AutoRegisterKnownGuardians()
     ; Her quest alias re-equips from this container in OnObjectUnequipped;
     ; stowing it during a preset apply breaks that loop. 0x005902 is her PLACED
     ; reference (the NPC_ base 0x005900 cast to Actor is None); 0x5F4FB7 is
-    ; k101DaegonCustomOutfitContainerRef.
-    Actor daegon = Game.GetFormFromFile(0x005902, "k101Daegon.esp") as Actor
-    ObjectReference daegonContainer = Game.GetFormFromFile(0x5F4FB7, "k101Daegon.esp") as ObjectReference
-    if daegonContainer && !daegon
-        ; The plugin is loaded but the reference did not resolve (a replacer
-        ; re-placed her, or the FormID changed): log it, never fail silently.
-        Log("AutoRegisterKnownGuardians: k101Daegon.esp is loaded but 0x005902 did not resolve as an Actor - Daegon's guardian container not registered")
-    elseif daegon && daegonContainer
-        if SeverActionsNative.Native_OutfitSlot_GetSlot(daegon) >= 0
-            RegisterGuardianContainer(daegon, daegonContainer)
+    ; k101DaegonCustomOutfitContainerRef. GetFormFromFile on a plugin that is not
+    ; loaded logs a Papyrus error, so test the plugin first.
+    if Game.IsPluginInstalled("k101Daegon.esp")
+        Actor daegon = Game.GetFormFromFile(0x005902, "k101Daegon.esp") as Actor
+        ObjectReference daegonContainer = Game.GetFormFromFile(0x5F4FB7, "k101Daegon.esp") as ObjectReference
+        if daegonContainer && !daegon
+            ; The plugin is loaded but the reference did not resolve (a replacer
+            ; re-placed her, or the FormID changed): log it, never fail silently.
+            Log("AutoRegisterKnownGuardians: k101Daegon.esp is loaded but 0x005902 did not resolve as an Actor - Daegon's guardian container not registered")
+        elseif daegon && daegonContainer
+            if SeverActionsNative.Native_OutfitSlot_GetSlot(daegon) >= 0
+                RegisterGuardianContainer(daegon, daegonContainer)
+            endif
         endif
     endif
 
     ; ----- More known mods go here -----
     ; Template (the NPC's PLACED reference; an NPC_ base cast to Actor is None):
-    ;   Actor someActor = Game.GetFormFromFile(0xXX, "SomeMod.esp") as Actor
-    ;   ObjectReference someContainer = Game.GetFormFromFile(0xYY, "SomeMod.esp") as ObjectReference
-    ;   if someActor && someContainer && SeverActionsNative.Native_OutfitSlot_GetSlot(someActor) >= 0
-    ;       RegisterGuardianContainer(someActor, someContainer)
+    ;   if Game.IsPluginInstalled("SomeMod.esp")
+    ;       Actor someActor = Game.GetFormFromFile(0xXX, "SomeMod.esp") as Actor
+    ;       ObjectReference someContainer = Game.GetFormFromFile(0xYY, "SomeMod.esp") as ObjectReference
+    ;       if someActor && someContainer && SeverActionsNative.Native_OutfitSlot_GetSlot(someActor) >= 0
+    ;           RegisterGuardianContainer(someActor, someContainer)
+    ;       endif
     ;   endif
 EndFunction
 

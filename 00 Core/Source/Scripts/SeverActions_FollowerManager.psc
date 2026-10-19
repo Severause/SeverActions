@@ -362,6 +362,10 @@ FormList Property PlayMarkerList Auto
 String Property KEY_WORK_MARKER = "SeverActions_WorkMarkerRef" AutoReadOnly
 ; One-shot migration counter: borrow-a-home-slot workers onto the Route B pool.
 String Property KEY_WORKPOOL_MIG = "SeverActions_WorkPoolMigDone" AutoReadOnly
+; Per-actor StorageUtil key: the relationship rank a companion had before turning on the player.
+String Property KEY_RANK_BEFORE_TURN = "SeverActions_RankBeforeTurn" AutoReadOnly
+; Per-actor StorageUtil key: game seconds of the companion's last Start over (CompanionMind reads it, sharedKeys).
+String Property KEY_BOND_RESET_GT = "SeverActions_BondResetGT" AutoReadOnly
 
 ; Per-slot home sandbox packages, one per HomeSlot alias
 Package Property HomeSandboxPackage_00 Auto
@@ -1564,24 +1568,23 @@ Event OnCompanionSeat(String eventName, String strArg, Float numArg, Form sender
         Return
     EndIf
     ; The world moved since the DLL chose: the player got up, or the companion was told
-    ; to wait, passed to another framework or the player switched to Tracking mode. Another
-    ; framework's follower is seated only under followersSitWithPlayerOthers.
+    ; to wait or passed to another framework. Owner 1 is SeverActions; any other owner is
+    ; seated only under followersSitWithPlayerOthers, as the DLL rules.
     Actor player = Game.GetPlayer()
     If player.GetSitState() != 3 || npc.GetAV("WaitingForPlayer") != 0
         Return
     EndIf
-    If IsFollowHandsOff(npc)
-        If SeverActionsNativeExt2.Settings_GetInt("frameworkMode") == 1 || !SeverActionsNativeExt2.Settings_GetBool("followersSitWithPlayerOthers")
-            Return
-        EndIf
+    Int owner = SeverActionsNativeExt2.Native_GetFollowerOwner(npc)
+    If owner != 1 && (owner == 0 || !SeverActionsNativeExt2.Settings_GetBool("followersSitWithPlayerOthers"))
+        Return
     EndIf
-    ; Taken since: return silently - UseRef would put a refusal in the history of a
+    ; Taken since: return silently - UseRefAsSeatMate would put a refusal in the history of a
     ; companion the player never asked to sit.
     If !SeverActionsNativeExt2.Furniture_SeatFor(npc, seat, 0.0)
         Return
     EndIf
-    SeverActions_FurnitureLib.UseRef(npc, seat)
-    ; UseRef spans frames: a player who stood meanwhile ended the DLL's episode before
+    SeverActions_FurnitureLib.UseRefAsSeatMate(npc, seat)
+    ; UseRefAsSeatMate spans frames: a player who stood meanwhile ended the DLL's episode before
     ; this registration landed. A belt beside the DLL's release of in-flight orders.
     If player.GetSitState() != 3
         SeverActions_FurnitureLib.Stop(npc)
@@ -3394,6 +3397,64 @@ EndFunction
 ; ROSTER MANAGEMENT
 ; =============================================================================
 
+Function RequestCompanion(Actor akActor)
+    {Set Companion from the hotkey, the quick wheel or the Actions page. When Settings > Behavior >
+     Ask Before Recruiting says so (RecruitRequest_ShouldAsk) the NPC is asked and answers in
+     dialogue: SetCompanion recruits them, DeclineCompanionRequest turns it down, and no answer in two
+     minutes ends the request. Otherwise, and for anyone RegisterFollower refuses, it recruits at once.}
+    If !akActor || akActor.IsDead()
+        Return
+    EndIf
+    ; RegisterFollower's own refusals stay its own, with their events and notices.
+    ; A teammate SA never rostered (a vanilla, NFF or custom-AI follower) is adopted: SetCompanion is not offered to one.
+    Bool recruitNow = IsRegisteredFollower(akActor) || akActor.IsPlayerTeammate() || !SeverActionsNativeExt2.RecruitRequest_ShouldAsk(akActor)
+    recruitNow = recruitNow || !CanRecruitMore()
+    recruitNow = recruitNow || SeverActionsNativeExt2.Venture_Audit_IsCollector(akActor) || SeverActionsNativeExt.Native_Kidnap_GetPhase(akActor) >= 2
+    If recruitNow || SeverActionsNativeExt2.Custody_IsHeld(akActor)
+        RegisterFollower(akActor)
+        Return
+    EndIf
+    String npcName = akActor.GetDisplayName()
+    If akActor.IsInCombat() || SeverActionsNative.Native_IsActorInScene(akActor)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.recruitBusy", npcName))
+        Return
+    EndIf
+    ; The narration carries the refusals too: a prompt render can hold a decorator's old answer for a while.
+    String before = SeverActionsNativeExt2.RecruitRequest_DeclinesText(akActor)
+    If SeverActionsNativeExt2.RecruitRequest_Open(akActor) == 0
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.recruitBusy", npcName))
+        Return
+    EndIf
+    Actor player = Game.GetPlayer()
+    String playerName = player.GetDisplayName()
+    String narration = "*" + playerName + " asks " + npcName + " to travel with them as a companion.*"
+    If before != ""
+        narration = "*" + playerName + " asks " + npcName + " again to travel with them as a companion. " + npcName + " has turned " + playerName + " down before (" + before + ").*"
+    EndIf
+    SkyrimNetApi.DirectNarration(narration, akActor, player)
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.recruitAsked", npcName))
+    DebugMsg("Asked " + npcName + " to join (refusals on record: " + before + ")")
+EndFunction
+
+Function DeclineCompanionRequest(Actor akActor)
+    {DeclineCompanionRequest (declinecompanionrequest.yaml): akActor turns down the player's request
+     to join them. Recorded for the next ask; nothing happens without an open request.}
+    If !akActor
+        Return
+    EndIf
+    ; Already joined another way (vanilla or NFF dialogue): the request is answered, not refused.
+    If IsRegisteredFollower(akActor) || akActor.IsPlayerTeammate()
+        SeverActionsNativeExt2.RecruitRequest_Close(akActor, False)
+        Return
+    EndIf
+    If !SeverActionsNativeExt2.RecruitRequest_Close(akActor, True)
+        Return
+    EndIf
+    Actor player = Game.GetPlayer()
+    SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " turned down " + player.GetDisplayName() + "'s request to travel together as a companion.", akActor, player)
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.recruitDeclined", akActor.GetDisplayName()))
+EndFunction
+
 Function RegisterFollower(Actor akActor)
     {Add an actor to the follower roster and start them following. With NFF
      installed, NFF recruits them first (see below).}
@@ -3422,12 +3483,17 @@ Function RegisterFollower(Actor akActor)
     ; the Actions page, a brawler's re-recruit).
     Bool wasRegistered = IsRegisteredFollower(akActor)
     If !wasRegistered && !CanRecruitMore()
+        ; An agreed request ends here too, or it would lapse as "no answer".
+        SeverActionsNativeExt2.RecruitRequest_Close(akActor, False)
         Debug.Notification(SeverActionsNativeExt2.Native_L10n("followermanager.tooManyFollowersAlready"))
         SkyrimNetApi.RegisterEvent("follower_recruit_failed", \
             akActor.GetDisplayName() + " cannot join because " + Game.GetPlayer().GetDisplayName() + " already has too many companions.", \
             akActor, Game.GetPlayer())
         Return
     EndIf
+
+    ; Answers an open request to join (RequestCompanion), and forgets their refusals.
+    SeverActionsNativeExt2.RecruitRequest_Close(akActor, False)
 
     ; Lets listeners (e.g. Hearth's camp layer, a kidnapper's guard duty) release
     ; their own hold on the actor before the recruit changes teammate/faction
@@ -6609,14 +6675,14 @@ Function ProcessHomeSleep(Actor[] homed, Bool windowOpen)
                     ; Morning, death, or re-recruitment - stand them up.
                     SeverActions_FurnitureLib.Stop(npc)
                     StorageUtil.UnsetIntValue(npc, "SeverActions_HomeSleeping")
-                ElseIf !SkyrimNetApi.HasPackage(npc, "SeverActions_UseFurniture")
+                ElseIf !SeverActions_FurnitureLib.IsUsing(npc)
                     ; Something else ended the furniture use; drop our flag so a
                     ; later tick can put them back to bed.
                     StorageUtil.UnsetIntValue(npc, "SeverActions_HomeSleeping")
                 EndIf
             ElseIf windowOpen && npc.Is3DLoaded() && !npc.IsDead() && !npc.IsInCombat() \
                 && !IsRegisteredFollower(npc) && !npc.IsPlayerTeammate() \
-                && !SkyrimNetApi.HasPackage(npc, "SeverActions_UseFurniture") \
+                && !SeverActions_FurnitureLib.IsUsing(npc) \
                 && DetermineScheduleTypeFor(npc) == SCHEDULE_HOME
                 Int bedId = SeverActionsNative.Native_BedAssignment_GetBedFormID(npc)
                 ObjectReference homeMk = None
@@ -8494,7 +8560,7 @@ EndFunction
 
 Perk Function GetLightFootPerk() Global
     {Vanilla LightFoot (Skyrim.esm 0x0005820C), by FormID: runtime EditorIDs need
-     po3 Tweaks, which has no VR build.}
+     po3 Tweaks, an optional dependency.}
     Return Game.GetFormFromFile(0x0005820C, "Skyrim.esm") as Perk
 EndFunction
 
@@ -9075,12 +9141,44 @@ Bool Function LeaveToAttack(Actor akActor, Actor akTarget)
         akActor.GetDisplayName() + " turned on " + akTarget.GetDisplayName() + " and left " + player.GetDisplayName() + "'s service.", \
         akActor, akTarget)
     UnregisterFollower(akActor, false, true)
+    If akTarget == player
+        SeverActionsNativeExt2.Bond_NoteTurn(akActor, akTarget)
+    EndIf
     ; UnregisterFollower keeps the higher of the recruit's rank and the original; a companion
-    ; who turned on the player keeps neither.
+    ; who turned on the player keeps neither. The rank they had is kept for RelationshipStartOver.
     If akTarget == player && akActor.GetRelationshipRank(player) > 0
+        StorageUtil.SetIntValue(akActor, KEY_RANK_BEFORE_TURN, akActor.GetRelationshipRank(player))
         akActor.SetRelationshipRank(player, 0)
     EndIf
     Return True
+EndFunction
+
+Function RelationshipStartOver(Actor akActor)
+    {The Papyrus half of the Companions page's Start over (the "relationshipStartOver" verb, after the DLL
+     reset the bond and the stance): stamps the reset, so a relationship assessment already in flight is
+     dropped when it lands (CompanionMind), and gives back the rank LeaveToAttack took from a companion who
+     turned on the player, so the vanilla and NFF recruit dialogue, which needs Friend, offers them again.
+     With no rank recorded, a former companion at rank 0 is lifted to Friend.}
+    If !akActor
+        Return
+    EndIf
+    StorageUtil.SetFloatValue(akActor, KEY_BOND_RESET_GT, GetGameTimeInSeconds())
+    Actor player = Game.GetPlayer()
+    Int saved = StorageUtil.GetIntValue(akActor, KEY_RANK_BEFORE_TURN, -99)
+    Int now = akActor.GetRelationshipRank(player)
+    Int want = now
+    If saved != -99
+        StorageUtil.UnsetIntValue(akActor, KEY_RANK_BEFORE_TURN)
+        If saved > now
+            want = saved
+        EndIf
+    ElseIf now == 0 && SeverActionsNativeExt2.Native_WasEverFollower(akActor)
+        want = 1
+    EndIf
+    If want != now
+        akActor.SetRelationshipRank(player, want)
+        DebugMsg("Start over: " + akActor.GetDisplayName() + " relationship rank " + now + " -> " + want)
+    EndIf
 EndFunction
 
 Bool Function CustodyHold(Actor akActor)
@@ -9768,7 +9866,7 @@ Event OnVerb_Followers(String eventName, String strArg, Float numArg, Form sende
     ; -- Followers (own code) --
     Bool repaintCompanions = false
     If actionId == "registerFollower"
-        RegisterFollower(target)
+        RequestCompanion(target)
 
     ElseIf actionId == "companionFollow"
         CompanionFollow(target)
@@ -9783,6 +9881,10 @@ Event OnVerb_Followers(String eventName, String strArg, Float numArg, Form sende
 
     ElseIf actionId == "followerLeaves"
         FollowerLeaves(target)
+
+    ElseIf actionId == "relationshipStartOver"
+        RelationshipStartOver(target)
+        repaintCompanions = true
 
     ElseIf actionId == "assignHome"
         String locName = strParam
@@ -9919,7 +10021,7 @@ Event OnHotkey_Followers(String eventName, String strArg, Float numArg, Form sen
         ElseIf target == player
             Debug.Notification(SeverActionsNativeExt2.Native_L10n("hotkeys.cannotTargetYourself"))
         Else
-            RegisterFollower(target)
+            RequestCompanion(target)
         EndIf
 
     ElseIf hotkeyId == "CompanionWait"

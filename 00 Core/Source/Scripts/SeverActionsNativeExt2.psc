@@ -109,6 +109,13 @@ Bool Function Native_LeashHasHandLeash() Global Native
  ApplyHolderOwnedLeashToBone API exist, so the rope can run from the holder's
  hand. False on 1.1.0 (neck only). The armor record is the gate: esm and DLL ship
  together.}
+Bool Function Familiarity_SetBlurb(Actor akActor, String asText) Global Native
+{Store the reputation assessment's impression of the player for akActor (read by
+ sever_reputation_blurb). False, and nothing written, while the player keeps their own
+ on the Companions page's Reasons tab.}
+Bool Function Familiarity_ImportBlurb(Actor akActor, String asText) Global Native
+{The one-time import of a StorageUtil SeverFamiliarity_Blurb: fills only an NPC with no
+ impression in the DLL. True when it wrote one.}
 Function Native_Familiarity_SetTier(Actor akActor, String asTier) Global Native
 {Store the reputation assessment's familiarity verdict: "stranger" / "passing" /
  "met_once" / "acquainted" / "familiar". The player_familiarity decorator prefers
@@ -264,6 +271,17 @@ Bool Function FriendlyFire_IsProtected(Actor akActor) Global Native
 ; True, once, when the friendly-fire guard caught akActor turning on the player within the
 ; last afSeconds of real time: the mark is used up.
 Bool Function FriendlyFire_TakeForgiven(Actor akActor, Float afSeconds) Global Native
+; Whom a companion told to attack akAlly means to fight: akAlly's combat target, else the nearest actor
+; fighting akAlly; None when akAlly is in no fight. Never the player or a protected actor.
+Actor Function Combat_FindAllyAttacker(Actor akAttacker, Actor akAlly) Global Native
+; A relationship assessment's reply: adds the deltas inside the bond ranges, sets a non-empty summary, and puts
+; what moved (with asCause) in the Companions page's history. True when rapport, trust or loyalty fell by 5+.
+Bool Function Bond_ApplyAssessment(Actor akActor, Int aiRapport, Int aiTrust, Int aiLoyalty, Int aiMood, String asBlurb, String asCause) Global Native
+; After Bond_ApplyAssessment: the lines the reply's "sources" cite (only those the assessment was shown), onto
+; the history entry it wrote and as what the read on the player is based on. True when any was kept.
+Bool Function Bond_NoteSources(Actor akActor, String asReply) Global Native
+; Notes on the Companions page's history that akActor turned on akTarget and left the player's service.
+Function Bond_NoteTurn(Actor akActor, Actor akTarget) Global Native
 ; Records who akActor's SA forced fight is against (ForceAttack), so the friendly-fire guard
 ; exempts that pair only. Cleared with the forced-combat flag.
 Function Native_SetForcedCombatPartner(Actor akActor, Actor akPartner) Global Native
@@ -471,6 +489,11 @@ Int Function Kernel_SkyrimNetApiVersion() Global Native
 {SkyrimNet's PublicAPI version as the DLL resolved it (0 = not loaded). Below v8
  the quest-awareness summaries are off (below v5 the completion memories too),
  and Init shows a notice.}
+Int Function Kernel_SkyrimNetPackageApi() Global Native
+{SkyrimNet's package-registry API version (0 = SkyrimNet absent or too old). At 1+ the
+ SkyrimNetApi natives RegisterPackageEx, UnregisterPackageEx, ListPackage and the owned
+ HoldPackages / ReleaseHeldPackages / IsHoldingPackages exist and the package ModEvents
+ are sent.}
 Float Function Kernel_RealTime() Global Native
 {Real seconds on a steady clock since the DLL loaded, for timing stamps. It costs
  no frame (Utility.GetCurrentRealTime does). Never compare it with a value from
@@ -1082,6 +1105,81 @@ Bool Function Native_OutfitSlot_HoldActivePreset(Actor akActor) Global Native
 ; which reads False (enforce).
 Bool Function Native_OutfitSlot_IsActivePresetHeld(Actor akActor) Global Native
 
+; The spell facts (SpellFactsCore): one reading for teaching, learning, the pages
+; and the prompts. The required skill is the higher of the spell's vanilla
+; casting perk tier and its effects' highest minimum skill (0..100); the tier is
+; 0 Novice .. 4 Master; the school is "Destruction" and so on, or "" for none.
+; An older DLL leaves them unbound: 0, 0, "" and False.
+Int Function Spell_GetRequiredSkill(Spell akSpell) Global Native
+Int Function Spell_GetTier(Spell akSpell) Global Native
+String Function Spell_GetSchool(Spell akSpell) Global Native
+; True for a power, an ability or a disease: never taught or learned.
+Bool Function Spell_IsUnteachable(Spell akSpell) Global Native
+
+; The learning rule (SpellLearnCore). Reach: 0 within the learner's skill, 1 a
+; stretch (up to 25 below the requirement), 2 far beyond them (they may still
+; try). The lesson's failure chance 0..95 counts the teacher's own skill (None:
+; a tome) and the difficulty setting. An older DLL reads 0 for both.
+Int Function Spell_GetReach(Actor akLearner, Spell akSpell) Global Native
+Int Function Spell_LessonFailChance(Actor akLearner, Spell akSpell, Actor akTeacher, Float afDifficultyMult) Global Native
+; A spell learned from beyond the learner's skill is unstable (an NPC only).
+Function Spell_MarkUnstable(Actor akActor, Spell akSpell) Global Native
+; 0 stable; -1 it was unstable and the caster has now mastered it; otherwise the
+; chance (0..60) that casting it misfires, scaled by afDifficultyMult (0 = never).
+Int Function Spell_MisfireChance(Actor akActor, Spell akSpell, Float afDifficultyMult) Global Native
+; A cast of an unstable spell went right: True when practice settled it.
+Bool Function Spell_NotePractice(Actor akActor, Spell akSpell) Global Native
+; The tier a lesson's mishap plays out at: the spell's own, one harsher on a
+; stretch or beyond (capped at Master).
+Int Function Spell_GetMishapTier(Actor akLearner, Spell akSpell) Global Native
+
+; Studying a spell tome (an NPC reads a tome they carry over game hours of quiet
+; reading; SpellLearnStore). FindTomeOnActor: the carried tome whose spell or
+; title best matches the name, or None. StartStudy: the hours it needs, or -1
+; (not a tome, a power, known already, the player, not carried). StudyDue: one
+; student whose reading is done, or None (call until None). StudyHoursLeft: -1
+; when they study nothing.
+Book Function Spell_FindTomeOnActor(Actor akActor, String asName) Global Native
+Int Function Spell_StartStudy(Actor akActor, Book akTome) Global Native
+Actor Function Spell_StudyDue() Global Native
+Book Function Spell_StudyBook(Actor akActor) Global Native
+Float Function Spell_StudyHoursLeft(Actor akActor) Global Native
+Function Spell_EndStudy(Actor akActor) Global Native
+Int Function Spell_StudyCount() Global Native
+; The actor's carried tomes changed (the sever_spell_tomes decorator's cache).
+Function Spell_ForgetTomes(Actor akActor) Global Native
+; The actors studying a tome who are alive, loaded and within afRadius units of the player.
+Actor[] Function Spell_StudentsNearPlayer(Float afRadius) Global Native
+; True while akActor sits on a seat a book can be read on (a chair, stool, bench, throne or writing chair; never a
+; workbench, bed or lean marker).
+Bool Function Spell_OnReadingSeat(Actor akActor) Global Native
+; Record a lesson's or tome study's outcome in the learning history (the
+; sever_spell_history decorator): aiOutcome 0 failed, 1 learned roughly, 2
+; learned; akTeacher None with akTome = a study; aiReach from Spell_GetReach.
+Function Spell_NoteLearning(Actor akLearner, Actor akTeacher, Spell akSpell, Book akTome, Int aiOutcome, Int aiReach, Bool abUnstable) Global Native
+
+; Why the outfit system leaves a piece alone, as bits (a piece can be several):
+; 1 a Devious Device, 2 on the undress blacklist (any item), 4 body-mod gear
+; (its body framework's); 0 none. A guarded piece is never taken off, stashed
+; or taken back by an outfit; bits 1 and 4 are never minted or saved into an
+; NPC's outfit, and bit 4 is never put on.
+Int Function Native_Outfit_PieceGuard(Form akItem) Global Native
+
+; Hand an actor with an active slot preset to the outfit reconciler (the
+; outfitReconciler setting): it looks at them at once and re-applies the preset
+; where needed. False for an actor with no slot preset (a legacy lock keeps its
+; Papyrus path), while the reconciler or the outfit system is off, and on an
+; older DLL (unbound): the caller then re-dresses them itself.
+Bool Function Native_Outfit_Reconcile(Actor akActor) Global Native
+
+; Remember which copies of their armor the actor wears now for their slot
+; preset presetName, so applying it wears those copies (NpcPresetIdentity).
+Function Native_OutfitSlot_RememberWornCopies(Actor akActor, String presetName) Global Native
+
+; The player-facing line naming the pieces of the actor's active preset that
+; another mod takes away (the preset cannot go back on), or "" when none.
+String Function Native_OutfitSlot_TakenAwayNotice(Actor akActor) Global Native
+
 ; Release the DefaultOutfit a lock, Undress or slot preset parked: restore it
 ; onto the base when nothing holds the suppression any more and forget the
 ; parking, so the load pass stops re-nulling the base. False while a legacy lock
@@ -1200,7 +1298,9 @@ Int Function CountPlainCopies(Actor akActor, Form akItem) Global Native
 Int Function RemovePlainCopies(Actor akActor, Form akItem, Int aiCount, ObjectReference akDest = None) Global Native
 {Remove up to aiCount unmodified copies, never a player-modified one; returns how
  many went. akDest None destroys them, else moves them there. Use instead of
- Actor.RemoveItem for any item picked by FormID (RemoveItem cannot pick the stack).}
+ Actor.RemoveItem for any item picked by FormID (RemoveItem cannot pick the stack).
+ On an NPC a slot preset lent a copy to, that copy is the one taken, and none
+ once it has left them.}
 
 String Function GetCustomItemName(Actor akActor, Form akItem) Global Native
 {The name the player gave their copy of akItem at an enchanting table, or "".
@@ -1332,3 +1432,18 @@ ObjectReference Function Furniture_SeatFor(Actor akActor, ObjectReference akFurn
 Bool Function Native_OutfitSlot_UsesPresetOutfit(Actor akActor) Global Native
 {True when akActor's default or sleep outfit is one of the 1600 preset BGSOutfits, the only
  case in which the engine reads a preset's LeveledItem.}
+
+; ── Recruit requests (RecruitRequests.h) ───────────────────────────────────
+Bool Function RecruitRequest_ShouldAsk(Actor akActor) Global Native
+{True when Settings > Behavior > Ask Before Recruiting says a recruit the player orders asks
+ akActor first: an NPC who was never a companion, or everyone.}
+Int Function RecruitRequest_Open(Actor akActor) Global Native
+{Opens a request for akActor to answer in dialogue (two minutes; ends early if the player walks
+ away or they join another way). 1 = opened, 2 = one was open and its window restarts, 0 = no
+ actor, or they are in a SexLab or OStim scene.}
+Bool Function RecruitRequest_Close(Actor akActor, Bool abDeclined) Global Native
+{Ends akActor's request. abDeclined records a refusal for the next ask; otherwise they joined and
+ their refusals are forgotten. True when a request was open.}
+String Function RecruitRequest_DeclinesText(Actor akActor) Global Native
+{How often and how long ago akActor turned the player down ("twice, the last about 3 hours ago"),
+ or "" when they never have.}

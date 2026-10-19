@@ -1,0 +1,27 @@
+{% if render_mode == "full" %}
+{# The tome they study (sever_spell_study), else their rank in each school (the skill the learning rule reads), and their
+   history (sever_spell_history); both decorators ship with their DLL. Only while studying, for a real mage (40 in a
+   school; a race's bonus alone gives 25), or for someone with a history here. #}
+{% set study = sever_spell_study(actorUUID) %}
+{% set history = sever_spell_history(actorUUID) %}
+{% set alt = round(get_actor_value(actorUUID, "Alteration"), 0) %}
+{% set con = round(get_actor_value(actorUUID, "Conjuration"), 0) %}
+{% set des = round(get_actor_value(actorUUID, "Destruction"), 0) %}
+{% set ill = round(get_actor_value(actorUUID, "Illusion"), 0) %}
+{% set res = round(get_actor_value(actorUUID, "Restoration"), 0) %}
+{% if study != "" or history != "" or alt >= 40 or con >= 40 or des >= 40 or ill >= 40 or res >= 40 %}
+## Learning Magic
+
+{% if study != "" %}
+{{ study }}
+{% else %}
+Your skill in each school of magic: Alteration, {% if alt >= 100 %}master{% elif alt >= 75 %}expert{% elif alt >= 50 %}adept{% elif alt >= 25 %}apprentice{% elif alt >= 15 %}novice{% else %}untrained{% endif %}; Conjuration, {% if con >= 100 %}master{% elif con >= 75 %}expert{% elif con >= 50 %}adept{% elif con >= 25 %}apprentice{% elif con >= 15 %}novice{% else %}untrained{% endif %}; Destruction, {% if des >= 100 %}master{% elif des >= 75 %}expert{% elif des >= 50 %}adept{% elif des >= 25 %}apprentice{% elif des >= 15 %}novice{% else %}untrained{% endif %}; Illusion, {% if ill >= 100 %}master{% elif ill >= 75 %}expert{% elif ill >= 50 %}adept{% elif ill >= 25 %}apprentice{% elif ill >= 15 %}novice{% else %}untrained{% endif %}; Restoration, {% if res >= 100 %}master{% elif res >= 75 %}expert{% elif res >= 50 %}adept{% elif res >= 25 %}apprentice{% elif res >= 15 %}novice{% else %}untrained{% endif %}.
+A spell one rank above your skill in its school is a stretch for you. Two ranks or more is far beyond you, and you know it: you can still try to learn it, from a teacher or a tome, but it often goes wrong, and a spell learned from that far beyond you can misfire until you have practised it or grown into it.
+{% endif %}
+{% if history != "" %}
+
+What learning magic has left with you, newest first:
+{{ history }}
+{% endif %}
+{% endif %}
+{% endif %}

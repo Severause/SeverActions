@@ -1,6 +1,6 @@
 {% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" %}
 {# What this NPC knows of the player: the tier from player_familiarity and the impression sever_reputation_assess writes #}
-{# (SeverFamiliarity_Blurb). World knowledge is read only to test whether the name has reached them; 0130 prints it. #}
+{# (sever_reputation_blurb). World knowledge is read only to test whether the name has reached them; 0130 prints it. #}
 {% if not is_follower(actorUUID) and is_sever_follower(actorUUID) == "" and not is_player(actorUUID) %}
 {% set familiarity = player_familiarity(actorUUID) %}
 {% if isObject(familiarity) %}
@@ -44,7 +44,7 @@
 {% elif get_faction_rank(actorUUID, 114099) >= 0 and get_faction_rank(player.UUID, 114099) >= 0 %}{% set shared_guild = "The Dark Brotherhood" %}
 {% endif %}
 
-{% set rep_blurb = papyrus_util("GetStringValue", actorUUID, "SeverFamiliarity_Blurb", "") %}
+{% set rep_blurb = sever_reputation_blurb(actorUUID) %}
 {% set has_blurb = rep_blurb != "" %}
 
 {# The name is theirs once they have spoken (met_once and up), heard it tied to deeds, or formed an impression: a blurb #}

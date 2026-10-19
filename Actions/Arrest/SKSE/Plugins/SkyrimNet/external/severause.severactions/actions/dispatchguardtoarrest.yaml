@@ -54,7 +54,7 @@ eligibilityRules:
   - conditions:
       # Not a guard in the middle of an SA arrest or dispatch. sever_is_dispatched
       # reads the arrest store by FormID (the dispatch faction named by EditorID
-      # never resolves on VR). Custom decorator, so a STRING compare: "" = free.
+      # resolves only with po3 Tweaks). Custom decorator, so a STRING compare: "" = free.
       - decoratorName: "sever_is_dispatched"
         arguments: ["currentActor"]
         comparisonOperator: "=="

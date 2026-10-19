@@ -183,8 +183,9 @@ Event OnUpdate()
 
     ; Bulk change (3+ unequips in 500 ms): a strip stays latched until a cell
     ; load or our own outfit change clears it; a re-dress (non-preset armor put
-    ; on in their place) is re-applied over, up to twice a minute. 0 = an older
-    ; DLL without the native: the latch alone decides.
+    ; on in their place) is re-applied over once; the second inside a minute
+    ; yields until the next load (OutfitContention). 0 = an older DLL without
+    ; the native: the latch alone decides.
     Int burst = SeverActionsNativeExt2.Native_Outfit_ResolveBurst(follower)
     If burst == 0
         If SeverActionsNative.Native_Outfit_IsBurstSuppressed(follower)
@@ -212,6 +213,11 @@ Event OnUpdate()
     ; A hold keeps the active index, so the slot branch below would otherwise
     ; undo the per-item change.
     If IsSlotPresetHeld(follower)
+        Return
+    EndIf
+
+    ; The reconciler re-dresses them (see Native_Outfit_Reconcile).
+    If SeverActionsNativeExt2.Native_Outfit_Reconcile(follower)
         Return
     EndIf
 
@@ -279,6 +285,11 @@ Function ReequipIfLocked()
     ; HELD preset: no re-apply and no legacy-lock re-equip, mirroring
     ; OutfitDataStore::ReequipLockedItemsOnActor (IsSlotPresetHeld).
     If IsSlotPresetHeld(follower)
+        Return
+    EndIf
+
+    ; The reconciler re-dresses them (see Native_Outfit_Reconcile).
+    If SeverActionsNativeExt2.Native_Outfit_Reconcile(follower)
         Return
     EndIf
 

@@ -33,7 +33,7 @@ eligibilityRules:
     required: true
   - conditions:
       # Only a creditor. sever_is_creditor reads the debt store by FormID (a
-      # faction named by EditorID never resolves on VR). Custom decorator, so
+      # faction named by EditorID needs po3 Tweaks). Custom decorator, so
       # a STRING compare: "" = owed nothing.
       - decoratorName: "sever_is_creditor"
         arguments: ["currentActor"]

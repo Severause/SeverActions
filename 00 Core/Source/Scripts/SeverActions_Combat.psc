@@ -312,8 +312,9 @@ EndEvent
 ; === MAIN ATTACK FUNCTION ===
 
 Function AttackTarget_Execute(Actor akAttacker, Actor akTarget)
-{The AttackTarget action: a companion who attacks the player or another companion leaves the
- player's service first (LeaveServiceToAttack), then _AttackTarget.}
+{The AttackTarget action: a companion attacks the player or another companion only when the bond
+ is broken (TurnRefused), and then leaves the player's service first (LeaveServiceToAttack); told to
+ attack an ally in a fight otherwise, they attack the ally's enemy.}
     _AttackTarget(akAttacker, akTarget, True)
 EndFunction
 
@@ -336,9 +337,47 @@ Function _AttackTarget(Actor akAttacker, Actor akTarget, Bool abLeaveService)
         Return
     EndIf
     If abLeaveService
-        LeaveServiceToAttack(akAttacker, akTarget)
+        If TurnRefused(akAttacker, akTarget)
+            ; Told to attack an ally in a fight, they meant the ally's enemy: fight that one instead.
+            Actor foe = SeverActionsNativeExt2.Combat_FindAllyAttacker(akAttacker, akTarget)
+            If !foe || AttackOnCooldown(akAttacker, foe)
+                Return
+            EndIf
+            Debug.Trace("[SeverCombat] AttackTarget redirected: " + akAttacker.GetDisplayName() + " -> " + foe.GetDisplayName() + " (named " + akTarget.GetDisplayName() + ", whom " + foe.GetDisplayName() + " is fighting)")
+            akTarget = foe
+        Else
+            LeaveServiceToAttack(akAttacker, akTarget)
+        EndIf
     EndIf
     ForceAttack(akAttacker, akTarget)
+EndFunction
+
+Bool Function TurnRefused(Actor akAttacker, Actor akTarget)
+{True when a rostered companion would turn on the player or another protected companion while the
+ bond is not broken. The action model can name an ally as the target of a fight it means to join,
+ and a turn cannot be taken back (service, rank, a follower_turned event). Broken = rapport at most
+ -60 and loyalty at most 20 toward the player, or affinity at most -60 toward the companion. No
+ SkyrimNet event: a refused misfire must not become a memory of a near-betrayal.}
+    Actor player = Game.GetPlayer()
+    If !akAttacker || !akTarget || akAttacker == player || akAttacker == akTarget
+        Return False
+    EndIf
+    If !SeverActionsNativeExt.Native_GetIsFollower(akAttacker)
+        Return False
+    EndIf
+    If akTarget == player
+        If SeverActionsNative.Native_GetRapport(akAttacker) <= -60.0 && SeverActionsNative.Native_GetLoyalty(akAttacker) <= 20.0
+            Return False
+        EndIf
+    ElseIf SeverActionsNativeExt2.FriendlyFire_IsProtected(akTarget)
+        If SeverActionsNative.Native_GetPairAffinity(akAttacker, akTarget) <= -60.0
+            Return False
+        EndIf
+    Else
+        Return False
+    EndIf
+    Debug.Trace("[SeverCombat] AttackTarget REFUSED: " + akAttacker.GetDisplayName() + " -> " + akTarget.GetDisplayName() + " - a companion whose bond is not broken does not turn on an ally")
+    Return True
 EndFunction
 
 Function LeaveServiceToAttack(Actor akAttacker, Actor akTarget)

@@ -1,5 +1,5 @@
 {# A blacksmith's deferred commissions: JobBlacksmithFaction by decimal FormID 330013 (Skyrim.esm 0x0005091D; an EditorID
-   needs po3, absent on VR, and Inja reads no hex literal). crafting_commission is the open orders, one "- " line each ("" with
+   needs po3, an optional plugin, and Inja reads no hex literal). crafting_commission is the open orders, one "- " line each ("" with
    none). The how-to and the order rules render only in NPC dialogue (responseTarget type player, npc or all). #}
 {% if get_faction_rank(npc.UUID, 330013) >= 0 %}
 {% set _commission_info = crafting_commission(npc.UUID) %}

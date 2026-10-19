@@ -13,7 +13,7 @@ Scriptname SeverActions_FurnitureLib Hidden
 
 ; Literals: package priority 80, scene-event TTLs 300000 ms (using) and 60000 ms (got
 ; up) - the runtime values of the quest-script properties they replaced (DR18) - and
-; 60000 ms for a refusal.
+; 60000 ms for a refusal. The companion seat order uses 200 instead (UseRefAsSeatMate).
 
 Package Function UsePackage() Global
     {SeverAction_UseFurniture (EditorID without the s): an Activate package on the target
@@ -62,6 +62,20 @@ Function UseRef(Actor akActor, ObjectReference furnRef) Global
     {Send akActor to use a furniture reference we already resolved (e.g. the crosshair
      target from the hotkey) - skips the FormID lookup. Refuses, with a short-lived line,
      a ref with no free place for them; the free half of a bench is a place.}
+    _UseRefAt(akActor, furnRef, 80)
+EndFunction
+
+Function UseRefAsSeatMate(Actor akActor, ObjectReference furnRef) Global
+    {UseRef above every other package, for CompanionSeating's order (OnCompanionSeat).}
+    ; PapyrusUtil caps a priority at 100 (a tie goes to the higher package FormID), and
+    ; SkyrimNet's override hook, which picks for every loaded actor, keeps 200 as given.
+    ; An SA order that needs them standing loses to it, so CompanionSeating stands them up
+    ; for one (CompanionSeatingCore::SeatedRefusal); another mod's order waits for the player.
+    _UseRefAt(akActor, furnRef, 200)
+EndFunction
+
+Function _UseRefAt(Actor akActor, ObjectReference furnRef, Int priority) Global
+    {UseRef's body, the override at priority.}
     if !akActor || !furnRef
         return
     endif
@@ -95,7 +109,7 @@ Function UseRef(Actor akActor, ObjectReference furnRef) Global
 
     ; The Activate package walks them to the furniture (linked ref) and uses it.
     if usePkg
-        ActorUtil.AddPackageOverride(akActor, usePkg, 80, 1)
+        ActorUtil.AddPackageOverride(akActor, usePkg, priority, 1)
         akActor.EvaluatePackage()
 
         ; Native auto-cleanup. 0 = the manager's default distance, i.e. the

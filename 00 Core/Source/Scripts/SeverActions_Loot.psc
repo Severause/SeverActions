@@ -26,6 +26,12 @@ Float Property BookReadingTimeout = 300.0 Auto Hidden
 ; Real time when the last reading narration was sent. Used for auto-continue.
 Float BookReadingLastNarrationTime = 0.0
 
+; The Inventory page's last Eat / Drink (UseItemForm_Execute): the item, who used it, and the real time
+; until which a second press of it is refused.
+Actor _pageConsumeActor
+Form _pageConsumeItem
+Float _pageConsumeUntil
+
 Float Property BookReadingContinueDelay = 15.0 Auto Hidden
 {Seconds to wait after speech queue empties before sending a continue narration.}
 
@@ -951,13 +957,20 @@ Function UseItem_Execute(Actor akActor, String itemName)
         return
     endif
 
-    ; Own pack first, then the merchant chest
+    ; Own pack first, then the merchant chest. Only a potion, food or an ingredient is used up: anything else
+    ; (a book, a soul gem, gear) would record a "used" event for what did not happen.
     Form itemForm = GetItemFormByName(akActor, itemName)
+    if itemForm && !IsConsumable(itemForm)
+        itemForm = None
+    endif
 
     if !itemForm || akActor.GetItemCount(itemForm) <= 0
         ObjectReference merchantChest = GetMerchantContainer(akActor)
         if merchantChest && merchantChest != akActor
             itemForm = FindItemInContainer(merchantChest, itemName)
+            if itemForm && !IsConsumable(itemForm)
+                itemForm = None
+            endif
             if itemForm && merchantChest.GetItemCount(itemForm) > 0
                 ; Into their pack, where EquipItem can consume it
                 merchantChest.RemoveItem(itemForm, 1, true, akActor)
@@ -976,23 +989,55 @@ Function UseItem_Execute(Actor akActor, String itemName)
         return
     endif
     
+    _ConsumeItem(akActor, itemForm, false)
+EndFunction
+
+Function UseItemForm_Execute(Actor akActor, Form itemForm)
+    {The Inventory page's Eat / Drink: consume this exact item from the actor's own pack. The effect lands at
+     once (the page refreshes from the count) and a follower's animation plays after it.}
+    if !akActor || !itemForm
+        return
+    endif
+    ; A second press of the same item before the first lands is refused: EquipItem adds an item the actor no
+    ; longer holds, so it would be a second drink. Nothing yields between the test and the stamp, so a second
+    ; stack cannot pass between them; the window is checked from both ends so a stamp from an earlier session
+    ; (real time restarts at launch) never holds.
+    Float now = Utility.GetCurrentRealTime()
+    if akActor == _pageConsumeActor && itemForm == _pageConsumeItem && now < _pageConsumeUntil && _pageConsumeUntil - now <= 1.5
+        Debug.Trace("[SeverActions_Loot] UseItemForm: " + itemForm + " already being used by " + akActor)
+        return
+    endif
+    _pageConsumeActor = akActor
+    _pageConsumeItem = itemForm
+    _pageConsumeUntil = now + 1.5
+    if akActor.IsDead() || akActor.GetItemCount(itemForm) <= 0 || !IsConsumable(itemForm)
+        Debug.Trace("[SeverActions_Loot] UseItemForm: refused for " + akActor + " / " + itemForm)
+        return
+    endif
+    _ConsumeItem(akActor, itemForm, true)
+EndFunction
+
+Function _ConsumeItem(Actor akActor, Form itemForm, Bool abFromInventoryPage)
+    {Consume one itemForm from akActor's pack, tell Survival and SkyrimNet. A spoken action plays the eat or
+     drink idle before the effect; the Inventory page's gets the effect and a page refresh first, then the
+     idle. The player gets no idle: the inventory never animates them.}
+    Bool animate = akActor != Game.GetPlayer()
     String actualItemName = itemForm.GetName()
     Debug.Trace("[SeverActions_Loot] UseItem: " + akActor.GetDisplayName() + " consuming " + actualItemName)
 
     Potion potionForm = itemForm as Potion
     Ingredient ingredientForm = itemForm as Ingredient
+    Bool isFood = !potionForm || potionForm.IsFood()
+
+    if animate && !abFromInventoryPage
+        PlayConsumeAnimation(akActor, isFood, itemForm)
+    endif
+
+    ; EquipItem consumes it: effects applied, item removed (an ingredient also teaches its first effect)
+    akActor.EquipItem(itemForm, false, true)
 
     if potionForm
-        if potionForm.IsFood()
-            PlayConsumeAnimation(akActor, true, itemForm)  ; true = food
-        else
-            PlayConsumeAnimation(akActor, false, itemForm) ; false = potion/drink
-        endif
-
-        ; EquipItem consumes it: effects applied, item removed
-        akActor.EquipItem(potionForm, false, true)
-
-        if potionForm.IsFood()
+        if isFood
             ; Survival owns hunger; it hears the meal through its verb
             SeverActionsNativeExt2.Verb_Send("survival", "ateFood", "||" + itemForm.GetFormID(), akActor)
             SkyrimNetApi.RegisterEvent("item_consumed", akActor.GetDisplayName() + " ate " + actualItemName, akActor, None)
@@ -1003,23 +1048,26 @@ Function UseItem_Execute(Actor akActor, String itemName)
             SeverActionsNativeExt2.Verb_Send("survival", "drank", "||" + itemForm.GetFormID(), akActor)
             SkyrimNetApi.RegisterEvent("item_consumed", akActor.GetDisplayName() + " drank " + actualItemName, akActor, None)
         endif
-        
     elseif ingredientForm
-        PlayConsumeAnimation(akActor, true, itemForm) ; food animation
-
-        ; EquipItem on an ingredient eats it (learns its first effect)
-        akActor.EquipItem(ingredientForm, false, true)
-
         ; A raw ingredient counts as food (Survival picks the amount)
         SeverActionsNativeExt2.Verb_Send("survival", "ateFood", "||" + itemForm.GetFormID(), akActor)
         SkyrimNetApi.RegisterEvent("item_consumed", akActor.GetDisplayName() + " ate raw " + actualItemName, akActor, None)
     else
-        Debug.Trace("[SeverActions_Loot] UseItem: Unknown consumable type for " + actualItemName + ", attempting EquipItem")
-        akActor.EquipItem(itemForm, false, true)
         SkyrimNetApi.RegisterEvent("item_consumed", akActor.GetDisplayName() + " used " + actualItemName, akActor, None)
     endif
-    
-    ResetToDefaultIdle(akActor)
+
+    if abFromInventoryPage
+        ; The new count before the idle's waits. The gatherer parses a negative FormID back to its 32 bits and
+        ; skips this when the page has moved on to another actor.
+        SeverActionsNative.Magelight_RefreshPage("inventory|" + akActor.GetFormID())
+    endif
+
+    if animate
+        if abFromInventoryPage
+            PlayConsumeAnimation(akActor, isFood, itemForm)
+        endif
+        ResetToDefaultIdle(akActor)
+    endif
 EndFunction
 
 Bool Function IsConsumable(Form akForm) Global
@@ -1519,6 +1567,20 @@ Event OnVerb_Items(String eventName, String strArg, Float numArg, Form sender)
             learnSys.LearnSpell(target, strParam)
         EndIf
 
+    ElseIf actionId == "studySpellTome"
+        ; target = the student; intParam = the tome's FormID (the Inventory page's row), else strParam names it.
+        SeverActions_SpellTeach studySys = (Self as Quest) as SeverActions_SpellTeach
+        If studySys
+            If intParam != 0
+                studySys.StudyTome(target, Game.GetFormEx(intParam) as Book)
+            Else
+                studySys.StudySpellTome(target, strParam)
+            EndIf
+            If target
+                SeverActionsNative.Magelight_RefreshPage("inventory|" + target.GetFormID())   ; the Learning view shows the study
+            EndIf
+        EndIf
+
     ElseIf actionId == "castSpell"
         ; target = caster (Subject), strParam = spell name, target2 = optional
         ; target NPC (empty/"0" = aimed cast in front of caster)
@@ -1552,8 +1614,13 @@ Event OnVerb_Items(String eventName, String strArg, Float numArg, Form sender)
         EndIf
 
     ElseIf actionId == "useItem"
-        ; target = the user, strParam = the item in their own pack.
-        UseItem_Execute(target, strParam)
+        ; target = the user, strParam = the item in their own pack; intParam = its FormID as signed decimal
+        ; (the Inventory page's exact row), 0 = resolve strParam by name.
+        If intParam != 0
+            UseItemForm_Execute(target, Game.GetFormEx(intParam))
+        Else
+            UseItem_Execute(target, strParam)
+        EndIf
 
     Else
         Debug.Trace("[SeverActions_Loot] OnVerb_Items: unknown actionId '" + actionId + "' (not a row this dispatcher carries)")

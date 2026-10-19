@@ -160,7 +160,7 @@ EndFunction
 ; gate on WaitingForPlayer == 0, so the flag alone drops them to base AI. The
 ; record's location TYPE must stay NEAR PACKAGE START (xEdit
 ; Scripts/FixWaitPackage.pas). Resolved by FormID: runtime EditorIDs are
-; stripped without po3 Tweaks (none on VR).
+; stripped without po3 Tweaks (an optional plugin).
 Int Property WAIT_IN_PLACE_PKG_FORMID = 0x05DA58 AutoReadOnly
 Package _waitInPlacePkg = None       ; lazy cache
 Bool _waitInPlacePkgWarned = False
@@ -194,10 +194,46 @@ Package Function GetWaitSandboxPackage()
     Return SandboxPackage
 EndFunction
 
+; ── SkyrimNet's Package Manager ──
+; With SkyrimNet's package API (Kernel_SkyrimNetPackageApi 1+) the manual wait and a follow-pool seat
+; are LISTED there (ListPackage): SkyrimNet shows the row and never runs it. The wait stays the
+; ActorUtil override and the follow the pool alias, so their precedence is PapyrusUtil's and the
+; alias's as before (a SkyrimNet-run package would outrank every ActorUtil override after loading
+; a save made by an older SkyrimNet, whose copy of them is empty). The player's Remove or Remove all ends what the row
+; stands for (OnSkyrimNetPackageRemoved); another mod's clear-all or a timed removal stopped nothing,
+; so the row is listed again while its state holds (reason 0 is also SA's own unlisting: ignored). Wait rows are persistent; follow rows are not, and the load sweep
+; lists every seat again (_ListPoolSeats).
+String Property PKG_OWNER = "SeverActions" AutoReadOnly   ; owner of every row SeverActions lists in SkyrimNet
+String Property WAIT_NAME_WIDE = "SeverActions_LeisureSandbox" AutoReadOnly
+String Property WAIT_NAME_TIGHT = "SeverActions_WaitPackage" AutoReadOnly
+String Property FOLLOW_ROW = "SeverActions_Follow" AutoReadOnly
+
+Function _ApplyWaitPackage(Actor akActor, Package akWaitPkg)
+    {Put the manual-wait package on akActor (the ActorUtil override) and list it in SkyrimNet.}
+    ActorUtil.AddPackageOverride(akActor, akWaitPkg, SandboxPackagePriority, 0)
+    If akWaitPkg == SandboxPackage
+        _ListWaitRow(akActor, WAIT_NAME_WIDE)
+    Else
+        _ListWaitRow(akActor, WAIT_NAME_TIGHT)
+    EndIf
+EndFunction
+
+Function _ListWaitRow(Actor akActor, String asName)
+    {List akActor's wait as asName (WAIT_NAME_WIDE or WAIT_NAME_TIGHT). No-op without SkyrimNet's package API.}
+    If !akActor || SeverActionsNativeExt2.Kernel_SkyrimNetPackageApi() < 1
+        Return
+    EndIf
+    String display = "Waiting (Remove ends the wait)"
+    If asName == WAIT_NAME_TIGHT
+        display = "Waiting in place (Remove ends the wait)"
+    EndIf
+    SkyrimNetApi.ListPackage(akActor, asName, PKG_OWNER, display, true, true)
+EndFunction
+
 Function RemoveWaitSandboxPackages(Actor akActor)
-    {Strip BOTH manual-wait packages: the toggle can flip mid-wait, and the
-     one the current setting doesn't name would stay a live priority-100
-     override. Removing a package the actor never had is a no-op.}
+    {Strip BOTH manual-wait packages and their SkyrimNet rows: the toggle can flip mid-wait, and
+     the one the current setting doesn't name would stay a live priority-100 override. Removing a
+     package the actor never had is a no-op.}
     If !akActor
         Return
     EndIf
@@ -208,17 +244,119 @@ Function RemoveWaitSandboxPackages(Actor akActor)
     If tightPkg
         ActorUtil.RemovePackageOverride(akActor, tightPkg)
     EndIf
+    If SeverActionsNativeExt2.Kernel_SkyrimNetPackageApi() >= 1
+        SkyrimNetApi.UnregisterPackageEx(akActor, WAIT_NAME_WIDE, PKG_OWNER)
+        SkyrimNetApi.UnregisterPackageEx(akActor, WAIT_NAME_TIGHT, PKG_OWNER)
+    EndIf
 EndFunction
 
-Event OnSkyrimNetPackageRemoved(Form akSender, Form akPackage)
-    {SkyrimNet removed a package from an actor. Re-verify with HasPackage
-     rather than comparing the passed form, which would mean resolving
-     SkyrimNet's FollowPlayer package by EditorID.}
-    Actor akActor = akSender as Actor
+Function _ListPoolFollow(Actor akActor)
+    {List akActor's follow-pool seat, its text by their role now (a call again updates it). No-op
+     without SkyrimNet's package API.}
+    If !akActor || SeverActionsNativeExt2.Kernel_SkyrimNetPackageApi() < 1
+        Return
+    EndIf
+    String display = "Following you (Remove stops the follow)"
+    If SeverActionsNativeExt.Native_GetIsFollower(akActor)
+        display = "Companion following you (Remove dismisses them)"
+    EndIf
+    SkyrimNetApi.ListPackage(akActor, FOLLOW_ROW, PKG_OWNER, display, true, false)
+EndFunction
+
+Function _UnlistPoolFollow(Actor akActor)
+    {Take akActor's follow row out of SkyrimNet's Package Manager. No-op without SkyrimNet's package API.}
+    If akActor && SeverActionsNativeExt2.Kernel_SkyrimNetPackageApi() >= 1
+        SkyrimNetApi.UnregisterPackageEx(akActor, FOLLOW_ROW, PKG_OWNER)
+    EndIf
+EndFunction
+
+Function _ListPoolSeats(Quest akPool)
+    {Load sweep's last step: list every follow seat (claim "follow") in SkyrimNet's Package Manager.}
+    If !akPool || SeverActionsNativeExt2.Kernel_SkyrimNetPackageApi() < 1
+        Return
+    EndIf
+    Int[] seats = SeverActionsNativeExt2.Pool_FilledIndices(akPool)
+    Int n = 0
+    Int k = 0
+    While k < seats.Length
+        If seats[k] < FOLLOW_ALIAS_POOL_SIZE && SeverActionsNativeExt2.FollowPool_OwnerOf(seats[k]) == "follow"
+            ReferenceAlias al = akPool.GetNthAlias(seats[k]) as ReferenceAlias
+            Actor a = None
+            If al
+                a = al.GetReference() as Actor
+            EndIf
+            If a
+                _ListPoolFollow(a)
+                n += 1
+            EndIf
+        EndIf
+        k += 1
+    EndWhile
+    If n > 0
+        Debug.Trace("[SeverActions_Follow] Listed " + n + " follow seat(s) in SkyrimNet's Package Manager")
+    EndIf
+EndFunction
+
+Event OnSkyrimNetPackageRemoved(String eventName, String strArg, Float numArg, Form sender)
+    {SkyrimNet removed a registry row from an actor (sender): strArg "<package>|<reason>|<owner>",
+     numArg the reason code (SkyrimNetApi.psc, package events).}
+    Actor akActor = sender as Actor
     If !akActor
         Return
     EndIf
-    VerifyCasualFollowPackage(akActor)
+    String[] parts = StringUtil.Split(strArg, "|")
+    String pkgName = ""
+    String owner = ""
+    If parts.Length > 0
+        pkgName = parts[0]
+    EndIf
+    If parts.Length > 2
+        owner = parts[2]
+    EndIf
+    Int reason = numArg as Int
+    If owner == PKG_OWNER && (pkgName == FOLLOW_ROW || pkgName == WAIT_NAME_WIDE || pkgName == WAIT_NAME_TIGHT)
+        ; Listed again since (the notice is delivered after the fact): nothing to act on.
+        If SkyrimNetApi.HasPackage(akActor, pkgName) > 0
+            Return
+        EndIf
+        Bool seated = SeverActionsNativeExt.Native_GetFollowAliasIndex(akActor) >= 0
+        If pkgName == FOLLOW_ROW
+            If reason == 1 || reason == 8
+                ; The player's Remove / Remove all: a companion is dismissed, a casual follow ends,
+                ; judged by the role they hold now.
+                If SeverActionsNativeExt.Native_GetIsFollower(akActor)
+                    Debug.Trace("[SeverActions_Follow] SkyrimNet removed the companion follow of " + akActor.GetDisplayName() + " (reason " + reason + ") - dismissing")
+                    SeverActions_FollowerManager fmDis = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+                    If fmDis
+                        fmDis.DismissCompanion(akActor)
+                    EndIf
+                ElseIf IsInFollowerSlot(akActor)
+                    Debug.Trace("[SeverActions_Follow] SkyrimNet removed the casual follow of " + akActor.GetDisplayName() + " (reason " + reason + ") - stopping the follow")
+                    StopFollowing(akActor)
+                EndIf
+            ElseIf (reason == 2 || reason == 4) && seated
+                _ListPoolFollow(akActor)
+            EndIf
+        ElseIf reason == 1 || reason == 8
+            ; The player's Remove ends the wait. Remove all on a seated actor also removed the
+            ; follow row, whose notice dismisses or stops them, which ends the wait too.
+            If IsSandboxing(akActor) && !(reason == 8 && seated && SeverActionsNativeExt2.Kernel_SkyrimNetPackageApi() >= 1)
+                Debug.Trace("[SeverActions_Follow] SkyrimNet removed the wait row of " + akActor.GetDisplayName() + " (reason " + reason + ") - ending the wait")
+                SeverActions_FollowerManager fmPkg = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+                If fmPkg
+                    fmPkg.CompanionFollow(akActor)
+                EndIf
+            EndIf
+        ElseIf (reason == 2 || reason == 4) && IsSandboxing(akActor)
+            _ListWaitRow(akActor, pkgName)
+        EndIf
+        Return
+    EndIf
+    ; Re-verify with HasPackage rather than trusting the notice: a legacy casual's
+    ; FollowPlayer may have been re-registered since.
+    If pkgName == "FollowPlayer"
+        VerifyCasualFollowPackage(akActor)
+    EndIf
 EndEvent
 
 Bool Function VerifyCasualFollowPackage(Actor akActor)
@@ -313,8 +451,8 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_SafeInteriorReEval", "OnSafeInteriorReEval")
     RegisterForModEvent("SeverActions_SafeInteriorReassert", "OnSafeInteriorReassert")
     RegisterForModEvent("SeverActions_SafeInteriorRelease", "OnSafeInteriorRelease")
-    ; A package removed by any route but ours would leave a legacy casual's
-    ; hasFollowPkg set, and cell catch-up would keep dragging them around.
+    ; SkyrimNet's removals: the Package Manager rows SA lists (see the handler), and a legacy
+    ; casual's FollowPlayer, whose loss would leave hasFollowPkg set for cell catch-up to drag.
     RegisterForModEvent("SkyrimNet_OnPackageRemoved", "OnSkyrimNetPackageRemoved")
     ; The camp muster and the persistence pools register in
     ; SeverActions_Enterprises.Maintenance (P9-03).
@@ -1158,6 +1296,7 @@ Function ClearFollowerSlot(Actor akActor)
         EndWhile
     EndIf
     _ClearLegacyFollowerSlot(akActor)
+    _UnlistPoolFollow(akActor)
 EndFunction
 
 Bool Function IsInFollowerSlot(Actor akActor)
@@ -1339,6 +1478,7 @@ Function SweepFollowAliasesOnLoad(Actor[] followers)
         EndIf
         ri += 1
     EndWhile
+    _ListPoolSeats(pool)
     Debug.Trace("[SeverActions_Follow] FollowPool load sweep complete")
 EndFunction
 
@@ -1469,8 +1609,8 @@ Function ReapplyFollowTracking(Actor[] followers)
     {Load re-apply for the roster (FollowerManager.RunDeferredMaintenance).
      Alias packages persist natively; this re-sets the follow LinkedRef, the
      wait sandbox, the ActivelyFollowing tag and the native follow flag, and
-     takes the flag and LinkedRef off a hands-off follower. Never registers a
-     SkyrimNet package.}
+     takes the flag and LinkedRef off a hands-off follower. The wait is listed
+     in SkyrimNet's Package Manager, never run by it.}
     Actor player = Game.GetPlayer()
     Int i = 0
     While i < followers.Length
@@ -1518,7 +1658,7 @@ Function ReapplyFollowTracking(Actor[] followers)
             Bool isWaiting = akActor.GetAV("WaitingForPlayer") > 0 || IsSandboxing(akActor)
             ; 4th arg 0 = no AI reset; the EvaluatePackage below picks it up.
             If isWaiting && SandboxPackage
-                ActorUtil.AddPackageOverride(akActor, GetWaitSandboxPackage(), SandboxPackagePriority, 0)
+                _ApplyWaitPackage(akActor, GetWaitSandboxPackage())
                 SetSandboxFlag(akActor, true)
             EndIf
 
@@ -1688,6 +1828,9 @@ Function StartFollowing(Actor akActor)
     AssignFollowerSlot(akActor)
     SeverActionsNative.Native_SetPackageState(akActor, true, false, false)
     akActor.EvaluatePackage()
+    If SeverActionsNativeExt.Native_GetFollowAliasIndex(akActor) >= 0   ; a pool seat (overflow shows as ActorUtil rows)
+        _ListPoolFollow(akActor)
+    EndIf
 
     ; ENGAGED tag in prompts.
     SetActivelyFollowing(akActor, true)
@@ -1785,6 +1928,9 @@ Function CompanionStartFollowingHeld(Actor akActor, Int aiHeld)
 
     ; The alias packages apply now and re-apply on cell load. No RegisterPackage.
     AssignFollowerSlot(akActor)
+    If SeverActionsNativeExt.Native_GetFollowAliasIndex(akActor) >= 0   ; a pool seat (overflow shows as ActorUtil rows)
+        _ListPoolFollow(akActor)
+    EndIf
 
     SetActivelyFollowing(akActor, true)
 
@@ -1885,7 +2031,7 @@ Function SandboxHeld(Actor akActor, Int aiHeld, Bool abStateEvent)
     ; Flags 0 skips the AI reset. GetWaitSandboxPackage picks Wait In Place or
     ; the wide sandbox.
     Package waitPkg = GetWaitSandboxPackage()
-    ActorUtil.AddPackageOverride(akActor, waitPkg, SandboxPackagePriority, 0)
+    _ApplyWaitPackage(akActor, waitPkg)
 
     ; Now the follow can drop: the sandbox already covers them.
     SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")

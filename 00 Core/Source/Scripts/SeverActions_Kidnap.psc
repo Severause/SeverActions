@@ -629,14 +629,29 @@ Function KidnapTick(Bool abFromLoad = false)
             phase = SeverActionsNativeExt.Native_Kidnap_GetPhase(v)
         EndIf
 
-        ; A SkyrimNet package on a captive rides the eval hook and outranks the whole hold:
+        ; A SkyrimNet package on a captive rides the eval hook and can outrank the hold:
         ; FollowPlayer (the LLM's own StartFollow; is_kidnap_victim gates only SA actions) or
-        ; TalkToPlayer (lands when anyone talks to them). Clear the SkyrimNet stack every
-        ; tick; the sit package / pin re-asserts on re-eval.
-        If phase >= 2 && (SkyrimNetApi.HasPackage(v, "FollowPlayer") > 0 || SkyrimNetApi.HasPackage(v, "TalkToPlayer") > 0)
-            SkyrimNetApi.ClearAllPackages(v)
-            SkyrimNetApi.CancelPendingPackageTasks(v)
-            v.EvaluatePackage()
+        ; TalkToPlayer (lands when anyone talks to them). With SkyrimNet's package API the
+        ; captive is HELD (every registry package paused, new ones stored unapplied, handed
+        ; back by _ReleaseCaptiveHold); the tick re-holds one an old save cleared instead.
+        ; Without it, clear the SkyrimNet stack every tick; the sit package / pin re-asserts
+        ; on re-eval.
+        If phase >= 2
+            If SeverActionsNativeExt2.Kernel_SkyrimNetPackageApi() >= 1
+                If !SkyrimNetApi.IsHoldingPackages(v, "SeverActions")
+                    SkyrimNetApi.HoldPackages(v, "SeverActions")
+                    ; Freed while this tick ran: the release (after the entry's clear) may
+                    ; already be past, and a hold left now is saved and never released.
+                    If SeverActionsNativeExt.Native_Kidnap_GetPhase(v) < 2
+                        SkyrimNetApi.ReleaseHeldPackages(v, "SeverActions")
+                    EndIf
+                    v.EvaluatePackage()
+                EndIf
+            ElseIf SkyrimNetApi.HasPackage(v, "FollowPlayer") > 0 || SkyrimNetApi.HasPackage(v, "TalkToPlayer") > 0
+                SkyrimNetApi.ClearAllPackages(v)
+                SkyrimNetApi.CancelPendingPackageTasks(v)
+                v.EvaluatePackage()
+            EndIf
         EndIf
 
         If phase == 3
@@ -2780,6 +2795,7 @@ Function _EscapeCaptive(Actor akVictim)
     EndIf
     _DeleteKidnapHomeMarker(akVictim)
     SeverActionsNativeExt.Native_Kidnap_Clear(akVictim)
+    _ReleaseCaptiveHold(akVictim)
 
     If escRestraint
         ; Restraint: no "fled home" (a never-moved restraint has no home marker).
@@ -3782,6 +3798,7 @@ Function _AbortKidnapForVictim(Actor akVictim, Actor akKidnapper)
     EndIf
     _DeleteKidnapHomeMarker(akVictim)
     SeverActionsNativeExt.Native_Kidnap_Clear(akVictim)
+    _ReleaseCaptiveHold(akVictim)
     Debug.Trace("[SeverActions_Kidnap] Kidnap: unwound for " + akVictim.GetDisplayName() + " - kidnapper dead/unresolvable (phase " + deadPh + ")")
 EndFunction
 
@@ -3809,6 +3826,7 @@ Function _AbortKidnap(Actor akKidnapper)
     _UnbindCaptive(victim)
     _DeleteKidnapHomeMarker(victim)
     SeverActionsNativeExt.Native_Kidnap_Clear(victim)
+    _ReleaseCaptiveHold(victim)
     If abortWasRestraint
         SkyrimNetApi.RegisterEvent("kidnap_aborted", \
             akKidnapper.GetDisplayName() + " gave up on restraining " + victim.GetDisplayName() + ".", \
@@ -3878,12 +3896,17 @@ Function _PacifyCaptive(Actor akVictim)
     If arrestP && arrestP.dunPrisonerFaction
         akVictim.AddToFaction(arrestP.dunPrisonerFaction)
     EndIf
-    ; SkyrimNet applies its packages from a package-eval hook that outranks every ActorUtil
-    ; override and alias package (its priority only ranks SkyrimNet's own), so a victim
-    ; carrying its FollowPlayer walks to the player whenever unpinned. Clear SkyrimNet's
-    ; stack; KidnapTick heals a mid-captivity re-issue.
-    SkyrimNetApi.ClearAllPackages(akVictim)
-    SkyrimNetApi.CancelPendingPackageTasks(akVictim)
+    ; SkyrimNet applies its packages from a package-eval hook that runs after the engine's and
+    ; the aliases' pick, so a victim carrying its FollowPlayer walks to the player whenever
+    ; unpinned. Clear SkyrimNet's stack; KidnapTick heals a mid-captivity re-issue. With
+    ; SkyrimNet's package API, hold it instead, so other plugins' packages come back when
+    ; _ReleaseCaptiveHold releases them.
+    If SeverActionsNativeExt2.Kernel_SkyrimNetPackageApi() >= 1
+        SkyrimNetApi.HoldPackages(akVictim, "SeverActions")
+    Else
+        SkyrimNetApi.ClearAllPackages(akVictim)
+        SkyrimNetApi.CancelPendingPackageTasks(akVictim)
+    EndIf
 EndFunction
 
 Bool Function _RejectIfBoundActor(Actor akActor, String verbPhrase)
@@ -3955,6 +3978,7 @@ Function ReleaseCaptive(Actor akActor, String targetName)
     _UnbindCaptive(victim)
     _DeleteKidnapHomeMarker(victim)
     SeverActionsNativeExt.Native_Kidnap_Clear(victim)
+    _ReleaseCaptiveHold(victim)
 
     If relPhase == 1
         ; Approach-only: no bonds yet, so no "freed from captivity".
@@ -3967,6 +3991,22 @@ Function ReleaseCaptive(Actor akActor, String targetName)
         akActor.GetDisplayName() + " has freed " + victim.GetDisplayName() + " from captivity.", \
         akActor, victim)
     Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.hasBeenFreed", ("" + victim.GetDisplayName())))
+EndFunction
+
+Function _ReleaseCaptiveHold(Actor akVictim)
+    {Hand back the SkyrimNet packages the captivity held. Called after Native_Kidnap_Clear, so a
+     KidnapTick past its phase read sees the cleared entry once it has held (it re-checks). The
+     FollowPlayer and dialogue packages are dropped first: registered on a captive, they would
+     apply the moment the hold ends.}
+    If !akVictim || SeverActionsNativeExt2.Kernel_SkyrimNetPackageApi() < 1
+        Return
+    EndIf
+    If SkyrimNetApi.IsHoldingPackages(akVictim, "SeverActions")
+        SkyrimNetApi.UnregisterPackage(akVictim, "FollowPlayer")
+        SkyrimNetApi.UnregisterPackage(akVictim, "TalkToPlayer")
+        SkyrimNetApi.UnregisterPackage(akVictim, "TalkToNPC")
+        SkyrimNetApi.ReleaseHeldPackages(akVictim, "SeverActions")
+    EndIf
 EndFunction
 
 Function _UnbindCaptive(Actor akVictim)

@@ -1,6 +1,6 @@
 customCategory: magic
 name: LearnSpell
-description: "Use only when {{ player.name }} offers to teach the speaker a named spell and the speaker accepts in this line: {{ player.name }} is the teacher, the speaker the student, and the lesson starts now. Not for wishing to learn someday, admiring {{ player.name }}'s magic, or the speaker teaching (TeachSpell). {{ player.name }} must know the spell."
+description: "Use only when {{ player.name }} offers to teach the speaker a named spell and the speaker accepts in this line: {{ player.name }} is the teacher, the speaker the student, and the lesson starts now. Not for wishing to learn someday, admiring {{ player.name }}'s magic, or the speaker teaching (TeachSpell). Spells {{ player.name }} could teach the speaker: {{ sever_player_teachable_spells(npc.UUID) }}. One far beyond the speaker may still be tried; they know it, and it can go badly."
 questEditorId: SeverActions
 scriptName: SeverActions_SpellTeach
 executionFunctionName: learnspell
@@ -39,6 +39,15 @@ eligibilityRules:
       - decoratorName: "is_kidnap_victim"
         arguments: ["currentActor"]
         comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Only while the player knows a spell this NPC could be taught (SpellLessons; '(not yet known)' while the list
+      # is first worked out). Custom decorator, so a STRING compare.
+      - decoratorName: "sever_player_teachable_spells"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
         expectedValue: ""
     logicalOperator: "AND"
     required: true

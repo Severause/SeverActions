@@ -1,6 +1,6 @@
 customCategory: magic
 name: Magic
-description: "Category: magic cast or taught right now, outside a fight: cast a spell the speaker knows (heal a wound, light the way, raise a ward, strike a beast), teach the player a spell or learn one from them, or, for a master of the Voice, teach a word of a Shout. Only when the cast or the lesson happens in this line; readying a spell 'in case', boasts and lessons promised for later are words. Attacking a person to start a fight is Combat."
+description: "Category: magic cast or taught right now, outside a fight: cast a spell the speaker knows (heal a wound, light the way, raise a ward, strike a beast), teach the player a spell or learn one from them, start studying a spell tome they carry, or, for a master of the Voice, teach a word of a Shout. Only when the cast or the lesson happens in this line; readying a spell 'in case', boasts and lessons promised for later are words. Attacking a person to start a fight is Combat."
 enabled: true
 
 eligibilityRules:

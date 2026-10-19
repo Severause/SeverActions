@@ -633,20 +633,32 @@ Int Function RowFlags(String asRow, String asType, Int aiEntry)
     If Math.LogicalAnd(f, FLAG_DISABLEDWHEN) != 0 && RowDisabledNow(SeverActions_ModuleBase.VerbField(asRow, ROW_ID))
         Return OPTION_FLAG_DISABLED
     EndIf
-    If asType == "keymap" && KeymapAbsentModule(asRow) != ""
+    If (asType == "keymap" || asType == "setting") && KeymapAbsentModule(asRow) != ""
         Return OPTION_FLAG_DISABLED
     EndIf
     Return OPTION_FLAG_NONE
 EndFunction
 
 String Function KeymapAbsentModule(String asRow)
-    {The player-facing module whose absence refuses a keymap row's hotkey, "" when it works or the row is no
-     keymap. Only a Modular install asks the DLL: nothing is refused outside it (DR7).}
-    If SeverActions_ModuleBase.VerbField(asRow, ROW_TYPE) != "keymap" || !SeverActionsNativeExt2.Module_IsModular()
+    {The player-facing module whose absence refuses a keymap row's hotkey, or a Hold row's (the <Key>Mod setting
+     under it), "" when it works or the row is neither. Only a Modular install asks the DLL: nothing is refused
+     outside it (DR7).}
+    String rowType = SeverActions_ModuleBase.VerbField(asRow, ROW_TYPE)
+    If rowType != "keymap" && rowType != "setting"
         Return ""
     EndIf
-    ; a keymap row's id is its hotkey id
-    Return SeverActionsNativeExt2.Hotkey_AbsentModule(SeverActions_ModuleBase.VerbField(asRow, ROW_ID))
+    ; a keymap row's id is its hotkey id, a Hold row's its <Key>Mod settings key, which the DLL also takes
+    String rowId = SeverActions_ModuleBase.VerbField(asRow, ROW_ID)
+    If rowType == "setting"
+        Int at = StringUtil.Find(rowId, "KeyMod")
+        If at < 0 || at != StringUtil.GetLength(rowId) - 6
+            Return ""
+        EndIf
+    EndIf
+    If !SeverActionsNativeExt2.Module_IsModular()
+        Return ""
+    EndIf
+    Return SeverActionsNativeExt2.Hotkey_AbsentModule(rowId)
 EndFunction
 
 Bool Function RowDisabledNow(String asRowId)

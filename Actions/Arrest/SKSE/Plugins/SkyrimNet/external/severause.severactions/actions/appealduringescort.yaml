@@ -36,7 +36,7 @@ eligibilityRules:
       # Only the prisoner a guard is marching to jail (ArrestState 3, the one
       # state AppealDuringEscort_Internal accepts; a jailed prisoner is not),
       # read by FormID: the Arrested / Jailed factions resolve by EditorID only
-      # with po3's retention (none on VR). Custom decorator: a STRING compare.
+      # with po3's retention (optional). Custom decorator: a STRING compare.
       - decoratorName: "sever_is_escorted_prisoner"
         arguments: ["currentActor"]
         comparisonOperator: "!="

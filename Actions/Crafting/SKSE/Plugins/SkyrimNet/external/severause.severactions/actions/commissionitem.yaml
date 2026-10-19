@@ -40,8 +40,8 @@ eligibilityRules:
         arguments:
           - currentActor
           # JobBlacksmithFaction (Skyrim.esm 0x0005091D) by hex FormID — the
-          # VR-safe form (name lookup needs po3 "Keep EditorIDs", absent on
-          # VR, and failed closed: blacksmiths never matched). Mirrors the
+          # po3-free form (name lookup needs po3 "Load EditorIDs", optional,
+          # and failed closed: blacksmiths never matched). Mirrors the
           # documented fix in craftitem.yaml.
           - "0x0005091D"
         comparisonOperator: "=="

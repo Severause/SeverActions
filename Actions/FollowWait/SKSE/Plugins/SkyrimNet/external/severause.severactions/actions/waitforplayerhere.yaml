@@ -26,7 +26,7 @@ eligibilityRules:
   #                        what covers a CASUAL follower — StartFollowing sets
   #                        neither teammate nor the roster flag. The earlier
   #                        is_in_faction("SeverActions_ActivelyFollowing")
-  #                        arm resolved by EditorID, which is empty on VR /
+  #                        arm resolved by EditorID, which is empty
   #                        without po3 Tweaks, so the action silently left
   #                        eligibility for every casual follower there.
   # Custom decorators are STRING-compared: gate on != "" (CLAUDE.md).

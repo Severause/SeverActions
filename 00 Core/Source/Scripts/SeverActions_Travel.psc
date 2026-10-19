@@ -163,8 +163,8 @@ Function DisengageOverridesForTravel(Actor akNPC, String asTag)
 EndFunction
 
 Quest Function GetTravelPoolQuest()
-    {The 24-alias traveler pool quest SeverActions_TravelQuest, by FormID (VR strips
-     runtime EditorIDs).}
+    {The 24-alias traveler pool quest SeverActions_TravelQuest, by FormID (runtime
+     EditorIDs need po3 Tweaks).}
     Return Game.GetFormFromFile(0x0016AC00, "SeverActions.esp") as Quest
 EndFunction
 

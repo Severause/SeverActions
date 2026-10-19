@@ -8,7 +8,7 @@ Scriptname SeverActions_Courier extends Quest
  Calls SeverActions_TravelCore statically, legal because travelcore is in this bundle's
  requires closure (DR2).}
 
-; Records by FormID (SeverActions.esp; the VR rule)
+; Records by FormID (SeverActions.esp; EditorIDs need po3)
 Int Property FID_TRAVEL_TARGET_KW = 0x076F5F AutoReadOnly   ; SeverTravelKeyword (Travel.TravelTargetKeyword's fill)
 Int Property FID_SANDBOX_PKG      = 0x0BDDFF AutoReadOnly   ; SeverActions_LeisureSandbox (the loiter fallback)
 
@@ -258,7 +258,7 @@ EndFunction
 Bool Function CourierBlockedWorldspace(Actor akPlayer)
     {True in an exterior worldspace a courier could never reach: underground zones, other
      planes and roadless hidden areas (listed below; IsInInterior covers real interiors).
-     By FormID, never EditorID (VR); an absent DLC's entries are None.}
+     By FormID, never EditorID (needs po3); an absent DLC's entries are None.}
     WorldSpace ws = akPlayer.GetWorldSpace()
     If !ws
         Return false

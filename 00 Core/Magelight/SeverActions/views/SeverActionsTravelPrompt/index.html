@@ -102,6 +102,9 @@
     border-radius: 3px; box-shadow: 0 12px 32px rgba(0,0,0,0.6);
     display: flex; flex-direction: column;
   }
+  .tp-suggest::-webkit-scrollbar { width: 5px; }
+  .tp-suggest::-webkit-scrollbar-track { background: transparent; }
+  .tp-suggest::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--sa-ink-mute) 30%, transparent); border-radius: 3px; }
   .tp-suggest-row {
     text-align: left; padding: 0.375rem 0.625rem; background: none; border: none;
     border-bottom: 1px solid color-mix(in srgb, var(--accent-warm) 8%, transparent);

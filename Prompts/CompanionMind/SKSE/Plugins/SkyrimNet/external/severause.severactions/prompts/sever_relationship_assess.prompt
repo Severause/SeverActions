@@ -53,11 +53,16 @@ Recent dialogue between {{ npc.name }} and {{ player.name }}, oldest first (a li
 {% if length(newEvents) > 0 %}
 {% for ev in newEvents %}
 {% if loop.index >= length(newEvents) - 30 %}
-[{{ ev.gameTimeStr }}] {{ default(ev.data.speaker, player.name) }}{% if existsIn(ev.data, "listener") %} to {{ ev.data.listener }}{% elif existsIn(ev.data, "target") %} to {{ ev.data.target }}{% endif %}: {{ ev.data.dialogue }}
+[e:{{ ev.id }}] [{{ ev.gameTimeStr }}] {{ default(ev.data.speaker, player.name) }}{% if existsIn(ev.data, "listener") %} to {{ ev.data.listener }}{% elif existsIn(ev.data, "target") %} to {{ ev.data.target }}{% endif %}: {{ ev.data.dialogue }}
 {% endif %}
 {% endfor %}
 {% else %}
 No new dialogue between them since the last assessment.
+{% endif %}
+
+{% set recent_foes = sever_recent_foes(npcUUID) %}
+{% if recent_foes != "" %}
+Recent fights - these were hostile to {{ player.name }} and their companions on their own account and fought them: {{ recent_foes }}. A battle account that calls one of them "not actively engaged in combat" means they fell before striking a blow, not that they were a bystander.
 {% endif %}
 
 {# Memories are never id-gated (the best matches are often old, low-id ones), so the memory watermark goes back unchanged. #}
@@ -66,7 +71,7 @@ No new dialogue between them since the last assessment.
 {% if length(relMemories) > 0 %}
 Memories most relevant to {{ npc.name }}'s relationship with {{ player.name }}:
 {% for m in relMemories %}
-- {{ m.text }}
+- {% if existsIn(m, "id") %}[m:{{ m.id }}] {% endif %}{{ m.text }}
 {% endfor %}
 {% else %}
 Recent memories for {{ npc.name }}:
@@ -87,7 +92,7 @@ Last diary entry:
 {% set diaryId = to_number(to_string(diary.id)) %}
 {% endif %}
 {% if diary and diary.content and diaryId > lastDiaryId %}
-[{{ diary.entry_date_str }}] {{ diary.content }}{% if diary.emotion %} ({{ diary.emotion }}){% endif %}
+[d:{{ diary.id }}] [{{ diary.entry_date_str }}] {{ diary.content }}{% if diary.emotion %} ({{ diary.emotion }}){% endif %}
 {% else %}
 No new diary entries since last assessment.
 {% endif %}
@@ -125,13 +130,18 @@ Include a "blurb" — a 3-5 sentence summary (40-80 words) of how {{ npc.name }}
 - Rapport between -30 and +30 reads reserved, ambivalent, still deciding. That is a legitimate place to be and most companions live there for a long time; do not inflate it into warmth or resentment to make it sound alive.
 - Low rapport reads as distance, guardedness, disappointment — not hostility. Insults and contempt belong only below -60, and only with a concrete grievance the blurb names.
 - High rapport reads as warmth with independent judgment — someone who likes them and still disagrees, still has their own life, still notices their flaws. Not devotion, not servitude.
+- If the profile above shows their current feelings (How You Feel About {{ player.name }}), the player may have corrected them. Start from that text: keep what still holds, change only what the new material changes, and never bring back a grievance it no longer carries.
 - The relationship is not fixed, and the blurb should feel that way — but NEVER spell out what would change their mind. The player can read this blurb, and a stated price ("if they apologised…", "one more rescue and…") becomes a recipe. Convey the openness through tone, not terms; and some wounds are simply not for mending soon — it is fine for a blurb to offer nothing.
 The blurb should reflect the TOTAL relationship state, not just the latest change. If all changes are 0, still write a blurb reflecting the current state (voice example — never reuse its content: "You're still sizing them up — that reckless charge into the barrow earned a grudging nod, but you're not convinced they won't get you both killed.").
 
+Include a "cause": when any number moves, a few words naming the specific thing that moved it (for rapport, trust or loyalty, something in the NEW dialogue or diary), as the companion would put it (e.g. "you pulled me out of the river", "you mocked my faith"); empty when nothing moved. It is shown to the player beside the change.
+
+Include "sources": the tags of at most 3 lines above, written without brackets (like "e:1234" for dialogue, "m:56" for a memory, "d:7" for the diary): first the NEW line or diary entry behind any change, then what most shaped the blurb; [] when nothing stood out. Use only tags shown above. Tags go only in "sources", never in the blurb or the cause. The player can see these lines beside the change.
+
 Respond with ONLY this JSON. No spaces after colons. No explanation. One line.
 Include "eid" with the value {{ maxEventId }}, "mid" with the value {{ maxMemoryId }}, and "did" with the value {{ diaryId }} so the system knows which events, memories, and diary entries were assessed:
-{% raw %}{"rapport":0,"trust":0,"loyalty":0,"mood":0,"blurb":"","eid":0,"mid":0,"did":0}{% endraw %}
+{% raw %}{"rapport":0,"trust":0,"loyalty":0,"mood":0,"blurb":"","cause":"","sources":[],"eid":0,"mid":0,"did":0}{% endraw %}
 {% else %}
-{% raw %}{"rapport":0,"trust":0,"loyalty":0,"mood":0,"blurb":"","eid":0,"mid":0,"did":0}{% endraw %}
+{% raw %}{"rapport":0,"trust":0,"loyalty":0,"mood":0,"blurb":"","cause":"","sources":[],"eid":0,"mid":0,"did":0}{% endraw %}
 {% endif %}
 [ end user ]

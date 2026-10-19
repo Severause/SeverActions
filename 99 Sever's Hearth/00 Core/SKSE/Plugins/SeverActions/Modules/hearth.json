@@ -1,6 +1,6 @@
 {
     "id":  "hearth",
-    "version":  "4.3.0",
+    "version":  "4.5.0",
     "name":  "Sever\u0027s Hearth",
     "group":  "World",
     "requires":  [
@@ -18,5 +18,8 @@
                   "PromoteCampToBase.yaml",
                   "UpgradeBase.yaml",
                   "camping.yaml"
-              ]
+              ],
+    "scriptStamps":  {
+                         "SeversHearth_Camp":  1792022105
+                     }
 }

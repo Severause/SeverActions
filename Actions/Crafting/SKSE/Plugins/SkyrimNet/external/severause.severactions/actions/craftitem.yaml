@@ -32,11 +32,11 @@ eligibilityRules:
         arguments:
           - currentActor
           # JobBlacksmithFaction (Skyrim.esm 0x0005091D). The hex FormID
-          # string is the VR-safe form: SkyrimNet resolves a faction name
+          # string is the po3-free form: SkyrimNet resolves a faction name
           # via LookupByEditorID, which returns nothing for FACT records
-          # unless po3 Tweaks ("Keep EditorIDs") is installed -- and there
-          # is no po3 build for Skyrim VR, so the EditorID form failed
-          # closed there (blacksmiths could never craft). A hex string is
+          # unless po3 Tweaks ("Load EditorIDs") is installed -- an optional
+          # plugin, so the EditorID form failed
+          # closed without it (blacksmiths could never craft). A hex string is
           # converted to numeric and takes the FormID path instead, which
           # works everywhere. Skyrim.esm sits at index 00, so the runtime
           # FormID equals this local one.

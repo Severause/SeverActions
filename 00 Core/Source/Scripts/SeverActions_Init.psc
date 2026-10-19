@@ -9,10 +9,14 @@ Scriptname SeverActions_Init extends ReferenceAlias
 ; === Initialization ===
 
 ; K0: bumped together with the DLL's KernelSession::kAbiVersion whenever a native's signature or
-; meaning changes in a way an older pex must not run against. 29: the follow paths ask Custody_IsHeld
-; and the parley lane calls Parley_Arm / Parley_Disarm / Parley_SetFlags, which an older DLL does
-; not register.
-Int Property KERNEL_ABI = 29 AutoReadOnly
+; meaning changes in a way an older pex must not run against. 33: FollowerManager asks
+; RecruitRequest_ShouldAsk and the rest, which an older DLL does not register (unbound, every ordered
+; recruit would skip the ask and DeclineCompanionRequest would do nothing). 32: the outfit scripts ask
+; Native_Outfit_PieceGuard, which an older DLL does not register (unbound it reads 0 and Undress
+; would strip Devious Devices). 31: Familiarity calls Familiarity_SetBlurb
+; and Familiarity_ImportBlurb, which an older DLL does not register (unbound, every reputation impression
+; would be dropped), and CompanionMind calls Bond_NoteSources.
+Int Property KERNEL_ABI = 33 AutoReadOnly
 
 Event OnInit()
     Debug.Trace("[SeverActions] OnInit - First time initialization")

@@ -6,13 +6,12 @@
 </p>
 
 <p align="center">
-  <code>118 Actions</code> &nbsp;&middot;&nbsp; <code>78 Prompt Templates</code> &nbsp;&middot;&nbsp;
-  <code>~62,000 Lines of Papyrus</code> &nbsp;&middot;&nbsp; <code>~148,000 Lines of C++</code>
+  <code>119 Actions</code> &nbsp;&middot;&nbsp; <code>79 Prompt Templates</code>
 </p>
 
 <p align="center">
   <code>Skyrim SE &middot; AE &middot; VR</code> &nbsp;&middot;&nbsp; <code>SkyrimNet 0.25+</code> &nbsp;&middot;&nbsp;
-  <code>Magelight UI 0.30.5 included</code>
+  <code>Magelight UI 1.3.0 included</code>
 </p>
 
 <p align="center">
@@ -136,7 +135,7 @@ Opens). Every page has a **?** button that explains it.
 
 | Page | What it is for |
 |---|---|
-| **Dashboard** | Your character, alerts that need you, gossip and recent events |
+| **Dashboard** | Your character and your party, alerts that need you, gossip and recent events |
 | **Companions** | Each follower's orders, schedule, combat style, bonds, portrait and memories |
 | **Bio Blocks** | Reusable character traits for NPCs and factions |
 | **Inventory** | Items, stats and spells for you and each follower |
@@ -178,7 +177,9 @@ Opens). Every page has a **?** button that explains it.
 - **Portraits**: press Add portrait on the Companions page and pick any picture with the menu's own file browser;
   Adjust frames it. A copy is kept per install, so that NPC shows it in every save, and your file is untouched.
   Retainers, NPCs you gave a home and your own character (on the Dashboard, per playthrough) can have one too; NPCs
-  spawned during play cannot.
+  spawned during play cannot. Without one, SeverActions takes its own chest-up picture of you, your companions and the
+  NPCs it keeps track of when you open the menu near them, and shows that instead; the Dashboard's party row shows
+  you and your companions this way.
 - **Bio Blocks**: reusable character traits (a quirk, a backstory beat, a way of speaking) you write once and give to
   any NPC, your companions or a whole faction. The library is shared by all saves; who carries which block is kept per
   save. Import and export it as JSON. Other mods can add read-only blocks; their guide installs to
@@ -277,7 +278,9 @@ Opens). Every page has a **?** button that explains it.
 - **Hotkeys**: Toggle Follow, Wait Here / Resume, Dismiss Companion, Set Companion, Assign Home Here, Clear Home
   (Target), Set Up Camp, Small Camp, Drop Named Marker, Tie / Untie NPC, Make NPC Stand Up, Use Furniture, Make NPC
   Yield, Undress NPC, Dress NPC. All start unbound: bind them in Settings → Interface → Hotkeys or the MCM (Small Camp
-  only in the menu). Keyboard, mouse and gamepad buttons all work.
+  only in the menu). Keyboard, mouse and gamepad buttons all work. A hotkey, the menu key and the quick wheel key can
+  also need Shift, Ctrl or Alt held, so one key can carry two actions: pick it with the Hold button beside the key in the
+  menu (or hold it while capturing), or in the MCM's Hold dropdown (the menu key's Require Shift there).
 - They act on your crosshair target; **Target Mode** (MCM Hotkeys page) can switch to Nearest NPC or Last Talked To.
   They don't fire while a menu or dialogue is open, or while you are sitting.
 - **The quick wheel** is SeverActions' own. Bind **Open Quick Wheel** first (it is unbound on flat Skyrim), then choose
@@ -491,7 +494,7 @@ Four layers, each doing what it is best at:
 1. **Action YAMLs** declare what the AI may do and when it is eligible.
 2. **Prompt templates** put live state into the AI's context.
 3. **Papyrus** owns quest aliases, packages and anything the engine only exposes to scripts.
-4. **Native SKSE plugins** (~148k lines of C++: the main one, and a smaller one for Sever's Hearth) own the data, the
+4. **Native SKSE plugins** (the main one, and a smaller one for Sever's Hearth) own the data, the
    heavy scans, and everything performance- or thread-sensitive.
 
 State lives in the **SKSE co-save** (about 50 records, each versioned) rather than in Papyrus properties, so updates
@@ -536,6 +539,9 @@ See `CLAUDE.md` for conventions, `RELEASING.md` for the release procedure and `a
 - **[SkyrimNet](https://www.nexusmods.com/skyrimspecialedition/mods/148913)** by MinLL, which this builds on
 - **Magelight UI**, bundled, draws the in-game menu. It uses the Ultralight runtime; the licences and notices install to
   `Data/SKSE/Plugins/Magelight/license`
+- The native plugins are built with CommonLibSSE-NG (MinLL's CommonLibVR), DirectXTex, DirectXTK, DirectXMath,
+  OpenVR, fmt, spdlog, xbyak, nlohmann/json, rapidcsv and MinHook, and include Tailor's MIT API header; their
+  licences install to `Data/SKSE/Plugins/SeverActions/Licenses`
 - Map artwork by Caro Tuts ([Nexus #62705](https://www.nexusmods.com/skyrimspecialedition/mods/62705))
 - Hold sigils derived from CoMAP map markers by **Parapets** ([Nexus #56123](https://www.nexusmods.com/skyrimspecialedition/mods/56123)) and the Cities of the North marker pack, re-tinted to a parchment palette for the World page
 - Imperial Fiscal Levy armour **meshes and textures** by **NordwarUA** ([New Legion, Nexus #30468](https://www.nexusmods.com/skyrimspecialedition/mods/30468) — Base and Textures HD archives), recoloured to a Treasury livery for the Final Audit detail

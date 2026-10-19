@@ -21,7 +21,7 @@ defaultPriority: 6
 eligibilityRules:
   - conditions:
       # Only a debtor. sever_is_debtor reads the debt store by FormID (a
-      # faction named by EditorID never resolves on VR). Custom decorator, so
+      # faction named by EditorID needs po3 Tweaks). Custom decorator, so
       # a STRING compare: "" = owes nothing.
       - decoratorName: "sever_is_debtor"
         arguments: ["currentActor"]

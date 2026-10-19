@@ -1,0 +1,23 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{# An NPC the player has just asked to become a companion through the hotkey, the quick wheel or the Actions page
+   (RecruitRequests.h), while the request waits for an answer. Action rules render only where an action can be
+   chosen (_actionsOffered: NPC dialogue and the drill-down). #}
+{% set _actionsOffered = render_mode == "action" or (render_mode == "full" and default(responseTarget.type, "none") != "none") %}
+{% if player and player.UUID and actorUUID != player.UUID and sever_recruit_request(actorUUID) != "" %}
+{% set actor = decnpc(actorUUID) %}
+{% set playerName = player.name %}
+{% set subj = actor.subjectivePronoun %}
+{% set declines = sever_recruit_declines(actorUUID) %}
+## {{ playerName }}'s Request
+{{ playerName }} has just asked {{ actor.name }} to travel with them as a companion. Nothing is settled yet: {{ actor.name }} decides, in character.
+- What weighs on it: how well {{ subj }} knows and trusts {{ playerName }}, what {{ subj }} would leave behind (work, family, a home, duties), whether a life on the road suits {{ actor.name }}, and what {{ playerName }} offers.
+- {{ actor.name }} may ask questions or name terms first, and give an answer once {{ playerName }} replies.
+{% if declines != "" %}
+- {{ actor.name }} has turned {{ playerName }} down before ({{ declines }}), and this is {{ playerName }} asking again. Saying yes now takes a good reason: something that has changed since then, or an offer better than the last one. Without one, {{ actor.name }} says no again, and may have less patience for being asked.
+{% endif %}
+{% if _actionsOffered %}
+- Once {{ subj }} has decided, select the **Companionship** action category, then **SetCompanion** to join {{ playerName }}, or **DeclineCompanionRequest** to turn it down. While still asking or weighing it, just talk.
+- The line that gives the answer says why, in character.
+{% endif %}
+{% endif %}
+{% endif %}

@@ -59,6 +59,58 @@ Function CastSpell_Execute(Actor akCaster, String spellName, String targetName, 
     _DispatchOneCast(akCaster, spellToCast, targetRef, bDualCasting, bUseMagicka, bHealToFull, markerPlaced)
 EndFunction
 
+Bool Function _RollMisfire(Actor akCaster, Spell akSpell)
+    {True when an unstable spell misfired (the cast is off). The spell-failure settings scale it; off = never.}
+    Float mult = 1.0
+    SeverActions_SpellTeach teach = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_SpellTeach
+    If teach
+        If teach.EnableFailureSystem
+            mult = teach.FailureDifficultyMult
+        Else
+            mult = 0.0
+        EndIf
+    EndIf
+    Int misfire = SeverActionsNativeExt2.Spell_MisfireChance(akCaster, akSpell, mult)
+    If misfire < 0
+        SkyrimNetApi.RegisterEvent("spell_mastered", akCaster.GetDisplayName() + " has grown into " + akSpell.GetName() + \
+            ": it no longer slips from their grasp.", akCaster, None)
+        Return false
+    EndIf
+    If misfire <= 0
+        Return false
+    EndIf
+    If Utility.RandomInt(0, 99) < misfire
+        _Misfire(akCaster, akSpell)
+        Return true
+    EndIf
+    If SeverActionsNativeExt2.Spell_NotePractice(akCaster, akSpell)
+        SkyrimNetApi.RegisterEvent("spell_mastered", akCaster.GetDisplayName() + " has practised " + akSpell.GetName() + \
+            " until it no longer slips from their grasp.", akCaster, None)
+    EndIf
+    Return false
+EndFunction
+
+Function _Misfire(Actor akCaster, Spell akSpell)
+    {An unstable spell slips: it fizzles, lashes back and costs the caster their magicka. It never takes them
+     below a tenth of their health.}
+    SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] " + akCaster.GetDisplayName() + " misfired " + akSpell.GetName())
+    Debug.SendAnimationEvent(akCaster, "staggerStart")
+    akCaster.DamageActorValue("Magicka", akCaster.GetActorValue("Magicka") * 0.5)
+    Float maxHealth = akCaster.GetActorValueMax("Health")
+    Float spare = akCaster.GetActorValue("Health") - maxHealth * 0.1
+    If spare > 0.0
+        Float hurt = maxHealth * 0.05
+        If hurt > spare
+            hurt = spare
+        EndIf
+        akCaster.DamageActorValue("Health", hurt)
+    EndIf
+    SkyrimNetApi.DirectNarration(akCaster.GetDisplayName() + "'s grip on " + akSpell.GetName() + \
+        " slips; the spell fizzles and lashes back at them.", akCaster)
+    SkyrimNetApi.RegisterEvent("spell_misfired", akCaster.GetDisplayName() + " tried to cast " + akSpell.GetName() + \
+        ", a spell still beyond their skill, and it misfired.", akCaster, None)
+EndFunction
+
 ; === Slot dispatch ===
 
 ; Starts one cast on a free slot: TRUE once the alias is armed, FALSE when all slots are busy or a
@@ -67,6 +119,13 @@ EndFunction
 ; at once; if the package still holds its placeholder spell or the target alias is empty, UseMagic starts
 ; with the wrong data and the cast silently aborts.
 Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference akTarget, Bool bDualCasting, Bool bUseMagicka, Bool bHealToFull, Bool bMarkerIsTarget)
+    ; One cast per caster at a time: two of theirs would share one clone (CloneSpellForCast), and the first
+    ; cleanup would take it from the second. The heal-to-full recast clears its slot before dispatching.
+    If _CasterHasSlot(akCaster)
+        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] " + akCaster.GetDisplayName() + " is already casting - refused")
+        _AbortCastCleanup(akCaster, akTarget, bMarkerIsTarget, None)
+        Return false
+    EndIf
     ReferenceAlias slot = FindFreeSlot()
     If !slot
         SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] FindFreeSlot returned None - all 4 slots busy")
@@ -85,6 +144,13 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
             _AbortCastCleanup(akCaster, akTarget, bMarkerIsTarget, None)
             Return false
         EndIf
+    EndIf
+
+    ; (1b) A spell learned from far beyond the caster's skill (SpellLearnStore) can misfire, until their skill
+    ; reaches it or practice settles it. The heal-to-full recast passes the clone, which is never unstable.
+    If _RollMisfire(akCaster, akSpell)
+        _AbortCastCleanup(akCaster, akTarget, bMarkerIsTarget, None)
+        Return false
     EndIf
 
     ; (2) Rebind the alias's SlotPackage to the live package (see GetPackageForSlot).
@@ -191,6 +257,16 @@ Function RecastSameSlot(Actor akCaster, Spell akSpell, ObjectReference akTarget,
         Return
     EndIf
     _DispatchOneCast(akCaster, akSpell, akTarget, bDualCasting, bUseMagicka, bHealToFull, false)
+EndFunction
+
+Bool Function _CasterHasSlot(Actor akCaster)
+    if !akCaster
+        return false
+    endif
+    return (SpellCastCaster00 && SpellCastCaster00.GetActorRef() == akCaster) || \
+           (SpellCastCaster01 && SpellCastCaster01.GetActorRef() == akCaster) || \
+           (SpellCastCaster02 && SpellCastCaster02.GetActorRef() == akCaster) || \
+           (SpellCastCaster03 && SpellCastCaster03.GetActorRef() == akCaster)
 EndFunction
 
 ReferenceAlias Function FindFreeSlot()

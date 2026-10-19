@@ -11,6 +11,8 @@ Float Property AssessmentMinRealGapSeconds = 90.0 AutoReadOnly
 {Real-time floor between two assessment dispatches of either kind (scaled up past 10 followers).}
 String Property KEY_LAST_ASSESS_GT = "SeverFollower_LastAssessGT" AutoReadOnly
 String Property KEY_NEXT_ASSESS_GT = "SeverFollower_NextAssessGT" AutoReadOnly
+; Written by FollowerManager's Start over (sharedKeys): game seconds of the last reset of this bond.
+String Property KEY_BOND_RESET_GT = "SeverActions_BondResetGT" AutoReadOnly
 String Property KEY_LAST_INTER_ASSESS_GT = "SeverFollower_LastInterAssessGT" AutoReadOnly
 String Property KEY_NEXT_INTER_ASSESS_GT = "SeverFollower_NextInterAssessGT" AutoReadOnly
 
@@ -273,6 +275,13 @@ Function OnRelationshipAssessment(String response, Int success)
         Return
     EndIf
 
+    ; Sent before the player's Start over: its numbers and summary are about the bond that was reset. A tie
+    ; (game time stands still in the menu) counts as before.
+    If StorageUtil.GetFloatValue(akActor, KEY_BOND_RESET_GT, -1.0) >= StorageUtil.GetFloatValue(akActor, KEY_LAST_ASSESS_GT, 0.0)
+        DebugMsg("Relationship assessment for " + akActor.GetDisplayName() + " dropped: sent before a Start over")
+        Return
+    EndIf
+
     ; Success: commit the full randomized cooldown (the fire set only a provisional retry).
     Float assessCooldownSec = Utility.RandomFloat(SeverActionsNativeExt2.Settings_GetFloat("assessmentCooldownMin"), SeverActionsNativeExt2.Settings_GetFloat("assessmentCooldownMax")) * SECONDS_PER_GAME_HOUR
     StorageUtil.SetFloatValue(akActor, KEY_NEXT_ASSESS_GT, GetGameTimeInSeconds() + assessCooldownSec)
@@ -287,6 +296,7 @@ Function OnRelationshipAssessment(String response, Int success)
     Int lastMemoryId = SeverActionsNativeExt2.Json_GetInt(response, "/mid")
     Int lastDiaryId = SeverActionsNativeExt2.Json_GetInt(response, "/did")
     String blurb = SeverActionsNativeExt2.Json_GetString(response, "/blurb")
+    String cause = SeverActionsNativeExt2.Json_GetString(response, "/cause")
 
     ; Dedup watermarks live in FollowerData.
     If lastEventId > 0
@@ -299,30 +309,17 @@ Function OnRelationshipAssessment(String response, Int success)
         SeverActionsNativeExt.Native_SetLastAssessDiaryId(akActor, lastDiaryId)
     EndIf
 
-    ; The native blurb is the only copy; prompts read it through the sever_player_blurb
-    ; decorator (no SeverFollower_PlayerBlurb StorageUtil mirror).
+    ; One native call: the deltas inside the ranges, the summary (the native blurb is the only copy; prompts read it
+    ; through sever_player_blurb), and a history entry with the cause for the Companions page's Undo.
+    Bool sharpFall = SeverActionsNativeExt2.Bond_ApplyAssessment(akActor, rapportChange, trustChange, loyaltyChange, moodChange, blurb, cause)
+    SeverActionsNativeExt2.Bond_NoteSources(akActor, response)
     If blurb != ""
-        SeverActionsNativeExt.Native_SetPlayerBlurb(akActor, blurb)
         SeverActionsNative.Magelight_RefreshPage("companions")
     EndIf
 
     If rapportChange == 0 && trustChange == 0 && loyaltyChange == 0 && moodChange == 0
         DebugMsg(akActor.GetDisplayName() + " assessment: no change (eid " + lastEventId + ", mid " + lastMemoryId + ", did " + lastDiaryId + ")" + ", blurb=" + (blurb != ""))
         Return
-    EndIf
-
-    ; The Modify* natives clamp to the valid range.
-    If rapportChange != 0
-        SeverActionsNativeExt.Native_ModifyRapport(akActor, rapportChange as Float)
-    EndIf
-    If trustChange != 0
-        SeverActionsNativeExt.Native_ModifyTrust(akActor, trustChange as Float)
-    EndIf
-    If loyaltyChange != 0
-        SeverActionsNativeExt.Native_ModifyLoyalty(akActor, loyaltyChange as Float)
-    EndIf
-    If moodChange != 0
-        SeverActionsNativeExt.Native_ModifyMood(akActor, moodChange as Float)
     EndIf
 
     ; Resets the native ticker's neglect clock.
@@ -345,6 +342,12 @@ Function OnRelationshipAssessment(String response, Int success)
     EndIf
 
     DebugMsg(summary)
+
+    ; A sharp fall (5+ actually applied, inside the prompt's "meaningful" band) is said at once, while the player
+    ; can still answer it, instead of waiting on the Companions page.
+    If sharpFall
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("companionmind.bondFell", akActor.GetDisplayName()))
+    EndIf
 EndFunction
 
 Function CheckInterFollowerAssessments(Actor[] followers)

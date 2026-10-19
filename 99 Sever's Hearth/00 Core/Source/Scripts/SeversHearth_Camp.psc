@@ -148,15 +148,13 @@ Event OnFollowerCalledByPlayer(string eventName, string strArg, float numArg, Fo
     ElseIf _IsBaseSandboxed(a)
         Debug.Trace("[SeversHearth] OnFollowerCalledByPlayer: releasing " + a.GetDisplayName() + " from the base (verb=" + strArg + ")")
         _ReleaseFromBaseSandbox(a)
-    ElseIf SkyrimNetApi.HasPackage(a, "CampSandbox")
+    ElseIf CampSandboxPackage && a.GetCurrentPackage() == CampSandboxPackage
         ; An override applied but missing from tracking (a save/load edge, a
-        ; travel hand-off race). The SkyrimNet registration exists only where
-        ; a camp sandbox was applied, so it is the detector.
+        ; travel hand-off race): the running package, by form, is the detector.
         Debug.Trace("[SeversHearth] OnFollowerCalledByPlayer: releasing ORPHANED camp sandbox on " + a.GetDisplayName() + " (verb=" + strArg + ")")
         If CampSandboxPackage
             ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
         EndIf
-        SkyrimNetApi.UnregisterPackage(a, "CampSandbox")
         If a.GetAV("WaitingForPlayer") == 1.0
             a.SetAV("WaitingForPlayer", 0)
         EndIf
@@ -301,7 +299,6 @@ Function _ParkAfterJourney(Actor a)
     If CampSandboxPackage
         ActorUtil.AddPackageOverride(a, CampSandboxPackage, 100, 0)
     EndIf
-    SkyrimNetApi.RegisterPackage(a, "CampSandbox", 100, 0, false)
     a.SetAV("WaitingForPlayer", 1)
     a.EvaluatePackage()
     _SetJourneyTracked(a, False)   ; Hearth's own sandbox now
@@ -1559,7 +1556,6 @@ Function _ApplyBaseSandbox(Actor occupant)
     occupant.SetAV("WaitingForPlayer", 1)
     ActorUtil.AddPackageOverride(occupant, CampSandboxPackage, 100, 0)
     occupant.EvaluatePackage()
-    SkyrimNetApi.RegisterPackage(occupant, "CampSandbox", 100, 0, false)
     BaseSandboxedActorTracking[BaseSandboxedActorCount] = occupant
     BaseSandboxedActorCount += 1
     _SetJourneyTracked(occupant, False)   ; Hearth's own sandbox now
@@ -1572,7 +1568,6 @@ Function _ReleaseFromBaseSandbox(Actor a)
     If CampSandboxPackage
         ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
     EndIf
-    SkyrimNetApi.UnregisterPackage(a, "CampSandbox")
     a.SetAV("WaitingForPlayer", 0)
     a.EvaluatePackage()
     BaseSandboxedActorCount = _RemoveFromList(BaseSandboxedActorTracking, BaseSandboxedActorCount, a)
@@ -1735,7 +1730,6 @@ Function _ClearBaseSandbox()
             If CampSandboxPackage
                 ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
             EndIf
-            SkyrimNetApi.UnregisterPackage(a, "CampSandbox")
             a.SetAV("WaitingForPlayer", 0)
             If _SeverActionsInstalled()
                 SeverActionsNativeExt.Travel_CancelByActor(a)
@@ -1875,11 +1869,6 @@ Function _ApplyCampSandbox(Actor occupant)
 
     ActorUtil.AddPackageOverride(occupant, CampSandboxPackage, 100, 0)
     occupant.EvaluatePackage()
-    ; Also registered with SkyrimNet (shows in its package UI) under
-    ; "CampSandbox", the EditorID less its "Package" suffix; the ActorUtil
-    ; override stays authoritative. Not persistent. OnFollowerCalledByPlayer
-    ; uses it to find orphaned overrides.
-    SkyrimNetApi.RegisterPackage(occupant, "CampSandbox", 100, 0, false)
     SandboxedActorTracking[SandboxedActorCount] = occupant
     SandboxedActorCount += 1
     _SetJourneyTracked(occupant, False)   ; Hearth's own sandbox now
@@ -1895,7 +1884,6 @@ Function _ReleaseFromCampSandbox(Actor a)
     If CampSandboxPackage
         ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
     EndIf
-    SkyrimNetApi.UnregisterPackage(a, "CampSandbox")
     a.SetAV("WaitingForPlayer", 0)
     a.EvaluatePackage()
     SandboxedActorCount = _RemoveFromList(SandboxedActorTracking, SandboxedActorCount, a)
@@ -1981,7 +1969,6 @@ Function _ClearCampSandbox()
             If CampSandboxPackage
                 ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
             EndIf
-            SkyrimNetApi.UnregisterPackage(a, "CampSandbox")
             a.SetAV("WaitingForPlayer", 0)
 
             ; A GoToCamp journey still under way: cancelling it also removes

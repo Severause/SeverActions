@@ -234,8 +234,12 @@ Function Native_UnequipItemNow(Actor akActor, Form akItem) Global Native
  worn change reachable from the paused menu; no-op if the item is not worn.}
 
 Function Native_EquipItemNow(Actor akActor, Form akItem) Global Native
-{Pause-safe equip (armor only) - see Native_UnequipItemNow. Force-equip: the
- engine keeps our item, no best-armor re-evaluation.}
+{Pause-safe equip (armor only) - see Native_UnequipItemNow. Puts on the
+ player's own piece when held, else, when another mod's runtime outfit dresses
+ the base, the copy that outfit issued, else a plain copy. Forced (the engine
+ keeps our item, no best-armor re-evaluation), except a copy that outfit
+ issued: unforced, and if it did not go on, the old forced equip (the player's
+ own piece, else the engine's pick, which can be a plain copy).}
 
 Function Native_Preview_NotifyWornChanged(Actor akActor) Global Native
 {Call at the END of a committed worn change that can run while the wardrobe
