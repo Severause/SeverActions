@@ -265,7 +265,7 @@ Function DispatchToOrchestrator(Actor akActor, Form itemForm, ObjectReference wo
 EndFunction
 
 ; DEFERRED COMMISSIONS (CommissionItem / CollectCommission)
-; The smith works off-screen, no workstation. State lives in the native
+; The smith or tailor works off-screen, no workstation. State lives in the native
 ; CommissionStore ('CMSN' block in SeverActionsNativeExt.psc). Price = the smith's
 ; quoted total, else item value × count; 50% deposit at order, the balance at
 ; pickup through a confirm. Unpaid, the smith keeps the item (it stays Ready).
@@ -291,6 +291,89 @@ Form Function ResolveCraftableForm(string itemName)
         itemForm = SeverActionsNative.FindPoison(itemName)
     endif
     return itemForm
+EndFunction
+
+Form Function ResolveCommissionForm(Actor akCrafter, string itemName)
+    {What a commission makes: a smith's (JobBlacksmithFaction) by recipe as in
+    ResolveCraftableForm, a tailor's (JobTailorFaction) plain clothing by name,
+    one in both factions either. A name written 'Name (Game Name)' (an item
+    SkyrimNet renamed, as 0411 shows it) also tries the bracketed game name. An
+    exact name wins over a near one: the whole name, then the game name, then
+    the nearest to the game name, then to the whole. None when nothing fits.}
+    Faction smithFaction = Game.GetFormFromFile(0x0005091D, "Skyrim.esm") as Faction
+    Faction tailorFaction = Game.GetFormFromFile(0x000806A8, "Skyrim.esm") as Faction
+    bool asTailor = akCrafter && tailorFaction && akCrafter.IsInFaction(tailorFaction)
+    bool asSmith = !asTailor || (smithFaction && akCrafter.IsInFaction(smithFaction))
+    string bracket = _BracketName(itemName)
+
+    Form wholeRecipe = None
+    Form wholeCloth = None
+    if asSmith
+        wholeRecipe = ResolveCraftableForm(itemName)
+        if wholeRecipe && wholeRecipe.GetName() == itemName
+            return wholeRecipe
+        endif
+    endif
+    if asTailor
+        wholeCloth = SeverActionsNativeExt2.Craft_FindClothing(itemName)
+        if wholeCloth && wholeCloth.GetName() == itemName
+            return wholeCloth
+        endif
+    endif
+    if bracket != ""
+        Form bracketRecipe = None
+        Form bracketCloth = None
+        if asSmith
+            bracketRecipe = ResolveCraftableForm(bracket)
+            if bracketRecipe && bracketRecipe.GetName() == bracket
+                return bracketRecipe
+            endif
+        endif
+        if asTailor
+            bracketCloth = SeverActionsNativeExt2.Craft_FindClothing(bracket)
+            if bracketCloth && bracketCloth.GetName() == bracket
+                return bracketCloth
+            endif
+        endif
+        if bracketRecipe
+            return bracketRecipe
+        elseif bracketCloth
+            return bracketCloth
+        endif
+    endif
+    if wholeRecipe
+        return wholeRecipe
+    endif
+    return wholeCloth
+EndFunction
+
+string Function _BracketName(string itemName)
+    {The text inside a closing '(...)' (the last '(' whose ')' ends the name,
+    trailing spaces aside), trimmed, or "".}
+    int len = StringUtil.GetLength(itemName)
+    while len > 0 && StringUtil.GetNthChar(itemName, len - 1) == " "
+        len -= 1
+    endwhile
+    if len < 3 || StringUtil.GetNthChar(itemName, len - 1) != ")"
+        return ""
+    endif
+    int openAt = -1
+    int at = StringUtil.Find(itemName, "(")
+    while at >= 0 && at < len - 1
+        openAt = at
+        at = StringUtil.Find(itemName, "(", at + 1)
+    endwhile
+    if openAt < 0 || openAt >= len - 2
+        return ""
+    endif
+    string inner = StringUtil.Substring(itemName, openAt + 1, len - openAt - 2)
+    while StringUtil.GetLength(inner) > 0 && StringUtil.GetNthChar(inner, 0) == " "
+        inner = StringUtil.Substring(inner, 1)
+    endwhile
+    while StringUtil.GetLength(inner) > 0 && StringUtil.GetNthChar(inner, StringUtil.GetLength(inner) - 1) == " "
+        inner = StringUtil.Substring(inner, 0, StringUtil.GetLength(inner) - 1)
+    endwhile
+    return inner
 EndFunction
 
 string Function DescribeEta(Float etaDays)
@@ -505,7 +588,7 @@ Function CommissionItem_Internal(Actor akActor, string itemName, string etaText,
 
     Actor player = Game.GetPlayer()
 
-    Form itemForm = ResolveCraftableForm(itemName)
+    Form itemForm = ResolveCommissionForm(akActor, itemName)
     if !itemForm
         Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("crafting.cannotCommission", ("" + itemName)))
         SkyrimNetApi.DirectNarration(akActor.GetDisplayName() + " doesn't know how to make " + itemName + ".", akActor, player)
@@ -575,7 +658,7 @@ Function CommissionItem_Internal(Actor akActor, string itemName, string etaText,
     String itemLabel = _CommLabel(m_commItemName, itemCount)
     String choice = ""
     If SeverActionsNativeExt2.Native_IsSkyMessageInstalled()
-        choice = SeverActions_SkyMessageLib.Show(akActor.GetDisplayName() + " will forge " + itemLabel + " for " + priceTotal + " gold. Pay the " + deposit + " gold deposit now? (" + balanceDue + " due on pickup)", "Pay " + deposit + " deposit", "Cancel", getIndex = true)
+        choice = SeverActions_SkyMessageLib.Show(akActor.GetDisplayName() + " will make " + itemLabel + " for " + priceTotal + " gold. Pay the " + deposit + " gold deposit now? (" + balanceDue + " due on pickup)", "Pay " + deposit + " deposit", "Cancel", getIndex = true)
     EndIf
     if choice == "0"
         _PlaceCommission()

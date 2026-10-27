@@ -25,7 +25,8 @@ NPC: {{ npc.name }} ({{ npc.race }}{% if npc.class != "" and npc.class != "unkno
 {% endif %}
 
 {# ── Standing facts ── #}
-Relationship to the player: {% if get_relationship_rank(npcUUID, player.UUID) >= 4 %}married to them.{% else %}not married.{% endif %}
+{# Married as 0045 tests it: rank 4 alone is the Lover rank. #}
+Relationship to the player: {% if get_relationship_rank(npcUUID, player.UUID) >= 4 and get_faction_rank(npcUUID, 812146) >= 0 %}married to them.{% else %}not married.{% endif %}
 How well they know the player: {{ fam.tier }}.
 Current stance: {{ currentStance }}
 Trigger for this assessment: {{ trigger }}

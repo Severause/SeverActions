@@ -1,6 +1,6 @@
 customCategory: crafting
 name: Crafting
-description: "Category: the speaker makes something for a person who asked: a smith forging a weapon or armor piece now or taking an order to collect later, cooking a meal, brewing a potion, or a smith handing over a finished order. Only when the speaker commits in this line to making a specific item for someone, or hands over a finished order being collected now; work already under way, offering services, and discussing or refusing a job are words. Drinks and other goods already made are sold (Economy) or given (Items). In the intent, name the item and who it is for."
+description: "Category: the speaker makes something for a person who asked: a smith forging a weapon or armor piece now, a smith or tailor taking an order to collect later, cooking a meal, brewing a potion, or a smith or tailor handing over a finished order. Only when the speaker commits in this line to making a specific item for someone, or hands over a finished order being collected now; work already under way, offering services, and discussing or refusing a job are words. Drinks and other goods already made are sold (Economy) or given (Items). In the intent, name the item and who it is for."
 enabled: true
 
 eligibilityRules:

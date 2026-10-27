@@ -207,8 +207,10 @@ Bool Function Native_Outfit_IsExternallyControlled(Actor akActor) Global Native
  re-equip: a child (never dressed), Diary of Mine / Paradise Halls holding them
  captive while defer-to-bondage is on, the Tailor mod dressing them while
  outfitDeferTailor is on (an NPC not asked about since the load counts as
- Tailor's until asked), a kidnap captive, a jailed prisoner or an arrest in
- progress.}
+ Tailor's until asked), the Raiment mod dressing them, a kidnap captive, a
+ jailed prisoner or an arrest in progress. Also true for an NPC in bed, so
+ another mod's sleepwear stays on, unless SA's own auto-switch dresses them for
+ sleep.}
 
 Function Native_Outfit_SetDeferBondage(Bool abEnabled) Global Native
 {Toggle for the Diary of Mine / Paradise Halls deferral above (default ON; off =

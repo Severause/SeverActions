@@ -1,6 +1,6 @@
 customCategory: combat
 name: AttackTarget
-description: "Use when the speaker attacks someone with weapons or magic in this very line: an ambush sprung, a sworn enemy met, a provocation answered with steel. The target is the one they fight against, never an ally they mean to defend; a companion turns on {{ player.name }} or another companion only when the bond between them is truly broken. Not for readying a weapon, a conditional 'if you…', threats, bluster or jokes, or a fist-fight (that is Brawl)."
+description: "Use when the speaker attacks someone with weapons or magic in this very line: an ambush sprung, a sworn enemy met, a provocation answered with steel. The target is the one they fight against, never an ally they mean to defend; a companion turns on {{ player.name }} only when the bond between them is truly broken, and on another companion almost never. Not for readying a weapon, a conditional 'if you…', threats, bluster or jokes, or a fist-fight (that is Brawl)."
 questEditorId: SeverActions
 scriptName: SeverActions_Combat
 executionFunctionName: AttackTarget_Execute

@@ -28,6 +28,12 @@
         --selected-ink: #f0d9a4; /* theme: accent */
         --suggest-ground: #160f07; /* theme: ground */
         --well: #000000; /* theme: ink */ /* a black well fill */
+        /* Magelight 1.9's IME candidate list, drawn like the suggestion list. No --ml-ime-font: the host sizes the list to the field. */
+        --ml-ime-bg: var(--suggest-ground);
+        --ml-ime-fg: var(--card-ink);
+        --ml-ime-border: var(--accent);
+        --ml-ime-selected-bg: var(--selected-ground);
+        --ml-ime-selected-fg: var(--selected-ink);
       }
       /* BEGIN GENERATED theme blocks (scripts/themes/gen_themes.py) */
       :root[data-theme="windhelm"] {

@@ -326,6 +326,12 @@ Function _AttackTarget(Actor akAttacker, Actor akTarget, Bool abLeaveService)
         Debug.Trace("[SeverCombat] AttackTarget: Invalid actor(s)")
         Return
     EndIf
+    ; Another mod's duel owns those fighters: a forced fight would hand them to this script's cleanup, and a turn
+    ; would cost a companion their service.
+    If SeverActionsNativeExt2.Duel_IsActive(akAttacker) || SeverActionsNativeExt2.Duel_IsActive(akTarget)
+        Debug.Trace("[SeverCombat] AttackTarget REFUSED: " + akAttacker.GetDisplayName() + " -> " + akTarget.GetDisplayName() + " - a duel is under way")
+        Return
+    EndIf
     If AttackOnCooldown(akAttacker, akTarget)
         Debug.Trace("[SeverCombat] AttackTarget REFUSED: " + akAttacker.GetDisplayName() + " -> " + akTarget.GetDisplayName() + " - cooldown active")
         ; The cooldown is per actor: name whoever holds it, not a truce between the two.
@@ -356,7 +362,8 @@ Bool Function TurnRefused(Actor akAttacker, Actor akTarget)
 {True when a rostered companion would turn on the player or another protected companion while the
  bond is not broken. The action model can name an ally as the target of a fight it means to join,
  and a turn cannot be taken back (service, rank, a follower_turned event). Broken = rapport at most
- -60 and loyalty at most 20 toward the player, or affinity at most -60 toward the companion. No
+ -60 and loyalty at most 20 toward the player, or affinity at most -60 toward the companion while the
+ companionsMayTurnOnEachOther setting is on (off by default: never between companions). No
  SkyrimNet event: a refused misfire must not become a memory of a near-betrayal.}
     Actor player = Game.GetPlayer()
     If !akAttacker || !akTarget || akAttacker == player || akAttacker == akTarget
@@ -370,13 +377,14 @@ Bool Function TurnRefused(Actor akAttacker, Actor akTarget)
             Return False
         EndIf
     ElseIf SeverActionsNativeExt2.FriendlyFire_IsProtected(akTarget)
-        If SeverActionsNative.Native_GetPairAffinity(akAttacker, akTarget) <= -60.0
+        If SeverActionsNativeExt2.Settings_GetBool("companionsMayTurnOnEachOther") \
+            && SeverActionsNative.Native_GetPairAffinity(akAttacker, akTarget) <= -60.0
             Return False
         EndIf
     Else
         Return False
     EndIf
-    Debug.Trace("[SeverCombat] AttackTarget REFUSED: " + akAttacker.GetDisplayName() + " -> " + akTarget.GetDisplayName() + " - a companion whose bond is not broken does not turn on an ally")
+    Debug.Trace("[SeverCombat] AttackTarget REFUSED: " + akAttacker.GetDisplayName() + " -> " + akTarget.GetDisplayName() + " - not allowed to turn on an ally (bond not broken, or companionsMayTurnOnEachOther off)")
     Return True
 EndFunction
 
@@ -712,6 +720,15 @@ Function Yield_Execute(Actor akYielder)
     akYielder.EvaluatePackage()
     If akStoredTarget
         akStoredTarget.EvaluatePackage()
+    EndIf
+EndFunction
+
+Function _DismemberUnequipSpell(Actor akActor, Int aiSpellFormId, Int aiHand)
+    {Takes a spell out of a hand whose arm survivable dismemberment cut (aiHand: 0 left, 1 right): the
+     DLL's CommonLib has no unequip-spell. Sent by LivingDismember as the dismemberUnequipSpell verb.}
+    Spell lostHandSpell = Game.GetFormEx(aiSpellFormId) as Spell
+    If akActor && lostHandSpell
+        akActor.UnequipSpell(lostHandSpell, aiHand)
     EndIf
 EndFunction
 
@@ -1621,6 +1638,18 @@ Event OnVerb_Combat(String eventName, String strArg, Float numArg, Form sender)
 
     ElseIf actionId == "yield"
         Yield_Execute(target)
+        ; target2 = the one they yielded to, when the caller knows it (survivable dismemberment): prompt 0160's
+        ; surrender lines read these keys, which Yield_Execute sets only for an SA-forced fight.
+        If target2
+            StorageUtil.SetFormValue(target, "SeverCombat_YieldedTo", target2)
+            StorageUtil.SetFormValue(target2, "SeverCombat_ReceivedYieldFrom", target)
+            Float yieldTime = Utility.GetCurrentGameTime() * 24 * 3631
+            StorageUtil.SetFloatValue(target, "SeverCombat_YieldTime", yieldTime)
+            StorageUtil.SetFloatValue(target2, "SeverCombat_YieldTime", yieldTime)
+        EndIf
+
+    ElseIf actionId == "dismemberUnequipSpell"
+        _DismemberUnequipSpell(target, strParam as Int, intParam)
 
     ; -- Brawl (sibling script; mirrors the YAML entry points 1:1).
     ;    target = the acting participant, target2 = the other one.

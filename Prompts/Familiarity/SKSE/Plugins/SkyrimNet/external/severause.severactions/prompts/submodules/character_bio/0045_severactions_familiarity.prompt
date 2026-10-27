@@ -4,10 +4,13 @@
 {% if not is_follower(actorUUID) and is_sever_follower(actorUUID) == "" and not is_player(actorUUID) %}
 {% set familiarity = player_familiarity(actorUUID) %}
 {% if isObject(familiarity) %}
-{# The native tier already reflects standing bonds and the assessment's verdict. Marriage needs the actor record, so the spouse floor is applied here. #}
+{# The native tier already reflects standing bonds and the assessment's verdict. Rank needs the actor record, so the lover floor is applied here. #}
+{# Rank 4 is the Lover rank, which romance and lover mods set without a wedding: it floors the tier, but only rank 4 AND PlayerMarriedFaction #}
+{# (Skyrim.esm 0x0C6472 = 812146, which the vanilla wedding adds; get_faction_rank >= 0, ai_docs/PROMPTS.md) is a marriage. 0046 and the two assessments test it the same way. #}
 {% set eff_tier = familiarity.tier %}
-{% set married = get_relationship_rank(actorUUID, player.UUID) >= 4 %}
-{% if married %}{% set eff_tier = "familiar" %}{% endif %}
+{% set lover = get_relationship_rank(actorUUID, player.UUID) >= 4 %}
+{% set married = lover and get_faction_rank(actorUUID, 812146) >= 0 %}
+{% if lover %}{% set eff_tier = "familiar" %}{% endif %}
 {# World-knowledge name gate. Substring test against the per-NPC-filtered text. #}
 {% set wk_text = get_world_knowledge(actorUUID) %}
 {% set knows_name_via_world = wk_text != "" and contains(" " + replace(wk_text, "\n", " "), " " + player.name) %}
@@ -49,7 +52,7 @@
 
 {# The name is theirs once they have spoken (met_once and up), heard it tied to deeds, or formed an impression: a blurb #}
 {# outlives a recent-dialogue window that rolls off, so it still proves recognition. #}
-{% set knows_name = eff_tier == "met_once" or eff_tier == "acquainted" or eff_tier == "familiar" or knows_name_via_world or has_blurb or married %}
+{% set knows_name = eff_tier == "met_once" or eff_tier == "acquainted" or eff_tier == "familiar" or knows_name_via_world or has_blurb or lover %}
 
 {% if knows_name %}## What You Know About {{ player.name }}{% else %}## What You Know About This Person{% endif %}
 {% if married %}

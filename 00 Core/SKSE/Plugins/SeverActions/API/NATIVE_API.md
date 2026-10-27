@@ -2,7 +2,7 @@
 
 For **SKSE plugins** that need to cooperate with SeverActions from C++: leave alone the NPCs SeverActions is holding,
 read an NPC's intimacy stance, report the outcome of an intimate scene, and send background SkyrimNet prompts under
-SeverActions' Background AI switch. Papyrus mods use the Papyrus APIs instead (see `BIO_BLOCKS_API.md`).
+SeverActions' Background AI switch. Papyrus mods use the Papyrus APIs instead (see `BIO_BLOCKS_API.md` and `DUEL_API.md`).
 
 ## Getting the functions
 

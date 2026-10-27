@@ -439,6 +439,7 @@ EndFunction
 Function Maintenance()
     RegisterForModEvent("SeverActionsNative_SandboxCleanup", "OnNativeSandboxCleanup")
     RegisterForModEvent("SeverActions_ExternalWaitAdopt", "OnExternalWaitAdopt")
+    RegisterForModEvent("SeverActions_FollowReseat", "OnNativeFollowReseat")
     RegisterForModEvent("SeverActions_SafeInteriorChanged", "OnSafeInteriorChanged")
     RegisterForModEvent("SeverActions_SafeInteriorToggle", "OnSafeInteriorToggle")
     RegisterForModEvent("SeverActions_PauseOnOpenToggle",  "OnPauseOnOpenToggle")
@@ -2194,6 +2195,44 @@ Event OnExternalWaitAdopt(String eventName, String strArg, Float numArg, Form se
     Debug.Trace("[SeverActions_Follow] Adopting external wait on " + akActor.GetDisplayName() + " (third-party WaitingForPlayer=1)")
     Sandbox(akActor)
 EndEvent
+
+Event OnNativeFollowReseat(String eventName, String strArg, Float numArg, Form sender)
+    {FollowDriftMonitor found a companion SA leads off the follow package with no follow-pool seat: the evaluate
+     cannot bring the alias packages back, so seat them again.}
+    Actor akActor = sender as Actor
+    If akActor && ReseatFollow(akActor)
+        akActor.EvaluatePackage()
+        Debug.Trace("[SeverActions_Follow] Re-seated " + akActor.GetDisplayName() + " in the follow pool (FollowDriftMonitor found the seat empty)")
+    EndIf
+EndEvent
+
+Bool Function _SALeads(Actor akActor)
+    {A rostered companion whose follow SA drives (hasFollowPkg) and may drive (not IsFollowHandsOff).}
+    Return SeverActionsNativeExt.Native_GetIsFollower(akActor) && SeverActionsNative.Native_GetHasFollowPkg(akActor) \
+        && !SeverActions_ModuleBase.IsFollowHandsOff(akActor)
+EndFunction
+
+Bool Function ReseatFollow(Actor akActor)
+    {Give a companion SA leads back a follow seat that went missing (FollowDriftMonitor, the sleep pass): not
+     waiting, relaxing or on a schedule hold, not in custody. True when it seated them; no evaluate. SA's lead is
+     checked again after the seat: a dismiss or a framework taking them over can land while it is being written,
+     and the seat is then given back.}
+    If !akActor || akActor.IsDead() || IsInFollowerSlot(akActor) || !_SALeads(akActor)
+        Return false
+    EndIf
+    If akActor.GetAV("WaitingForPlayer") != 0.0 || IsSandboxing(akActor) || SeverActionsNativeExt2.Custody_IsHeld(akActor)
+        Return false
+    EndIf
+    AssignFollowerSlot(akActor)
+    If !_SALeads(akActor)
+        ClearFollowerSlot(akActor)
+        Return false
+    EndIf
+    If SeverActionsNativeExt.Native_GetFollowAliasIndex(akActor) >= 0
+        _ListPoolFollow(akActor)
+    EndIf
+    Return true
+EndFunction
 
 ; ============================================================================
 ; SCENE EVENTS

@@ -17,6 +17,12 @@
     --text-dim: var(--sa-ink-mute);
     --bg-input: var(--sa-bg-0);
     --well: #000000; /* theme: ink */ /* a black well fill */
+    /* Magelight 1.9's IME candidate list, drawn like the suggestion list (selected = a focused row). No --ml-ime-font: the host sizes the list to the field. */
+    --ml-ime-bg: var(--bg-panel);
+    --ml-ime-fg: var(--text);
+    --ml-ime-border: var(--border-accent);
+    --ml-ime-selected-bg: color-mix(in srgb, var(--accent-warm) 15%, var(--bg-panel));
+    --ml-ime-selected-fg: var(--text);
   }
   /* The main UI's names for the values above, at their defaults (the theme blocks below override them). */
   :root {

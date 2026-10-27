@@ -5,7 +5,8 @@
 {% set fam = player_familiarity(actorUUID) %}
 {% if fam and fam.intimacySurfaced %}
 {% set st = sever_intimacy_stance(actorUUID) %}
-{% set married = get_relationship_rank(actorUUID, player.UUID) >= 4 %}
+{# Married as 0045 tests it: rank 4 alone is the Lover rank. #}
+{% set married = get_relationship_rank(actorUUID, player.UUID) >= 4 and get_faction_rank(actorUUID, 812146) >= 0 %}
 {% set stance = "none" %}
 {% set reason = "" %}
 {% if st and st.assessed %}{% set stance = st.stance %}{% set reason = st.reason %}{% endif %}

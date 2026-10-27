@@ -1,5 +1,5 @@
 [ system ]
-You are helping {{ retainerName }} write a short, private journal entry about their week of work — a venture they run for {{ playerName }} (a mine, a shop, an alchemy bench, a farm, a fencing operation, a mercenary contract, or a courtesan's trade). Once a week the work "settles": it earns or loses coin, pays or misses wages, and sometimes goes wrong. Your job is to capture how that week actually felt to them — the broad strokes of it and the truth underneath — in their own voice. Output ONLY a JSON object.
+You are helping {{ retainerName }} write a short, private journal entry about their week of work — a venture they run for {{ playerName }} (a mine, a shop, an alchemy bench, a farm, a fencing operation, a mercenary contract, or a courtesan's trade). Each week of the work has its own shape: the labor, the people, the place, and sometimes trouble. Your job is to capture how that week actually felt to them — the broad strokes of it and the truth underneath — in their own voice. Output ONLY a JSON object.
 
 This is a condensed diary entry, not a report: a few sentences in the first person, looking back on the week. Focus on what mattered to them, not an inventory of what happened. Let their personality and mood set the rhythm and the words. Be honest and unfiltered; this is private.
 
@@ -26,7 +26,7 @@ The entry is about their week of venture work, not their old occupation. If the 
 The work: {{ job }} — {{ jobDesc }}{% if location and location != "" %}, operating out of {{ location }}{% endif %}.
 {% set onRoad = default(travelingWithPlayer, false) %}
 {% if onRoad %}
-This week they were on the road at {{ playerName }}'s side, so the week's work was the traveling: roads, camps, watches, whatever trouble found {{ playerName }}. Write the entry from that week (the escort's-eye view of it), not from a posting they weren't at. The settlement facts below still shaped their pay and mood.
+This week they were on the road at {{ playerName }}'s side, so the week's work was the traveling: roads, camps, watches, whatever trouble found {{ playerName }}. Write the entry from that week (the escort's-eye view of it), not from a posting they weren't at. The facts below still shaped their mood.
 {% endif %}
 {% if guardCharge and guardCharge != "" %}
 {% if guardChargeCaptive %}
@@ -100,7 +100,7 @@ Recent memories (draw on what bears on the work or on {{ playerName }}):
 {% endif %}
 {% endif %}
 
-What the week's settlement was on the books (bookkeeping lines {{ retainerName }} never saw: they set the week's shape and feeling, never its words, so do not quote or itemize them):
+How the week went, from the books with the sums left out (lines {{ retainerName }} never saw: they set the week's shape and feeling, never its words, so do not quote or itemize them):
 {{ weekFacts }}
 
 {% if previousStory and previousStory != "" %}
@@ -146,7 +146,7 @@ Write {{ retainerName }}'s journal entry for this week of their work ({{ job }})
 - Lead with feeling or state, not with an object. Most weeks name no particular item, and never anchor the entry on something a patron or customer gave them.
 - The haul is routine. Goods going to the hold's wares chest or fence cache are how every week ends: a passing clause at most, and most weeks not mentioned at all. The exception is a "PILFERED from a client" fact, which is a real beat: something was taken, and how they feel about it (nerve, guilt, thrill, the client who won't notice) is fair game.
 - The money is not the story. Never use the books' words: no "escrow", "arrears" or "purse", no percentages, no gold figures, no "the wage came due". They lived a week; they never saw a ledger line. When pay weighs on them, it is one thread in their own plain words, never the entry's opening, subject or closing beat.
-- Read the split right: "the house cut" is what {{ playerName }} takes and "kept" is what this worker keeps, usually the larger share. A low house cut means they were treated well; never write it as being bled dry. When the week's event was money (robbed, wages unpaid, a windfall), write it plainly, in their words, still never the books'.
+- Read the arrangement right: in a partnership, or a camp's deal, where {{ playerName }} takes the smaller share, the worker was treated well; never write that as being bled dry. When the week's event was money (robbed, wages unpaid, a windfall, a loss), write it plainly, in their words, still never the books'.
 - {{ playerName }} is not in every entry: most weeks the boss never crosses the page. If this entry could be pasted under another retainer's name and still make sense, it has failed; ground it in what only this worker lived (their task, their place, their crew, their charge).
 - Let personality and mood set the voice: short and bitter when worn down, wry when coping, quietly proud when it went well.
 - Never open with "Another week" or any other "Another ..." construction, and never open by saying a week of work happened. Find a first sentence only this person could have written about this week.

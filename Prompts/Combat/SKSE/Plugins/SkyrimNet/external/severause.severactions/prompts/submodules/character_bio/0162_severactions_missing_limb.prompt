@@ -1,0 +1,20 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "dialogue_target" %}
+{# Limbs this actor lost in a fight and lives without (survivable dismemberment, LivingDismember.h). #}
+{% if actorUUID and actorUUID != 0 %}
+{% if render_mode == "dialogue_target" %}
+{% set missing_seen = sever_missing_limb_seen(actorUUID) %}
+{% if missing_seen != "" %}
+{% set actor = decnpc(actorUUID) %}
+## Visible Wounds
+{{ actor.name }} {{ missing_seen }}.
+{% endif %}
+{% else %}
+{% set missing_limb = sever_missing_limb(actorUUID) %}
+{% if missing_limb != "" %}
+## Lost Limb
+{{ missing_limb }}
+It changes what you can do and how you carry yourself. How you feel about it, and about whoever did it (pain, shock, grief, rage, fear or a grim acceptance), depends on who you are. Never speak or act as if the limb were still there.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

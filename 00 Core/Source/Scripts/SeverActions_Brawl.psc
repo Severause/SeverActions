@@ -2,7 +2,8 @@ Scriptname SeverActions_Brawl extends Quest
 {Fist fights between any two actors. Native BrawlManager owns the engine state (DGIntimidateFaction,
  loadout snapshot, fists-only equip block, bleedout detection); this script holds the Challenge /
  Accept / Decline / Forfeit actions, the pending-challenge state, the teammate strip around a fight
- and the SeverBrawl_* event handlers.}
+ and the SeverBrawl_* event handlers. The same strip serves another mod's duels (DuelManager,
+ API/DUEL_API.md): OnDuelPrepare / OnDuelRestore.}
 
 Faction Property DGIntimidateFaction Auto
 {Skyrim.esm 0x0004CFA6, filled by the ESP. Its kSpecialCombat flag routes brawl damage to bleedout
@@ -51,6 +52,7 @@ Int Property OverlayRetryCount = 0 Auto Hidden
 ;                               7=CalledOff - a cheat or an outside hit broke a brawl between the player and a companion, or two companions)
 ; SeverBrawl_LastEndTime      - Float (Utility.GetCurrentGameTime() of end)
 ; SeverBrawl_Active / _Opponent (live mirror), _WasTeammate / _WasNFF / _NFFSparFac (strip markers).
+; SeverDuel_WasVanillaSeat    - Int (a duel took them out of the vanilla follower alias; re-seated after)
 ; On the quest: form lists SeverBrawl_OpenChallengers, _StrippedTeammates, _PendingRerecruit.
 
 SeverActions_Brawl Function GetInstance() Global
@@ -68,6 +70,8 @@ Function RegisterEvents()
     RegisterForModEvent("SeverActions_BrawlChallengeChoice", "OnBrawlPromptChoice")
     RegisterForModEvent("SeverBrawl_Rekick", "OnBrawlRekick")
     RegisterForModEvent("SeverBrawl_HandsClean", "OnBrawlHandsClean")
+    RegisterForModEvent("SeverActions_DuelPrepare", "OnDuelPrepare")
+    RegisterForModEvent("SeverActions_DuelRestore", "OnDuelRestore")
     PushBrawlConfigToNative()
 EndFunction
 
@@ -793,12 +797,150 @@ Function RestoreStrippedTeammatesAfterReload()
                 EndIf
                 Debug.Trace("[SeverBrawl] RestoreStrippedTeammatesAfterReload: queued track-only re-recruit for " + a.GetDisplayName() + " (wasNFF=" + wasNFFReload + ")")
             EndIf
+            _ReseatVanillaAfterDuel(a)
         EndIf
         i += 1
     EndWhile
     StorageUtil.FormListClear(self, "SeverBrawl_StrippedTeammates")
     ; Drain now: the delay is for a live brawl to finish, and brawls do not survive a load.
     ProcessPendingRerecruit()
+EndFunction
+
+; ---- Duels (another mod's sanctioned fights, DuelManager) ----
+; Each step asks Native_Duel_HandleOf, never Duel_IsActive: by the time an older duel's event runs, a fighter may be in
+; a newer one (a rematch started from SeverActions_DuelEnded), and the strip markers are per actor.
+
+Event OnDuelPrepare(String eventName, String strArg, Float numArg, Form sender)
+    {Duel_Begin registered the pair: free both to fight (the brawl's teammate and framework strip, and a vanilla
+     follower's alias seat), then start the fight and send the public SeverActions_DuelStarted. DuelManager has
+     already begun their armed brawl (BrawlManager::BeginArmedBrawl, which also asks the engine to start the fight
+     until it does); the duel's own mod owns the yield. sender = the first fighter,
+     strArg = the second as signed decimal, numArg = the handle.}
+    Actor a = sender as Actor
+    Actor b = Game.GetFormEx(strArg as Int) as Actor
+    Int handle = numArg as Int
+    If !_InDuel(a, handle) || !_InDuel(b, handle)
+        Return
+    EndIf
+    StripTeammateForBrawl(a)
+    StripTeammateForBrawl(b)
+    _ReleaseVanillaSeatForDuel(a)
+    _ReleaseVanillaSeatForDuel(b)
+    ; NFF's dismissal tears its seat down asynchronously and swallows combat started too early, as in a brawl.
+    If StorageUtil.GetIntValue(a, "SeverBrawl_WasNFF", 0) == 1 || StorageUtil.GetIntValue(b, "SeverBrawl_WasNFF", 0) == 1
+        Utility.Wait(2.0)
+    EndIf
+    If !_PrepareStillLive(a, b, handle)
+        Return
+    EndIf
+    a.EvaluatePackage()
+    b.EvaluatePackage()
+    ; The engine refuses StartCombat on the player; the NPC side alone starts the fight.
+    Actor player = Game.GetPlayer()
+    If a != player
+        a.StartCombat(b)
+    EndIf
+    If b != player
+        Utility.Wait(0.1)
+        ; Also where a save made during the wait resumes, after the load has ended the duel.
+        If !_PrepareStillLive(a, b, handle)
+            If a != player
+                a.StopCombat()
+            EndIf
+            Return
+        EndIf
+        b.StartCombat(a)
+    EndIf
+    ; Public (DUEL_API.md): the fight is on. Sent from the first fighter, as SeverActions_DuelEnded is.
+    a.SendModEvent("SeverActions_DuelStarted", "", numArg)
+    Debug.Trace("[SeverBrawl] Duel " + handle + " begun: " + a.GetDisplayName() + " vs " + b.GetDisplayName())
+EndEvent
+
+Event OnDuelRestore(String eventName, String strArg, Float numArg, Form sender)
+    {A duel ended (DuelManager): both fighters get back what OnDuelPrepare took, then the public
+     SeverActions_DuelEnded goes out, so a mod that starts a rematch from it never races this restore. A load's
+     restore is RestoreStrippedTeammatesAfterReload's, and DuelManager sends that end itself. strArg =
+     aFid|bFid|reason (signed decimal FormIDs), numArg = the handle.}
+    Actor a = Game.GetFormEx(SeverActions_ModuleBase.VerbField(strArg, 0) as Int) as Actor
+    Actor b = Game.GetFormEx(SeverActions_ModuleBase.VerbField(strArg, 1) as Int) as Actor
+    String reason = SeverActions_ModuleBase.VerbField(strArg, 2)
+    _RestoreDuelFighter(a)
+    _RestoreDuelFighter(b)
+    _ArmRerecruit()
+    If a
+        a.SendModEvent("SeverActions_DuelEnded", reason, numArg)
+    ElseIf b
+        b.SendModEvent("SeverActions_DuelEnded", reason, numArg)
+    Else
+        SendModEvent("SeverActions_DuelEnded", reason, numArg)
+    EndIf
+EndEvent
+
+Bool Function _InDuel(Actor akActor, Int aiHandle)
+    Return akActor && SeverActionsNativeExt2.Native_Duel_HandleOf(akActor) == aiHandle
+EndFunction
+
+Bool Function _PrepareStillLive(Actor a, Actor b, Int aiHandle)
+    {OnDuelPrepare's recheck after each wait. False once duel aiHandle has ended: its restore may have run before
+     this strip did, so the fighters are given back here too (each restore is idempotent).}
+    If _InDuel(a, aiHandle) && _InDuel(b, aiHandle)
+        Return True
+    EndIf
+    _RestoreDuelFighter(a)
+    _RestoreDuelFighter(b)
+    _ArmRerecruit()
+    Return False
+EndFunction
+
+Function _RestoreDuelFighter(Actor akActor)
+    {RestoreTeammateAfterBrawl and the vanilla re-seat, each reading its own marker. A fighter already in a newer
+     duel is left to that duel's restore: their markers carry over to it.}
+    If !akActor || SeverActionsNativeExt2.Native_Duel_HandleOf(akActor) != 0
+        Return
+    EndIf
+    RestoreTeammateAfterBrawl(akActor)
+    _ReseatVanillaAfterDuel(akActor)
+    ; A vanilla seat with no teammate flag to restore was listed only for the reload pass.
+    StorageUtil.FormListRemove(self, "SeverBrawl_StrippedTeammates", akActor, True)
+EndFunction
+
+Function _ArmRerecruit()
+    {Arms the re-recruit tick when RestoreTeammateAfterBrawl queued framework re-seats: they wait TrackOnlyRerecruitDelay
+     for the framework to settle, as after a brawl.}
+    If StorageUtil.FormListCount(self, "SeverBrawl_PendingRerecruit") > 0
+        ChronoArm(TrackOnlyRerecruitDelay)
+    EndIf
+EndFunction
+
+Function _ReleaseVanillaSeatForDuel(Actor akActor)
+    {Takes a follower out of the vanilla follower alias for the duel, silently: its FollowerAliasScript dismisses
+     (the message, the walk home) a follower who targets the player. Listed for the reload restore, which walks
+     SeverBrawl_StrippedTeammates.}
+    If !akActor || akActor == Game.GetPlayer()
+        Return
+    EndIf
+    If SeverActions_FollowerFrameworkLib.ReleaseVanillaSeat(akActor)
+        StorageUtil.SetIntValue(akActor, "SeverDuel_WasVanillaSeat", 1)
+        StorageUtil.FormListAdd(self, "SeverBrawl_StrippedTeammates", akActor, False)
+    EndIf
+EndFunction
+
+Function _ReseatVanillaAfterDuel(Actor akActor)
+    {Puts a follower _ReleaseVanillaSeatForDuel took out back in the vanilla alias, unless someone else holds it.}
+    If !akActor || StorageUtil.GetIntValue(akActor, "SeverDuel_WasVanillaSeat", 0) != 1
+        Return
+    EndIf
+    StorageUtil.UnsetIntValue(akActor, "SeverDuel_WasVanillaSeat")
+    If akActor.IsDead()
+        Return
+    EndIf
+    ReferenceAlias seat = SeverActions_FollowerFrameworkLib.VanillaFollowerAlias()
+    If !seat || seat.GetReference()
+        Debug.Trace("[SeverBrawl] Duel: the vanilla follower alias is taken - " + akActor.GetDisplayName() + " is not re-seated")
+        Return
+    EndIf
+    ; The kit the alias handed them the first time is still theirs: strip the second copy.
+    SeverActions_FollowerFrameworkLib.SeatViaVanillaDialogue(akActor, True)
 EndFunction
 
 Function ClearChallengeState(Actor a, Actor b)

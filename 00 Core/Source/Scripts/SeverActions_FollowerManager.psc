@@ -1046,14 +1046,17 @@ EndFunction
 ; =============================================================================
 
 Event OnSleepStart(Float afSleepStartTime, Float afDesiredSleepEndTime)
-    {On sleep, clear the orphaned FF runtime package a time-skip can leave on an
-     actively-following same-cell follower, so follow re-asserts on wake. Waiters,
-     sandboxers, track-only followers and other-cell followers are left alone.}
+    {On sleep, re-pick the package of each same-cell companion SA leads, so the FF runtime package a time-skip can
+     leave is replaced by follow on wake, and give back a follow-pool seat that went missing. Waiters, sandboxers,
+     travelers, other-cell followers and anyone SA does not lead (IsFollowHandsOff) are left alone. Never
+     ClearPackageOverride: it drops every mod's PapyrusUtil overrides, SA's own furniture and seat orders included,
+     and the FF package is not one of them.}
     Cell playerCell = Game.GetPlayer().GetParentCell()
     If !playerCell
         Return
     EndIf
 
+    SeverActions_Follow fSleep = GetFollowScript()
     Actor[] followers = GetAllFollowers()
     Int i = 0
     While i < followers.Length
@@ -1064,25 +1067,16 @@ Event OnSleepStart(Float afSleepStartTime, Float afDesiredSleepEndTime)
                 ; track-only relaxers) or manual Wait: sleeping never ends them.
                 Debug.Trace("[SeverActions_FollowerManager] Leaving waiting/sandboxing " + f.GetDisplayName() + " alone on sleep")
             ElseIf _OnJourney(f)
-                ; The clear would strip the journey's walk override.
                 Debug.Trace("[SeverActions_FollowerManager] Leaving traveling " + f.GetDisplayName() + " alone on sleep")
-            ElseIf SeverActionsNativeExt2.Native_IsTrackOnlyFollower(f)
-                ; Their framework owns the package stack: ClearPackageOverride would wipe
-                ; its follow package with no re-apply hook.
-                Debug.Trace("[SeverActions_FollowerManager] Skipping track-only " + f.GetDisplayName() + " on sleep (external AI owns packages)")
+            ElseIf IsFollowHandsOff(f)
+                ; Another framework leads them, or Tracking mode: SA leads nobody, so their packages are not ours.
+                Debug.Trace("[SeverActions_FollowerManager] Skipping " + f.GetDisplayName() + " on sleep (SA does not lead them)")
             Else
-                ActorUtil.ClearPackageOverride(f)
-                SkyrimNetApi.ReinforcePackages(f)
-                ; Overflow companions follow via a PO3 override the clear just wiped,
-                ; which ReinforcePackages cannot restore (not SkyrimNet-registered).
-                If StorageUtil.GetIntValue(f, "SeverFollow_Overflow", 0) == 1
-                    SeverActions_Follow fSleep = (Self as Quest) as SeverActions_Follow
-                    If fSleep
-                        fSleep.ApplyOverflowFollow(f)
-                    EndIf
+                If fSleep && fSleep.ReseatFollow(f)
+                    Debug.Trace("[SeverActions_FollowerManager] Re-seated " + f.GetDisplayName() + " in the follow pool on sleep (the seat was empty)")
                 EndIf
                 f.EvaluatePackage()
-                Debug.Trace("[SeverActions_FollowerManager] Cleared FF orphan for actively-following " + f.GetDisplayName() + " on sleep")
+                Debug.Trace("[SeverActions_FollowerManager] Re-evaluated actively-following " + f.GetDisplayName() + " on sleep")
             EndIf
         EndIf
         i += 1
@@ -2150,6 +2144,16 @@ Bool Function _UnledInTracking(Actor akActor)
         && !SeverActionsNativeExt2.Native_IsTrackOnlyFollower(akActor)
 EndFunction
 
+Bool Function _NffLostSeat(Actor akActor)
+    {Tracking mode and akActor on the roster with no one leading her: not NFF-seated, owned by no other framework
+     (owner None) and not a player teammate. With NFF installed (the caller's gate) the recruit put her in NFF
+     (RegisterFollower), so Follow and Wait put her back there rather than leave her to her own AI. Not during a
+     brawl, which lets go of an NFF follower on purpose and puts her back itself.}
+    Return akActor && SeverActionsNativeExt2.Settings_GetInt("frameworkMode") == 1 && IsRegisteredFollower(akActor) \
+        && !akActor.IsPlayerTeammate() && !SeverActionsNativeExt.Brawl_IsActive(akActor) \
+        && SeverActionsNativeExt2.Native_GetFollowerOwner(akActor) == 0
+EndFunction
+
 Function _ReleaseCasualFollow(Actor akActor)
     {Releases SA's casual follow (the follow flag, the pool seat and the follow LinkedRef) from an NPC becoming a
      follower SA does not lead (Tracking mode, D45). Once rostered, the flag would make SA the owner and
@@ -2878,11 +2882,11 @@ Function CheckTrackOnlyFollowerStatus()
                     ; Arrested or jailed: custody parks them through their framework, not a dismiss.
                     DebugMsg("Track-only untrack SKIPPED: " + follower.GetDisplayName() + " is in custody")
                 ElseIf !follower.IsPlayerTeammate()
-                    If SeverActionsNativeExt.Brawl_IsActive(follower)
-                        ; Mid-brawl, not a dismiss: the brawl strips the teammate
-                        ; flag from both fighters and restores it at the end
+                    If SeverActionsNativeExt.Brawl_IsActive(follower) || SeverActionsNativeExt2.Duel_IsActive(follower)
+                        ; Mid-brawl or mid-duel, not a dismiss: both strip the
+                        ; teammate flag from the fighters and restore it at the end
                         ; (TeammateMonitor and CellCatchup carry the same gate).
-                        DebugMsg("Track-only untrack SKIPPED: " + follower.GetDisplayName() + " is mid-brawl")
+                        DebugMsg("Track-only untrack SKIPPED: " + follower.GetDisplayName() + " is mid-brawl or mid-duel")
                     ElseIf IsStillFollowingByEvidence(follower)
                         ; Not a teammate but still following through their own
                         ; framework (see IsStillFollowingByEvidence).
@@ -6063,7 +6067,8 @@ EndFunction
 Int Function _EnsureSchedAnchor(Actor akActor, Int aiType)
     {Re-links the anchor aiType's package needs when akActor has none (a load dropped it, or an older build set it
      non-permanent). Never over a live link: a steward visit points WorkAnchorKW at the retainer it visits, and
-     FollowTargetKW is also an arrest escort's. 0 linked already (or no keyword on this ESP), 1 re-linked, -1 missing.}
+     FollowTargetKW is also an arrest escort's. 0 linked already (or no keyword on this ESP), 1 re-linked, -1 missing
+     (no marker, or the engine refused the link). A link dropped later is PackageManager's to heal.}
     ObjectReference marker = None
     Keyword kw = None
     If aiType == SCHEDULE_HOME
@@ -6087,6 +6092,11 @@ Int Function _EnsureSchedAnchor(Actor akActor, Int aiType)
         Return -1
     EndIf
     SeverActionsNativeExt.LinkedRef_SetPermanent(akActor, marker, kw)
+    ; The engine can refuse the link; without it the package resolves to her editor location.
+    If akActor.GetLinkedRef(kw) != marker
+        Debug.Trace("[SeverActions_FollowerManager] SchedAlias: the " + GetSchedTypeName(aiType) + " anchor of " + akActor.GetDisplayName() + " did not take (3D loaded: " + akActor.Is3DLoaded() + ")")
+        Return -1
+    EndIf
     DebugMsg("SchedAlias: re-linked " + akActor.GetDisplayName() + "'s " + GetSchedTypeName(aiType) + " anchor")
     Return 1
 EndFunction
@@ -8855,7 +8865,8 @@ Function _CompanionWaitCore(Actor akActor, Bool abQuiet)
      follow-state event stays per actor (each bio reads its own).
      - NFF-owned: NFF's own wait.
      - Hands-off (another framework, or Tracking mode): no SA package; strip stale SA
-       state, then set WaitingForPlayer (Serana: through her own brain).
+       state, then set WaitingForPlayer (Serana: through her own brain; a roster follower
+       who lost her NFF seat in Tracking mode: seated with NFF again, then NFF's wait).
      - An NPC no framework leads in Tracking mode (_UnledInTracking): Sandbox(), as in SeverActions mode.
      - Otherwise SeverActions_Follow.Sandbox() does the package work.
      Stays in Papyrus: Sandbox() writes PapyrusUtil's override store, SkyrimNet's
@@ -8928,18 +8939,25 @@ Function _CompanionWaitCore(Actor akActor, Bool abQuiet)
         If followSys
             followSys.ReleaseFollowHold(akActor, held, false)
         EndIf
+        ; True once the wait went through a framework, which then owns WaitingForPlayer.
+        Bool waitRouted = false
+        ; Lost her NFF seat: NFF's own wait, once she is seated again (the WaitingForPlayer flag alone would leave her
+        ; to her own AI).
+        If SeverActionsNativeExt2.Native_IsNFFInstalled() && !dlcOwned && !SeverActions_Follow.HeldSure(held, HELD_NFF_MANAGED) && _NffLostSeat(akActor)
+            waitRouted = SeverActions_NFFLib.NFFRecruit(akActor) && SeverActions_NFFLib.NFFWait(akActor)
+            Debug.Trace("[SeverActions_FollowerManager] CompanionWait: " + akActor.GetDisplayName() + " had lost their NFF seat - handed back to NFF (NFF wait: " + waitRouted + ")")
+        EndIf
         ; DLC-owned (Serana): wait through her own brain - Dawnguard zeroes a
         ; WaitingForPlayer it did not order (see FollowerFrameworkLib.WaitSerana).
         ; Her Wait() sets the flag only when she is willing; an unwilling Serana
         ; must be left at 0, not at a wait from before.
-        Bool dlcWaitRouted = false
         If dlcOwned
             If SeverActions_Follow.Held(held, HELD_WFP_SET)
                 akActor.SetAV("WaitingForPlayer", 0)
             EndIf
-            dlcWaitRouted = SeverActions_FollowerFrameworkLib.WaitSerana(akActor)
+            waitRouted = SeverActions_FollowerFrameworkLib.WaitSerana(akActor)
         EndIf
-        If !dlcWaitRouted
+        If !waitRouted
             akActor.SetAV("WaitingForPlayer", 1)
         EndIf
         ; The release took a relax's package and sandbox flag but not its relax flag
@@ -8978,7 +8996,8 @@ EndFunction
 Function _CompanionFollowCore(Actor akActor, Bool abQuiet)
     {The resume. abQuiet (Follow All) skips only the per-follower notification.
      - Hands-off: NFF / Serana resume through their own framework, SA state is
-       stripped, WaitingForPlayer cleared.
+       stripped, WaitingForPlayer cleared. A roster follower who lost her NFF seat in
+       Tracking mode is seated with NFF again (_NffLostSeat).
      - Registered companions: CompanionStartFollowing (alias + LinkedRef).
      - Casual followers: StopSandbox + StartFollowing, in Tracking mode too.
      For any other NPC no framework leads in Tracking mode this only ends SA's wait; her schedule takes her back.}
@@ -9051,6 +9070,10 @@ Function _CompanionFollowCore(Actor akActor, Bool abQuiet)
         ; which the WaitingForPlayer AV does not reach - only NFFResume un-parks.
         If SeverActionsNativeExt2.Native_IsNFFInstalled() && SeverActions_Follow.Held(held, HELD_NFF_MANAGED)
             SeverActions_NFFLib.NFFResume(akActor)
+        ElseIf SeverActionsNativeExt2.Native_IsNFFInstalled() && _NffLostSeat(akActor)
+            If SeverActions_NFFLib.NFFRecruit(akActor)
+                Debug.Trace("[SeverActions_FollowerManager] CompanionFollow: " + akActor.GetDisplayName() + " had lost their NFF seat - re-seated through NFF")
+            EndIf
         EndIf
         If followSys
             followSys.ReleaseFollowHold(akActor, held, true)

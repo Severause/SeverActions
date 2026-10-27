@@ -1,13 +1,13 @@
 customCategory: crafting
 name: CollectCommission
-description: "Use when {{ player.name }} has come for the finished order this smith is holding for them and wants it now. This one action shows the balance due, takes it and hands the item over, so no separate payment or hand-over is needed. Not while the order is only being mentioned or {{ player.name }} is putting the pickup off."
+description: "Use when {{ player.name }} has come for the finished order this smith or tailor is holding for them and wants it now. This one action shows the balance due, takes it and hands the item over, so no separate payment or hand-over is needed. Not while the order is only being mentioned or {{ player.name }} is putting the pickup off."
 questEditorId: SeverActions
 scriptName: SeverActions_Crafting
 executionFunctionName: CollectCommission_Internal
 parameterMapping:
   - type: speaker
     name: akActor
-    description: the smith handing over the finished commission
+    description: the smith or tailor handing over the finished commission
 enabled: true
 eligibilityRules:
   - conditions:
@@ -18,17 +18,22 @@ eligibilityRules:
     logicalOperator: "AND"
     required: true
   - conditions:
+      # A smith (JobBlacksmithFaction, Skyrim.esm 0x0005091D) or a tailor
+      # (JobTailorFaction, 0x000806A8), by hex FormID: the po3-free form (a
+      # faction name needs po3 "Load EditorIDs", optional, and failed closed).
       - decoratorName: "is_in_faction"
         arguments:
           - currentActor
-          # JobBlacksmithFaction (Skyrim.esm 0x0005091D) by hex FormID — the
-          # po3-free form (name lookup needs po3 "Load EditorIDs", optional,
-          # and failed closed: blacksmiths never matched). Mirrors the
-          # documented fix in craftitem.yaml.
           - "0x0005091D"
         comparisonOperator: "=="
         expectedValue: true
-    logicalOperator: "AND"
+      - decoratorName: "is_in_faction"
+        arguments:
+          - currentActor
+          - "0x000806A8"
+        comparisonOperator: "=="
+        expectedValue: true
+    logicalOperator: "OR"
     required: true
   - conditions:
       # has_ready_commission returns the STRING "true"/"" — custom decorators are

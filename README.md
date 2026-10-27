@@ -101,7 +101,7 @@ nothing.
 | **Furniture Actions** | Yes | 1 | Sit, lie down or kneel to pray at nearby chairs, benches, beds and shrines; NPCs get up by themselves when you walk away |
 | **Economy Actions** | No | 10 | Give gold, ask for payment, buy or sell an item at an agreed price in one step, and keep debts: tabs, credit limits, due dates, recurring charges, repaying, reducing and forgiving |
 | **Enterprises Actions** | No | 26 | Hire retainers to run ventures for you and settle their pay, raises, loans and grievances; appoint hold stewards; ease or raise hold taxes; the Imperial Treasury's Final Audit; outlaw camps sworn to you and their war bands; standoffs with hired thugs |
-| **Crafting Actions** | No | 5 | Walk to a forge, alchemy lab or cooking pot and craft, brew or cook; take a commission a smith forges over a few days for you to collect |
+| **Crafting Actions** | No | 5 | Walk to a forge, alchemy lab or cooking pot and craft, brew or cook; take a commission a smith or tailor makes over a few days for you to collect |
 | **Arrest Actions** | No | 15 | Guards arrest, are dispatched across cells, search homes for evidence and escort prisoners to jail (a prisoner can plead once on the way); jarls and housecarls order arrests rather than making them; delivered prisoners are judged |
 | **Follower Actions** | Yes | 6 | Recruit a companion, dismiss them, tell them to wait or follow again, and assign a home; a badly treated companion may leave on their own |
 | **Kidnap and Captive Actions** | No | 8 | Any NPC can restrain someone and lead them, tie a captive to furniture or release them; your companions can also move, untie and interrogate captives, and kidnap for ransom (with Enable Kidnap Actions, off by default) |
@@ -215,7 +215,7 @@ Opens). Every page has a **?** button that explains it.
 - **Money** (Economy Actions): you confirm payments, trades and debts on a card, or in conversation with Immersive
   Mode. Once a debt you owe is past due, the lender brings it up when you meet; after a day's grace it is marked
   overdue, and at 72 hours overdue the lender reports you to the guards.
-- **Crafting** (Crafting Actions): smiths forge on the spot or take a commission (half now, the rest on pickup), and
+- **Crafting** (Crafting Actions): smiths forge on the spot, and smiths and tailors take a commission (half now, the rest on pickup), and
   anyone can cook a dish or brew a potion.
 - **Captives** (Kidnap and Captive Actions): the **Tie / Untie NPC** hotkey binds or frees the NPC you aim at; while
   you lead a captive, aim at furniture to tie them there. Kidnapping and ransom also need **Enable Kidnap Actions**

@@ -13,14 +13,16 @@ You are an internal impression-assessment system for NPCs in Skyrim. You produce
 {% set persona_flag = sever_intimate_persona(npcUUID) %}
 {% set persona_trade = sever_intimate_trade(npcUUID) %}
 
-{# Standing bonds the conversation count cannot see (steward, retainer, spouse, a home the player gave them) are facts, weighed above line count. #}
+{# Standing bonds the conversation count cannot see (steward, retainer, spouse or lover, a home the player gave them) are facts, weighed above line count. #}
 {% set bond_steward  = is_steward(npcUUID) %}
 {% set bond_retainer = retainer_status(npcUUID) %}
 {% set bond_hostile = bond_retainer == "hostile" %}
 {% if bond_hostile %}{% set bond_retainer = "" %}{% endif %}
 {% set bond_home     = default(sever_home(npcUUID), "") %}
-{% set bond_married  = get_relationship_rank(npcUUID, player.UUID) >= 4 %}
-{% set has_bond = bond_married or bond_steward != "" or bond_retainer != "" or bond_home != "" %}
+{# Lover and married as 0045 tests them: rank 4 alone is the Lover rank. #}
+{% set bond_lover    = get_relationship_rank(npcUUID, player.UUID) >= 4 %}
+{% set bond_married  = bond_lover and get_faction_rank(npcUUID, 812146) >= 0 %}
+{% set has_bond = bond_lover or bond_steward != "" or bond_retainer != "" or bond_home != "" %}
 
 {# Recent events the NPC is aware of — the same feed the bio uses. An
    impression formed without them lags days behind what just happened. #}
@@ -94,6 +96,7 @@ NPC: {{ npc.name }} ({{ npc.race }}{% if npc.class != "" and npc.class != "unkno
 {% if has_bond %}
 What actually stands between them (fact, not talk — weigh this ABOVE any conversation count):
 {% if bond_married %}- {{ npc.name }} is married to {{ player.name }}.
+{% elif bond_lover %}- {{ npc.name }} and {{ player.name }} are lovers (not married).
 {% endif %}{% if bond_steward != "" %}- {{ npc.name }} is {{ player.name }}'s appointed steward for {{ bond_steward }}, running those affairs day to day.
 {% endif %}{% if bond_retainer != "" %}- {{ bond_retainer }}
 {% endif %}{% if bond_home != "" %}- {{ player.name }} gave {{ npc.name }} the home they live in ({{ bond_home }}).

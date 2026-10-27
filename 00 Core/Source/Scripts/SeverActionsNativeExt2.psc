@@ -805,6 +805,10 @@ Int Function Craft_CancelByActor(Actor akActor) Global Native
 {Cancel every live crafting session for this actor (travel-start disengage);
  returns how many. TermCancelled still fires, so the Papyrus cleanup runs.}
 
+Form Function Craft_FindClothing(String asName) Global Native
+{The plain clothing a tailor can make by this name (exact name first, then the
+ nearest), or None.}
+
 Bool Function Venture_SyncPremisesFromWork(Actor akActor, ObjectReference akMarker) Global Native
 {The only premises writer: the owned-property cell holding the retainer's work
  marker becomes the premises; any other spot (or None = work cleared) detaches
@@ -1447,3 +1451,28 @@ Bool Function RecruitRequest_Close(Actor akActor, Bool abDeclined) Global Native
 String Function RecruitRequest_DeclinesText(Actor akActor) Global Native
 {How often and how long ago akActor turned the player down ("twice, the last about 3 hours ago"),
  or "" when they never have.}
+
+; ── Survivable dismemberment (LivingDismember.h) ───────────────────────────
+Function LivingDismember_Restore(Actor akActor) Global Native
+{Regrows every limb akActor lost and lived without (Dismembering Framework's reset) and lifts the
+ hold: alive and able to stand again, their aggression put back. Nothing for anyone else.}
+
+; ── Duel PUBLIC API (v1) ───────────────────────────────────────────────────
+; For other mods: a sanctioned fight between two actors, a companion included. Frozen: these signatures never change
+; and are never removed (fomod/public_api.json). Recipe, lifecycle and caveats:
+; Data/SKSE/Plugins/SeverActions/API/DUEL_API.md. ModEvents, numArg = the handle, sender = the first fighter:
+; "SeverActions_DuelStarted" once SeverActions has freed the pair and started the fight, and "SeverActions_DuelEnded"
+; on every end (strArg = ended / expired / load / death / calledoff).
+; 1, or 0 when duels are unavailable (a Modular install without the combat module). An older SeverActions has no
+; such native (the call fails and returns 0).
+Int Function Duel_ApiVersion() Global Native
+; Starts a duel between akA and akB lasting at most afMaxSeconds of unpaused play: a handle above 0, or 0 when
+; refused (the same actor twice, dead, unloaded, already dueling, in an SA brawl, custody or captivity, in a scene,
+; a duration that is not a positive number, or no combat module).
+Int Function Duel_Begin(Actor akA, Actor akB, Float afMaxSeconds) Global Native
+; Ends the duel and puts everything back. False when the handle names no live duel (it already ended).
+Bool Function Duel_End(Int aiHandle) Global Native
+; True while akActor is in a duel.
+Bool Function Duel_IsActive(Actor akActor) Global Native
+; Not part of the API (SeverActions_Brawl's duel handlers): the handle of akActor's duel, 0 for none.
+Int Function Native_Duel_HandleOf(Actor akActor) Global Native

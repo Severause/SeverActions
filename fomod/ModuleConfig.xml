@@ -2,7 +2,7 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
 
-    <moduleName>SeverActions - SkyrimNet Action Pack v4.5</moduleName>
+    <moduleName>SeverActions - SkyrimNet Action Pack v4.6</moduleName>
 
     <requiredInstallFiles>
         <folder source="00 Core" destination="" priority="0"/>
@@ -15,6 +15,10 @@
              Scripts/ at the Data root. A separately installed Magelight must
              be this version or newer (VERSION.txt beside the runtime). -->
         <folder source="98 Magelight UI/00 Core" destination="" priority="1"/>
+        <!-- Phantasm, the renderer that draws SA's pictures (the Outfits mirror, the item Inspect view, the party
+             cutouts), ships as CORE the same way: staged into "97 Phantasm/00 Core" by build_fomod_zip.ps1 from
+             Phantasm's build (Phantasm.dll) and its repo's data/ (its carrier movie and licences). -->
+        <folder source="97 Phantasm/00 Core" destination="" priority="1"/>
         <folder source="10 Modules/followers" destination="" priority="0"/>
         <folder source="10 Modules/companions" destination="" priority="0"/>
         <folder source="10 Modules/social" destination="" priority="0"/>

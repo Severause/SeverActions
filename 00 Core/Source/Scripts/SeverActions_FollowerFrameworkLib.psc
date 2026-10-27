@@ -122,6 +122,31 @@ Bool Function DismissViaVanillaDialogue(Actor akActor) Global
     Return false
 EndFunction
 
+ReferenceAlias Function VanillaFollowerAlias() Global
+    {The vanilla DialogueFollower quest's follower alias (alias 0), None when the quest is missing.}
+    Quest dfQuest = Game.GetFormFromFile(0x000750BA, "Skyrim.esm") as Quest
+    If !dfQuest
+        Return None
+    EndIf
+    Return dfQuest.GetAlias(0) as ReferenceAlias
+EndFunction
+
+Bool Function ReleaseVanillaSeat(Actor akActor) Global
+    {Empties the vanilla follower alias while akActor holds it, without DismissFollower's dismissal (no message,
+     no DismissedFollower, no walk home, the follower count kept), so SeatViaVanillaDialogue can seat them again.
+     Skipped under NFF or SFF, which replace that quest. True when the seat was released.}
+    If !akActor || SeverActionsNativeExt2.Native_IsNFFInstalled() || HasSFF()
+        Return false
+    EndIf
+    ReferenceAlias seat = VanillaFollowerAlias()
+    If !seat || seat.GetReference() != akActor as ObjectReference
+        Return false
+    EndIf
+    seat.Clear()
+    Debug.Trace("[SeverActions_FollowerFrameworkLib] ReleaseVanillaSeat: " + akActor.GetDisplayName() + " leaves the vanilla follower alias")
+    Return true
+EndFunction
+
 Bool Function RecruitSerana(Actor akActor) Global
     {Recruit Serana through her mental model's EngageFollowBehavior() (her flags, teammate,
      WIFollowerCommentFaction, the monitoring quest).}
