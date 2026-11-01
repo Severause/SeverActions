@@ -364,8 +364,6 @@ String Property KEY_WORK_MARKER = "SeverActions_WorkMarkerRef" AutoReadOnly
 String Property KEY_WORKPOOL_MIG = "SeverActions_WorkPoolMigDone" AutoReadOnly
 ; Per-actor StorageUtil key: the relationship rank a companion had before turning on the player.
 String Property KEY_RANK_BEFORE_TURN = "SeverActions_RankBeforeTurn" AutoReadOnly
-; Per-actor StorageUtil key: game seconds of the companion's last Start over (CompanionMind reads it, sharedKeys).
-String Property KEY_BOND_RESET_GT = "SeverActions_BondResetGT" AutoReadOnly
 
 ; Per-slot home sandbox packages, one per HomeSlot alias
 Package Property HomeSandboxPackage_00 Auto
@@ -465,12 +463,10 @@ String Property KEY_ORIG_RELRANK = "SeverFollower_OrigRelRank" AutoReadOnly
 ; Cooldown tracking for AdjustRelationship (real-time seconds via Utility.GetCurrentRealTime)
 String Property KEY_LAST_REL_ADJUST = "SeverFollower_LastRelAdjust" AutoReadOnly
 
-; Cooldown tracking for automatic LLM relationship assessment (game time seconds)
+; Older builds' assessment clocks, cleared on purge; the live ones are on the follower row (Assess_GetTime)
 String Property KEY_LAST_ASSESS_GT = "SeverFollower_LastAssessGT" AutoReadOnly
-; Per-NPC randomized next-eligible time (game time seconds) — set after each assessment
 String Property KEY_NEXT_ASSESS_GT = "SeverFollower_NextAssessGT" AutoReadOnly
 
-; Cooldown tracking for inter-follower relationship assessment (game time seconds)
 String Property KEY_LAST_INTER_ASSESS_GT = "SeverFollower_LastInterAssessGT" AutoReadOnly
 String Property KEY_NEXT_INTER_ASSESS_GT = "SeverFollower_NextInterAssessGT" AutoReadOnly
 
@@ -9185,7 +9181,7 @@ Function RelationshipStartOver(Actor akActor)
     If !akActor
         Return
     EndIf
-    StorageUtil.SetFloatValue(akActor, KEY_BOND_RESET_GT, GetGameTimeInSeconds())
+    SeverActionsNativeExt2.Assess_SetTime(akActor, 2, GetGameTimeInSeconds())   ; 2 = the bond's Start over
     Actor player = Game.GetPlayer()
     Int saved = StorageUtil.GetIntValue(akActor, KEY_RANK_BEFORE_TURN, -99)
     Int now = akActor.GetRelationshipRank(player)

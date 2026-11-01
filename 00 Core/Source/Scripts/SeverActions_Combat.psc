@@ -732,6 +732,62 @@ Function _DismemberUnequipSpell(Actor akActor, Int aiSpellFormId, Int aiHand)
     EndIf
 EndFunction
 
+Function TendWound(Actor akTender, Actor akTarget)
+    {akTender binds akTarget's stumps and splints their broken bones (survivable dismemberment): an NPC walks
+     over and does it by hand. The TendWound action, and the Actions page's tendWound verb (the player, who spends a
+     Linen Wrap, when no tender is named). The DLL does the work and tells the player what came of it.}
+    If !akTender || !akTarget || akTender == akTarget || akTender == Game.GetPlayer()
+        SeverActionsNativeExt2.LivingDismember_Tend(akTender, akTarget)
+    ElseIf !SeverActionsNativeExt.Arrival_IsTracked(akTender)   ; a second call while they are already on their way
+        _TendByHand(akTender, akTarget)
+    EndIf
+EndFunction
+
+Function _TendByHand(Actor akTender, Actor akTarget)
+    {Latent. akTender walks to akTarget and works on the wound, kneeling for someone on the ground or a leg; the wrap
+     goes on partway through. Nobody walks over for nothing, and a walk that does not arrive, or a fight before the
+     wrap goes on, binds nothing.}
+    If SeverActionsNativeExt2.LivingDismember_TendPose(akTender, akTarget) == 0
+        Debug.Trace("[SeverCombat] TendWound: " + akTender.GetDisplayName() + " cannot tend " + akTarget.GetDisplayName())
+        Return
+    EndIf
+    ; 200: a wait outranks a walk at the usual 100, and someone told to go and tend goes (see CompanionSeating in CLAUDE.md).
+    If !SeverActions_WalkLib.WalkToReferenceAt(akTender, akTarget, 20.0, 200) || akTender.IsInCombat()
+        Debug.Trace("[SeverCombat] TendWound: " + akTender.GetDisplayName() + " did not reach " + akTarget.GetDisplayName())
+        Return
+    EndIf
+    akTender.PathToReference(akTarget, 0.5)   ; the walk stops a good step short of arm's length
+    If akTender.IsWeaponDrawn()
+        akTender.SheatheWeapon()
+        Utility.Wait(1.0)
+    EndIf
+    akTender.SetLookAt(akTarget)
+    akTender.SetAngle(akTender.GetAngleX(), akTender.GetAngleY(), akTender.GetAngleZ() + akTender.GetHeadingAngle(akTarget))
+    Int idleId = 0x06FF0F   ; IdleSearchingTable: hands at waist height, for an arm
+    Int pose = SeverActionsNativeExt2.LivingDismember_TendPose(akTender, akTarget)
+    If pose == 2
+        idleId = 0x0EFC64   ; IdleSearchBody: on one knee
+    EndIf
+    If pose != 0 && !akTender.IsInCombat()
+        akTender.PlayIdle(Game.GetFormFromFile(idleId, "Skyrim.esm") as Idle)
+        Utility.Wait(2.2)
+        If !akTender.IsInCombat()
+            SeverActionsNativeExt2.LivingDismember_Tend(akTender, akTarget)
+            Utility.Wait(1.0)
+        EndIf
+    EndIf
+    akTender.ClearLookAt()
+    ; Both idles hold until told to stop. The graph event drops a combat stance, and only it reaches a graph not ready
+    ; for a PlayIdle, so a fighter gets the PlayIdle alone.
+    akTender.PlayIdle(Game.GetFormFromFile(0x086840, "Skyrim.esm") as Idle)   ; IdleForceDefaultState
+    If !akTender.IsInCombat()
+        Debug.SendAnimationEvent(akTender, "IdleForceDefaultState")
+        Utility.Wait(0.3)
+        Debug.SendAnimationEvent(akTender, "IdleForceDefaultState")
+    EndIf
+    akTender.EvaluatePackage()
+EndFunction
+
 Bool Function Yield_IsEligible(Actor akYielder)
     If !akYielder
         Return False
@@ -1650,6 +1706,14 @@ Event OnVerb_Combat(String eventName, String strArg, Float numArg, Form sender)
 
     ElseIf actionId == "dismemberUnequipSpell"
         _DismemberUnequipSpell(target, strParam as Int, intParam)
+
+    ElseIf actionId == "tendWound"
+        ; target = the wounded, target2 = who tends them; none named is the player.
+        If target2
+            TendWound(target2, target)
+        Else
+            TendWound(Game.GetPlayer(), target)
+        EndIf
 
     ; -- Brawl (sibling script; mirrors the YAML entry points 1:1).
     ;    target = the acting participant, target2 = the other one.

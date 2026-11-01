@@ -1564,7 +1564,8 @@ EndEvent
 
 Event OnRetainerWorkLoc(string eventName, string strArg, float numArg, Form sender)
     {The assign / manage popup's confirm; a cancel fires nothing, and the hire itself is
-     native. strArg = "here" | "named|<placeName>" | "clear" | "guard|<hexFormId>[|<name>]".}
+     native. strArg = "here" | "named|<placeName>" | "clear" | "guard|<hexFormId>[|<name>]"
+     | "crew|<hexMemberFormId or here>|<crewLabel>".}
     Actor npc = sender as Actor
     If !npc
         Return
@@ -1603,6 +1604,43 @@ Event OnRetainerWorkLoc(string eventName, string strArg, float numArg, Form send
         EndIf
         Return
     EndIf
+    ; "crew|...": join a crew. The marker goes beside the member's own (or at the player for
+    ; "here") and takes the crew's label, so the crew key matches either way.
+    If StringUtil.Find(strArg, "crew|") == 0
+        String crewRest = StringUtil.Substring(strArg, 5)
+        String who = crewRest
+        String crewLabel = ""
+        Int crewBar = StringUtil.Find(crewRest, "|")
+        If crewBar >= 0
+            who = StringUtil.Substring(crewRest, 0, crewBar)
+            crewLabel = StringUtil.Substring(crewRest, crewBar + 1)
+        EndIf
+        ObjectReference beside = None
+        If who != "here"
+            Actor mate = Game.GetFormEx(SeverActionsNative.HexToInt(who)) as Actor
+            ; The cosaved work spot, the one the board picked this member by. Guard duty holds the
+            ; protectee there, not a spot.
+            If mate
+                beside = SeverActionsNative.Native_GetWorkLoc(mate)
+            EndIf
+            If beside as Actor
+                beside = None
+            EndIf
+            If !beside && crewLabel != "" && SeverActionsNative.IsLocationResolverReady()
+                beside = SeverActionsNative.ResolveDestination(npc, crewLabel)
+                If beside
+                    DebugMsg("OnRetainerWorkLoc: crew member '" + who + "' has no work spot - resolved '" + crewLabel + "' instead")
+                Else
+                    DebugMsg("OnRetainerWorkLoc: crew member '" + who + "' has no work spot and '" + crewLabel + "' did not resolve - placing at the player")
+                EndIf
+            EndIf
+        EndIf
+        fm.SetRoutineLocHere(npc, "work", beside, crewLabel)
+        fm.FireWorkAssignedEvent(npc)
+        DebugMsg("OnRetainerWorkLoc: " + npc.GetDisplayName() + " joined the crew at " + crewLabel + " (" + strArg + ")")
+        SeverActionsNative.Magelight_RefreshPage("enterprises")
+        Return
+    EndIf
     ObjectReference dest = None
     String placeLabel = ""
     Int bar = StringUtil.Find(strArg, "|")
@@ -1615,6 +1653,8 @@ Event OnRetainerWorkLoc(string eventName, string strArg, float numArg, Form send
     fm.SetRoutineLocHere(npc, "work", dest, placeLabel)
     fm.FireWorkAssignedEvent(npc)
     DebugMsg("OnRetainerWorkLoc: placed work marker for " + npc.GetDisplayName() + " (" + strArg + ")")
+    ; A place's crew exists only now: the open board shows it for the next pick.
+    SeverActionsNative.Magelight_RefreshPage("enterprises")
 EndEvent
 
 Function SyncAllPremisesFromWork()

@@ -1,0 +1,5 @@
+{
+    "name": "SeverActions",
+    "author": "Severause",
+    "description": "SeverActions' injury animations: an NPC with a broken leg limps, one with a broken arm holds it against the body. SeverActions' own animations, made from the vanilla clips, each set played while SeverActions_LimpingFaction holds the NPC at its rank."
+}

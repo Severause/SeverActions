@@ -1,4 +1,4 @@
-{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
+{% if render_mode == "stable" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" or (render_mode == "full" and not default(stable_split, false)) %}
 {# SeverActions Enterprises — the NPC labor market: this NPC's own job working
    for another NPC (npc_employer), or the workforce they employ themselves
    (npc_workforce). Both return "" when they don't apply. The player's

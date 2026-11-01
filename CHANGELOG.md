@@ -1,5 +1,144 @@
 # SeverActions Changelog
 
+## v4.7.0 - Linen and Bone
+
+Magelight UI 1.7.1 (`98 Magelight UI`) and Phantasm 0.3.0 (`97 Phantasm`) are bundled and always install with the core. SeverActions still needs Magelight UI 1.5.0 or later: if you also run an older Magelight UI as its own mod and it wins, SeverActions' menus do not open and Magelight names SeverActions when the game loads; let the included copy win.
+
+Installing this version: install it over 4.6.x with Replace. The installer's pages and choices are the same, and saves load as they are. Replace every file: the plugin and the scripts are checked against each other at load, and a mix from two versions stops with a message. If you install by hand, remove the old Imperial Levy character files first, because they were renamed.
+
+The menu's cards and rows have their rounded corners and their slight translucency back, and pages fade in again when you open them: Magelight 1.5 draws them correctly, so the workaround that turned them off is gone. The coloured status edge of Enterprises and Survival cards now shows; the older Magelight did not draw it.
+
+A new colour theme, Tallow & Soot, is now the default: a tavern by candlelight, with soot-brown pages, text the colour of candle wax and a flame-orange accent. If you never picked a theme you get it now; if you picked The Ledger or another theme in Settings > UI Display, you keep it.
+
+Every theme now has a finish of its own on top of its colours: a texture on the page and the cards, its own light, its own corners and its own face for page titles. Tallow & Soot has soot grain, candlelight from the top corner and IM Fell English, an old printing face. The Ledger has paper dust, faint ruling across the page, gilt-edged cards and gilded titles. Windhelm Slate has mottled slate, cold daylight from above, square chiselled slabs and Cinzel's carved capitals. Dwemer Verdigris has brushed metal, a lamp overhead, plated cards and Marcellus capitals. Soul Cairn has drifting mist, soul-light rising from below, soft corners, cards lit from within and Cormorant's thin glowing capitals. Jarl's Vellum has fibrous parchment, edges darkened with age and IM Fell's small capitals. Settings > UI Display has a Theme texture switch: off takes away the grain and keeps the rest of the finish. The prompts and the quick wheel take each theme's colours. The title faces are free fonts under the SIL Open Font License; their licences are in SKSE/Plugins/SeverActions/Licenses.
+
+**The menu works with a controller** (Magelight UI 1.6.0 or later, flat only). The d-pad moves a highlight between the controls, the rows of the Inventory, Spells and Catalog lists included, A presses, and B leaves a slider or list you are editing, then closes a popup, then the menu. The left stick moves the cursor whenever you want it, A clicks, and the d-pad picks up from where the cursor was. LT and RT step through the pages, LB and RB through the current page's sections in the rail (or the tabs the highlight sits on), X opens the right-click menu of a row (Inventory) or pins an Actions tile, and the right stick scrolls. While the Outfits mirror or an item's picture is showing, the right stick turns it, and with Y held it zooms. The rail and every popup show the buttons as small badges in your controller's style (Xbox letters, PlayStation shapes, or a generic pad's positions, as set in Magelight), and the View button (Create on PlayStation) opens a card with a drawing of your controller and what each button does; pick Xbox, PlayStation or Steam Controller there with LB and RB. On the quick wheel the left stick points straight at a slot, the d-pad steps round it, A picks and B cancels. A menu or wheel key bound to a controller button closes what it opened. The smaller prompts start with a controller cursor. While the menu is open, the controller's buttons no longer draw weapons, attack or shout behind it. In VR, and with an older Magelight, the controller works as before.
+
+Escape in a popup (a confirmation, a picker, a right-click menu) now closes just that popup, not the whole menu.
+
+The menu's left rail shows a small mark beside each page, and every popup in the menu now softens the page behind it and settles in. Settings > UI Display has a new Interface kit preview that shows every shared part of the menu (meters, rings, faces, the side drawer) in your current theme.
+
+The Dashboard is redone. Its title band takes the colour of the hour and the weather where you stand (amber at dawn and dusk, blue at night, grey under cloud or rain, snowflakes in snow). The party cards are larger and show each companion's state in the Survival page's words (Famished, Very Cold, Exhausted and worse) and whether they are wanted; a companion who is starving, freezing or sleep deprived gets a slow frost glow, which stays still in VR. The gold, holdings, provisions and tidings figures count up when the page opens, and the chronicle is now a timeline grouped by day that keeps the last twelve entries instead of four.
+
+The Companions page opens on a lit masthead: a soft glow of the portrait you picked for the companion behind their name, with health, stamina and magicka as ring gauges. The Bonds tab shows how the relationship assessments have moved rapport, trust, loyalty and mood, and each opinion of another companion carries that companion's face. Memories sit on a timeline grouped by day, with the most important ones set apart.
+
+On a companion's Bonds tab, rapport and mood grow from a centre mark, so a neutral 0 shows an empty bar instead of a half-full one.
+
+The World map fills the page: the hold drawer floats over a softened copy of the map, and the map zooms in up to three times with the mouse wheel or the + and - buttons in its corner and pans when you drag it. Hold sigils, travellers and roads keep their size as you zoom.
+
+On the World map, a hold where you have a bounty glows red again, more strongly for a larger bounty.
+
+Your named markers are grouped by hold under its sigil, and each has a Send button that sends a companion to walk there and wait (the same order as the Actions page's travel). The World map can show your marks: the ✦ button in its corner turns the layer on and off, and it remembers your choice. Marks inside buildings or outside Skyrim's own map are listed but not drawn.
+
+Settings search now finds single settings, not only pages: it shows every page with a matching setting, one under another, and marks the matching rows. A setting you have changed from its default has a small gold mark, with a button beside its name that puts it back. The Background AI, Outfit System and Truce master switches sit at the top of their pages as a card, and the page below dims while one is off. Nearby Objects is now a set of on/off chips, and the quick wheel is drawn as a wheel beside its slots, as the game shows it; click a slice to change it.
+
+Enterprises has one menu again: its panes are listed only in the left rail, now grouped (Overview, Retainers, Holdings & accounts) with the numbers that need you beside them (gold waiting, trouble, debts), and each pane takes the full width. On Holds, each hold opens with a banner: its sigil, its steward's face and three figures (who works there, what they make a week, the gold waiting). The Cashbook shows coin in and out for each of the last twelve weeks. Estate groups your properties by hold under their sigils, a commission shows how far along the work is, and Labor reads as a court: each employer's face heads their card with a line down to the people working for them.
+
+World Knowledge reads like a ledger instead of code: who an entry reaches is shown in words ("In Whiterun", "Nord", "MQ101 stage >= 10", joined by and / or), an important entry is set in heavier ink with its importance as pips, and the Faction view groups entries under each hold's sigil. A condition the page cannot put into words is still shown as code. Entries can be edited in place: SkyrimNet has no edit, so saving adds the changed entry and removes the old one, and the editor warns that the entry's tags are not kept.
+
+On the Survival page each companion's hunger, cold and fatigue are ring gauges with the stage word under them, and a very cold companion's face is rimed with frost. Under the party, a list shows how many hours each one has until they are famished, the soonest first. The camp card shows a glowing ember while a camp stands (it stays still in VR).
+
+On the Life Tracker each letter carries a wax seal in its hold's colour with the hold's sigil pressed in, the featured letter's sender is shown larger with the seal on the corner of their portrait, and each rumor is pinned up like a notice. The pin and bell marks are drawn in the page's own ink instead of emoji.
+
+The diary picker is now a journal page on the same parchment as the letters, bound in leather with a ribbon marking the page; each entry's date is in red ink and its opening lines in the handwriting the letters use. Like the letters, it looks the same in every theme.
+
+The Inventory's Stats sheet shows health, magicka and stamina as ring gauges (click a ring to edit the base value, as before), a resistance wheel beside the exact figures (on your own sheet the resistance cap, 85% in the base game, is a dashed ring, named under the wheel), and a small Combat / Magic / Stealth chart of the average skill in each next to the name.
+
+The Spells tab marks each school with its own drawn sign (a flame for Destruction, a sun for Restoration, and so on), shows what one cast costs that character (with their skill and perks; per second for a concentration spell) over a small bar of their full magicka (red when one cast costs more than all of it), shows how a spell is delivered with a small picture in the spell's details, and shows a spell being studied as a ring filling up.
+
+In the Inventory's item list each item's picture sits on a small tile in its category's colour, with a gold edge when it is enchanted, and a weapon's or armor's damage or rating shows the difference from what the character wears in that slot, or the weapon of the same kind they hold (a staff is not compared) ("+5" in green, "−3" in red). On a wide enough list the category tabs and the filter buttons share one row.
+
+A torch's flame in the item viewer no longer pulses a square around it with a flame texture that keeps colour behind its transparent parts, as Embers XD's does.
+
+The item viewer shows armor as worn, in a taller view with a wider side panel so a whole outfit piece fits. On the Inventory page's Inspect view and in the Catalog, an armor piece takes the shape it has on a body instead of lying flat as it does on the ground, at first for the sex of the NPC whose inventory you are looking at (in the Catalog, the companion you would give it to). A Male / Female switch under the view shows it on the other. This needs Phantasm 0.3.0; an older Phantasm shows the ground model as before.
+
+On the Outfits page the Situations tab, yours and each NPC's, is a grid of seven cells, one per situation with its own drawn sign (sun, town, house, bed, crossed swords, rain, snow), showing the outfit it puts on, with the current one named. The outfit builders' armor lists (the catalogue, and your own gear in yours) show each piece's picture by its slot, gilded when enchanted, and the mirror's buttons sit together on one panel.
+
+The Catalog's rows start with the item's picture on a tile in its category's colour; in the Armor and Weapons bands it shows the piece's slot or the weapon's kind and is gilded when enchanted, and the inspector shows the same picture.
+
+On the Actions page the writ shows the chosen character's face and, once an action is chosen, what it does on a line under it, kept in view while the writ is filled in; the staged action's ★ is always visible, so it can be pinned without hunting for it, and sealing the writ presses the seal with a brief ring.
+
+On World > Law & Crime your own wanted people are shown as wanted posters (face, charges, bounty and Pay), the arrests under way show the prisoner's and the guard's faces larger, and the figures at the top count up when the page opens.
+
+World > Portraits is now a gallery built to hold hundreds of faces: larger portraits with a Small, Medium or Large size, organized by category, place or A-Z, with a rail that jumps to any section. It draws only what is on screen, so a large collection stays smooth, and it remembers your choices. You can also make your own categories, for a town, a faction or anything else: Select picks many NPCs at once, and Select all on a section moves a whole group, so Other picked portraits no longer has to hold everyone. Categories are kept with your portraits, so they carry between saves and survive a load order change.
+
+On World > Portraits each card's frame says where the face came from: gilded for a portrait you picked, plain for the automatic one, and an empty easel in a dashed frame when there is none yet.
+
+The portrait file picker now opens in the folder you last used a picture from, and Pin this folder keeps any folder one click away in its list.
+
+On the Bio Blocks page each library tile shows about how many tokens the block adds, and the Applied view shows each character's face and about how many tokens the blocks applied to them add to every line they speak.
+
+The confirmation card (payments, trades, debts, bounties, commissions, camp challenges) is a little more see-through, with a gilt rule under its heading, and on the quick wheel the chosen slice glows in its own colour inside a brass-lit rim.
+
+The arrest, brawl, retainer and payment prompts now use the menu's serif instead of Georgia. The travel prompt's countdown bar costs less to draw.
+
+Scrolling is smoother on the Outfits page and in the Catalog. While the mirror or the item viewer is open, a list scrolling beside it no longer makes the page measure the view or resend its size and place, and the Catalog redraws only its list, in larger steps, as you scroll.
+
+Pages that show many faces open at once. Each face was read on the game thread, which froze the game for several seconds on Enterprises with a mod manager's virtual file system; the page now opens straight away and the faces fill in a moment later.
+
+NPCs keep the weapons you give them. A weapon, shield or ammo you equip on an NPC through the Inventory page (either hand, the row's Equip, or the right-click menu) is remembered as that exact copy, enchantment, temper and name included. When the game later swaps it for what it thinks is better, after a load, a cell change or a fight, SeverActions puts your choice back, never during combat, a brawl or duel, a scene, captivity or an arrest, and never for an NPC another mod dresses (Tailor, Raiment). Kept items show a Kept tag on their row and a line in the Inspect panel with a Stop keeping button, and what the NPC wears lists their kept weapons with a Forget all button. Unequipping the item there stops keeping it, and one that leaves their inventory (sold, given or dropped) is forgotten. With an outfit preset or lock dressing them, the outfit decides their shield, and a shield in that outfit keeps its place in the left hand. While the outfit system is off nothing is put back, and nothing kept is forgotten. In a fight the game still picks their weapons.
+
+An NPC can keep an outfit's pieces. A preset built from the catalog or a uniform lends its pieces to the NPC and takes them back when they change clothes; the new **Give** button beside a saved preset on the Outfits page gives them for good instead: every piece goes into their inventory (where you can see and trade it) and stays there when the outfit changes, and a piece they lose is given again the next time the preset goes on. Clicking it again goes back to lending; anything they already have stays theirs.
+
+NPCs can prefer spells in a fight. On an NPC's Spells page, mark a spell **Prefer in fights** in its panel, or **Favor in fights** on a school's heading: when they choose what to cast, preferred spells and their favored school rank well above the rest. The game still decides when they cast and whether to use magic at all. The page also says when a spell will not be cast in a fight: the game leaves out a spell that needs more skill than the NPC has (so a spell learned as a stretch or beyond usually waits until they grow into it), and one that costs more magicka than they have. Preferring a spell does not change that.
+
+**Wounds without magic, armor, and broken bones.** With Survivable Dismemberment on (it still needs Dismembering Framework):
+- **Normal attacks** can take a limb too, at their own smaller chance (Settings > Combat Context, default 5%); the old chance is now the chance per power attack.
+- **Armor protects the limb it covers.** Gauntlets or bracers guard the forearms, boots or greaves the shins: heavy armor turns most blades, light armor some. A switch turns this off.
+- **Maces and warhammers break bones** instead of cutting them: a broken forearm drops what that hand held and the hand is useless until it mends, a broken shin makes them limp. Armor softens a blunt blow only a little. Any Restoration healing from you or a follower mends the bone at once; otherwise it mends by itself within three days of the break, or one day if splinted. A switch turns breaks off. With [Open Animation Replacer](https://www.nexusmods.com/skyrimspecialedition/mods/92109) installed, someone on a broken leg also limps until it mends, on the side of the broken leg, walking, jogging or sprinting in any direction, weapons sheathed or drawn (SeverActions' own animations, made from the vanilla movement cycles). With weapons sheathed they walk hunched and head down, favouring the leg, and when they stand still they keep their weight off the leg, now and then reach down to rub it or grab it at a twinge of pain, and test it before snatching their weight back. Someone with a broken arm (and no broken leg) holds it against their stomach while they stand, walk, jog or sprint, also while fighting on with the other hand (a one-handed weapon, a spell or fists). With both arms broken they hold one against their body and let the other hang limp, leaning forward and breathing heavily. Someone who can use neither hand, or who gave up the fight with a hurt arm, puts their weapon away. A broken leg can also give way while they move: they pitch forward and have to get up again, more often the faster they go, less once splinted or in a fight (a setting; 0 turns it off). Most walks for a broken leg or arm, sheathed or weapons drawn, are rebuilt with a motion model from our own poses, sheathed separately for men and women, so the weight shifts like a hurt person's; standing still, most jogs and sprints and the moves that did not hold up keep the scripted animations, smoothed so they read less mechanical. The injury animations have their own switch (Injury animations, on by default), and turning Survivable dismemberment off stops them too; the breaks themselves stay either way.
+- **Tend Wound** binds a wound or a bare stump with cloth and splints broken bones, no magic needed. On the Actions page (Combat) you do it yourself, with a Linen Wrap from your pack, standing next to them; name a tender and they do it instead. In conversation, ask a companion or anyone else to see to the wounded and they can do it themselves.
+- **Fire seals a stump**: a fire spell, or a torch, on a bleeding stump sears it shut (it hurts).
+- **Other healing** (a health potion, the wounded's own healing, or a healing spell below Adept) halves the bleeding for a minute.
+- The wounded remember who bound, seared, splinted or mended them, and anyone talking to them can see the splint or the limp.
+
+**Lost limbs grow back with healing.** Keep healing someone who lost a limb with Restoration of Adept rank or better (Heal Other, Grand Healing), you or a follower: the first heal closes the wound as before, the second knits new bone where the limb was (bare bone grows from the elbow or knee, with a crack of bone), the third binds sinew to it (the bone glows under the healing light), and the fourth grows the limb back over it in a few seconds, with the sound of the flesh knitting, until it is whole again with a flash. A heal that lands while the last step is still playing does nothing. The knit bones stay between heals, through saving and loading, until the next heal or a new cut; a new cut while the limb grows stops it from growing back. Onlookers hear about each step through SkyrimNet, and the one healed remembers it.
+
+**A bound stump looks bound**: strips of linen wound round the limb and folded over the end, with old blood come through. A stump already seared or healed can be bound too, and stays seared or healed in what they remember. Anyone asked to tend a wound now walks over, puts their weapon away and does it by hand, on one knee for someone on the ground or a leg. A tender who is down or has no usable hand is refused. A follower on Wait goes too, and waits where they finish.
+
+Someone who lost an arm and is still on their feet now moves with the broken-arm animations, and someone with no usable hand and a broken leg goes down in the wounded pose until a bone mends. A lost limb bleeds 1% of full health a second however many limbs are gone, so someone maimed at low health has time to be tended. It was 1% an arm and 2% a leg, added together.
+
+Magic overhauls no longer stop healing from closing a lost limb's wound or growing the limb back. A healing spell now counts by its own rank, so Mysticism's Greater Healing, Grand Healing and other area heals of Adept rank or better work. Heal Other always counts, whatever rank a mod gives it. Healing Hands still does not, and neither do buffs such as Fortify Health.
+
+The dismemberment death notices can be turned off: Settings > Combat Context > Dismemberment > Record Dismemberment Deaths (on by default, shown with Dismembering Framework installed). Off, a death with a head or limb cut off is no longer recorded in SkyrimNet's events. Survivable Dismemberment's own events (a limb cut off, a limb growing back, an amputee bleeding to death) are not affected.
+
+When you hire or move a retainer, Join a crew now lists crews working inside a property you own too, and the crew you used last comes first with a Last used tag. Joining one puts the new retainer at a crewmate's actual work spot instead of looking the place up by name, even when its name isn't a place the game can find. Standing at a crew's site adds a Here chip with its size, and a hire made there joins that crew unless you pick otherwise. You can also pick several people at once and hire them all on the same terms, so filling a site no longer means typing its name for each person.
+
+A retainer's card on the Enterprises page has a Home row. Stand where they should live and press Set Here: outside work hours they go there instead of walking back to their old home, wherever they are when you set it.
+
+A companion's "how they see you" changes with what happens again. Since 4.5 the background AI was told to keep their current read and change only what new events changed, so with little new to go on it could write nearly the same text back and the read could look stuck. It now does that only while the read is one you wrote yourself on the Reasons tab.
+
+If PapyrusUtil fails to load, SeverActions now says so once at the main menu and names what to get: it reads your game version, your SKSE version and the version your PapyrusUtil.dll was built for, so it can say when the newest file is the wrong one for your game or when SKSE is what needs updating. Relationship assessments also keep working without it. Their replies were thrown away and their cooldown never held, so "how they see you" stopped updating while assessments fired more often than they should. Those timestamps now live in the save with the follower, and a one-time copy moves the existing ones over.
+
+With the Cache Enabled prompts for SkyrimNet, part of what SeverActions adds to a character now sits in the cached part of the prompt, so a reply costs less: how a companion feels about you, how they speak in a group, their camp, the quests they saw with you, your Bio Blocks and an NPC's job and intimacy stance. Without those prompts nothing changes.
+
+An NPC stripped by another mod, such as a home's pool, puts their outfit back on once they walk about 15 metres away, change location, or after ten minutes, instead of staying undressed until they next load. Dress works on them too: it re-applies their outfit, where it used to say they had no stored clothing.
+
+Each companion on the Survival page has Mark Rested and Mark Warm buttons again, which clear that need at once. A page redesign had lost them.
+
+Companions held at a Hearth camp or base no longer get SeverActions' own wait put on top of the camp's, which could keep them standing around after the camp was gone. They also count as staying put in conversation, and they are told that talking with you does not end their rest.
+
+Sever's Hearth: on Skyrim VR, placing a camp no longer needs the keyboard. The trigger confirms on every controller, and so does Activate where the game binds it to a single button (A on Oculus Touch, the right touchpad on Windows MR). On Vive that button is also teleport, so use the trigger there. Each grip rotates the camp to its side, and B or Y (the Menu button on Vive and Windows MR) cancels. The keyboard keys still work.
+
+In VR, the quick wheel opens where you are looking, so looking down at a chair or a bed to pick Use Furniture no longer puts the wheel high above it. This needs Magelight UI 1.6.1; with an older Magelight UI it opens at eye height as before.
+
+An NPC sent on a journey from inside a dungeon or building no longer hops around the room when they get stuck: indoors the hops went in a meaningless direction, and outdoors an NPC bound for a place indoors now hops toward its door. An NPC stuck on something the game gave them instead of their journey has their AI reset, unless they are in a fight, a scene or talking to you. If one stays stuck while you watch, they stand still until you leave, and the journey carries on without you.
+
+Decanus Aranwe Fidelis of the Imperial Levy no longer takes her looks through a leveled list, the likely reason NPC Names Distributor could rename her. Her face and voice now come from a different template.
+
+The Imperial Levy's General, Legates and soldiers now match on SkyrimNet's character list: their bio files were named in lower case, so the dashboard showed them with no actor, no memories and no diary, though the game itself read them. If you install by hand, remove the old files first.
+
+The Enterprises page no longer crashes the game when an NPC on the NPC labor list has a name that is not UTF-8, as translated names on a Russian install can be (seen when giving an NPC a work assignment); such a name shows with a replacement mark instead. Any other page whose data fails to build now shows an error instead of crashing the game.
+
+On Enterprises > Holds, a hold no longer shows up twice after a load (once with its retainers, once with its steward). Loading the save again was the workaround.
+
+The game no longer risks freezing when a follower is soft reset or removed, a camp member dies, a camp is released, a stalled brawl is started again, a steward collects their cut, an NPC takes over a leftover outfit slot, or named markers are checked as a save loads.
+
+On VR and some load orders, an NPC's journey could be checked at the same moment the game's own AI was working on them, and moving a stuck NPC could collide with it. That work now waits its turn in the game's task queue.
+
+The SeverActions menu key does nothing at the main menu. Newer versions of Magelight UI can open pages there, but this menu needs a loaded game.
+
+For mod authors: a new `sever_employment` decorator tells other mods what an NPC does for a living, so a bio generator can see retainers and NPC labor. See `Data/SKSE/Plugins/SeverActions/API/EMPLOYMENT_API.md`.
+
 ## v4.6.0 - Blood and Thread
 
 Magelight UI 1.5.1 is bundled (`98 Magelight UI`): Ultralight 2.0, memory released after pages close, in-page IME typing, crash fixes (including one with mods that read the game's cursor every frame), pages no longer put weapons away, and the Windows cursor stays in the game window while a page holds the mouse.

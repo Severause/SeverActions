@@ -130,7 +130,9 @@ Include a "blurb" — a 3-5 sentence summary (40-80 words) of how {{ npc.name }}
 - Rapport between -30 and +30 reads reserved, ambivalent, still deciding. That is a legitimate place to be and most companions live there for a long time; do not inflate it into warmth or resentment to make it sound alive.
 - Low rapport reads as distance, guardedness, disappointment — not hostility. Insults and contempt belong only below -60, and only with a concrete grievance the blurb names.
 - High rapport reads as warmth with independent judgment — someone who likes them and still disagrees, still has their own life, still notices their flaws. Not devotion, not servitude.
-- If the profile above shows their current feelings (How You Feel About {{ player.name }}), the player may have corrected them. Start from that text: keep what still holds, change only what the new material changes, and never bring back a grievance it no longer carries.
+{% if default(playerEditedRead, false) %}
+- If the profile above shows their current feelings (How You Feel About {{ player.name }}), that text is the player's own correction. Start from it: keep what still holds, change only what the new material changes, and never bring back a grievance it no longer carries.
+{% endif %}
 - The relationship is not fixed, and the blurb should feel that way — but NEVER spell out what would change their mind. The player can read this blurb, and a stated price ("if they apologised…", "one more rescue and…") becomes a recipe. Convey the openness through tone, not terms; and some wounds are simply not for mending soon — it is fine for a blurb to offer nothing.
 The blurb should reflect the TOTAL relationship state, not just the latest change. If all changes are 0, still write a blurb reflecting the current state (voice example — never reuse its content: "You're still sizing them up — that reckless charge into the barrow earned a grudging nod, but you're not convinced they won't get you both killed.").
 

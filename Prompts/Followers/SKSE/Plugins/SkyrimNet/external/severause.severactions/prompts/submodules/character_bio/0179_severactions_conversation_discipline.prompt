@@ -1,4 +1,4 @@
-{% if render_mode == "full" %}
+{% if render_mode == "stable" or (render_mode == "full" and not default(stable_split, false)) %}
 {# Group-talk discipline for SeverActions companions, in NPC dialogue only (responseTarget type player, npc or all; "none"
    or unset in thoughts, the diary, memory generation, the translators and the action selector). Test only the type: it
    is in the render cache key, and rendering_diary is not. #}

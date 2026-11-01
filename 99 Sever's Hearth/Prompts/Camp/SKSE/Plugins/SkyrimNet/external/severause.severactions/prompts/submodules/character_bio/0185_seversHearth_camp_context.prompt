@@ -1,4 +1,4 @@
-{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" %}
+{% if render_mode == "stable" or render_mode == "thoughts" or render_mode == "transform" or (render_mode == "full" and not default(stable_split, false)) %}
 {# The player's camps, for their companions only: camp_base (the base; the first camp pitched becomes it) and current_camp (a
    field camp), both from SeversHearthNative, "" when that camp is not up. The "x and" half of each test catches null (the
    Hearth DLL not registering them); deploy this prompt with that DLL. #}
@@ -14,6 +14,9 @@
 {% if has_camp %}- {{ camp_ctx }}
 {% endif %}
 - You and {{ player.name }} share {% if has_base and has_camp %}these camps{% else %}this camp{% endif %}: somewhere to rest, eat and warm up by the fire. Keep to what anyone there could see; do not invent furnishings or who built what. Bring it up when it fits the conversation, not in every line.
+{% if sever_camp_held(actorUUID) == "1" %}
+- You have settled in here for now. Talking with {{ player.name }} does not change that: you stay until they tell you to come along or send you elsewhere.
+{% endif %}
 {% endif %}
 {% endif %}
 {% endif %}

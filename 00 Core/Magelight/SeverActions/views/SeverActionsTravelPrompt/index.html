@@ -34,6 +34,14 @@
     --accent-warm: #c9a866;
   }
   /* BEGIN GENERATED theme blocks (scripts/themes/gen_themes.py) */
+  :root[data-theme="tallow"] {
+      --sa-bg-0: #170f09;
+      --sa-bg-2: #211812;
+      --sa-brass: #e3985d;
+      --sa-ink: #d5c095;
+      --sa-ink-mute: #998764;
+      --accent-warm: #e79b60;
+  }
   :root[data-theme="windhelm"] {
       --sa-bg-0: #08111a;
       --sa-bg-2: #121b25;
@@ -133,7 +141,7 @@
   }
   .tp-input:focus { outline: 2px solid var(--brass); outline-offset: 1px; }
   .tp-timer { height: 3px; background: color-mix(in srgb, var(--well) 30%, transparent); border-radius: 2px; overflow: hidden; }
-  .tp-timer-fill { height: 100%; width: 100%; background: var(--brass); transition: width linear; }
+  .tp-timer-fill { height: 100%; width: 100%; background: var(--brass); transform-origin: left center; transition: transform linear; }
 </style>
 </head>
 <body>
@@ -306,10 +314,10 @@
       // Drain timer — lapse = decline (no travel).
       var ms = parseInt(data.timeoutMs, 10) || 60000;
       timerFill.style.transition = 'none';
-      timerFill.style.width = '100%';
+      timerFill.style.transform = 'scaleX(1)';
       void timerFill.offsetWidth;
-      timerFill.style.transition = 'width ' + ms + 'ms linear';
-      timerFill.style.width = '0%';
+      timerFill.style.transition = 'transform ' + ms + 'ms linear';
+      timerFill.style.transform = 'scaleX(0)';
       if (timerHandle) clearTimeout(timerHandle);
       timerHandle = setTimeout(function () { post('decline'); }, ms);
     };

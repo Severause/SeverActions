@@ -348,8 +348,11 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
                                 retainedAcrossEdit += 1
                             else
                                 ; The copy SA lent, else a plain copy, never a player-modified
-                                ; one (see RemovePresetItemsFromActor).
-                                If SeverActionsNativeExt2.RemovePlainCopies(akActor, oldItem, 1, None) > 0
+                                ; one (see RemovePresetItemsFromActor), nor one a given preset
+                                ; made hers.
+                                If SeverActionsNativeExt2.Native_OutfitSlot_IsGivenPiece(akActor, oldItem)
+                                    preservedUserOwned += 1
+                                ElseIf SeverActionsNativeExt2.RemovePlainCopies(akActor, oldItem, 1, None) > 0
                                     cleanedCatalog += 1
                                 Else
                                     playerWorkSparedEdit += 1
@@ -402,6 +405,8 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
 
     Form[] committedItems = Utility.CreateFormArray(32)
     Int committed = 0
+    ; A given preset (the Outfits page's Give) lends nothing: a piece the save adds stays hers.
+    Bool givenPreset = SeverActionsNativeExt2.Native_OutfitSlot_GivesPieces(akActor, presetIdx)
     Int catalogTagged = 0
     Int playerWorkSparedBuild = 0
     Int userOwnedTagged = 0
@@ -432,7 +437,11 @@ Int Function BuildPreset(Actor akActor, Int presetIdx, Form[] items, String pres
                 EndWhile
             endif
 
-            if isCatalog
+            if isCatalog && givenPreset
+                ; Given: a marker copy in the chest, her copy untouched, no tag.
+                chest.AddItem(items[i], 1, true)
+                userOwnedTagged += 1
+            elseif isCatalog
                 ; Catalog: MOVE the actor's copy (C++'s grant, or one retained
                 ; across the edit) to the chest.
                 Int npcCount = akActor.GetItemCount(items[i])
@@ -583,7 +592,8 @@ Function RemovePresetItemsFromActor(Actor akActor, Int slotIdx, Int presetIdx)
                     ; puts its own piece straight back on.
                     blacklistSkipped += 1
                 else
-                    Bool isCatalog = SeverActionsNative.Native_OutfitSlot_IsCatalogSupplied(akActor, presetIdx, item)
+                    ; A piece a given preset lists is hers whatever this preset's tag says: only unequipped.
+                    Bool isCatalog = SeverActionsNative.Native_OutfitSlot_IsCatalogSupplied(akActor, presetIdx, item) && !SeverActionsNativeExt2.Native_OutfitSlot_IsGivenPiece(akActor, item)
                     if isCatalog
                         ; Catalog temp copy. Unequip-now first: RemoveItem's implicit
                         ; unequip can defer under menu pause.
@@ -946,7 +956,8 @@ Int Function _TakeBackGrantedCopies(Actor akActor, Form[] akItems, Int[] aiHeldB
     Int i = 0
     While i < n
         Form item = akItems[i]
-        if item && aiHeldBefore[i] == 0 && akActor.GetItemCount(item) > 0
+        ; A piece a given preset lists was given, not lent: it stays.
+        if item && aiHeldBefore[i] == 0 && akActor.GetItemCount(item) > 0 && !SeverActionsNativeExt2.Native_OutfitSlot_IsGivenPiece(akActor, item)
             if (item as Armor) && akActor.IsEquipped(item)
                 SeverActionsNativeExt.Native_UnequipItemNow(akActor, item)
             endif

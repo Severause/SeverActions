@@ -1,4 +1,4 @@
-{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" %}
+{% if render_mode == "stable" or render_mode == "thoughts" or render_mode == "transform" or (render_mode == "full" and not default(stable_split, false)) %}
 {# Quests this companion saw at the player's side: quest_awareness's lines, "" without a record (records are made only for
    rostered followers, so no follower test). The decorator returns the body; this file owns the heading. Ships with that DLL. #}
 {% if actorUUID and actorUUID != 0 %}

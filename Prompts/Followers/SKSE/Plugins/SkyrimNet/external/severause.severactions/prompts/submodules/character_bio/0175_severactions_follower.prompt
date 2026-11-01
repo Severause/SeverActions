@@ -1,4 +1,4 @@
-{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" %}
+{% if render_mode == "stable" or render_mode == "thoughts" or render_mode == "transform" or (render_mode == "full" and not default(stable_split, false)) %}
 {# A current companion's role, feelings, fighting style and routine; anyone else's SeverActions home and routine. #}
 {% if actorUUID and actorUUID != 0 %}
 {% set actor = decnpc(actorUUID) %}

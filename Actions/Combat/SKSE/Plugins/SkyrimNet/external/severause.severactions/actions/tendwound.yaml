@@ -1,0 +1,64 @@
+customCategory: combat
+name: TendWound
+description: "Use when the speaker binds someone's wound or stump or splints their broken bone in this very line: tearing cloth to stop the blood from a lost limb, wrapping a stump already closed, setting a broken arm or leg. Anyone can do it, no magic needed. Not for healing magic (that is Magic), promises to help later, or only looking at the wound. The wounded nearby: {{ sever_wounded_nearby(npc.UUID) }}."
+questEditorId: SeverActions
+scriptName: SeverActions_Combat
+executionFunctionName: TendWound
+parameterMapping:
+  - type: speaker
+    name: akTender
+    description: the actor tending the wound
+  - type: dynamic
+    name: akTarget
+    description: "exact name of one of the wounded the action description lists"
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      # Someone near the player has a bare stump or a broken bone not yet splinted (the speaker aside).
+      # Custom decorator: STRING compare, "" = nobody to tend.
+      - decoratorName: "sever_wounded_nearby"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # A bound captive cannot act (see the is_kidnap_victim bullet in CLAUDE.md). "" = not a victim.
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Not while the guards hold them (Custody::IsHeld); "" = free.
+      - decoratorName: "sever_in_custody"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      # Not in a parley (a guard questioning a companion over a bounty): the container's gate is not read
+      # again in the drill-down. "" = no parley.
+      - decoratorName: "sever_parley_role"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

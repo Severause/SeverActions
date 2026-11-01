@@ -11,7 +11,7 @@
 
 <p align="center">
   <code>Skyrim SE &middot; AE &middot; VR</code> &nbsp;&middot;&nbsp; <code>SkyrimNet 0.25+</code> &nbsp;&middot;&nbsp;
-  <code>Magelight UI 1.3.0 included</code>
+  <code>Magelight UI 1.7 included</code>
 </p>
 
 <p align="center">
@@ -312,7 +312,7 @@ the game (people, places, items, quests) appear as the game shows them.
 | | |
 |---|---|
 | **Required** | Skyrim SE 1.5.97, AE 1.6.x or 1.7.x, or Skyrim VR 1.4.15 · SKSE64 (2.3.0 or newer on 1.7.x), or SKSEVR on VR · Address Library for SKSE Plugins (the VR Address Library on VR) · [SkyrimNet](https://www.nexusmods.com/skyrimspecialedition/mods/148913) 0.25 (beta 25) or newer · PapyrusUtil · the latest Microsoft Visual C++ Redistributable 2015-2022 (x64), which the menu needs |
-| **Included** | Magelight UI 0.30.5, which draws the menu, popups and quick wheel and always installs with the core · Sever's Hearth, the camp system, on its own installer page |
+| **Included** | Magelight UI 1.7.1, which draws the menu, popups and quick wheel and always installs with the core · Sever's Hearth, the camp system, on its own installer page |
 | **Recommended** | SkyUI, only for the MCM |
 | **Optional** | See [Compatibility](#compatibility) |
 | **No longer needed** | PrismaUI and UIExtensions. Papyrus MessageBox is optional now, only a fallback for when one of SeverActions' own popups can't open |
@@ -321,7 +321,7 @@ SeverActions also does not need powerofthree's Papyrus Extender, JContainers, Co
 powerofthree's Tweaks.
 
 PrismaUI can stay installed for other mods, such as SkyrimNet's chat; SeverActions won't open its menu or popups while
-that chat has focus. If you also install Magelight UI as its own mod, let the newer copy win: it should be 0.30.5 or
+that chat has focus. If you also install Magelight UI as its own mod, let the newer copy win: it must be 1.5.0 or
 newer.
 
 **Load order**: place SeverActions after SkyrimNet; otherwise the order doesn't matter. `SeverActions.esp` uses a full

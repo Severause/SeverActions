@@ -75,9 +75,10 @@ Float Property FireBlockRadius = 50.0 Auto Hidden
 ; Placement state, transient: the "postload" tick resets it (the native ghost
 ; refs do not survive a reload).
 Int PlacementMode = 0                ; 0 idle, 1 field-camp ghost, 2 base ghost
-Float PlacementRotateOffset = 0.0    ; Q/E rotation on top of facing (deg)
+Float PlacementRotateOffset = 0.0    ; the player's rotation on top of facing (deg)
 Int PlacementConfirmKey = 28         ; resolved Activate key, or Enter on collision
 Float PlacementBannerCooldown = 0.0  ; seconds until the next banner reminder
+Bool PlacementOnControllers = False  ; VR: the native sink takes this placement's commands
 
 ; One upgrade at a time: the button, the LLM action and a second companion can
 ; all call UpgradeBase during its ~5 s of fades and waits, and a second call
@@ -105,6 +106,8 @@ Function RegisterCampEvents()
     RegisterForModEvent("SeverActions_MagelightSetupCamp",       "OnPrismaSetupCamp")
     RegisterForModEvent("SeverActions_MagelightSetupSmallCamp",  "OnPrismaSetupSmallCamp")
     RegisterForModEvent("SeverActions_MagelightRepositionCamp",  "OnPrismaRepositionCamp")
+    ; Placement on VR controllers, which RegisterForKey cannot hear.
+    RegisterForModEvent("SeversHearth_PlacementInput", "OnPlacementInputEvent")
     ; A player recruit / follow / wait / dismiss releases the actor from its camp
     ; or base sandbox.
     RegisterForModEvent("SeverActions_FollowerCalledByPlayer", "OnFollowerCalledByPlayer")
@@ -502,9 +505,9 @@ Function BreakCamp(Actor akActor)
 EndFunction
 
 ; Player-driven placement: a ghost of the whole camp follows the player's view;
-; Q/E rotate, Enter/Activate confirms, Tab cancels. Confirm deletes the ghost
-; and spawns the real camp where it stood (a moved static's collision does not
-; follow it). Reposition first tears the camp down, keeping the stash chest.
+; Q/E rotate, Enter/Activate confirms, Tab cancels (VR: CampPlacementInput.h).
+; Confirm deletes the ghost and spawns the real camp where it stood (a moved
+; static's collision does not follow it). Reposition first tears the camp down, keeping the stash chest.
 ; A 0.1 s update tick re-projects the ghost; DisablePlayerControls blocks
 ; menus / activate / fighting so the keys do not double-fire, leaving movement
 ; and looking on for aiming.
@@ -598,17 +601,35 @@ Event OnKeyDown(Int keyCode)
         Return
     EndIf
     If keyCode == 16                 ; Q — rotate left
-        PlacementRotateOffset -= 15.0
-        Native_Camp_UpdatePreview(PlacementRotateOffset)
+        _RotatePlacement(-15.0)
     ElseIf keyCode == 18             ; E — rotate right
-        PlacementRotateOffset += 15.0
-        Native_Camp_UpdatePreview(PlacementRotateOffset)
+        _RotatePlacement(15.0)
     ElseIf keyCode == 15             ; Tab — cancel
         CancelPlacement()
     ElseIf keyCode == 28 || keyCode == PlacementConfirmKey   ; Enter / Activate — confirm
         ConfirmPlacement()
     EndIf
 EndEvent
+
+Event OnPlacementInputEvent(String eventName, String strArg, Float numArg, Form sender)
+    If PlacementMode == 0
+        Return
+    EndIf
+    If strArg == "left"
+        _RotatePlacement(-15.0)
+    ElseIf strArg == "right"
+        _RotatePlacement(15.0)
+    ElseIf strArg == "cancel"
+        CancelPlacement()
+    ElseIf strArg == "confirm"
+        ConfirmPlacement()
+    EndIf
+EndEvent
+
+Function _RotatePlacement(Float degrees)
+    PlacementRotateOffset += degrees
+    Native_Camp_UpdatePreview(PlacementRotateOffset)
+EndFunction
 
 Function ConfirmPlacement()
     ; The ghost was started against its slot (field or base), so the commit
@@ -710,6 +731,8 @@ Function _BeginPlacementInput()
     ; Disables fighting, menu, activate and journal tabs; movement, camera,
     ; looking and sneaking stay on.
     Game.DisablePlayerControls(False, True, False, False, False, True, True, True)
+    ; Last: a controller command must find placement fully set up.
+    PlacementOnControllers = Native_Camp_ArmControllerInput()
 EndFunction
 
 Function _EndPlacementInput()
@@ -729,7 +752,11 @@ Function _EndPlacementMode()
 EndFunction
 
 Function _ShowPlacementBanner()
-    Debug.Notification("Camp placement - aim with your view, Q/E rotate, Enter/Activate confirms, Tab cancels")
+    If PlacementOnControllers
+        Debug.Notification("Camp placement - aim with your view, grips rotate, trigger confirms, B/Y or Menu cancels")
+    Else
+        Debug.Notification("Camp placement - aim with your view, Q/E rotate, Enter/Activate confirms, Tab cancels")
+    EndIf
     PlacementBannerCooldown = 3.0
 EndFunction
 
@@ -2281,6 +2308,7 @@ Function Native_Camp_UnbindLocation(Form locForm) Global Native
 ; The survival tick (CampSurvivalTick.h worker thread).
 Function Native_Camp_ForceTick() Global Native
 Function Native_Camp_AckPostLoad() Global Native
+Bool Function Native_Camp_ArmControllerInput() Global Native
 Function Native_Camp_SetTickIntervalSeconds(Int seconds) Global Native
 Function Native_Camp_SetTickEnabled(Bool enabled) Global Native
 
@@ -2298,7 +2326,7 @@ Actor[] Function Native_Camp_FindNearbyTeammates(Float radius) Global Native
 
 ; ── Placement preview (CampPlacement.h) ────────────────────────────────
 ; StartPreview spawns the ghost ahead of the player; UpdatePreview re-projects
-; and ground-snaps it (rotateOffsetDeg = the Q/E rotation on top of facing);
+; and ground-snaps it (rotateOffsetDeg = the player's rotation on top of facing);
 ; CommitPreview deletes the ghost, spawns the real camp at its last transform
 ; (keeping the stash chest) and returns the structure count; CancelPreview
 ; deletes the ghost.

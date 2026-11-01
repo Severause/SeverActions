@@ -9,7 +9,8 @@ Scriptname SeverActions_Init extends ReferenceAlias
 ; === Initialization ===
 
 ; K0: bumped together with the DLL's KernelSession::kAbiVersion whenever a native's signature or
-; meaning changes in a way an older pex must not run against. 34: Combat and FollowerManager ask
+; meaning changes in a way an older pex must not run against. 36: Combat's TendWound calls
+; LivingDismember_Tend, which an older DLL does not register (35 is the vampire work's). 34: Combat and FollowerManager ask
 ; Duel_IsActive, and Brawl's duel handlers Native_Duel_HandleOf, which an older DLL does not register. 33: FollowerManager asks
 ; RecruitRequest_ShouldAsk and the rest, which an older DLL does not register (unbound, every ordered
 ; recruit would skip the ask and DeclineCompanionRequest would do nothing). 32: the outfit scripts ask
@@ -17,7 +18,7 @@ Scriptname SeverActions_Init extends ReferenceAlias
 ; would strip Devious Devices). 31: Familiarity calls Familiarity_SetBlurb
 ; and Familiarity_ImportBlurb, which an older DLL does not register (unbound, every reputation impression
 ; would be dropped), and CompanionMind calls Bond_NoteSources.
-Int Property KERNEL_ABI = 34 AutoReadOnly
+Int Property KERNEL_ABI = 38 AutoReadOnly
 
 Event OnInit()
     Debug.Trace("[SeverActions] OnInit - First time initialization")

@@ -7,7 +7,7 @@
     <style>
       /* Arrest prompt overlay -- non-pausing HUD card.
          Visual tokens copied from the Brawl + CollectPayment prompts
-         (brass-on-dark, EB Garamond). Vanilla HTML/CSS -- no React.
+         (brass-on-dark, the Sitka serif). Vanilla HTML/CSS -- no React.
 
          Buttons are color-coded by severity:
            green  -- Pay Fine, Bribe (transactional, ends peacefully)
@@ -40,6 +40,15 @@
         --well: #000000; /* theme: ink */ /* a black well fill */
       }
       /* BEGIN GENERATED theme blocks (scripts/themes/gen_themes.py) */
+      :root[data-theme="tallow"] {
+          --accent: #e59a5e;
+          --accent-warm: #e79b60;
+          --card-ground-top: #170d05;
+          --card-ground-bottom: #231409;
+          --card-ink: #feb881;
+          --btn-ground: #442913;
+          --btn-ground-hi: #623b1a;
+      }
       :root[data-theme="windhelm"] {
           --accent: #7cb2ce;
           --accent-warm: #7db3d0;
@@ -98,7 +107,7 @@
         width: 100%;
         height: 100%;
         background: transparent !important;
-        font-family: 'Trajan Pro', 'EB Garamond', Georgia, serif;
+        font-family: 'Sitka Heading', 'Sitka Text', 'Cambria', 'Palatino Linotype', Georgia, serif;
         font-size: 19px;
         color: var(--accent);
         overflow: hidden;

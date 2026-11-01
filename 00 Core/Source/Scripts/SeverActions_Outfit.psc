@@ -466,6 +466,9 @@ Function Dress_Execute(Actor akActor)
         Return
     EndIf
 
+    ; The player's word ends a strip mod's hold on them.
+    SeverActionsNative.Native_Outfit_ClearBurstSuppression(akActor)
+
     ; A HELD slot preset (EquipArmor / UnequipArmor took over): dressed means
     ; back into that preset. ApplyPresetBySlot's same-index path puts every
     ; piece back (reusing catalog copies still in the pack) and ends the hold.
@@ -507,6 +510,11 @@ Function Dress_Execute(Actor akActor)
         ; A (non-held) preset went on since the Undress, by the auto-switch or
         ; the Outfits page, and dresses the NPC. The native apply ended the
         ; native half of the session; this ends the Papyrus half.
+        ; Another mod may have stripped it since: worn in full, the re-apply touches nothing.
+        SeverActions_OutfitSlot sinceSlotSys = GetSlotScript()
+        If sinceSlotSys
+            sinceSlotSys.ApplyPresetBySlot(akActor, SeverActionsNative.Native_OutfitSlot_GetActivePreset(akActor))
+        EndIf
         Debug.Trace("[SeverActions_Outfit] Dress: " + akActor.GetDisplayName() + " - a preset went on since the undress, the undress session is over")
         _ClearDressStash(akActor)
         StorageUtil.UnsetIntValue(akActor, "SeverActions_DressWasLocked")
@@ -538,6 +546,20 @@ Function Dress_Execute(Actor akActor)
         EndIf
         StorageUtil.UnsetIntValue(akActor, "SeverActions_DressPresetIdx")
     StorageUtil.UnsetStringValue(akActor, "SeverActions_DressPresetName")
+    EndIf
+
+    ; Another mod stripped them, so there is no stash: dressed means their active
+    ; preset. Worn in full, the re-apply touches nothing.
+    Form[] dressStash = SeverActionsNativeExt.Native_Outfit_DressStashGet(akActor)
+    Int dressActive = SeverActionsNative.Native_OutfitSlot_GetActivePreset(akActor)
+    If dressActive >= 0 && (!dressStash || dressStash.Length == 0)
+        SeverActions_OutfitSlot activeSlotSys = GetSlotScript()
+        If activeSlotSys
+            Debug.Trace("[SeverActions_Outfit] Dress: " + akActor.GetDisplayName() + " - re-applying active preset " + dressActive)
+            activeSlotSys.ApplyPresetBySlot(akActor, dressActive)
+            StorageUtil.UnsetIntValue(akActor, "SeverActions_DressWasLocked")
+            Return
+        EndIf
     EndIf
 
     BeginAdHocOutfitOp(akActor)
@@ -678,10 +700,10 @@ EndFunction
 
 Bool Function Dress_IsEligible(Actor akActor)
 {Alive, not a child, not outfit-excluded, outfit system on (see Undress_IsEligible),
- and something to put back: stashed clothing, a held slot preset, the preset an
- Undress took off, or a saved DefaultOutfit. False while a held preset cannot go
- back on because another mod takes a piece of it away: Dress_Execute changes
- nothing then.}
+ and something to put back: stashed clothing, a slot preset (active, held, or the
+ one an Undress took off), a locked outfit, or a saved DefaultOutfit. False while
+ a held preset cannot go back on because another mod takes a piece of it away:
+ Dress_Execute changes nothing then.}
     if !akActor
         return false
     endif
@@ -705,6 +727,16 @@ Bool Function Dress_IsEligible(Actor akActor)
     Form[] stashed = SeverActionsNativeExt.Native_Outfit_DressStashGet(akActor)
     if stashed && stashed.Length > 0
         return true
+    endif
+    ; Another mod's strip stashes nothing: what they should wear is the outfit.
+    if SeverActionsNative.Native_OutfitSlot_GetActivePreset(akActor) >= 0
+        return true
+    endif
+    if SeverActionsNativeExt.Native_Outfit_IsLockActive(akActor)
+        Form[] lockedPieces = SeverActionsNative.Native_Outfit_GetLockedItems(akActor)
+        if lockedPieces && lockedPieces.Length > 0
+            return true
+        endif
     endif
     ; Or a snapshotted DefaultOutfit.
     return SeverActionsNativeExt.Native_Outfit_DressStashGetDefaultOutfit(akActor) != None

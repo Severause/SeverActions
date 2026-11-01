@@ -22,7 +22,8 @@ eligibilityRules:
   #   sever_follow_state — SA's OWN follow state, FormID-resolved from the
   #                        native FollowerDataStore: "following" (SA drives
   #                        the follow, or the actor is on the roster) /
-  #                        "waiting" (parked by SA) / "" (not ours). This is
+  #                        "waiting" (parked by SA, or held at a Hearth
+  #                        camp) / "" (not ours). This is
   #                        what covers a CASUAL follower — StartFollowing sets
   #                        neither teammate nor the roster flag. The earlier
   #                        is_in_faction("SeverActions_ActivelyFollowing")

@@ -1,6 +1,6 @@
 customCategory: combat
 name: Combat
-description: "Category: a real fight with weapons or magic: attack someone this very moment, or end a fight the speaker is in by surrendering or calling a truce. Carrying on a fight already under way needs no action. Threats of what will happen, warnings, readying a weapon, 'prepare to fight' and 'if you…' are words; drawing steel and striking now is the attack. Fist-fights are Brawl; an outlaw questioning the player at their camp is CampChallenge; an ambush standoff is AmbushStandoff; resisting a guard who has stopped one over a bounty is Arrest."
+description: "Category: a real fight with weapons or magic: attack someone this very moment, or end a fight the speaker is in by surrendering or calling a truce; and its wounds: binding a bleeding wound or splinting a broken bone with one's own hands, no magic. Carrying on a fight already under way needs no action. Threats of what will happen, warnings, readying a weapon, 'prepare to fight' and 'if you…' are words; drawing steel and striking now is the attack. Fist-fights are Brawl; an outlaw questioning the player at their camp is CampChallenge; an ambush standoff is AmbushStandoff; resisting a guard who has stopped one over a bounty is Arrest."
 enabled: true
 
 eligibilityRules:

@@ -40,8 +40,29 @@
     --hub-edge: #16110c;
     --sector-fallback: #1c1610;
     --hub-fallback: #1f1913;
+    /* The controller's A and B in the hub (the main menu's --pad-* tokens) */
+    --pad-a: #6cb04e;
+    --pad-b: #d0503f;
+    --pad-ps-cross: #7f9fd6;
+    --pad-ps-circle: #de6a62;
   }
   /* BEGIN GENERATED theme blocks (scripts/themes/gen_themes.py) */
+  :root[data-theme="tallow"] {
+      --brass: #e3985d;
+      --border: rgba(227, 152, 93, 0.22);
+      --border-accent: rgba(227, 152, 93, 0.55);
+      --text: #d5c095;
+      --text-dim: #998764;
+      --txt-hot: #f7e3b9;
+      --tone-default: #e59a5e;
+      --tone-greyed: #807254;
+      --sector-inner: #120d08;
+      --sector-outer: #2f2217;
+      --hub-center: #2e2117;
+      --hub-edge: #18100b;
+      --sector-fallback: #1e150f;
+      --hub-fallback: #211812;
+  }
   :root[data-theme="windhelm"] {
       --brass: #7ab0cd;
       --border: rgba(122, 176, 205, 0.22);
@@ -120,6 +141,10 @@
       --hub-edge: #c9b68e;
       --sector-fallback: #d7c7a6;
       --hub-fallback: #e0d3b7;
+      --pad-a: #2d6902;
+      --pad-b: #ab2c1e;
+      --pad-ps-cross: #3f5c8f;
+      --pad-ps-circle: #a33531;
   }
   /* END GENERATED theme blocks */
   * { box-sizing: border-box; }
@@ -154,6 +179,11 @@
   .sector .tint { opacity: .09; pointer-events: none; transition: opacity 90ms ease; }
   .sector .band { fill: none; stroke-width: 3; opacity: .6; pointer-events: none;
                   transition: opacity 90ms ease, stroke-width 90ms ease; }
+  /* The hot sector's glow: a wide, faint stroke under the band in the same pigment, inside the TXT_OUT margin the labels
+     keep clear (a stroke, not a filter: cheap in the host, and a filter blurs). */
+  .sector .glow { fill: none; stroke-width: 9; opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
+  .sector.hot .glow { opacity: .28; }
+  .sector.dis.hot .glow { opacity: 0; }
   .sector .glyph { font-size: 13px; text-anchor: middle; pointer-events: none; opacity: .75; }
   .sector.hot .tint { opacity: .26; }
   .sector.hot .band { opacity: 1; stroke-width: 4.5; }
@@ -162,7 +192,9 @@
      keeps the quiet wash and only its band and glyph brighten. */
   .sector.dis { opacity: .45; cursor: default; }
   .sector.dis.hot .tint { opacity: .09; }
-  .ring { fill: none; stroke: var(--border); stroke-width: 1; pointer-events: none; }
+  /* The rim: a brass gradient round the ring (SVG has no conic gradient; a diagonal one, brightest top left, dimmest
+     across the middle). */
+  .ring { fill: none; stroke: url(#rimFill) var(--border); stroke-width: 1.5; pointer-events: none; }
   .stud { fill: var(--brass); opacity: .55; pointer-events: none; }
   .txt { fill: var(--text); font-size: 15px; text-anchor: middle; pointer-events: none;
          letter-spacing: 0.3px; }
@@ -174,6 +206,7 @@
   .hub-ring { fill: none; stroke: var(--brass); stroke-width: 1; opacity: .18; pointer-events: none; }
   #hub-name { fill: var(--brass); font-size: 13px; text-anchor: middle; pointer-events: none;
               letter-spacing: 1px; text-transform: uppercase; }
+  #hub-pad text { fill: var(--text-dim); font-size: 10px; pointer-events: none; }
   #hub-hint { fill: var(--text-dim); font-size: 10px; text-anchor: middle; pointer-events: none;
               font-style: italic; }
 </style>
@@ -397,6 +430,8 @@
     // The hub's second line: 'cancel', or a greyed slot's note, squeezed to the hub like a long
     // name. Measured where the host can (CJK runs twice as wide per character), else counted.
     function setHint(txt) {
+      var padRow = document.getElementById('hub-pad');
+      if (padRow) padRow.style.display = txt ? 'none' : '';
       if (!hintEl || hintEl.textContent === txt) return;
       hintEl.textContent = txt;
       hintEl.removeAttribute('textLength');
@@ -408,7 +443,7 @@
         hintEl.setAttribute('lengthAdjust', 'spacingAndGlyphs');
       }
     }
-    function restoreHint() { setHint(hot >= 0 && isDisabled(hot) ? noteOf(hot) : S('cancel', 'cancel')); }
+    function restoreHint() { setHint(hot >= 0 && isDisabled(hot) ? noteOf(hot) : padFamily ? '' : S('cancel', 'cancel')); }
     function setHot(i) {
       if (hot >= 0 && sectors[hot]) {
         sectors[hot].classList.remove('hot');
@@ -420,6 +455,76 @@
         (sectorText[hot] || []).forEach(function (t) { t.classList.add('hot'); });
       }
       restoreHint();
+    }
+    // Walk the ring one slot (keys, the pad's d-pad); with none lit, start at either end.
+    function step(delta) {
+      var n = sectors.length;
+      if (n) setHot(hot < 0 ? (delta > 0 ? 0 : n - 1) : (hot + delta + n) % n);
+    }
+    // Pick the lit slot; a greyed one shows its note in the hub instead.
+    function choose() {
+      if (hot >= 0) { if (isDisabled(hot)) setHint(noteOf(hot)); else pick(hot); }
+    }
+
+    // The hub's A pick / B cancel while a controller is in use, drawn as the menu's PadGlyph badges are
+    // (components/pad/PadGlyph.tsx): Xbox letters, PlayStation shapes, a generic pad's positions.
+    var padFamily = '';
+    function padBadge(button, cx, cy, r) {
+      var g = el('g', {});
+      var ps = padFamily === 'playstation';
+      var tone = button === 'south' ? (ps ? 'var(--pad-ps-cross)' : 'var(--pad-a)') : (ps ? 'var(--pad-ps-circle)' : 'var(--pad-b)');
+      g.appendChild(el('circle', { cx: cx, cy: cy, r: r, fill: 'var(--hub-edge)', stroke: tone, 'stroke-width': 1.2 }));
+      var k = r / 10.4;
+      if (ps && button === 'south') {
+        g.appendChild(el('path', { d: 'M' + (cx - 4 * k) + ' ' + (cy - 4 * k) + ' L' + (cx + 4 * k) + ' ' + (cy + 4 * k) +
+          ' M' + (cx + 4 * k) + ' ' + (cy - 4 * k) + ' L' + (cx - 4 * k) + ' ' + (cy + 4 * k), stroke: tone, 'stroke-width': 1.5, 'stroke-linecap': 'round' }));
+      } else if (ps) {
+        g.appendChild(el('circle', { cx: cx, cy: cy, r: 4.6 * k, fill: 'none', stroke: tone, 'stroke-width': 1.5 }));
+      } else if (padFamily === 'generic') {
+        [[0, 6], [6, 0], [-6, 0], [0, -6]].forEach(function (d, i) {
+          var on = (button === 'south' && i === 0) || (button === 'east' && i === 1);
+          g.appendChild(el('circle', { cx: cx + d[0] * k, cy: cy + d[1] * k, r: 2.2 * k, fill: on ? 'var(--txt-hot)' : 'none',
+            stroke: on ? 'var(--txt-hot)' : 'var(--text-dim)', 'stroke-width': 0.8 }));
+        });
+      } else {
+        var t = el('text', { x: cx, y: cy + 4.2 * k, 'text-anchor': 'middle', style: 'font-size:' + (12 * k) + 'px;font-weight:700;fill:' + tone });
+        t.textContent = button === 'south' ? 'A' : 'B';
+        g.appendChild(t);
+      }
+      return g;
+    }
+    // Laid out from the words' measured widths and centred, squeezed to the hub like a long name.
+    function drawPadHints() {
+      var old = document.getElementById('hub-pad');
+      if (old) old.parentNode.removeChild(old);
+      if (!padFamily || !hintEl) return;
+      var g = el('g', { id: 'hub-pad' });
+      svg.appendChild(g);
+      var y = CY + 16, r = 7.5, gapIn = 3, gapOut = 10, max = (R_IN - 8) * 2 - 18;
+      var words = [S('pick', 'pick'), S('cancel', 'cancel')].map(function (str) {
+        var t = el('text', { y: y });
+        t.textContent = str;
+        g.appendChild(t);
+        var w = 0;
+        try { w = t.getComputedTextLength(); } catch (e) {}
+        return { el: t, w: w || str.length * 5.5 };
+      });
+      var fixed = 4 * r + 2 * gapIn + gapOut;
+      var room = max - fixed, wordsW = words[0].w + words[1].w;
+      if (wordsW > room) {
+        words.forEach(function (wd) {
+          wd.w = wd.w * room / wordsW;
+          wd.el.setAttribute('textLength', String(wd.w));
+          wd.el.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+        });
+      }
+      var x = CX - (fixed + words[0].w + words[1].w) / 2;
+      ['south', 'east'].forEach(function (button, i) {
+        g.appendChild(padBadge(button, x + r, y - 3.5, r));
+        x += 2 * r + gapIn;
+        words[i].el.setAttribute('x', String(x));
+        x += words[i].w + gapOut;
+      });
     }
 
     function render(data) {
@@ -442,6 +547,12 @@
       var defs = el('defs', {});
       defs.appendChild(radialFill('sectorFill', R_OUT, [[R_IN / R_OUT, 'var(--sector-inner)', 0.94], [1, 'var(--sector-outer)', 0.94]]));
       defs.appendChild(radialFill('hubFill', R_IN - 8, [[0, 'var(--hub-center)', 1], [1, 'var(--hub-edge)', 1]]));
+      var rim = el('linearGradient', { id: 'rimFill', gradientUnits: 'userSpaceOnUse',
+        x1: CX - R_OUT, y1: CY - R_OUT, x2: CX + R_OUT, y2: CY + R_OUT });
+      [[0, 'var(--brass)', 0.95], [0.5, 'var(--border)', 0.7], [1, 'var(--brass)', 0.6]].forEach(function (st) {
+        rim.appendChild(el('stop', { offset: st[0], 'stop-color': st[1], 'stop-opacity': st[2] }));
+      });
+      defs.appendChild(rim);
       svg.appendChild(defs);
       if (n > 0) {
         svg.appendChild(el('circle', { cx: CX, cy: CY, r: R_OUT + 6 }, 'ring'));
@@ -473,6 +584,7 @@
           }
           s.appendChild(base);
           s.appendChild(el('path', { d: d, fill: color }, 'tint'));
+          s.appendChild(el('path', { d: arcPath(R_OUT - 4.5, ang[0], ang[1]), stroke: color }, 'glow'));
           s.appendChild(el('path', { d: arcPath(R_OUT - 3.5, ang[0], ang[1]), stroke: color }, 'band'));
           var gp = polar(R_IN + 13, mid);
           var glyph = el('text', { x: gp[0], y: gp[1] + 4.5, fill: color }, 'glyph');
@@ -507,9 +619,10 @@
       }
       svg.appendChild(name);
       var hint = el('text', { id: 'hub-hint', x: CX, y: CY + 16 });
-      hint.textContent = S('cancel', 'cancel');
+      hint.textContent = padFamily ? '' : S('cancel', 'cancel');
       svg.appendChild(hint);
       hintEl = hint;
+      drawPadHints();
     }
 
     // Anywhere outside a slot (the page background) dismisses — the same
@@ -517,23 +630,69 @@
     overlay.addEventListener('click', function () { dismiss(); });
     document.addEventListener('contextmenu', function (e) { e.preventDefault(); dismiss(); });
 
-    // Keyboard / gamepad (the native GamepadUIBridge turns A→Enter, B→Escape,
-    // d-pad/stick→arrows): arrows walk the ring, Enter picks, Escape cancels.
+    // Keyboard, and a pad typed as keys (the native GamepadUIBridge, or a Magelight
+    // without the gamepad layer: A Enter, B Escape, d-pad/stick the arrows):
+    // arrows walk the ring, Enter picks, Escape cancels.
     document.addEventListener('keydown', function (e) {
       var k = e.key;
       if (k === 'Escape') { e.preventDefault(); dismiss(); return; }
-      if (k === 'Enter' || k === ' ') {
-        e.preventDefault();
-        if (hot >= 0) { if (isDisabled(hot)) setHint(noteOf(hot)); else pick(hot); }
-        return;
-      }
-      var n = sectors.length;
-      if (!n) return;
-      if (k === 'ArrowRight' || k === 'ArrowDown') { e.preventDefault(); setHot(hot < 0 ? 0 : (hot + 1) % n); }
-      else if (k === 'ArrowLeft' || k === 'ArrowUp') { e.preventDefault(); setHot(hot < 0 ? n - 1 : (hot - 1 + n) % n); }
+      if (k === 'Enter' || k === ' ') { e.preventDefault(); choose(); return; }
+      if (k === 'ArrowRight' || k === 'ArrowDown') { e.preventDefault(); step(1); }
+      else if (k === 'ArrowLeft' || k === 'ArrowUp') { e.preventDefault(); step(-1); }
     });
 
+    // Magelight 1.6.0's gamepad layer (navigation style, UiHost::OptInGamepad): the
+    // left stick aims at a slot as a radial menu does and the slot stays lit when
+    // it is let go, the d-pad walks the ring, A picks, B cancels. The page holds
+    // Escape so B reaches it rather than closing the view behind the bridge's back.
+    var pad = null;
+    try {
+      var caps = window.__MAGELIGHT__ && window.__MAGELIGHT__.capabilities;
+      if (window.magelight && window.magelight.gamepad && caps && caps.gamepad) pad = window.magelight.gamepad;
+    } catch (e) {}
+    function holdEscape() {
+      try { if (pad && window.magelight.send) window.magelight.send('__escapecapture', '1'); } catch (e) {}
+    }
+    // SKSE's controller key codes 266-281 as the helper names the controls (lib/gamepad.ts keeps the same table).
+    var PAD_CODES = ['dpadUp', 'dpadDown', 'dpadLeft', 'dpadRight', 'start', 'back', 'leftThumb', 'rightThumb',
+      'leftShoulder', 'rightShoulder', 'south', 'east', 'west', 'north', 'leftTrigger', 'rightTrigger'];
+    var wheelPadKey = '';
+    if (pad) {
+      pad.onStateChange(function (st) {
+        var fam = st.active && st.device === 'gamepad' ? st.glyphFamily : '';
+        if (fam === padFamily) return;
+        padFamily = fam;
+        drawPadHints();
+        restoreHint();
+      });
+      pad.onAction(function (ev) {
+        var n = sectors.length;
+        if (!n || posted) return true;
+        // The wheel key on a controller button closes the wheel, as it does from the keyboard: the native sink never
+        // sees the press while the layer holds the pad.
+        if (wheelPadKey && ev.control === wheelPadKey && ev.phase === 'press') { dismiss(); return true; }
+        if (ev.control === 'leftStick') {
+          // 0 degrees is up and the angle runs clockwise, as polar() draws the ring; slot i is centred on i * 360 / n.
+          if (ev.phase === 'change' && Math.sqrt(ev.x * ev.x + ev.y * ev.y) >= 0.55) {
+            var deg = Math.atan2(ev.x, ev.y) * 180 / Math.PI;
+            if (deg < 0) deg += 360;
+            var i = Math.round(deg / (360 / n)) % n;
+            if (i !== hot) setHot(i);
+          }
+          return true;   // the stick's direction presses too: it aims, it never steps
+        }
+        if (ev.phase !== 'press' && ev.phase !== 'repeat') return true;
+        if (ev.action === 'right' || ev.action === 'down') step(1);
+        else if (ev.action === 'left' || ev.action === 'up') step(-1);
+        else if (ev.action === 'accept' && ev.phase === 'press') choose();
+        else if (ev.action === 'cancel' && ev.phase === 'press') dismiss();
+        return true;
+      });
+    }
+
     window.receiveWheelData = function (data) {
+      holdEscape();
+      wheelPadKey = PAD_CODES[((data && data.key) | 0) - 266] || '';
       data = data || {};
       posted = false;
       STR = (data.strings && typeof data.strings === 'object') ? data.strings : {};

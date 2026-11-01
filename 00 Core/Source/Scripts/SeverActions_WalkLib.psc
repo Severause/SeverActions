@@ -1,13 +1,18 @@
 Scriptname SeverActions_WalkLib Hidden
 {The walk support library (M-L): WalkToReference over a travel package (0x02B051, Travel to the
  walker's own LinkedRef under keyword 0x02B050, radius 150), with the native ArrivalMonitor polling
- for arrival. The items and economy modules call it statically; SeverActions_Loot keeps a forwarder
+ for arrival. The items, economy and combat modules call it statically; SeverActions_Loot keeps a forwarder
  under the old name. The 150-unit arrival distance is Loot's INTERACTION_DISTANCE runtime value (DR18).}
 
 Bool Function WalkToReference(Actor akActor, ObjectReference akTarget, float maxWaitTime = 15.0) Global
     {Walk akActor to akTarget, waiting up to maxWaitTime seconds; true when within 150 units at
      the end. A traveler on the road never detours: true only when akTarget is already in reach.
      The package and keyword are resolved by FormID.}
+    return WalkToReferenceAt(akActor, akTarget, maxWaitTime, 100)
+EndFunction
+
+Bool Function WalkToReferenceAt(Actor akActor, ObjectReference akTarget, float maxWaitTime, int aiPriority) Global
+    {WalkToReference with the walk's package override at aiPriority.}
     ; Each walker's target is their own LinkedRef, so two walkers never retarget each other as they
     ; would through one shared quest alias. 0x02B051 is the retired travel walk (TravelCore still
     ; strips it when a journey starts), nothing else links 0x02B050, and its radius is the arrival distance.
@@ -24,7 +29,7 @@ Bool Function WalkToReference(Actor akActor, ObjectReference akTarget, float max
     Bool usingPackage = walkPkg && walkKW
     if usingPackage
         SeverActionsNative.LinkedRef_Set(akActor, akTarget, walkKW)
-        ActorUtil.AddPackageOverride(akActor, walkPkg, 100)
+        ActorUtil.AddPackageOverride(akActor, walkPkg, aiPriority)
         akActor.EvaluatePackage()
     else
         akActor.PathToReference(akTarget, 1.0)

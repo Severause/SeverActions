@@ -11,8 +11,14 @@ Float Property AssessmentMinRealGapSeconds = 90.0 AutoReadOnly
 {Real-time floor between two assessment dispatches of either kind (scaled up past 10 followers).}
 String Property KEY_LAST_ASSESS_GT = "SeverFollower_LastAssessGT" AutoReadOnly
 String Property KEY_NEXT_ASSESS_GT = "SeverFollower_NextAssessGT" AutoReadOnly
-; Written by FollowerManager's Start over (sharedKeys): game seconds of the last reset of this bond.
+; An older build's clocks, read once by AssessTimesNative.
 String Property KEY_BOND_RESET_GT = "SeverActions_BondResetGT" AutoReadOnly
+; The slots of SeverActionsNativeExt2.Assess_GetTime.
+Int Property ASSESS_LAST = 0 AutoReadOnly
+Int Property ASSESS_NEXT = 1 AutoReadOnly
+Int Property ASSESS_RESET = 2 AutoReadOnly
+Int Property ASSESS_INTER_LAST = 3 AutoReadOnly
+Int Property ASSESS_INTER_NEXT = 4 AutoReadOnly
 String Property KEY_LAST_INTER_ASSESS_GT = "SeverFollower_LastInterAssessGT" AutoReadOnly
 String Property KEY_NEXT_INTER_ASSESS_GT = "SeverFollower_NextInterAssessGT" AutoReadOnly
 
@@ -38,9 +44,40 @@ Function Maintenance()
      tick. Re-registering is idempotent.}
     _mindTickInFlight = false
     _mindTickStartedRT = 0.0
+    _MigrateAssessTimes()
     ; In-flight state lives in the native lanes (cleared on revert, TTL-expired).
     RegisterForModEvent("SeverActions_AssessRelNow", "OnAssessRelNow")
     ChronoArm(30.0)
+EndFunction
+
+Function _MigrateAssessTimes()
+    {One-shot: the StorageUtil timestamps into the follower rows (rule 15). A copy never moves a clock back, and
+     with StorageUtil gone every read is 0 and nothing is copied.}
+    String name = "AssessTimesNative"
+    If !SeverActionsNativeExt2.Migration_TryClaim(name, 1)
+        Return
+    EndIf
+    Actor[] followers = SeverActionsNativeExt.Native_GetActiveFollowerRoster()
+    Int i = 0
+    While i < followers.Length
+        Actor a = followers[i]
+        If a
+            _CopyAssessTime(a, ASSESS_LAST, KEY_LAST_ASSESS_GT)
+            _CopyAssessTime(a, ASSESS_NEXT, KEY_NEXT_ASSESS_GT)
+            _CopyAssessTime(a, ASSESS_RESET, KEY_BOND_RESET_GT)
+            _CopyAssessTime(a, ASSESS_INTER_LAST, KEY_LAST_INTER_ASSESS_GT)
+            _CopyAssessTime(a, ASSESS_INTER_NEXT, KEY_NEXT_INTER_ASSESS_GT)
+        EndIf
+        i += 1
+    EndWhile
+    SeverActionsNativeExt2.Migration_MarkDone(name, 1)
+EndFunction
+
+Function _CopyAssessTime(Actor akActor, Int aiSlot, String asKey)
+    Float t = StorageUtil.GetFloatValue(akActor, asKey, 0.0)
+    If t > SeverActionsNativeExt2.Assess_GetTime(akActor, aiSlot)
+        SeverActionsNativeExt2.Assess_SetTime(akActor, aiSlot, t)
+    EndIf
 EndFunction
 
 Function ChronoArm(Float afSeconds)
@@ -149,10 +186,10 @@ Function CheckRelationshipAssessments(Actor[] followers)
         ; Loaded, not same-cell: exterior cells are 4096u, so a same-cell test starves a
         ; companion waiting a few metres away.
         If follower && !follower.IsDead() && follower.Is3DLoaded()
-            Float nextEligible = StorageUtil.GetFloatValue(follower, KEY_NEXT_ASSESS_GT, 0.0)
+            Float nextEligible = SeverActionsNativeExt2.Assess_GetTime(follower, ASSESS_NEXT)
             ; No next-eligible yet: last assess + the min cooldown.
             If nextEligible == 0.0
-                Float lastAssess = StorageUtil.GetFloatValue(follower, KEY_LAST_ASSESS_GT, 0.0)
+                Float lastAssess = SeverActionsNativeExt2.Assess_GetTime(follower, ASSESS_LAST)
                 nextEligible = lastAssess + (SeverActionsNativeExt2.Settings_GetFloat("assessmentCooldownMin") * SECONDS_PER_GAME_HOUR)
             EndIf
 
@@ -215,11 +252,11 @@ Function FireRelationshipAssessment(Actor akActor)
     PendingAssessmentActor = akActor
     LastAssessClassFireRT = Utility.GetCurrentRealTime()
     Float nowTime = GetGameTimeInSeconds()
-    StorageUtil.SetFloatValue(akActor, KEY_LAST_ASSESS_GT, nowTime)
+    SeverActionsNativeExt2.Assess_SetTime(akActor, ASSESS_LAST, nowTime)
     ; Provisional 0.5 game-hr retry only: OnRelationshipAssessment commits the full
     ; randomized cooldown on success, so a dropped or refused call does not shelve this
     ; follower for hours.
-    StorageUtil.SetFloatValue(akActor, KEY_NEXT_ASSESS_GT, nowTime + (0.5 * SECONDS_PER_GAME_HOUR))
+    SeverActionsNativeExt2.Assess_SetTime(akActor, ASSESS_NEXT, nowTime + (0.5 * SECONDS_PER_GAME_HOUR))
 
     ; Prompt module not installed (FOMOD): skip, or SkyrimNet logs "prompt not found" every cycle.
     If !SeverActionsNative.Native_IsPromptAvailable("sever_relationship_assess")
@@ -277,14 +314,15 @@ Function OnRelationshipAssessment(String response, Int success)
 
     ; Sent before the player's Start over: its numbers and summary are about the bond that was reset. A tie
     ; (game time stands still in the menu) counts as before.
-    If StorageUtil.GetFloatValue(akActor, KEY_BOND_RESET_GT, -1.0) >= StorageUtil.GetFloatValue(akActor, KEY_LAST_ASSESS_GT, 0.0)
+    Float bondReset = SeverActionsNativeExt2.Assess_GetTime(akActor, ASSESS_RESET)
+    If bondReset > 0.0 && bondReset >= SeverActionsNativeExt2.Assess_GetTime(akActor, ASSESS_LAST)
         DebugMsg("Relationship assessment for " + akActor.GetDisplayName() + " dropped: sent before a Start over")
         Return
     EndIf
 
     ; Success: commit the full randomized cooldown (the fire set only a provisional retry).
     Float assessCooldownSec = Utility.RandomFloat(SeverActionsNativeExt2.Settings_GetFloat("assessmentCooldownMin"), SeverActionsNativeExt2.Settings_GetFloat("assessmentCooldownMax")) * SECONDS_PER_GAME_HOUR
-    StorageUtil.SetFloatValue(akActor, KEY_NEXT_ASSESS_GT, GetGameTimeInSeconds() + assessCooldownSec)
+    SeverActionsNativeExt2.Assess_SetTime(akActor, ASSESS_NEXT, GetGameTimeInSeconds() + assessCooldownSec)
 
     ; The prompt caps deltas at +/-15 (rapport/trust/loyalty) and +/-20 (mood); the natives
     ; only clamp the range to +/-100, so the caps are enforced here.
@@ -380,9 +418,9 @@ Function CheckInterFollowerAssessments(Actor[] followers)
     While i < followers.Length
         Actor follower = followers[i]
         If follower && !follower.IsDead()
-            Float nextEligible = StorageUtil.GetFloatValue(follower, KEY_NEXT_INTER_ASSESS_GT, 0.0)
+            Float nextEligible = SeverActionsNativeExt2.Assess_GetTime(follower, ASSESS_INTER_NEXT)
             If nextEligible == 0.0
-                Float lastAssess = StorageUtil.GetFloatValue(follower, KEY_LAST_INTER_ASSESS_GT, 0.0)
+                Float lastAssess = SeverActionsNativeExt2.Assess_GetTime(follower, ASSESS_INTER_LAST)
                 nextEligible = lastAssess + (SeverActionsNativeExt2.Settings_GetFloat("interFollowerCooldownMin") * SECONDS_PER_GAME_HOUR)
             EndIf
 
@@ -418,9 +456,9 @@ Function FireInterFollowerAssessment(Actor akActor, Actor[] followers)
     PendingInterAssessActor = akActor
     LastAssessClassFireRT = Utility.GetCurrentRealTime()
     Float nowTime = GetGameTimeInSeconds()
-    StorageUtil.SetFloatValue(akActor, KEY_LAST_INTER_ASSESS_GT, nowTime)
+    SeverActionsNativeExt2.Assess_SetTime(akActor, ASSESS_INTER_LAST, nowTime)
     ; Provisional 0.5 game-hr retry, as in FireRelationshipAssessment.
-    StorageUtil.SetFloatValue(akActor, KEY_NEXT_INTER_ASSESS_GT, nowTime + (0.5 * SECONDS_PER_GAME_HOUR))
+    SeverActionsNativeExt2.Assess_SetTime(akActor, ASSESS_INTER_NEXT, nowTime + (0.5 * SECONDS_PER_GAME_HOUR))
 
     ; No display names in this hand-built JSON: EscapeJsonString keeps a non-UTF-8 byte, and one
     ; makes SkyrimNet drop the whole context. The prompt names everyone through decnpc.
@@ -527,7 +565,7 @@ Function OnInterFollowerAssessment(String response, Int success)
 
     ; Success: commit the full randomized cooldown (the fire set only a provisional retry).
     Float interCooldownSec = Utility.RandomFloat(SeverActionsNativeExt2.Settings_GetFloat("interFollowerCooldownMin"), SeverActionsNativeExt2.Settings_GetFloat("interFollowerCooldownMax")) * SECONDS_PER_GAME_HOUR
-    StorageUtil.SetFloatValue(akActor, KEY_NEXT_INTER_ASSESS_GT, GetGameTimeInSeconds() + interCooldownSec)
+    SeverActionsNativeExt2.Assess_SetTime(akActor, ASSESS_INTER_NEXT, GetGameTimeInSeconds() + interCooldownSec)
 
     ; Dedup watermarks live in FollowerData.
     Int lastEventId = SeverActionsNativeExt2.Json_GetInt(response, "/eid")

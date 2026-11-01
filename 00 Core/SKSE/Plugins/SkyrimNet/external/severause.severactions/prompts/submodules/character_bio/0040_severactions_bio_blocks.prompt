@@ -1,4 +1,4 @@
-{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" %}
+{% if render_mode == "stable" or render_mode == "thoughts" or render_mode == "transform" or (render_mode == "full" and not default(stable_split, false)) %}
 {# Bio Blocks: the library blocks applied to this character, each a "### Title" section from custom_bio_blocks
    under this file's own heading. Ships with the DLL that registers the decorator; the bare test catches null. #}
 {% if actorUUID and actorUUID != 0 %}

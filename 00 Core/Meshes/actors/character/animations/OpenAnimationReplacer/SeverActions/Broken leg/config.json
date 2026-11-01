@@ -1,0 +1,45 @@
+{
+    "name": "Broken leg",
+    "description": "A broken right leg (rank 0), or both legs (rank 2): walking, jogging and sprinting in every direction, weapons sheathed or drawn, limp favouring the right leg; with weapons sheathed they walk hunched with the right hand on the thigh, and stand with their weight off it, rubbing the leg and wincing. SeverActions' own animations, made from the vanilla movement and idle cycles. The priority sits above locomotion styles and below situational overlays such as sneaking, diving and death animations.",
+    "priority": 1500000100,
+    "conditions": [
+        {
+            "condition": "IsInFaction",
+            "requiredVersion": "1.0.0.0",
+            "Faction": {
+                "pluginName": "SeverActions.esp",
+                "formID": "16B641"
+            }
+        },
+        {
+            "condition": "OR",
+            "requiredVersion": "1.0.0.0",
+            "Conditions": [
+                {
+                    "condition": "FactionRank",
+                    "requiredVersion": "1.0.0.0",
+                    "Faction": {
+                        "pluginName": "SeverActions.esp",
+                        "formID": "16B641"
+                    },
+                    "Comparison": "==",
+                    "Numeric value": {
+                        "value": 0.0
+                    }
+                },
+                {
+                    "condition": "FactionRank",
+                    "requiredVersion": "1.0.0.0",
+                    "Faction": {
+                        "pluginName": "SeverActions.esp",
+                        "formID": "16B641"
+                    },
+                    "Comparison": "==",
+                    "Numeric value": {
+                        "value": 2.0
+                    }
+                }
+            ]
+        }
+    ]
+}

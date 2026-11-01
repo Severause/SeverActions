@@ -181,8 +181,9 @@ Event OnUpdate()
         Return
     EndIf
 
-    ; Bulk change (3+ unequips in 500 ms): a strip stays latched until a cell
-    ; load or our own outfit change clears it; a re-dress (non-preset armor put
+    ; Bulk change (3+ unequips in 500 ms): a strip stays latched until a load, our
+    ; own outfit change or the actor leaving it behind (OutfitDataStore's
+    ; TakeFinishedStrips) clears it; a re-dress (non-preset armor put
     ; on in their place) is re-applied over once; the second inside a minute
     ; yields until the next load (OutfitContention). 0 = an older DLL without
     ; the native: the latch alone decides.

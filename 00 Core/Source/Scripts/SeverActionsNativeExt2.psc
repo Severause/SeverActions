@@ -1437,6 +1437,13 @@ Bool Function Native_OutfitSlot_UsesPresetOutfit(Actor akActor) Global Native
 {True when akActor's default or sleep outfit is one of the 1600 preset BGSOutfits, the only
  case in which the engine reads a preset's LeveledItem.}
 
+Bool Function Native_OutfitSlot_GivesPieces(Actor akActor, Int presetIdx) Global Native
+{True when the player gave akActor the pieces of that preset (the Outfits page's Give): they are
+ hers, never lent or taken back.}
+
+Bool Function Native_OutfitSlot_IsGivenPiece(Actor akActor, Form akItem) Global Native
+{True when a given preset of akActor lists akItem: her copy is never taken back by any preset.}
+
 ; ── Recruit requests (RecruitRequests.h) ───────────────────────────────────
 Bool Function RecruitRequest_ShouldAsk(Actor akActor) Global Native
 {True when Settings > Behavior > Ask Before Recruiting says a recruit the player orders asks
@@ -1455,7 +1462,16 @@ String Function RecruitRequest_DeclinesText(Actor akActor) Global Native
 ; ── Survivable dismemberment (LivingDismember.h) ───────────────────────────
 Function LivingDismember_Restore(Actor akActor) Global Native
 {Regrows every limb akActor lost and lived without (Dismembering Framework's reset) and lifts the
- hold: alive and able to stand again, their aggression put back. Nothing for anyone else.}
+ hold: alive and able to stand again, their aggression put back; with only broken bones, mends them.
+ Nothing for anyone else.}
+
+Int Function LivingDismember_Tend(Actor akTender, Actor akTarget) Global Native
+{akTender binds akTarget's bare stumps and splints their broken bones; the player spends a Linen Wrap.
+ Returns 1 bandaged, 2 splinted, 3 both, 0 nothing to tend, -1 no Linen Wrap, -2 too far, -3 refused.}
+
+Int Function LivingDismember_TendPose(Actor akTender, Actor akTarget) Global Native
+{How akTender works on akTarget: 0 they cannot (nothing to tend, or no hand or no footing of their own), 1 standing,
+ 2 on one knee (akTarget is on the ground, or a leg break needs splinting).}
 
 ; ── Duel PUBLIC API (v1) ───────────────────────────────────────────────────
 ; For other mods: a sanctioned fight between two actors, a companion included. Frozen: these signatures never change
@@ -1476,3 +1492,8 @@ Bool Function Duel_End(Int aiHandle) Global Native
 Bool Function Duel_IsActive(Actor akActor) Global Native
 ; Not part of the API (SeverActions_Brawl's duel handlers): the handle of akActor's duel, 0 for none.
 Int Function Native_Duel_HandleOf(Actor akActor) Global Native
+
+; The assessments' clocks, in game seconds, 0 = never: slot 0 last sent, 1 next due, 2 the bond's Start over, 3 and 4 the
+; inter-follower assessment's last sent and next due.
+Float Function Assess_GetTime(Actor akActor, Int aiSlot) Global Native
+Function Assess_SetTime(Actor akActor, Int aiSlot, Float afGameSeconds) Global Native

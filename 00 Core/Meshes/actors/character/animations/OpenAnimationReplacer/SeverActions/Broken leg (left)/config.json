@@ -1,0 +1,27 @@
+{
+    "name": "Broken leg (left)",
+    "description": "A broken left leg (rank 1): the left-leg twin of Broken leg.",
+    "priority": 1500000101,
+    "conditions": [
+        {
+            "condition": "IsInFaction",
+            "requiredVersion": "1.0.0.0",
+            "Faction": {
+                "pluginName": "SeverActions.esp",
+                "formID": "16B641"
+            }
+        },
+        {
+            "condition": "FactionRank",
+            "requiredVersion": "1.0.0.0",
+            "Faction": {
+                "pluginName": "SeverActions.esp",
+                "formID": "16B641"
+            },
+            "Comparison": "==",
+            "Numeric value": {
+                "value": 1.0
+            }
+        }
+    ]
+}

@@ -1,0 +1,27 @@
+{
+    "name": "Broken arm (left)",
+    "description": "A broken left arm and no broken leg (rank 4): the left-arm twin of Broken arm.",
+    "priority": 1500000103,
+    "conditions": [
+        {
+            "condition": "IsInFaction",
+            "requiredVersion": "1.0.0.0",
+            "Faction": {
+                "pluginName": "SeverActions.esp",
+                "formID": "16B641"
+            }
+        },
+        {
+            "condition": "FactionRank",
+            "requiredVersion": "1.0.0.0",
+            "Faction": {
+                "pluginName": "SeverActions.esp",
+                "formID": "16B641"
+            },
+            "Comparison": "==",
+            "Numeric value": {
+                "value": 4.0
+            }
+        }
+    ]
+}
