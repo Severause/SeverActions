@@ -1,6 +1,6 @@
 customCategory: items
 name: TakeItem
-description: "Use when someone holds an item out to the speaker or agrees to hand it over (usually {{ player.name }}, who has no action of their own) and the speaker takes it now: a key surrendered, a borrowed sword returned, a book passed across. Not when the giver already handed it over with their own action (it is already the speaker's), and not for a demand or threat they have not given in to. Coin is a payment (Economy); the speaker giving is GiveItem."
+description: "Use when someone holds items out to the speaker or agrees to hand them over (usually {{ player.name }}, who has no action of their own) and the speaker takes them now: a key surrendered, a borrowed sword returned, a book passed across. One call takes all of it. Not when the giver already handed it over with their own action (it is already the speaker's), and not for a demand or threat they have not given in to. Coin is a payment (Economy); the speaker giving is GiveItem."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: TakeItem_Execute
@@ -13,10 +13,10 @@ parameterMapping:
     description: "who hands it over: exact name as listed in Nearby Actors, or the player's name"
   - type: dynamic
     name: item
-    description: "the item being handed over, by name (e.g. 'Iron Key', 'Iron Sword'); not coin"
+    description: "the item being handed over, by name (e.g. 'Iron Key', 'Iron Sword'); not coin; several items from the same giver comma-separated, each with an optional count before it (e.g. 'Iron Key, 2 Iron Arrow')"
   - type: dynamic
     name: count
-    description: "how many, a whole number, 1 or more"
+    description: "how many, a whole number, 1 or more; with several items, put 1 here and each item's count before its name"
     optional: true
     default: 1
 enabled: true

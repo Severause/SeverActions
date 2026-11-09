@@ -9,7 +9,22 @@ Scriptname SeverActions_Init extends ReferenceAlias
 ; === Initialization ===
 
 ; K0: bumped together with the DLL's KernelSession::kAbiVersion whenever a native's signature or
-; meaning changes in a way an older pex must not run against. 36: Combat's TendWound calls
+; meaning changes in a way an older pex must not run against. 46: CompanionLife calls OffScreen_StorySubjects,
+; OffScreen_StoryPlace and OffScreen_StoryHold, which an older DLL does not register (unbound, a homed NPC's
+; off-screen arrest would jail nobody). 45: Currency and Loot plan and move every trade and
+; hand-over through ItemList_Plan, ItemList_Items, ItemList_Recipients, ItemList_Shortfall and ItemList_HandOver, and
+; open the trade card through Magelight_OpenTradePromptBasket, which an older DLL does not register (unbound, every
+; trade and hand-over would fail as an empty plan). 44: FollowerManager calls Follow_ResolveGroup, which an
+; older DLL does not register (unbound, a group wait or follow moves only the speaker). 43: Survival calls
+; Survival_TakeBedRest, which an older DLL does not register (unbound it reads 0, so no bed rest is credited). 42: Travel calls Travel_ResolveGroup,
+; Travel_KeepEligible, Travel_SharesDestination and Magelight_OpenTravelPromptGroup, which an older DLL does not
+; register (unbound, no travel popup opens and a group order sends only the speaker). 41: every native 39 and 40 name, together (an older
+; DLL can carry either set without the other). 40: Combat, FollowerManager, Brawl and TravelCore keep
+; their undo records through CombatUndo_*, Follower_*Undo, Brawl_Strip* and Travel_Journey*, which an older DLL does not register
+; (unbound, a journey read answers 0 and the follower is not reinstated). 39: Outfit's Undress and Dress call
+; Native_Outfit_UndressWeapons, Native_Outfit_DressWeapons, Native_Outfit_HasUndressWeapons and Native_IsIEDInstalled,
+; which an older DLL does not register (unbound, Undress leaves the weapons on and logs an error per call), and the survival
+; penalty ledger's natives. 36: Combat's TendWound calls
 ; LivingDismember_Tend, which an older DLL does not register (35 is the vampire work's). 34: Combat and FollowerManager ask
 ; Duel_IsActive, and Brawl's duel handlers Native_Duel_HandleOf, which an older DLL does not register. 33: FollowerManager asks
 ; RecruitRequest_ShouldAsk and the rest, which an older DLL does not register (unbound, every ordered
@@ -18,7 +33,7 @@ Scriptname SeverActions_Init extends ReferenceAlias
 ; would strip Devious Devices). 31: Familiarity calls Familiarity_SetBlurb
 ; and Familiarity_ImportBlurb, which an older DLL does not register (unbound, every reputation impression
 ; would be dropped), and CompanionMind calls Bond_NoteSources.
-Int Property KERNEL_ABI = 38 AutoReadOnly
+Int Property KERNEL_ABI = 46 AutoReadOnly
 
 Event OnInit()
     Debug.Trace("[SeverActions] OnInit - First time initialization")

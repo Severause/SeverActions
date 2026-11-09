@@ -527,11 +527,18 @@ EndFunction
 ; =============================================================================
 
 Bool Function TravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0, Bool stopFollowing = true, Int speed = 0, Bool waitForPlayer = true)
-    {Action entry (executionFunctionName). Opens a non-pausing popup so the player can
-     confirm or redirect the destination (a confirm starts the trip via
-     OnTravelPromptResult; cancel, timeout or Escape means no travel). With the popup off,
-     followers-only for a non-follower, unavailable or busy, it travels straight to the
-     LLM's pick.}
+    {TravelToPlaceWith with nobody sent along: the Actions page's travel verb and an older
+     YAML's executionFunctionName.}
+    Return TravelToPlaceWith(akNPC, placeName, waitHours, stopFollowing, speed, waitForPlayer, "")
+EndFunction
+
+Bool Function TravelToPlaceWith(Actor akNPC, String placeName, Float waitHours = 0.0, Bool stopFollowing = true, Int speed = 0, Bool waitForPlayer = true, String alsoSending = "")
+    {Action entry (executionFunctionName). Sends the speaker, and the people near them that
+     alsoSending names (the LLM's comma-separated list, resolved and gated natively), to the
+     place. A non-pausing popup lets the player confirm or redirect the destination, one card
+     for the whole group (a confirm starts the trips via OnTravelPromptResult; cancel, timeout
+     or Escape means no travel). With the popup off, or unavailable or busy, everyone travels
+     straight to the LLM's pick; with it set to followers only, the others go at once.}
     If akNPC == None
         Return false
     EndIf
@@ -542,30 +549,80 @@ Bool Function TravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0
         Return false
     EndIf
     ; Anti-spam backstop: the LLM fires this when a place is merely mentioned, so any
-    ; travel (or popup) takes the action off the eligible list for a while.
+    ; travel (or popup) takes the action off the eligible list for a while. SkyrimNet keys
+    ; the cooldown by action name, so the others are not offered it: they go through alsoSending.
     SkyrimNetApi.SetActionCooldown("TravelToPlace", TravelActionCooldownSeconds)
-    ; Popup disabled: go now.
-    If !SeverActionsNative.Magelight_IsTravelPopupEnabled()
-        Return DoTravelToPlace(akNPC, placeName, waitHours, stopFollowing, speed, waitForPlayer)
+
+    Actor[] others
+    If alsoSending != ""
+        others = SeverActionsNativeExt2.Travel_ResolveGroup(akNPC, alsoSending)
     EndIf
+    Int otherCount = 0
+    If others
+        otherCount = others.Length
+    EndIf
+
+    ; Who the popup asks about and who goes now; at most 1 + 16 (GroupOrderCore::kMaxNames).
+    Bool popup = SeverActionsNative.Magelight_IsTravelPopupEnabled()
     ; Followers-only popup: a stranger's errand is not the player's to redirect.
-    If SeverActionsNative.Magelight_IsTravelPopupFollowersOnly() && !IsPopupWorthyTraveler(akNPC)
-        Return DoTravelToPlace(akNPC, placeName, waitHours, stopFollowing, speed, waitForPlayer)
+    Bool followersOnly = popup && SeverActionsNative.Magelight_IsTravelPopupFollowersOnly()
+    Actor[] askList = new Actor[17]
+    Actor[] goList = new Actor[17]
+    Int askCount = 0
+    Int goCount = 0
+    Int i = 0
+    While i <= otherCount
+        Actor a = akNPC
+        If i > 0
+            a = others[i - 1]
+        EndIf
+        If popup && (!followersOnly || IsPopupWorthyTraveler(a))
+            askList[askCount] = a
+            askCount += 1
+        Else
+            goList[goCount] = a
+            goCount += 1
+        EndIf
+        i += 1
+    EndWhile
+
+    Bool asked = false
+    ; A card already open keeps its stash: this order goes now, as a second order always did.
+    If askCount > 0 && SeverActionsNativeExt.Magelight_IsTravelPromptAvailable() \
+        && !SeverActionsNativeExt.Magelight_IsTravelPromptOpen()
+        Actor lead = askList[0]
+        ; Make sure the confirm handler is registered before the popup can fire it, in case
+        ; load recovery did not run this session (idempotent).
+        RegisterForModEvent("SeverActions_TravelPromptResult", "OnTravelPromptResult")
+        ; Stashed before the card opens (VR immersive confirms at once); the confirm handler
+        ; starts the trips with these.
+        StorageUtil.SetFloatValue(lead, "SeverTravel_PendingWait", waitHours)
+        StorageUtil.SetIntValue(lead, "SeverTravel_PendingStopFollow", stopFollowing as Int)
+        StorageUtil.SetIntValue(lead, "SeverTravel_PendingSpeed", speed)
+        StorageUtil.SetIntValue(lead, "SeverTravel_PendingWaitForPlayer", waitForPlayer as Int)
+        StorageUtil.FormListClear(lead, "SeverTravel_PendingGroup")
+        i = 1
+        While i < askCount
+            StorageUtil.FormListAdd(lead, "SeverTravel_PendingGroup", askList[i])
+            i += 1
+        EndWhile
+        ; The card names everyone in askList (it skips the None padding; a lead alone gets the plain card).
+        asked = SeverActionsNativeExt2.Magelight_OpenTravelPromptGroup(lead, askList, placeName, 60000)
+        If asked
+            DebugMsg("TravelToPlace: opened travel popup for " + lead.GetDisplayName() + " and " + (askCount - 1) + " more (prefill '" + placeName + "')")
+        Else
+            ClearPendingTravel(lead)
+        EndIf
     EndIf
-    ; Make sure the confirm handler is registered before the popup can fire it, in case
-    ; load recovery did not run this session (idempotent).
-    RegisterForModEvent("SeverActions_TravelPromptResult", "OnTravelPromptResult")
-    If SeverActionsNativeExt.Magelight_IsTravelPromptAvailable() \
-        && SeverActionsNativeExt.Magelight_OpenTravelPrompt(akNPC, placeName, 60000)
-        ; The confirm handler starts the trip with these.
-        StorageUtil.SetFloatValue(akNPC, "SeverTravel_PendingWait", waitHours)
-        StorageUtil.SetIntValue(akNPC, "SeverTravel_PendingStopFollow", stopFollowing as Int)
-        StorageUtil.SetIntValue(akNPC, "SeverTravel_PendingSpeed", speed)
-        StorageUtil.SetIntValue(akNPC, "SeverTravel_PendingWaitForPlayer", waitForPlayer as Int)
-        DebugMsg("TravelToPlace: opened travel popup for " + akNPC.GetDisplayName() + " (prefill '" + placeName + "')")
-        Return true
+    If !asked
+        ; No card: everyone goes now, the speaker first.
+        Return TravelGroupToPlace(akNPC, others, placeName, waitHours, stopFollowing, speed, waitForPlayer)
     EndIf
-    Return DoTravelToPlace(akNPC, placeName, waitHours, stopFollowing, speed, waitForPlayer)
+    If goCount > 0
+        ; goList[0] leads; TravelGroupToPlace skips the lead and the None padding in the list.
+        TravelGroupToPlace(goList[0], goList, placeName, waitHours, stopFollowing, speed, waitForPlayer)
+    EndIf
+    Return true
 EndFunction
 
 Bool Function IsPopupWorthyTraveler(Actor akNPC)
@@ -577,9 +634,19 @@ Bool Function IsPopupWorthyTraveler(Actor akNPC)
     Return SeverActionsNativeExt.Native_GetIsFollower(akNPC)
 EndFunction
 
+Function ClearPendingTravel(Actor akNPC)
+    {Drop what a travel popup for this NPC stashed.}
+    StorageUtil.UnsetFloatValue(akNPC, "SeverTravel_PendingWait")
+    StorageUtil.UnsetIntValue(akNPC, "SeverTravel_PendingStopFollow")
+    StorageUtil.UnsetIntValue(akNPC, "SeverTravel_PendingSpeed")
+    StorageUtil.UnsetIntValue(akNPC, "SeverTravel_PendingWaitForPlayer")
+    StorageUtil.FormListClear(akNPC, "SeverTravel_PendingGroup")
+EndFunction
+
 Event OnTravelPromptResult(string eventName, string strArg, float numArg, Form sender)
     {The player confirmed a destination in the travel popup: strArg = the place,
-     sender = the NPC. Cancel, timeout and Escape never fire this.}
+     sender = the NPC (a group card's lead; the others were stashed on them). Cancel,
+     timeout and Escape never fire this.}
     Actor npc = sender as Actor
     If !npc || strArg == ""
         Return
@@ -588,29 +655,82 @@ Event OnTravelPromptResult(string eventName, string strArg, float numArg, Form s
     Bool stopFollowing = StorageUtil.GetIntValue(npc, "SeverTravel_PendingStopFollow", 1) != 0
     Int speed = StorageUtil.GetIntValue(npc, "SeverTravel_PendingSpeed", 0)
     Bool waitForPlayer = StorageUtil.GetIntValue(npc, "SeverTravel_PendingWaitForPlayer", 1) != 0
-    StorageUtil.UnsetFloatValue(npc, "SeverTravel_PendingWait")
-    StorageUtil.UnsetIntValue(npc, "SeverTravel_PendingStopFollow")
-    StorageUtil.UnsetIntValue(npc, "SeverTravel_PendingSpeed")
-    StorageUtil.UnsetIntValue(npc, "SeverTravel_PendingWaitForPlayer")
-    DoTravelToPlace(npc, strArg, waitHours, stopFollowing, speed, waitForPlayer)
+    Form[] group = StorageUtil.FormListToArray(npc, "SeverTravel_PendingGroup")
+    ClearPendingTravel(npc)
+    Int n = 0
+    If group
+        n = group.Length
+    EndIf
+    Actor[] others = PapyrusUtil.ActorArray(n)
+    Int i = 0
+    While i < n
+        others[i] = group[i] as Actor
+        i += 1
+    EndWhile
+    If n > 0
+        ; The card may have stood open a minute: ask the gates again.
+        others = SeverActionsNativeExt2.Travel_KeepEligible(others)
+    EndIf
+    TravelGroupToPlace(npc, others, strArg, waitHours, stopFollowing, speed, waitForPlayer)
 EndEvent
+
+Bool Function TravelGroupToPlace(Actor akLead, Actor[] akOthers, String placeName, Float waitHours, Bool stopFollowing, Int speed, Bool waitForPlayer)
+    {Send akLead, then each of akOthers (None and akLead itself skipped), to the place; true
+     if akLead's journey started. A place that does not resolve for the lead is not tried for
+     the others (the lead has already been told it did not), and each of akOthers already on
+     the way there, or waiting there, stays on that journey rather than starting it again.}
+    Int leadResult = _StartTrip(akLead, placeName, waitHours, stopFollowing, speed, waitForPlayer)
+    If leadResult == 1
+        Return false
+    EndIf
+    Int n = 0
+    If akOthers
+        n = akOthers.Length
+    EndIf
+    Int i = 0
+    While i < n
+        Actor a = akOthers[i]
+        If a && a != akLead
+            Bool there = false
+            If leadResult == 0
+                there = SeverActionsNativeExt2.Travel_SharesDestination(a, akLead)
+            Else
+                ; "" without a live journey, and placeName is never "" here.
+                there = SeverActionsNativeExt2.Travel_GetPlaceLabelByActor(a) == placeName
+            EndIf
+            If there
+                DebugMsg("TravelToPlace: " + a.GetDisplayName() + " is already bound for '" + placeName + "'")
+            Else
+                _StartTrip(a, placeName, waitHours, stopFollowing, speed, waitForPlayer)
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+    Return leadResult == 0
+EndFunction
 
 Bool Function DoTravelToPlace(Actor akNPC, String placeName, Float waitHours = 0.0, Bool stopFollowing = true, Int speed = 0, Bool waitForPlayer = true)
     {Send an NPC to a named place; true if travel started. speed: 0=walk, 1=jog, 2=run.
      waitForPlayer: true = meeting the player there (greet on approach, patience
      timeout); false = a self-errand of waitHours, then back to their normal life.}
+    Return _StartTrip(akNPC, placeName, waitHours, stopFollowing, speed, waitForPlayer) == 0
+EndFunction
+
+Int Function _StartTrip(Actor akNPC, String placeName, Float waitHours, Bool stopFollowing, Int speed, Bool waitForPlayer)
+    {DoTravelToPlace's work: 0 = the journey started, 1 = the place cannot be resolved
+     (for anyone standing with them either), 2 = refused for this NPC.}
 
     If akNPC == None
         DebugMsg("TravelToPlace: None actor")
-        Return false
+        Return 2
     EndIf
     If akNPC.IsDead()
         DebugMsg("TravelToPlace: dead actor")
-        Return false
+        Return 2
     EndIf
     If placeName == ""
         DebugMsg("TravelToPlace: empty placeName")
-        Return false
+        Return 1
     EndIf
 
     EnsureReady()
@@ -623,7 +743,7 @@ Bool Function DoTravelToPlace(Actor akNPC, String placeName, Float waitHours = 0
 
     If !SeverActionsNative.IsLocationResolverReady()
         DebugMsg("TravelToPlace: LocationResolver not initialized")
-        Return false
+        Return 1
     EndIf
 
     ; Resolve before BeginJourney ends the current journey: a bad placeName must not cancel it.
@@ -635,7 +755,7 @@ Bool Function DoTravelToPlace(Actor akNPC, String placeName, Float waitHours = 0
             "travel_failed", \
             akNPC.GetDisplayName() + " meant to set out for '" + placeName + "' but realizes they do not actually know where that is, and would have to ask for the place's proper name first.", \
             "", 30000, akNPC, Game.GetPlayer())
-        Return false
+        Return 1
     EndIf
 
     ; "outside/beside <place>": the resolver stamped this actor with exterior intent.
@@ -662,17 +782,17 @@ Bool Function DoTravelToPlace(Actor akNPC, String placeName, Float waitHours = 0
     Package travelPkg = GetTravelPackageForSpeed(speed)
     If travelPkg == None
         DebugMsg("TravelToPlace: no package for speed " + speed)
-        Return false
+        Return 2
     EndIf
 
     ; BeginJourney ends any journey under way, drops a follower for the trip and starts
     ; the walk with its arrival wait armed.
     DisengageOverridesForTravel(akNPC, "TravelToPlace")
     If !SeverActions_TravelCore.BeginJourney(akNPC, finalDest, placeName, waitHours, stopFollowing, speed, waitForPlayer, None)
-        Return false
+        Return 2
     EndIf
     NotifyPlayer(akNPC.GetDisplayName() + " traveling to " + placeName)
-    Return true
+    Return 0
 EndFunction
 
 Bool Function TravelNPCToReference(Actor akNPC, ObjectReference akDestination, Float waitHours = 0.0, Bool stopFollowing = false, Int speed = 1, Package akSandboxOverride = None)

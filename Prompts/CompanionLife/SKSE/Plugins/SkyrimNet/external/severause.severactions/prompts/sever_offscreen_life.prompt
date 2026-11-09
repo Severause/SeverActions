@@ -1,5 +1,12 @@
 [ system ]
+{# storySubject: an NPC the player follows with no home; their own AI keeps their routine, so the day is written inside it. everFollower: they once travelled with the player. #}
+{% set isSubject = default(storySubject, false) %}
+{% set knewPlayer = (not isSubject) or default(everFollower, false) %}
+{% if isSubject %}
+You are an internal life simulation system for an NPC of Skyrim whose life is followed while the player is away. They already have their own home, work and daily routine; you write one day inside that life. Output ONLY a JSON object. No explanation, no commentary.
+{% else %}
 You are an internal life simulation system for a dismissed companion in Skyrim. You generate believable daily events for an NPC living at their assigned home while the player is away adventuring. Output ONLY a JSON object. No explanation, no commentary.
+{% endif %}
 
 {# User-configured world setting / tone / genre / content rating from SkyrimNet's #}
 {# 0010_setting prompt — pulls in any conversion-mod or playstyle preferences the #}
@@ -28,7 +35,11 @@ Character: {{ npc.name }} ({{ npc.race }}{% if npc.gender %}, {{ npc.gender }}{%
 {% if bioAspirations != "" %}Goals: {{ bioAspirations }}{% endif %}
 {% if bioRelationships != "" %}Relationships: {{ bioRelationships }}{% endif %}
 
+{% if isSubject %}
+Where their days are spent now: {{ homeLocation }}, in {{ holdName }} hold. Their own home, trade and routine are whatever their bio and memories say; keep to them.
+{% else %}
 Home Location: {{ homeLocation }}
+{% endif %}
 {% set purse = default(npcGold, 0) %}
 Coin purse: {{ purse }} gold carried right now.
 {% if exists("inJail") and existsIn(inJail, "daysHeld") %}
@@ -79,6 +90,9 @@ Keep the event consistent with their work (this overrides the general activity c
 {% endif %}
 
 {% endif %}
+{% if not knewPlayer %}
+{{ npc.name }} is not one of {{ player.name }}'s companions and has never travelled with them: {{ player.name }} matters to them only as much as their own memories below say, if at all.
+{% else %}
 Relationship with {{ player.name }}:
 {% set rapport = to_number(sever_rapport(npc.UUID)) %}
 {% set trust   = to_number(sever_trust(npc.UUID)) %}
@@ -88,9 +102,13 @@ Relationship with {{ player.name }}:
 - Trust: {{ trust }} (0 to 100, faith in {{ player.name }}'s judgment)
 - Loyalty: {{ loyalty }} (0 to 100, commitment to {{ player.name }})
 - Mood: {{ mood }} (-100 to 100, current temperament)
+{% endif %}
 
 {% set combat_style = sever_combat_style(npc.UUID) %}
+{# "" for a story subject who never followed (no follower record). #}
+{% if combat_style != "" %}
 Combat approach: {{ combat_style }}
+{% endif %}
 
 {# npc.race is the race's display name; the vanilla Dawnguard hounds and several Creation Club pets have none, hence "". #}
 {% set isAnimal = npc.race in ["Dog", "Wolf", "Fox", "Husky", "Deathhound", "Nix Hound", ""] %}
@@ -134,14 +152,22 @@ HELD CAPTIVE RIGHT NOW, bound and kept by force — treat as CANON; none of them
 If the event or the townRumor touches any of them, it must reflect the captivity: their empty place, worry or talk about where they went, their affairs in someone else's hands. Never write them working, trading, drinking or walking about, and never write them freed or rescued: that is decided elsewhere.
 {% endif %}
 
+{% set hasLocals = length(default(nearbyLocals, [])) > 0 %}
+{% set hasPartners = (length(default(nearbyFollowers, [])) > 0) or hasLocals %}
 {% if length(default(nearbyFollowers, [])) > 0 %}
 Other dismissed companions living nearby:
 {% for name in nearbyFollowers %}
 - {{ name }}
 {% endfor %}
-{% if length(default(jailedNearby, [])) > 0 %}
-In a cell right now, not at home: {% for name in jailedNearby %}{{ name }}{% if not loop.is_last %}, {% endif %}{% endfor %}. A shared event with them can only be a visit to the jail.
 {% endif %}
+{% if length(default(nearbyLocals, [])) > 0 %}
+Other locals of {{ holdName }} hold living nearby:
+{% for name in nearbyLocals %}
+- {{ name }}
+{% endfor %}
+{% endif %}
+{% if hasPartners and length(default(jailedNearby, [])) > 0 %}
+In a cell right now, not at home: {% for name in jailedNearby %}{{ name }}{% if not loop.is_last %}, {% endif %}{% endfor %}. A shared event with them can only be a visit to the jail.
 {% endif %}
 
 {% if length(default(activeFollowers, [])) > 0 %}
@@ -153,7 +179,7 @@ In a cell right now, not at home: {% for name in jailedNearby %}{{ name }}{% if 
 These NPCs are standing next to {{ player.name }} right now — the player can see them while reading your event.
 ⛔ HARD RULE: no name from this list may appear in the summary, the involved array, or the townRumor — not directly, not obliquely ("the housecarl who follows the Dragonborn"), not indirectly ("a letter from X", "thinking of X", "missing X"). Before responding, reread your summary and townRumor; if a ⛔ name appears, rewrite without it.
 
-Acceptable partners for a shared event: {{ npc.name }} alone (the default — most events are solo), a vanilla local of {{ homeLocation }}{% if length(default(nearbyFollowers, [])) > 0 %}, or one of the dismissed companions listed above{% endif %}.
+Acceptable partners for a shared event: {{ npc.name }} alone (the default — most events are solo), a vanilla local of {{ homeLocation }}{% if hasLocals %}, or one of the people listed above as living nearby{% elif hasPartners %}, or one of the dismissed companions listed above{% endif %}.
 
 Example (Aela on the ⛔ list, Lydia the subject):
   ❌ summary: "Lydia spent the afternoon sparring with Aela behind the Skyforge."
@@ -167,7 +193,7 @@ Example (Aela on the ⛔ list, Lydia the subject):
 
 [ user ]
 {% if npcUUID and npcUUID != 0 %}
-Generate a single believable daily life event for {{ npc.name }} living in {{ homeLocation }} while {{ player.name }} is away. Keep the summary under 750 characters.
+Generate a single believable daily life event for {{ npc.name }} {% if isSubject %}whose day is set around {{ homeLocation }}{% else %}living in {{ homeLocation }}{% endif %} while {{ player.name }} is away. Keep the summary under 750 characters.
 {% if exists("inJail") and existsIn(inJail, "daysHeld") %}
 THIS EVENT HAPPENS IN THE CELLS, and they are still there when it ends. Show the confinement: the cell, the food, the cold, the other prisoners, the guards, a visitor or a letter, the waiting, how they came to be there. It overrides every place, travel and away-from-home instruction in this prompt (the daily rhythm, travel for their work, the exploration and away-work activities, the location guidance). No escape and no release: those are decided elsewhere. A shared event with a nearby companion can only be their visit to the jail.
 {% endif %}
@@ -185,6 +211,9 @@ Previous event (do not repeat or closely mirror it; change the activity, setting
 {% endif %}
 
 Rules:
+{% if isSubject %}
+- {{ npc.name }} keeps the life they already have: the same home, trade and people their bio and memories describe. Write a day inside it. Never move them to a new home, give them a new job, or make them anyone's companion or follower.
+{% endif %}
 - The event reflects the character's personality, skills, race, combat style and background.
 - Everyday life, mundane to interesting — not epic adventures or quests.
 - Open the summary differently from the recent events: different first words, and a different action, setting, time of day or company.
@@ -209,7 +238,7 @@ Critical rules for the townRumor:
   • Not a reaction to the events above: it is separate news from the same hold
   • Don't open with "In <hold>, …"; the place goes in rumorLocation
   • 1-2 sentences max, under 200 characters
-  • The hold this rumor is set in is: {{ holdName }} ({{ homeLocation }} is the follower's specific home; the rumor must be plausibly overheard somewhere in that wider hold)
+  • The hold this rumor is set in is: {{ holdName }} ({% if isSubject %}{{ homeLocation }} is where {{ npc.name }}'s day is set{% else %}{{ homeLocation }} is the follower's specific home{% endif %}; the rumor must be plausibly overheard somewhere in that wider hold)
   • Sometimes the rumor can seed a future event for someone else — leave threads dangling
 
 For the rumorLocation field:
@@ -239,23 +268,25 @@ Activity categories (rotate between these — don't repeat the same category as 
 - TRAINING/COMBAT: practicing drills, sparring with guards, maintaining weapons, studying spell tomes, target practice, shadow-boxing or wrestling
 - EXPLORATION: foraging herbs outside town, walking the outskirts, investigating strange noises, fishing by the water, climbing nearby ruins, scouting the roads
 - REST/REFLECTION: sleeping in late, sitting by the fire lost in thought, visiting a shrine to pray, writing in a journal, staring at the night sky, tending a garden
-- EMOTIONAL/PERSONAL: having nightmares about past battles, composing a letter they never send, reminiscing about travels with {{ player.name }}, visiting a spot that reminds them of someone, struggling with loneliness or boredom, celebrating a small personal victory
+- EMOTIONAL/PERSONAL: having nightmares about past battles, composing a letter they never send, {% if knewPlayer %}reminiscing about travels with {{ player.name }}, {% endif %}visiting a spot that reminds them of someone, struggling with loneliness or boredom, celebrating a small personal victory
 
 Bigger life developments (rare: at most about one event in six, and only when it fits the character):
 Most events are small daily life. But every so often give {{ npc.name }} something with real stakes — proof they have a life of their own beyond the player. Tell it in the past tense as something that already happened and resolved, so they're back now and the player can still find them.
 If a "Their work" section appears above, prefer developments that grow out of that trade — its customers, rivals, risks, and roads — so the drama and the day job stay one life (the weekly work journal will pick these threads up):
 - AWAY-WORK: took paid work that sent them out of town for a while — a Thieves Guild / Companions / mercenary job in another hold, guarding a caravan to a neighboring hold, a stint at a mine or mill, crewing a fishing boat, escorting a merchant. For someone with a "Their work" section above, make it venture business instead — a delivery run to a distant buyer, a buying trip for stock or supplies, hauling the operation's goods to a neighboring market — never a job for some other employer.
-- TROUBLE WITH THE LAW: got into a brawl and spent a night in the {{ holdName }} jail, talked their way out of a fine, ran afoul of a guard, quietly paid off a bounty.
+- TROUBLE WITH THE LAW: got into a brawl and {% if default(arrestAllowed, true) %}spent a night in the {{ holdName }} jail{% else %}was fined for it{% endif %}, talked their way out of a fine, ran afoul of a guard, quietly paid off a bounty.
 - RELATIONSHIP BEAT: made or lost a friend, a rivalry flared, a brief romance ran its course, reconnected with family, fell out with a neighbor over something real.
 - WINDFALL OR SETBACK: came into a chunk of coin, got robbed on the road, won (or lost) big at cards, lost a prized possession, was cheated in a deal and is sore about it.
 - FACTION / WORLD PULL: brushed up against the Guild, the Companions, a local cult, Stormcloak/Imperial recruiters, or some daedric oddity — a flirtation with a bigger thread, NOT a full quest or heroics.
-Keep these believable for this particular character (a timid cook doesn't run Guild jobs; a roguish type might). When a development has a real outcome, attach the matching consequence below (away-work or cards → gold_change; a brawl arrest → arrest/bounty; a robbery → negative gold_change). Never strand them somewhere — the framing is always "did this, now back."
+Keep these believable for this particular character (a timid cook doesn't run Guild jobs; a roguish type might). When a development has a real outcome, attach the matching consequence below (away-work or cards → gold_change; {% if default(arrestAllowed, true) %}a brawl arrest → arrest/bounty{% else %}a brawl that drew the guards → bounty{% endif %}; a robbery → negative gold_change). Never strand them somewhere — the framing is always "did this, now back."
 
 Personality and mood shape how they do things:
 - Unhappy characters: brood, drink alone, pick fights, isolate themselves, snap at strangers, neglect their appearance
 - Happy characters: help neighbors, train enthusiastically, socialize freely, whistle while working, treat themselves to something nice
+{% if knewPlayer %}
 - High rapport with {{ player.name }}: miss {{ player.name }}, do things that remind them of past adventures, keep {{ player.name }}'s favorite drink stocked, tell stories about their travels together
 - Low rapport: focus entirely on their own life, avoid mentioning {{ player.name }}, may resent being left behind, build new independent routines
+{% endif %}
 
 Location: range across {{ holdName }} hold, not just the doorstep of {{ homeLocation }}.
 - {{ homeLocation }} and the daily-rhythm spots above are the base, but {{ npc.name }} has legs and a life of their own. Roughly half the time, set the event somewhere else in {{ holdName }} hold: a different town or village, an outlying farm or mill, a mine, a stretch of road or a bridge, a shrine, a fishery or dock, a wilderness camp, a neighboring settlement's market or inn.
@@ -272,9 +303,9 @@ Animal companion behavior:
 {% else %}
 Let their skills steer the activity: fighters train, spar, patrol and arm-wrestle locals; scholars and mages research, visit court wizards and experiment with reagents; rogues case marks, eavesdrop, play cards for coin and trade in rumors.
 {% endif %}
-{% if length(default(nearbyFollowers, [])) > 0 %}
-- One of the dismissed companions listed above may share the event if it makes natural sense. Add their name to the "involved" array. Keep shared events to ~20% of the time.{% if not isAnimal %} Shared activities: training together, eating at the inn, having a disagreement, confiding about {{ player.name }}, competing at something, helping each other with a task, getting on each other's nerves.{% endif %}
-- A shared event with another companion can only be with someone on that list, never with anyone travelling with {{ player.name }}; if none of them fits, keep the event solo or with a local.
+{% if hasPartners %}
+- One of the {% if hasLocals %}people listed above as living nearby{% else %}dismissed companions listed above{% endif %} may share the event if it makes natural sense. Add their name to the "involved" array. Keep shared events to ~20% of the time.{% if not isAnimal %} Shared activities: training together, eating at the inn, having a disagreement, {% if knewPlayer %}confiding about {{ player.name }}, {% endif %}competing at something, helping each other with a task, getting on each other's nerves.{% endif %}
+- A shared event with another companion{% if hasLocals %} or one of the locals listed above can only be with someone on those lists{% else %} can only be with someone on that list{% endif %}, never with anyone travelling with {{ player.name }}; if none of them fits, keep the event solo or with a local.
 {% endif %}
 {% if consequencesEnabled and not isAnimal %}
 
@@ -285,7 +316,9 @@ An event MAY optionally include a "consequence" object with real game effects. R
 - About 5% may have a crime consequence (only if it fits the character's personality and background)
 - Consequence types:
   * Economy: {"action":"gold_change","amount":150,"reason":"sold herbs at market"} — positive = earned, negative = spent/lost/fined
+{% if default(arrestAllowed, true) %}
   * Arrest: {"action":"arrest","crime":"theft","bounty":200} — committed a crime, arrested and bounty assigned
+{% endif %}
   * Bounty: {"action":"bounty","crime":"trespassing","bounty":100} — wanted but not yet caught
   * Debt: {"action":"debt","amount":300,"reason":"borrowed from merchant for supplies"} — owes money
   * Item acquired: {"action":"item_acquired","item":"iron sword","category":"weapon","count":1} — found, crafted, or received an item WITHOUT paying for it

@@ -1,6 +1,6 @@
 customCategory: economy
 name: BuyItem
-description: "Use when the speaker buys a specific item they have chosen, at a set price, from someone who is selling it and has agreed: paying the barkeep for the drink they ordered, buying arrows from a fletcher. The coin goes from the speaker and the goods come to them in one step. Not while browsing, asking prices or haggling. Selling is SellItem; paying for a service with no item is GiveGold."
+description: "Use when the speaker buys items they have chosen, at a set price, from someone who is selling them and has agreed: paying the barkeep for the drinks they ordered, buying arrows from a fletcher. One call covers the whole order: the coin goes once and the seller hands each person their goods. Not while browsing, asking prices or haggling. Selling is SellItem; paying for a service with no item is GiveGold."
 questEditorId: SeverActions
 scriptName: SeverActions_Currency
 executionFunctionName: BuyItem_Execute
@@ -13,13 +13,13 @@ parameterMapping:
     description: "who owns the goods: exact name as listed in Nearby Actors, usually the merchant; the player only when the speaker is buying the player's own item; never the speaker"
   - type: dynamic
     name: item
-    description: "the item's exact in-game name, in the game's own language (never translated), as the seller carries it"
+    description: "the item's exact in-game name, in the game's own language (never translated), as the seller carries it; several items comma-separated, each with an optional count before it and, when it is for someone other than the speaker, 'for' and their exact name as listed in Nearby Actors, or the player's name, after it (e.g. '2 Black-Briar Mead, Ale for Rin')"
   - type: dynamic
     name: quantity
-    description: "how many, a whole number (1 for one)"
+    description: "how many, a whole number (1 for one); with several items, put 1 here and each item's count before its name"
   - type: dynamic
     name: totalGold
-    description: "the agreed price for the whole purchase in gold, a whole number, not per unit"
+    description: "the agreed price for the whole purchase in gold, every item together, a whole number, not per unit"
 enabled: true
 defaultPriority: 6
 eligibilityRules:

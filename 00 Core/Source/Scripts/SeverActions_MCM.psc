@@ -201,7 +201,7 @@ EndFunction
 Event OnConfigOpen()
     ; Rebuilt on every open (SkyUI reads Pages right after this event): OnGameReload never fires on quest
     ; 0x000D62, so SkyUI's OnVersionUpdate never runs. _sources rides the save, so drop it too, or a table an older DLL served would be used for the save's life.
-    _sources = PapyrusUtil.StringArray(0)
+    _sources = Utility.CreateStringArray(0)
     BuildPageList()
 EndEvent
 
@@ -241,7 +241,7 @@ Function BuildPageList()
         i += 1
     EndWhile
 
-    Pages = PapyrusUtil.StringArray(kept)
+    Pages = Utility.CreateStringArray(kept)
     Int n = 0
     i = 0
     While i < served.Length
@@ -258,7 +258,7 @@ Function BuildPageList()
         If _modulesPageLabel == "" || _modulesPageLabel == "mcm.modulesPage"
             _modulesPageLabel = "Modules"
         EndIf
-        Pages = PapyrusUtil.PushString(Pages, _modulesPageLabel)
+        Pages = Utility.ResizeStringArray(Pages, Pages.Length + 1, _modulesPageLabel)
     EndIf
 EndFunction
 
@@ -286,7 +286,7 @@ Event OnPageReset(string page)
 
     If _modulesPageLabel != "" && page == _modulesPageLabel
         _pageId = ""
-        _rows = PapyrusUtil.StringArray(0)
+        _rows = Utility.CreateStringArray(0)
         DrawModulesPage()
         Return
     EndIf
@@ -295,7 +295,7 @@ Event OnPageReset(string page)
     If _pageId == ""
         ; Say so on the page too: a blank page reads as "empty", not "the lookup failed".
         AddTextOption("", "$SA_ERROR_Script_not_linked", OPTION_FLAG_DISABLED)
-        _rows = PapyrusUtil.StringArray(0)
+        _rows = Utility.CreateStringArray(0)
         Debug.Trace("[SeverActions_MCM] OnPageReset: no layout page for '" + page + "'")
         TracePageDiag(page)
         Return
@@ -879,7 +879,7 @@ EndFunction
 
 Function RefreshFollowersState()
     CachedManagedFollowers = PapyrusUtil.ActorArray(0)
-    CachedPresetNames = PapyrusUtil.StringArray(0)
+    CachedPresetNames = Utility.CreateStringArray(0)
     _selCompanion = None
     _selCompanionHome = ""
     _selCompanionSituation = ""
@@ -910,7 +910,7 @@ EndFunction
 
 Function RefreshOutfitsState()
     CachedPresetActors = PapyrusUtil.ActorArray(0)
-    CachedOutfitPresetNames = PapyrusUtil.StringArray(0)
+    CachedOutfitPresetNames = Utility.CreateStringArray(0)
     _selPresetActor = None
     If !SeverActionsNativeExt2.Module_IsUsable("outfit")
         Return
@@ -984,8 +984,8 @@ EndFunction
 Function RefreshEconomyState()
     _debtPlayerOwes = 0
     _debtOwedToPlayer = 0
-    _debtOwesDetails = PapyrusUtil.StringArray(0)
-    _debtOwedDetails = PapyrusUtil.StringArray(0)
+    _debtOwesDetails = Utility.CreateStringArray(0)
+    _debtOwedDetails = Utility.CreateStringArray(0)
     If !SeverActionsNativeExt2.Module_IsUsable("economy")
         Return
     EndIf
@@ -1010,9 +1010,9 @@ EndFunction
 
 Function RefreshBioState()
     BioTabs = SeverActionsNativeExt2.Native_BioBlock_TabList()
-    BioBlockTitles = PapyrusUtil.StringArray(0)
-    BioAssignedTitles = PapyrusUtil.StringArray(0)
-    BioTargetFactions = PapyrusUtil.StringArray(0)
+    BioBlockTitles = Utility.CreateStringArray(0)
+    BioAssignedTitles = Utility.CreateStringArray(0)
+    BioTargetFactions = Utility.CreateStringArray(0)
     BioRuleNames = SeverActionsNativeExt2.Native_BioBlock_FactionRuleNames()
     BioTargetActor = Game.GetCurrentCrosshairRef() as Actor
     If BioTargetActor
@@ -1710,12 +1710,12 @@ String[] Function RuntimeMenuEntries(String asSource)
         Return BioTargetFactions
     EndIf
     Debug.Trace("[SeverActions_MCM] RuntimeMenuEntries: no branch for the source '" + asSource + "'")
-    Return PapyrusUtil.StringArray(0)
+    Return Utility.CreateStringArray(0)
 EndFunction
 
 String[] Function DisplayNames(Actor[] akList)
     Int n = ArrayLen(akList)
-    String[] out = PapyrusUtil.StringArray(n)
+    String[] out = Utility.CreateStringArray(n)
     Int i = 0
     While i < n
         If akList[i]
@@ -2647,7 +2647,7 @@ EndFunction
 String[] Function VisiblePresetNames(Actor akActor)
     {The user-visible preset names in store order (SeverActions_Outfit.GetPresetNames' filter): '_' entries
      ("_default") are the situation system's auto-saved baselines.}
-    String[] out = PapyrusUtil.StringArray(0)
+    String[] out = Utility.CreateStringArray(0)
     If !akActor
         Return out
     EndIf
@@ -2656,7 +2656,7 @@ String[] Function VisiblePresetNames(Actor akActor)
     While i < count
         String name = SeverActionsNative.Native_Outfit_GetPresetNameAt(akActor, i)
         If name != "" && StringUtil.GetNthChar(name, 0) != "_"
-            out = PapyrusUtil.PushString(out, name)
+            out = Utility.ResizeStringArray(out, out.Length + 1, name)
         EndIf
         i += 1
     EndWhile

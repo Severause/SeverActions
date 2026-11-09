@@ -131,6 +131,10 @@ Bool Function Native_IsSkyMessageInstalled() Global Native
  SeverActions_SkyMessageLib is gated on it; false = no popup, the caller takes
  its no-selection path.}
 
+Bool Function Native_IsIEDInstalled() Global Native
+{Immersive Equipment Displays present (ImmersiveEquipmentDisplays.dll loaded). Every
+ call into SeverActions_IEDLib is gated on it.}
+
 Bool Function Venture_Hire(Actor akAssignee, String asJob, String asArrangement) Global Native
 {Hire an NPC as a retainer. Job/arrangement are free text (normalized natively). Returns false on unparseable job or if already a retainer.}
 
@@ -800,6 +804,56 @@ Actor[] Function Travel_GetOrderedJourneyActors() Global Native
  waiting (the MCM's journey list).}
 String Function Travel_GetPlaceLabelByActor(Actor akActor) Global Native
 {The place label of the actor's live journey ("" when none).}
+Bool Function Travel_SharesDestination(Actor akA, Actor akB) Global Native
+{True when both are on a live journey, on the road or waiting, to the same place.}
+
+; ─── TravelToPlace's group order (TravelGroup.h; the card in MagelightTravelPromptBridge.h) ───
+Actor[] Function Travel_ResolveGroup(Actor akSpeaker, String asNames) Global Native
+{The people asNames (the LLM's comma-separated list) means within 2500 units of akSpeaker, in list order and at
+ most 16, who pass TravelToPlace's own eligibility rules; the speaker, the player and repeats are left out.}
+Actor[] Function Travel_KeepEligible(Actor[] akActors) Global Native
+{The living ones of akActors that TravelToPlace's eligibility rules still let go, in order.}
+Bool Function Magelight_OpenTravelPromptGroup(Actor akLead, Actor[] akOthers, String asNamedPlace, Int aiTimeoutMs) Global Native
+{Magelight_OpenTravelPrompt for a group: one card naming akLead and akOthers. A confirm fires
+ SeverActions_TravelPromptResult for akLead alone; the caller keeps who goes with them.}
+
+; ─── WaitForPlayerHere / ResumeFollowing's group order (CompanionGroup.h) ───
+Actor[] Function Follow_ResolveGroup(Actor akSpeaker, String asNames, Bool abWait) Global Native
+{The others asNames means within 2500 units of akSpeaker (list order, at most 16) who pass WaitForPlayerHere's
+ (abWait) or ResumeFollowing's eligibility rules, the speaker, the player and repeats left out; a wait passes anyone
+ SA already parks, the safe-interior relax flag being the caller's to read.}
+
+; ─── Item lists: one trade or hand-over carrying several items, each optionally for someone else (ItemList.h) ───
+String Function ItemList_Plan(Actor akOwner, Actor akDefaultRecipient, String asList, Int aiDefaultCount, Int aiTotalGold, Bool abHandOver, Bool abCapToStock) Global Native
+{The plan for an item action's list (ItemList.h has the rules), as JSON for the Json_* natives: "lines"
+ (n, name, toName, own, gold, share), "missing" (English), "ok", "summary". abHandOver: akOwner hands the
+ items over (Buy/Sell/Give); abCapToStock: cut a short line to stock instead of making the plan not ok.}
+Form[] Function ItemList_Items(String asPlan) Global Native
+{The plan's items, one per line in order.}
+Actor[] Function ItemList_Recipients(String asPlan) Global Native
+{The plan's recipients, one per line in order.}
+String Function ItemList_Shortfall(Actor akSeller, String asPlan) Global Native
+{What akSeller no longer has of a trade plan's lines, in English; "" when every line is still in stock.}
+Int Function ItemList_HandOver(Actor akOwner, Actor akTo, Form akItem, Int aiCount, Bool abShopStock) Global Native
+{Moves up to aiCount of akItem from akOwner (and, with abShopStock, their merchant chest) to akTo in one
+ step and returns how many moved; the player's plain copies go before any they enchanted or renamed.}
+Bool Function Magelight_OpenTradePromptBasket(Actor akCounterparty, Int aiGold, String asCounterpartyName, String asPlan, Bool abPlayerBuys, Int aiTimeoutMs) Global Native
+{Magelight_OpenTradePrompt for an ItemList plan: one line for the buyer alone is the plain card, anything else
+ lists every line with its recipient and the one total. False when the card cannot open (the caller falls back).}
+
+; ─── The travel core's journey record (cosaved in TRVL; outlives the journey's entry until its teardown) ───
+; Keys: "handle", "wasFollower", "sbxOwned" (Int) and "sandbox" (Form). A field the record does not hold means an
+; older build began the journey: read its StorageUtil key.
+Bool Function Travel_JourneySetInt(Actor akActor, String asKey, Int aiValue) Global Native
+{Record an Int field of the actor's journey record. False for a key that is not an Int field.}
+Int Function Travel_JourneyGetInt(Actor akActor, String asKey, Int aiMissing) Global Native
+{The Int field of the actor's journey record, aiMissing when the record does not hold it.}
+Bool Function Travel_JourneySetForm(Actor akActor, String asKey, Form akValue) Global Native
+{Record a Form field of the actor's journey record (None included). False for a key that is not a Form field.}
+Form Function Travel_JourneyGetForm(Actor akActor, String asKey) Global Native
+{The Form field of the actor's journey record, None when it holds None or nothing.}
+Function Travel_JourneyUnset(Actor akActor, String asKey) Global Native
+{Forget one field of the actor's journey record, or the whole record when asKey is "".}
 
 Int Function Craft_CancelByActor(Actor akActor) Global Native
 {Cancel every live crafting session for this actor (travel-start disengage);
@@ -858,6 +912,18 @@ Int Function Native_Outfit_ResolveBurst(Actor akActor) Global Native
  preset; the latch is dropped); 3 = no latch (also when the active preset is
  still worn in full). Never 0: an older DLL without it reads 0, so fall back to
  Native_Outfit_IsBurstSuppressed.}
+
+Int Function Native_Outfit_UndressWeapons(Actor akActor) Global Native
+{Undress: takes the weapon out of each hand and the arrows or bolts off, recording
+ each copy; the outfit settle keeps them off (a fight aside) until
+ Native_Outfit_DressWeapons. Returns how many came off.}
+
+Int Function Native_Outfit_DressWeapons(Actor akActor) Global Native
+{Dress: puts back the copies Native_Outfit_UndressWeapons took off, each in its
+ hand, and ends the hold. Returns how many went on.}
+
+Bool Function Native_Outfit_HasUndressWeapons(Actor akActor) Global Native
+{True while an Undress holds the actor's weapons or ammo off.}
 
 Bool Function Native_Outfit_ShouldYieldCombatGear(Actor akActor) Global Native
 {True when outfit enforcement should yield this debounce round: the yield
@@ -1239,6 +1305,21 @@ String[] Function Native_Debt_GetPlayerViewLines(Bool abPlayerIsCreditor) Global
 ; 1 fatigue, else cold. "" on an older DLL.
 String Function Native_Survival_GetSeverityLabel(Int aiNeedType, Int aiValue) Global Native
 
+; Survival's stat penalties, kept in the cosave (SurvivalPenaltyCore.h kinds: 0 SpeedMult, 1 StaminaRateMult,
+; 2 MagickaRateMult, 3 HealRateMult; amounts 0-100). AdoptPenalties takes an actor into the ledger once with the
+; old StorageUtil amounts and gives back what lost records left stacked: 1 when adopted now, 0 if already.
+; SetPenalty moves the actor value to a new penalty and records it, returning the previous one.
+; PenaltiesAdopted: whether the actor is in the ledger yet.
+Bool Function Survival_PenaltiesAdopted(Actor akActor) Global Native
+Int Function Survival_AdoptPenalties(Actor akActor, Int aiSpeed, Int aiStaminaRegen, Int aiMagickaRegen, Int aiHealthRegen) Global Native
+Int Function Survival_SetPenalty(Actor akActor, Int aiKind, Int aiPenalty) Global Native
+
+; The game hours a tracked follower lay in a bed since the last call, at most afMaxHours (SurvivalRestCore.h): each
+; hour is returned once, a Wait or Sleep skip included. 0 out of bed, or on an older DLL.
+Float Function Survival_TakeBedRest(Actor akActor, Float afMaxHours) Global Native
+; Whether the actor's needs were ever set: a follower at 0/0/0 is rested and fed, not new. False on an older DLL.
+Bool Function Survival_HasNeeds(Actor akActor) Global Native
+
 ; Quick wheel (QuickWheelBridge), the only wheel (D8). The DLL owns the key/chord
 ; and routes a pick through HotkeySink (SeverActions_Hotkey_<Name>, strArg
 ; wheel:<id>). Wheel_IsNative: a UI host is present and the wheel view exists;
@@ -1493,7 +1574,57 @@ Bool Function Duel_IsActive(Actor akActor) Global Native
 ; Not part of the API (SeverActions_Brawl's duel handlers): the handle of akActor's duel, 0 for none.
 Int Function Native_Duel_HandleOf(Actor akActor) Global Native
 
+; ── Brawl teammate strip (BrawlManager.h, BrawlStripCore.h; saved in 'BRWU') ──
+; What SeverActions_Brawl's teammate strip took from an actor, per actor, beside its StorageUtil keys. aiBits are
+; SeverActions_Brawl's STRIP_* values: 1 was a teammate, 2 dismissed from NFF, 4 joined NFF's spar faction, 8 on the
+; reload restore's list, 16 queued for a framework re-seat, 32 that re-seat goes to NFF.
+Function Brawl_StripMark(Actor akActor, Int aiBits, Faction akSparFaction = None) Global Native
+{Adds aiBits to akActor's record, making one when they have none; akSparFaction, when given, is the spar faction.}
+Function Brawl_StripUnmark(Actor akActor, Int aiBits) Global Native
+{Clears aiBits from akActor's record; a record left with no bits is dropped. None: nothing.}
+Int Function Brawl_StripBits(Actor akActor) Global Native
+{akActor's bits, 0 for no record. None: the bits any record holds.}
+Faction Function Brawl_StripSparFaction(Actor akActor) Global Native
+{The spar faction akActor's record joined, None for none.}
+Actor[] Function Brawl_StripActors(Int aiBits) Global Native
+{Every actor whose record holds any of aiBits.}
+
 ; The assessments' clocks, in game seconds, 0 = never: slot 0 last sent, 1 next due, 2 the bond's Start over, 3 and 4 the
 ; inter-follower assessment's last sent and next due.
 Float Function Assess_GetTime(Actor akActor, Int aiSlot) Global Native
 Function Assess_SetTime(Actor akActor, Int aiSlot, Float afGameSeconds) Global Native
+
+; A forced fight's or a surrender's undo record ('CBUN'), kept where StorageUtil drops values. aiField: 0 the original
+; Confidence, 1 the original Aggression, 2 the relationship rank toward the partner before the fight.
+Function CombatUndo_Set(Actor akActor, Int aiField, Float afValue) Global Native
+Bool Function CombatUndo_Has(Actor akActor, Int aiField) Global Native
+; The recorded value, 0.0 when none (test CombatUndo_Has first).
+Float Function CombatUndo_Get(Actor akActor, Int aiField) Global Native
+; aiField -1 clears the whole record, the partner included.
+Function CombatUndo_Clear(Actor akActor, Int aiField) Global Native
+; The forced fight's partner; None clears it.
+Function CombatUndo_SetPartner(Actor akActor, Actor akPartner) Global Native
+Actor Function CombatUndo_GetPartner(Actor akActor) Global Native
+
+; What a recruit or a turn on the player changed (FollowerData, FLWD v23), put back at dismissal or Start over. aiField:
+; 0 the original Aggression, 1 the original Confidence, 2 the original rank toward the player, 3 the rank before a turn
+; on the player, 4 hands-off at recruit (1 or 0). A dismissal keeps it.
+Function Follower_SetUndo(Actor akActor, Int aiField, Float afValue) Global Native
+Bool Function Follower_HasUndo(Actor akActor, Int aiField) Global Native
+; The recorded value, 0.0 when none (test Follower_HasUndo first).
+Float Function Follower_GetUndo(Actor akActor, Int aiField) Global Native
+Function Follower_ClearUndo(Actor akActor, Int aiField) Global Native
+
+; Off-screen life's story subjects (OffScreenLifeDataStore, 'OSLD' v7): NPCs whose days off-screen life writes without a
+; home, so SA never seats, moves or packages them.
+Actor[] Function OffScreen_StorySubjects() Global Native
+{The subjects who may get an event now: alive, not silenced, not following, not homed and not loaded near the player.
+ Drops the mark of a subject who died or no longer exists.}
+Bool Function OffScreen_MarkStorySubject(Actor akActor) Global Native
+{Marks akActor (never the player, the dead or a child) and says so on the HUD; true when they are a subject after it.}
+Bool Function OffScreen_UnmarkStorySubject(Actor akActor) Global Native
+{Unmarks akActor and says so on the HUD; true when they were a subject. Their letters stay.}
+String Function OffScreen_StoryPlace(Actor akActor) Global Native
+{Where akActor's off-screen story is told from: their home, a subject's last place, or "".}
+String Function OffScreen_StoryHold(Actor akActor) Global Native
+{The hold their rumors go under and an off-screen arrest jails them in: their home, a subject's hold, or "".}

@@ -1,7 +1,7 @@
 {% if render_mode == "full" or render_mode == "action" %}
 {# The player's pack in an NPC speaker's full profile and the drill-down, for trades and hand-overs; each group is capped by
-   its SeverActions_InvLimit_* StorageUtil key. #}
-{% if not is_player(actorUUID) %}
+   its SeverActions_InvLimit_* StorageUtil key; hidden from a speaker who has not spotted the player (stealthHiddenPlayer). #}
+{% if not is_player(actorUUID) and not exists("stealthHiddenPlayer") %}
 {# Build inventory array from object, skipping nameless items and get_inventory's {"error": ...} answer #}
 {% set pinventory = get_inventory(player.UUID) %}
 {% set itemList = [] %}

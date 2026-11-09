@@ -368,8 +368,10 @@ Function _FireSearchEvent(Actor akActor, ObjectReference akSource, String displa
     {Shared tail of the Search actions: the contents event.}
     String contents = SeverActionsNativeExt.Native_Loot_DescribeContents(akSource, 10)
     if contents == ""
+        ; SN-EVENT: container_searched corpse_searched
         SkyrimNetApi.RegisterEvent(eventKind, akActor.GetDisplayName() + " " + verb + " " + displayName + " — nothing there worth taking.", akActor, None)
     else
+        ; SN-EVENT: container_searched corpse_searched
         SkyrimNetApi.RegisterEvent(eventKind, \
             akActor.GetDisplayName() + " " + verb + " " + displayName + ". Inside: " + contents + ".", \
             akActor, None)
@@ -475,6 +477,7 @@ Function LootRef_Helper(Actor akActor, ObjectReference akTarget, Idle anim, Floa
                     suffix = " (as much as they could grab in one go)"
                 endif
             endif
+            ; SN-EVENT: container_looted corpse_looted
             SkyrimNetApi.RegisterEvent(kind + "_looted", akActor.GetDisplayName() + " " + verb + " " + desc + " from " + displayName + suffix, akActor, None)
             ApplyTheftBounty(akActor, "from " + displayName)
         else
@@ -484,15 +487,18 @@ Function LootRef_Helper(Actor akActor, ObjectReference akTarget, Idle anim, Floa
             if mode != "" && mode != "all" && mode != "everything" && mode != "valuables" && mode != "valuable" && mode != "gold" && mode != "septims" && mode != "money"
                 nothingMsg = displayName + " had no " + itemsToTake + " for " + akActor.GetDisplayName() + " to take"
             endif
+            ; SN-EVENT: container_looted corpse_looted
             SkyrimNetApi.RegisterEvent(kind + "_looted", nothingMsg, akActor, None)
         endif
     else
+        ; SN-EVENT: container_unreachable corpse_unreachable
         SkyrimNetApi.RegisterEvent(kind + "_unreachable", akActor.GetDisplayName() + " couldn't reach " + displayName, akActor, None)
     endif
 EndFunction
 
 ; =============================================================================
-; ACTION: GiveItem - hand item(s) to another actor, from the pack or the merchant chest
+; ACTION: GiveItem - hand item(s) to another actor, from the pack or the merchant chest; the
+; item text may list several, each for its own recipient (ItemList_Plan)
 ; =============================================================================
 
 Bool Function GiveItem_IsEligible(Actor akActor, Actor akTarget, String itemName, Int aiCount = 1) Global
@@ -504,6 +510,10 @@ Bool Function GiveItem_IsEligible(Actor akActor, Actor akTarget, String itemName
 EndFunction
 
 Function GiveItem_Execute(Actor akActor, Actor akTarget, String itemName, Int aiCount = 1)
+{Hands akTarget the items itemName lists (one, or several split at commas, each with an
+ optional count and an optional "for <name>" recipient near the giver; ItemList_Plan), from the
+ giver's pack or merchant chest, walking to each recipient in turn. One item_given event per
+ recipient; what the giver lacks is named in one item_give_failed.}
     if !akActor || !akTarget || itemName == ""
         return
     endif
@@ -512,66 +522,82 @@ Function GiveItem_Execute(Actor akActor, Actor akTarget, String itemName, Int ai
         aiCount = 1
     endif
 
-    if WalkToReference(akActor, akTarget)
-        if IdleGive
-            PlayAnimationAndWait(akActor, IdleGive, 2.0)
+    String plan = SeverActionsNativeExt2.ItemList_Plan(akActor, akTarget, itemName, aiCount, 0, True, True)
+    String missing = SeverActionsNativeExt2.Json_GetString(plan, "/missing")
+    Int count = SeverActionsNativeExt2.Json_ArrayCount(plan, "/lines")
+    if count <= 0
+        String failText = akActor.GetDisplayName() + " doesn't have " + itemName + " to give"
+        if missing != ""
+            failText += " - " + missing
         endif
+        SkyrimNetApi.RegisterEvent("item_give_failed", failText, akActor, akTarget)
+        return
+    endif
 
-        ; Own pack first, then the merchant chest
-        Form itemForm = GetItemFormByName(akActor, itemName)
-        Int transferred = 0
-        String actualName = itemName
+    Form[] items = SeverActionsNativeExt2.ItemList_Items(plan)
+    Actor[] takers = SeverActionsNativeExt2.ItemList_Recipients(plan)
+    Bool[] served = Utility.CreateBoolArray(count)
+    Int i = 0
+    while i < count
+        ; Someone who died or went away since the plan: the named recipient takes their lines.
+        if !takers[i] || takers[i].IsDead()
+            takers[i] = akTarget
+        endif
+        i += 1
+    endwhile
 
-        if itemForm && akActor.GetItemCount(itemForm) > 0
-            actualName = itemForm.GetName()
-            Int available = akActor.GetItemCount(itemForm)
-            transferred = aiCount
-            if transferred > available
-                transferred = available
+    i = 0
+    while i < count
+        if !served[i]
+            Actor taker = takers[i]
+            String[] gave = Utility.CreateStringArray(count)
+            String[] wanted = Utility.CreateStringArray(count)
+            Int movedAny = 0
+            Int goldValue = 0
+            Bool reached = SeverActions_WalkLib.WalkToReference(akActor, taker)
+            if reached && IdleGive
+                PlayAnimationAndWait(akActor, IdleGive, 2.0)
             endif
-            
-            if transferred > 0
-                akActor.RemoveItem(itemForm, transferred, false, akTarget)
-            endif
-        else
-            ObjectReference merchantChest = GetMerchantContainer(akActor)
-            if merchantChest && merchantChest != akActor
-                itemForm = FindItemInContainer(merchantChest, itemName)
-                if itemForm && merchantChest.GetItemCount(itemForm) > 0
-                    actualName = itemForm.GetName()
-                    Int available = merchantChest.GetItemCount(itemForm)
-                    transferred = aiCount
-                    if transferred > available
-                        transferred = available
-                    endif
-                    
-                    if transferred > 0
-                        merchantChest.RemoveItem(itemForm, transferred, false, akTarget)
+            Int j = i
+            while j < count
+                if !served[j] && takers[j] == taker
+                    served[j] = True
+                    String nm = SeverActionsNativeExt2.Json_GetString(plan, "/lines/" + j + "/name")
+                    Int n = SeverActionsNativeExt2.Json_GetInt(plan, "/lines/" + j + "/n")
+                    wanted[j] = SeverActions_ModuleBase.CountLabel(n, nm)
+                    if reached
+                        Int moved = SeverActionsNativeExt2.ItemList_HandOver(akActor, taker, items[j], n, True)
+                        if moved > 0
+                            gave[j] = SeverActions_ModuleBase.CountLabel(moved, nm)
+                            movedAny += moved
+                            goldValue += GetFormValue(items[j]) * moved
+                        endif
                     endif
                 endif
+                j += 1
+            endwhile
+            if reached
+                ResetToDefaultIdle(akActor)
+            endif
+
+            if movedAny > 0
+                ; Auto-debt: a gift from a creditor adds its value to the receiver's debt, through
+                ; the economy provider (DR2: items may not name its types); no module, no ledger.
+                if goldValue > 0
+                    SeverActions_ModuleBase.CallBool("economy", "autoAddToDebt", akActor, taker, "", goldValue)
+                endif
+                SkyrimNetApi.RegisterEvent("item_given", akActor.GetDisplayName() + " gave " + SeverActions_ModuleBase.JoinLabels(gave) + " to " + taker.GetDisplayName(), akActor, taker)
+            elseif !reached
+                SkyrimNetApi.RegisterEvent("item_give_failed", akActor.GetDisplayName() + " couldn't reach " + taker.GetDisplayName() + " to give " + SeverActions_ModuleBase.JoinLabels(wanted), akActor, taker)
+            else
+                SkyrimNetApi.RegisterEvent("item_give_failed", akActor.GetDisplayName() + " doesn't have " + SeverActions_ModuleBase.JoinLabels(wanted) + " to give", akActor, taker)
             endif
         endif
-        
-        ResetToDefaultIdle(akActor)
+        i += 1
+    endwhile
 
-        ; Auto-debt: a gift from a creditor adds its value to the receiver's debt, through
-        ; the economy provider (DR2: items may not name its types); no module, no ledger.
-        if transferred > 0 && itemForm
-            int goldValue = GetFormValue(itemForm) * transferred
-            if goldValue > 0
-                SeverActions_ModuleBase.CallBool("economy", "autoAddToDebt", akActor, akTarget, "", goldValue)
-            endif
-        endif
-
-        if transferred > 1
-            SkyrimNetApi.RegisterEvent("item_given", akActor.GetDisplayName() + " gave " + transferred + " " + actualName + " to " + akTarget.GetDisplayName(), akActor, akTarget)
-        elseif transferred == 1
-            SkyrimNetApi.RegisterEvent("item_given", akActor.GetDisplayName() + " gave " + actualName + " to " + akTarget.GetDisplayName(), akActor, akTarget)
-        else
-            SkyrimNetApi.RegisterEvent("item_give_failed", akActor.GetDisplayName() + " doesn't have " + itemName + " to give", akActor, akTarget)
-        endif
-    else
-        SkyrimNetApi.RegisterEvent("item_give_failed", akActor.GetDisplayName() + " couldn't reach " + akTarget.GetDisplayName() + " to give " + itemName, akActor, akTarget)
+    if missing != ""
+        SkyrimNetApi.RegisterEvent("item_give_failed", akActor.GetDisplayName() + " couldn't give everything asked for: " + missing, akActor, akTarget)
     endif
 EndFunction
 
@@ -625,13 +651,14 @@ Int Function TransferItemForTransaction(Actor akSeller, Actor akBuyer, Form akIt
 EndFunction
 
 ; =============================================================================
-; ACTION: TakeItem - the speaker takes an item from the player or any NPC
+; ACTION: TakeItem - the speaker takes item(s) from the player or any NPC
 ; =============================================================================
 
 Function TakeItem_Execute(Actor akSpeaker, Actor akTarget, String itemName, Int aiCount = 1)
-{The speaker walks to the target and takes an item from their inventory with
- the take animation. Gold goes through TakeGoldFrom (the LLM often picks this
- action where CollectPayment was meant).}
+{The speaker walks to the target and takes the items itemName lists (one, or several split at
+ commas, each with an optional count; ItemList_Plan) with the take animation. Gold, by name or a
+ name that resolves to it, goes through TakeGoldFrom (the LLM often picks this action where
+ CollectPayment was meant).}
     if !akSpeaker || !akTarget || itemName == ""
         return
     endif
@@ -643,70 +670,86 @@ Function TakeItem_Execute(Actor akSpeaker, Actor akTarget, String itemName, Int 
         aiCount = 1
     endif
 
-    Actor playerRef = Game.GetPlayer()
-    Bool targetIsPlayer = (akTarget == playerRef)
+    Bool targetIsPlayer = (akTarget == Game.GetPlayer())
+    String speakerName = akSpeaker.GetDisplayName()
+    String targetName = akTarget.GetDisplayName()
 
-    ; Gold by any common name
-    if SeverActionsNative.IsGoldName(itemName)
-        TakeGoldFrom(akSpeaker, akTarget, aiCount)
+    String plan = SeverActionsNativeExt2.ItemList_Plan(akTarget, akSpeaker, itemName, aiCount, 0, False, True)
+    String missing = SeverActionsNativeExt2.Json_GetString(plan, "/missing")
+    Int count = SeverActionsNativeExt2.Json_ArrayCount(plan, "/lines")
+    if count <= 0
+        String failText = speakerName + " couldn't find " + itemName + " in " + targetName + "'s inventory"
+        if missing != ""
+            failText += " - " + missing
+        endif
+        SkyrimNetApi.RegisterEvent("take_item_failed", failText, akSpeaker, akTarget)
         return
     endif
 
-    Form itemForm = GetItemFormByName(akTarget, itemName)
-    if !itemForm || akTarget.GetItemCount(itemForm) <= 0
-        SkyrimNetApi.RegisterEvent("take_item_failed", akSpeaker.GetDisplayName() + " couldn't find " + itemName + " in " + akTarget.GetDisplayName() + "'s inventory", akSpeaker, akTarget)
-        return
-    endif
+    Form[] items = SeverActionsNativeExt2.ItemList_Items(plan)
+    Int goldAsked = 0
+    Bool anyItem = False
+    Int i = 0
+    while i < count
+        if SeverActionsNativeExt2.Json_GetInt(plan, "/lines/" + i + "/gold") == 1
+            goldAsked += SeverActionsNativeExt2.Json_GetInt(plan, "/lines/" + i + "/n")
+        else
+            anyItem = True
+        endif
+        i += 1
+    endwhile
 
-    String actualName = itemForm.GetName()
-
-    ; A name that still resolved to gold
-    MiscObject goldForm = Game.GetFormFromFile(0x0000000F, "Skyrim.esm") as MiscObject
-    if goldForm && itemForm == goldForm as Form
-        TakeGoldFrom(akSpeaker, akTarget, aiCount)
-        return
-    endif
-
-    if WalkToReference(akSpeaker, akTarget)
+    if anyItem
+        if !SeverActions_WalkLib.WalkToReference(akSpeaker, akTarget)
+            SkyrimNetApi.RegisterEvent("take_item_failed", speakerName + " couldn't reach " + targetName + " to take " + itemName, akSpeaker, akTarget)
+            return
+        endif
         if IdleTake
             PlayAnimationAndWait(akSpeaker, IdleTake, 2.0)
         endif
 
-        Int available = akTarget.GetItemCount(itemForm)
-        Int transferred = aiCount
-        if transferred > available
-            transferred = available
-        endif
-
-        if transferred > 0
-            ; Silent for the player: our own notification below replaces the engine's.
-            akTarget.RemoveItem(itemForm, transferred, targetIsPlayer, akSpeaker)
-        endif
+        String[] took = Utility.CreateStringArray(count)
+        String[] noted = Utility.CreateStringArray(count)
+        Int takenAny = 0
+        i = 0
+        while i < count
+            if SeverActionsNativeExt2.Json_GetInt(plan, "/lines/" + i + "/gold") != 1
+                String nm = SeverActionsNativeExt2.Json_GetString(plan, "/lines/" + i + "/name")
+                Int n = SeverActionsNativeExt2.Json_GetInt(plan, "/lines/" + i + "/n")
+                Int transferred = SeverActionsNativeExt2.ItemList_HandOver(akTarget, akSpeaker, items[i], n, False)
+                if transferred > 0
+                    took[i] = SeverActions_ModuleBase.CountLabel(transferred, nm)
+                    noted[i] = nm
+                    if transferred > 1
+                        noted[i] = nm + " (" + transferred + ")"
+                    endif
+                    takenAny += transferred
+                endif
+            endif
+            i += 1
+        endwhile
 
         ResetToDefaultIdle(akSpeaker)
 
         ; The player-target path keeps its older event name, item_taken_from_player.
-        String speakerName = akSpeaker.GetDisplayName()
-        String targetName = akTarget.GetDisplayName()
-        if transferred > 1
+        if takenAny > 0
             if targetIsPlayer
-                Debug.Notification(speakerName + " took " + actualName + " (" + transferred + ")")
-                SkyrimNetApi.RegisterEvent("item_taken_from_player", speakerName + " took " + transferred + " " + actualName + " from " + targetName, akSpeaker, akTarget)
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("loot.tookItem", ("" + speakerName), SeverActions_ModuleBase.JoinLabels(noted, True)))
+                SkyrimNetApi.RegisterEvent("item_taken_from_player", speakerName + " took " + SeverActions_ModuleBase.JoinLabels(took) + " from " + targetName, akSpeaker, akTarget)
             else
-                SkyrimNetApi.RegisterEvent("item_taken", speakerName + " took " + transferred + " " + actualName + " from " + targetName, akSpeaker, akTarget)
-            endif
-        elseif transferred == 1
-            if targetIsPlayer
-                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("loot.tookItem", ("" + speakerName), ("" + actualName)))
-                SkyrimNetApi.RegisterEvent("item_taken_from_player", speakerName + " took " + actualName + " from " + targetName, akSpeaker, akTarget)
-            else
-                SkyrimNetApi.RegisterEvent("item_taken", speakerName + " took " + actualName + " from " + targetName, akSpeaker, akTarget)
+                SkyrimNetApi.RegisterEvent("item_taken", speakerName + " took " + SeverActions_ModuleBase.JoinLabels(took) + " from " + targetName, akSpeaker, akTarget)
             endif
         else
             SkyrimNetApi.RegisterEvent("take_item_failed", speakerName + " couldn't take " + itemName + " from " + targetName, akSpeaker, akTarget)
         endif
-    else
-        SkyrimNetApi.RegisterEvent("take_item_failed", akSpeaker.GetDisplayName() + " couldn't reach " + akTarget.GetDisplayName() + " to take " + itemName, akSpeaker, akTarget)
+    endif
+
+    if goldAsked > 0
+        TakeGoldFrom(akSpeaker, akTarget, goldAsked)
+    endif
+
+    if missing != ""
+        SkyrimNetApi.RegisterEvent("take_item_failed", speakerName + " couldn't take everything asked for from " + targetName + ": " + missing, akSpeaker, akTarget)
     endif
 EndFunction
 

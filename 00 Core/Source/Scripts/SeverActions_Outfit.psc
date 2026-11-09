@@ -284,6 +284,13 @@ Function Undress_Execute(Actor akActor)
         EndIf
     EndIf
 
+    ; Off through 3D loads too, until Dress (the outfit settle keeps the hands empty).
+    SeverActionsNativeExt2.Native_Outfit_UndressWeapons(akActor)
+    ; IED would draw them again from the inventory: it draws nothing on the NPC until the undress ends.
+    If SeverActionsNativeExt2.Native_IsIEDInstalled()
+        SeverActions_IEDLib.Hide(akActor)
+    EndIf
+
     ; Biped slots 30-60 except 31/Hair, 38/Calves, 41/LongHair (wigs) and
     ; 50/51 (decapitation FX, not gear).
     int[] slots = new int[26]
@@ -436,11 +443,16 @@ EndFunction
 
 Function _ClearDressStash(Actor akActor)
     {Forget what an Undress set aside for Dress: stashed pieces, DefaultOutfit
-     backup, recorded preset index and name. Called when Dress consumes it and
-     when a slot preset goes on (the preset is the dressed state). Find-only
-     natives: never re-creates an erased OutfitDataStore row.}
+     backup, recorded preset index and name; the weapons go back on and IED draws
+     again. Called when Dress consumes it and when a slot preset goes on (the preset
+     is the dressed state). Find-only natives: never re-creates an erased
+     OutfitDataStore row.}
     If !akActor
         Return
+    EndIf
+    SeverActionsNativeExt2.Native_Outfit_DressWeapons(akActor)
+    If SeverActionsNativeExt2.Native_IsIEDInstalled()
+        SeverActions_IEDLib.Show(akActor)
     EndIf
     SeverActionsNativeExt.Native_Outfit_DressStashClear(akActor)
     SeverActionsNativeExt.Native_Outfit_DressStashSetDefaultOutfit(akActor, None)
@@ -468,6 +480,12 @@ Function Dress_Execute(Actor akActor)
 
     ; The player's word ends a strip mod's hold on them.
     SeverActionsNative.Native_Outfit_ClearBurstSuppression(akActor)
+
+    ; Weapons and IED first, so every path below has them back, the ones that change no clothing too.
+    SeverActionsNativeExt2.Native_Outfit_DressWeapons(akActor)
+    If SeverActionsNativeExt2.Native_IsIEDInstalled()
+        SeverActions_IEDLib.Show(akActor)
+    EndIf
 
     ; A HELD slot preset (EquipArmor / UnequipArmor took over): dressed means
     ; back into that preset. ApplyPresetBySlot's same-index path puts every
@@ -700,10 +718,10 @@ EndFunction
 
 Bool Function Dress_IsEligible(Actor akActor)
 {Alive, not a child, not outfit-excluded, outfit system on (see Undress_IsEligible),
- and something to put back: stashed clothing, a slot preset (active, held, or the
- one an Undress took off), a locked outfit, or a saved DefaultOutfit. False while
- a held preset cannot go back on because another mod takes a piece of it away:
- Dress_Execute changes nothing then.}
+ and something to put back: weapons or ammo an Undress took off, stashed clothing,
+ a slot preset (active, held, or the one an Undress took off), a locked outfit, or a
+ saved DefaultOutfit. False while a held preset cannot go back on because another mod
+ takes a piece of it away and no weapon waits: Dress_Execute changes nothing then.}
     if !akActor
         return false
     endif
@@ -715,6 +733,9 @@ Bool Function Dress_IsEligible(Actor akActor)
     endif
     if SeverActionsNative.Native_GetOutfitExcluded(akActor)
         return false
+    endif
+    if SeverActionsNativeExt2.Native_Outfit_HasUndressWeapons(akActor)
+        return true
     endif
     ; A held slot preset: Dress re-applies it even with an empty stash.
     if SeverActionsNativeExt2.Native_OutfitSlot_IsActivePresetHeld(akActor)
@@ -2241,11 +2262,11 @@ String[] Function GetPresetNames(Actor akActor)
     {User-visible preset names: skips "_"-prefixed internal entries such as
      the situation system's auto-saved "_default" baseline.}
     if !akActor
-        return PapyrusUtil.StringArray(0)
+        return Utility.CreateStringArray(0)
     endif
     Int count = SeverActionsNative.Native_Outfit_GetPresetCount(akActor)
     if count <= 0
-        return PapyrusUtil.StringArray(0)
+        return Utility.CreateStringArray(0)
     endif
     ; First pass sizes the result.
     Int visibleCount = 0
@@ -2257,7 +2278,7 @@ String[] Function GetPresetNames(Actor akActor)
         EndIf
         i += 1
     EndWhile
-    String[] result = PapyrusUtil.StringArray(visibleCount)
+    String[] result = Utility.CreateStringArray(visibleCount)
     Int ri = 0
     i = 0
     While i < count
@@ -2416,7 +2437,7 @@ Function MigrateOutfitDataToNative()
             ; --- Presets for this actor (the legacy StringList; GetPresetNames reads native) ---
             String _legacyPresetsListKey = "SeverOutfit_Presets_" + (akActor.GetFormID() as String)
             Int _legacyNameCount = StorageUtil.StringListCount(None, _legacyPresetsListKey)
-            String[] presetNames = PapyrusUtil.StringArray(_legacyNameCount)
+            String[] presetNames = Utility.CreateStringArray(_legacyNameCount)
             Int _lpi = 0
             While _lpi < _legacyNameCount
                 presetNames[_lpi] = StorageUtil.StringListGet(None, _legacyPresetsListKey, _lpi)
@@ -2482,7 +2503,7 @@ Function MigrateOutfitDataToNative()
             if !alreadyVisited
                 String _legacyPresetsListKeyP = "SeverOutfit_Presets_" + (pActor.GetFormID() as String)
                 Int _legacyNameCountP = StorageUtil.StringListCount(None, _legacyPresetsListKeyP)
-                String[] presetNames = PapyrusUtil.StringArray(_legacyNameCountP)
+                String[] presetNames = Utility.CreateStringArray(_legacyNameCountP)
                 Int _lpiP = 0
                 While _lpiP < _legacyNameCountP
                     presetNames[_lpiP] = StorageUtil.StringListGet(None, _legacyPresetsListKeyP, _lpiP)
@@ -2671,10 +2692,10 @@ EndFunction
 String[] Function ParseCSVTrim(String csv)
 {Split a comma-separated string into trimmed non-empty tokens. Caps at 32
  to match the storage limits used by callers (preset/lock FormLists).}
-    String[] tmp = PapyrusUtil.StringArray(32)
+    String[] tmp = Utility.CreateStringArray(32)
     Int outCount = 0
     if csv == ""
-        return PapyrusUtil.StringArray(0)
+        return Utility.CreateStringArray(0)
     endif
 
     Int len = StringUtil.GetLength(csv)
@@ -2698,9 +2719,9 @@ String[] Function ParseCSVTrim(String csv)
     endwhile
 
     if outCount == 0
-        return PapyrusUtil.StringArray(0)
+        return Utility.CreateStringArray(0)
     endif
-    String[] result = PapyrusUtil.StringArray(outCount)
+    String[] result = Utility.CreateStringArray(outCount)
     Int ci = 0
     while ci < outCount
         result[ci] = tmp[ci]
@@ -3011,6 +3032,7 @@ Function Maintenance()
     ; module-unique (DR10).
     RegisterForModEvent("SeverActions_OutfitAliasDisplaced", "OnOutfitAliasDisplaced")
     RegisterForModEvent("SeverActions_RosterChanged", "OnRosterChanged_Outfit")
+    RegisterForModEvent("SeverActions_UndressEnded", "OnUndressEnded_Outfit")
 
     ; Animation frameworks: suspend the outfit lock during scenes. Both hook
     ; pairs are global (every scene).
@@ -3040,8 +3062,9 @@ Function Maintenance()
     ; Suspend/Resume never reads them). Walks every actor the outfit system
     ; tracks, not only GetActorsWithLocks, to reach actors whose locks have
     ; since been cleared.
-    Int cleanupDone = StorageUtil.GetIntValue(None, "SeverActions_OutfitSuspendCleanupDone", 0)
-    if cleanupDone == 0
+    ; Ledger claim, the old sentinel adopted as a done signal (rule 15).
+    Bool cleanupSentinel = StorageUtil.GetIntValue(None, "SeverActions_OutfitSuspendCleanupDone", 0) >= 1
+    if !SeverActionsNativeExt2.Migration_AdoptSentinel("OutfitSuspendCleanup", 1, cleanupSentinel) && SeverActionsNativeExt2.Migration_TryClaim("OutfitSuspendCleanup", 1)
         Actor[] tracked = SeverActionsNativeExt.Native_Outfit_GetAllTrackedActors()
         Int cleared = 0
         if tracked
@@ -3060,6 +3083,7 @@ Function Maintenance()
             EndWhile
         endif
         StorageUtil.SetIntValue(None, "SeverActions_OutfitSuspendCleanupDone", 1)
+        SeverActionsNativeExt2.Migration_MarkDone("OutfitSuspendCleanup", 1)
         Debug.Trace("[SeverActions_Outfit] Phase 5: cleaned " + cleared + " stale StorageUtil suspend key(s) - now using native SuspendUntil")
     endif
 
@@ -3536,7 +3560,20 @@ Event OnOutfitExcluded(String eventName, String strArg, Float numArg, Form sende
     ; The alias-pool seat is KEPT: the OutfitAlias gates on the exclusion flag,
     ; and un-excluding sends no event, so a cleared seat would stay empty until
     ; the next load. The next re-seat drops it if the actor is still excluded.
+    ; Dress refuses an excluded actor, so an Undress's IED block ends here.
+    If SeverActionsNativeExt2.Native_IsIEDInstalled()
+        SeverActions_IEDLib.Show(akActor)
+    EndIf
     Debug.Trace("[SeverActions_Outfit] OnOutfitExcluded: cleared StorageUtil lock for " + akActor.GetDisplayName())
+EndEvent
+
+Event OnUndressEnded_Outfit(String eventName, String strArg, Float numArg, Form sender)
+    {The DLL put a preset on or forgot the actor, which ends any Undress; sender =
+     the actor. Sent only with IED installed, block or not (lifting none does nothing).}
+    Actor akActor = sender as Actor
+    If SeverActionsNativeExt2.Native_IsIEDInstalled() && akActor
+        SeverActions_IEDLib.Show(akActor)
+    EndIf
 EndEvent
 
 Event OnPrismaAdHocClearSlotPreset(String eventName, String strArg, Float numArg, Form sender)

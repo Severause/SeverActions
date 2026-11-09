@@ -1,6 +1,6 @@
 customCategory: combat
 name: TendWound
-description: "Use when the speaker binds someone's wound or stump or splints their broken bone in this very line: tearing cloth to stop the blood from a lost limb, wrapping a stump already closed, setting a broken arm or leg. Anyone can do it, no magic needed. Not for healing magic (that is Magic), promises to help later, or only looking at the wound. The wounded nearby: {{ sever_wounded_nearby(npc.UUID) }}."
+description: "Use when the speaker binds someone's wound or stump or splints their broken bone in this very line: tearing cloth to stop the blood from a lost limb, wrapping a stump already closed, setting a broken arm or leg. No magic is needed. Use it only when the speaker means to help: whoever just maimed them, their enemy or someone who despises them has no reason to, unless the speaker chooses mercy or wants them alive for something. Not for healing magic (that is Magic), promises to help later, or only looking at the wound. The wounded nearby: {{ sever_wounded_nearby(npc.UUID) }}."
 questEditorId: SeverActions
 scriptName: SeverActions_Combat
 executionFunctionName: TendWound

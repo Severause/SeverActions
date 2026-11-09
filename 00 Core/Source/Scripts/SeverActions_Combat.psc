@@ -190,6 +190,11 @@ Bool Property YieldPersistenceEnabled = true Auto
 {Enable/disable yield alias persistence. When disabled, yielded generic NPCs
  may be recycled by the engine when crossing cells. Default: true.}
 
+; The native undo record's fields (SeverActionsNativeExt2.CombatUndo_*).
+Int Property UNDO_CONFIDENCE = 0 AutoReadOnly
+Int Property UNDO_AGGRESSION = 1 AutoReadOnly
+Int Property UNDO_RANK = 2 AutoReadOnly
+
 ; === STORAGEUTIL KEYS (per actor) ===
 ; SeverCombat_CeasefireTime - Float (game hours x 3631 at the ceasefire, not gameTimeNumeric; 0160 expires it)
 ; SeverCombat_YieldTime - Float (game hours x 3631 at the yield, not gameTimeNumeric; 0160 expires it)
@@ -200,6 +205,7 @@ Bool Property YieldPersistenceEnabled = true Auto
 ; SeverCombat_OriginalAggression - Float (stored aggression value)
 ; SeverCombat_OriginalRelationship - Int
 ; SeverCombat_CombatTarget - Form (who they're fighting)
+;     (these four mirror the native undo record: THE UNDO RECORD below)
 ; SeverCombat_CooldownEnd - RETIRED (native CombatCooldownStore)
 ; SeverCombat_WasSurrendered - Int (1 = this actor has surrendered)
 ; SeverCombat_WasNormallyHostile - Int (1 = held a hostile faction at yield/ceasefire
@@ -502,15 +508,15 @@ Function ForceAttack(Actor akAttacker, Actor akTarget)
 
     ; Snapshot the original ranks, never mid-fight: a repeat AttackTarget would
     ; store the forced -4 as the original and make the hostility permanent.
-    If StorageUtil.GetIntValue(akAttacker, "SeverCombat_InForcedCombat", 0) == 0
-        StorageUtil.SetIntValue(akAttacker, "SeverCombat_OriginalRelationship", akAttacker.GetRelationshipRank(akTarget))
+    If !_InForcedCombatWith(akAttacker, akTarget)
+        _StoreUndo(akAttacker, UNDO_RANK, akAttacker.GetRelationshipRank(akTarget))
     EndIf
-    If StorageUtil.GetIntValue(akTarget, "SeverCombat_InForcedCombat", 0) == 0
-        StorageUtil.SetIntValue(akTarget, "SeverCombat_OriginalRelationship", akTarget.GetRelationshipRank(akAttacker))
+    If !_InForcedCombatWith(akTarget, akAttacker)
+        _StoreUndo(akTarget, UNDO_RANK, akTarget.GetRelationshipRank(akAttacker))
     EndIf
 
-    StorageUtil.SetFormValue(akAttacker, "SeverCombat_CombatTarget", akTarget)
-    StorageUtil.SetFormValue(akTarget, "SeverCombat_CombatTarget", akAttacker)
+    _SetCombatPartner(akAttacker, akTarget)
+    _SetCombatPartner(akTarget, akAttacker)
     StorageUtil.SetIntValue(akAttacker, "SeverCombat_InForcedCombat", 1)
     StorageUtil.SetIntValue(akTarget, "SeverCombat_InForcedCombat", 1)
     SeverActionsNative.Native_SetInForcedCombat(akAttacker, true)
@@ -580,7 +586,7 @@ Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
     ; If akActor2 wasn't provided, fall back to the stored combat target.
     Actor akStoredTarget = akActor2
     If !akStoredTarget
-        akStoredTarget = StorageUtil.GetFormValue(akActor1, "SeverCombat_CombatTarget") as Actor
+        akStoredTarget = _GetCombatPartner(akActor1)
     EndIf
 
     ; Clear the forced-combat flag BEFORE PropagateGroup stops combat, or
@@ -619,11 +625,11 @@ Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
     If akStoredTarget
         RestoreOriginalValues(akStoredTarget)
         ; Only a forced fight stored a rank: a fight that flared on its own changed none.
-        If StorageUtil.HasIntValue(akActor1, "SeverCombat_OriginalRelationship")
-            akActor1.SetRelationshipRank(akStoredTarget, StorageUtil.GetIntValue(akActor1, "SeverCombat_OriginalRelationship", 0))
+        If _HasUndo(akActor1, UNDO_RANK)
+            akActor1.SetRelationshipRank(akStoredTarget, _GetUndo(akActor1, UNDO_RANK, 0.0) as Int)
         EndIf
-        If StorageUtil.HasIntValue(akStoredTarget, "SeverCombat_OriginalRelationship")
-            akStoredTarget.SetRelationshipRank(akActor1, StorageUtil.GetIntValue(akStoredTarget, "SeverCombat_OriginalRelationship", 0))
+        If _HasUndo(akStoredTarget, UNDO_RANK)
+            akStoredTarget.SetRelationshipRank(akActor1, _GetUndo(akStoredTarget, UNDO_RANK, 0.0) as Int)
         EndIf
         ClearAllCombatState(akStoredTarget)
     EndIf
@@ -660,7 +666,7 @@ Function Yield_Execute(Actor akYielder)
 
     ; Clear the forced-combat flag BEFORE StopCombat, or ForcedCombatEnded ->
     ; FullCleanup re-hostiles the freshly surrendered actor.
-    Actor akStoredTarget = StorageUtil.GetFormValue(akYielder, "SeverCombat_CombatTarget") as Actor
+    Actor akStoredTarget = _GetCombatPartner(akYielder)
     SeverActionsNative.Native_SetInForcedCombat(akYielder, false)
     If akStoredTarget
         SeverActionsNative.Native_SetInForcedCombat(akStoredTarget, false)
@@ -679,10 +685,14 @@ Function Yield_Execute(Actor akYielder)
     EndIf
 
     If akStoredTarget
-        Int origRankYielder = StorageUtil.GetIntValue(akYielder, "SeverCombat_OriginalRelationship", 0)
-        Int origRankAttacker = StorageUtil.GetIntValue(akStoredTarget, "SeverCombat_OriginalRelationship", 0)
-        akYielder.SetRelationshipRank(akStoredTarget, origRankYielder)
-        akStoredTarget.SetRelationshipRank(akYielder, origRankAttacker)
+        ; A rank with no record is left as it is, as CeaseFire and FullCleanup do: a guessed 0 would
+        ; replace a real one for good.
+        If _HasUndo(akYielder, UNDO_RANK)
+            akYielder.SetRelationshipRank(akStoredTarget, _GetUndo(akYielder, UNDO_RANK, 0.0) as Int)
+        EndIf
+        If _HasUndo(akStoredTarget, UNDO_RANK)
+            akStoredTarget.SetRelationshipRank(akYielder, _GetUndo(akStoredTarget, UNDO_RANK, 0.0) as Int)
+        EndIf
 
         StorageUtil.SetFormValue(akYielder, "SeverCombat_YieldedTo", akStoredTarget)
         StorageUtil.SetFormValue(akStoredTarget, "SeverCombat_ReceivedYieldFrom", akYielder)
@@ -698,7 +708,7 @@ Function Yield_Execute(Actor akYielder)
     EndIf
 
     ; Read by FullCleanup, and by ReassignYieldSlots when the native monitor lost this actor.
-    StorageUtil.SetFloatValue(akYielder, "SeverCombat_OriginalAggression", akYielder.GetActorValue("Aggression"))
+    _StoreUndo(akYielder, UNDO_AGGRESSION, akYielder.GetActorValue("Aggression"))
 
     ; The native keeps the removed factions in its YieldedActorData entry, which
     ; OnYieldBroken / ReturnToCrime / FullCleanup restore from.
@@ -849,7 +859,7 @@ Function ReturnToCrime_Execute(Actor akActor)
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasSurrendered")
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasNormallyHostile")
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_YieldedTo")
-    StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalAggression")
+    _ClearUndo(akActor, UNDO_AGGRESSION)
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_YieldTime")
     StorageUtil.FormListClear(akActor, "SeverCombat_RemovedFactions")  ; legacy
 
@@ -878,14 +888,15 @@ EndFunction
 ; === HELPER FUNCTIONS ===
 
 Function ClearAllCombatState(Actor akActor)
-{Completely clear all combat-related StorageUtil keys for an actor}
+{Clear an actor's forced-fight state: the partner, the rank and the confidence in the undo record and their
+ StorageUtil keys, and the InForcedCombat flag}
     ; Clear combat tracking
-    StorageUtil.UnsetFormValue(akActor, "SeverCombat_CombatTarget")
+    _ClearCombatPartner(akActor)
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_InForcedCombat")
-    StorageUtil.UnsetIntValue(akActor, "SeverCombat_OriginalRelationship")
+    _ClearUndo(akActor, UNDO_RANK)
 
     ; Clear stored original values (already restored by this point)
-    StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalConfidence")
+    _ClearUndo(akActor, UNDO_CONFIDENCE)
     
     ; Deliberately kept: the prompt keys (CeasefireTime, YieldTime, YieldedTo,
     ; ReceivedYieldFrom; the prompt expires them by time) and the surrender keys
@@ -904,22 +915,103 @@ Function PrepareForCombat(Actor akActor)
     akActor.EvaluatePackage()
 EndFunction
 
+; === THE UNDO RECORD ===
+; Each original value lives in the native record ('CBUN') and its old StorageUtil key (an older pex reads the key);
+; the record is read first, so a value StorageUtil dropped is still put back.
+
+Function _StoreUndo(Actor akActor, Int aiField, Float afValue)
+    SeverActionsNativeExt2.CombatUndo_Set(akActor, aiField, afValue)
+    If aiField == UNDO_CONFIDENCE
+        StorageUtil.SetFloatValue(akActor, "SeverCombat_OriginalConfidence", afValue)
+    ElseIf aiField == UNDO_AGGRESSION
+        StorageUtil.SetFloatValue(akActor, "SeverCombat_OriginalAggression", afValue)
+    Else
+        StorageUtil.SetIntValue(akActor, "SeverCombat_OriginalRelationship", afValue as Int)
+    EndIf
+EndFunction
+
+Bool Function _HasUndo(Actor akActor, Int aiField)
+    If SeverActionsNativeExt2.CombatUndo_Has(akActor, aiField)
+        Return true
+    ElseIf aiField == UNDO_CONFIDENCE
+        Return StorageUtil.HasFloatValue(akActor, "SeverCombat_OriginalConfidence")
+    ElseIf aiField == UNDO_AGGRESSION
+        Return StorageUtil.HasFloatValue(akActor, "SeverCombat_OriginalAggression")
+    EndIf
+    Return StorageUtil.HasIntValue(akActor, "SeverCombat_OriginalRelationship")
+EndFunction
+
+Float Function _GetUndo(Actor akActor, Int aiField, Float afMissing)
+    {The recorded value, or afMissing when neither the record nor the old key has one.}
+    If SeverActionsNativeExt2.CombatUndo_Has(akActor, aiField)
+        Return SeverActionsNativeExt2.CombatUndo_Get(akActor, aiField)
+    ElseIf aiField == UNDO_CONFIDENCE
+        Return StorageUtil.GetFloatValue(akActor, "SeverCombat_OriginalConfidence", afMissing)
+    ElseIf aiField == UNDO_AGGRESSION
+        Return StorageUtil.GetFloatValue(akActor, "SeverCombat_OriginalAggression", afMissing)
+    ElseIf StorageUtil.HasIntValue(akActor, "SeverCombat_OriginalRelationship")
+        Return StorageUtil.GetIntValue(akActor, "SeverCombat_OriginalRelationship", 0) as Float
+    EndIf
+    Return afMissing
+EndFunction
+
+Function _ClearUndo(Actor akActor, Int aiField)
+    SeverActionsNativeExt2.CombatUndo_Clear(akActor, aiField)
+    If aiField == UNDO_CONFIDENCE
+        StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalConfidence")
+    ElseIf aiField == UNDO_AGGRESSION
+        StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalAggression")
+    Else
+        StorageUtil.UnsetIntValue(akActor, "SeverCombat_OriginalRelationship")
+    EndIf
+EndFunction
+
+Function _SetCombatPartner(Actor akActor, Actor akPartner)
+    SeverActionsNativeExt2.CombatUndo_SetPartner(akActor, akPartner)
+    StorageUtil.SetFormValue(akActor, "SeverCombat_CombatTarget", akPartner)
+EndFunction
+
+Actor Function _GetCombatPartner(Actor akActor)
+    {The old key first: it is free, and CombatUndo_GetPartner (a FormID lookup) waits for a frame. AttackTarget records
+     the rank with the partner, so with no rank recorded there is no partner to look up.}
+    Actor partner = StorageUtil.GetFormValue(akActor, "SeverCombat_CombatTarget") as Actor
+    If !partner && SeverActionsNativeExt2.CombatUndo_Has(akActor, UNDO_RANK)
+        partner = SeverActionsNativeExt2.CombatUndo_GetPartner(akActor)
+    EndIf
+    Return partner
+EndFunction
+
+Function _ClearCombatPartner(Actor akActor)
+    SeverActionsNativeExt2.CombatUndo_SetPartner(akActor, None)
+    StorageUtil.UnsetFormValue(akActor, "SeverCombat_CombatTarget")
+EndFunction
+
+Bool Function _InForcedCombatWith(Actor akActor, Actor akPartner)
+    {Mid-fight with akPartner: a snapshot now would record the forced values. The record answers when the flag was
+     dropped.}
+    If StorageUtil.GetIntValue(akActor, "SeverCombat_InForcedCombat", 0) == 1
+        Return true
+    EndIf
+    Return SeverActionsNativeExt2.CombatUndo_Has(akActor, UNDO_RANK) && _GetCombatPartner(akActor) == akPartner
+EndFunction
+
 Function StoreOriginalValues(Actor akActor)
-{Store the actor's original Confidence and Aggression in StorageUtil (FullCleanup restores both).}
-    ; Skipped mid-fight, so a forced value is never stored as the original.
-    If StorageUtil.GetIntValue(akActor, "SeverCombat_InForcedCombat", 0) == 0
-        StorageUtil.SetFloatValue(akActor, "SeverCombat_OriginalConfidence", akActor.GetActorValue("Confidence"))
-        StorageUtil.SetFloatValue(akActor, "SeverCombat_OriginalAggression", akActor.GetActorValue("Aggression"))
+{Record the actor's original Confidence (FullCleanup restores it).}
+    ; Skipped mid-fight, so a forced value is never stored as the original. Aggression is not
+    ; recorded: a forced fight never changes it, and the value read here can be a truce's 0,
+    ; which FullCleanup would write back as the base after the truce had restored theirs.
+    If StorageUtil.GetIntValue(akActor, "SeverCombat_InForcedCombat", 0) == 0 && !SeverActionsNativeExt2.CombatUndo_Has(akActor, UNDO_CONFIDENCE)
+        _StoreUndo(akActor, UNDO_CONFIDENCE, akActor.GetActorValue("Confidence"))
     EndIf
 EndFunction
 
 Function RestoreOriginalValues(Actor akActor)
-{Restore actor's original combat values from StorageUtil}
+{Restore actor's original combat values from the undo record}
     ; Restore confidence
-    Float origConfidence = StorageUtil.GetFloatValue(akActor, "SeverCombat_OriginalConfidence", -1.0)
+    Float origConfidence = _GetUndo(akActor, UNDO_CONFIDENCE, -1.0)
     If origConfidence >= 0.0
         akActor.SetActorValue("Confidence", origConfidence)
-        StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalConfidence")
+        _ClearUndo(akActor, UNDO_CONFIDENCE)
     EndIf
 
     ; Drop the AIO flee-suppression factions. TRUE removal: RemoveFromFaction leaves a
@@ -1019,18 +1111,18 @@ Function FullCleanup(Actor akActor)
 
     ; Restore the ranks AttackTarget forced to -4. Safe when both actors get
     ; ForcedCombatEnded: each call restores both directions while the partner's
-    ; key exists and unsets only its own keys.
-    Actor rankPartner = StorageUtil.GetFormValue(akActor, "SeverCombat_CombatTarget") as Actor
-    If rankPartner && StorageUtil.HasIntValue(akActor, "SeverCombat_OriginalRelationship")
-        akActor.SetRelationshipRank(rankPartner, StorageUtil.GetIntValue(akActor, "SeverCombat_OriginalRelationship", 0))
-        If StorageUtil.HasIntValue(rankPartner, "SeverCombat_OriginalRelationship")
-            rankPartner.SetRelationshipRank(akActor, StorageUtil.GetIntValue(rankPartner, "SeverCombat_OriginalRelationship", 0))
+    ; rank is recorded and clears only its own record.
+    Actor rankPartner = _GetCombatPartner(akActor)
+    If rankPartner && _HasUndo(akActor, UNDO_RANK)
+        akActor.SetRelationshipRank(rankPartner, _GetUndo(akActor, UNDO_RANK, 0.0) as Int)
+        If _HasUndo(rankPartner, UNDO_RANK)
+            rankPartner.SetRelationshipRank(akActor, _GetUndo(rankPartner, UNDO_RANK, 0.0) as Int)
         EndIf
         Debug.Trace("[SeverCombat] Restored relationship ranks between " + akActor.GetDisplayName() + " and " + rankPartner.GetDisplayName())
     EndIf
 
     ; Restore aggression if stored; otherwise leave it.
-    Float originalAggression = StorageUtil.GetFloatValue(akActor, "SeverCombat_OriginalAggression", -1.0)
+    Float originalAggression = _GetUndo(akActor, UNDO_AGGRESSION, -1.0)
     If originalAggression >= 0.0
         akActor.SetActorValue("Aggression", originalAggression)
         Debug.Trace("[SeverCombat] Restored aggression to stored value: " + originalAggression)
@@ -1040,7 +1132,7 @@ Function FullCleanup(Actor akActor)
     EndIf
     
     ; Restore confidence if stored; otherwise leave it.
-    Float originalConfidence = StorageUtil.GetFloatValue(akActor, "SeverCombat_OriginalConfidence", -1.0)
+    Float originalConfidence = _GetUndo(akActor, UNDO_CONFIDENCE, -1.0)
     If originalConfidence >= 0.0
         akActor.SetActorValue("Confidence", originalConfidence)
         Debug.Trace("[SeverCombat] Restored confidence to stored value: " + originalConfidence)
@@ -1052,7 +1144,8 @@ Function FullCleanup(Actor akActor)
     ; the survivor unable to flee under the AIO patch for good.
     RestoreOriginalValues(akActor)
 
-    ; Clear ALL StorageUtil keys
+    ; Clear ALL StorageUtil keys and the undo record
+    SeverActionsNativeExt2.CombatUndo_Clear(akActor, -1)
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_CombatTarget")
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_InForcedCombat")
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_OriginalRelationship")
@@ -1174,7 +1267,7 @@ Event OnCeasefireBroken(String eventName, String strArg, Float numArg, Form send
 
     ; Current prompt-side state cleanup.
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_NeedsAggroRestore")
-    StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalAggression")
+    _ClearUndo(akActor, UNDO_AGGRESSION)
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_CeasefireTime")
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasNormallyHostile")
 
@@ -1203,7 +1296,7 @@ Event OnYieldBroken(string eventName, string strArg, float numArg, Form sender)
     ; clears the two together.
     StorageUtil.UnsetIntValue(akActor, "SeverCombat_WasSurrendered")
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_OriginalFaction")
-    StorageUtil.UnsetFloatValue(akActor, "SeverCombat_OriginalAggression")
+    _ClearUndo(akActor, UNDO_AGGRESSION)
     StorageUtil.UnsetFloatValue(akActor, "SeverCombat_YieldTime")
     StorageUtil.UnsetFormValue(akActor, "SeverCombat_YieldedTo")
     StorageUtil.FormListClear(akActor, "SeverCombat_RemovedFactions")  ; legacy
@@ -1333,7 +1426,7 @@ Function ReassignYieldSlots()
                 ; YieldMonitor restores from its 'YLDD' cosave record; re-register only
                 ; when it lost the actor, or the 1.0 default here would stomp the original.
                 If !SeverActionsNative.IsYieldMonitored(npc)
-                    Float origAggro = StorageUtil.GetFloatValue(npc, "SeverCombat_OriginalAggression", 1.0)
+                    Float origAggro = _GetUndo(npc, UNDO_AGGRESSION, 1.0)
                     SeverActionsNative.RegisterYieldedActor(npc, origAggro, SeverSurrenderedFaction)
                 EndIf
 

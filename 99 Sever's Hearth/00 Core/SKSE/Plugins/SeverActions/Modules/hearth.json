@@ -1,6 +1,6 @@
 {
     "id":  "hearth",
-    "version":  "4.7.0",
+    "version":  "4.8.0",
     "name":  "Sever\u0027s Hearth",
     "group":  "World",
     "requires":  [
@@ -20,6 +20,6 @@
                   "camping.yaml"
               ],
     "scriptStamps":  {
-                         "SeversHearth_Camp":  1793407967
+                         "SeversHearth_Camp":  1793938963
                      }
 }

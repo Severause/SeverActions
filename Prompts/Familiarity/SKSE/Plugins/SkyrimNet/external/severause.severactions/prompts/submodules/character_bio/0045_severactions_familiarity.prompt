@@ -1,7 +1,7 @@
 {% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" %}
 {# What this NPC knows of the player: the tier from player_familiarity and the impression sever_reputation_assess writes #}
 {# (sever_reputation_blurb). World knowledge is read only to test whether the name has reached them; 0130 prints it. #}
-{% if not is_follower(actorUUID) and is_sever_follower(actorUUID) == "" and not is_player(actorUUID) %}
+{% if not is_follower(actorUUID) and is_sever_follower(actorUUID) == "" and not is_player(actorUUID) and not exists("stealthHiddenPlayer") %}
 {% set familiarity = player_familiarity(actorUUID) %}
 {% if isObject(familiarity) %}
 {# The native tier already reflects standing bonds and the assessment's verdict. Rank needs the actor record, so the lover floor is applied here. #}

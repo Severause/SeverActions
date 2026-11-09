@@ -75,7 +75,7 @@
 - When {{ actor.name }} sees someone other than {{ playerName }} commit a crime here and now, {{ subj }} can charge them: select the **Arrest** action category, then **AddBountyToNPC**. Taking them in is a separate step.
 {% endif %}
 {% set bounty = to_number(tracked_bounty(actorUUID)) %}
-{% if bounty > 0 %}
+{% if bounty > 0 and not exists("stealthHiddenPlayer") %}
 ## Known Criminal Activity
 {{ actor.name }} knows that {{ playerName }} has a bounty of {{ bounty }} gold in {{ holdName }}.
 {% set charges = tracked_bounty_charges(actorUUID) %}
@@ -101,7 +101,7 @@ This is a trivial bounty. {{ actor.name }} might mention it but is unlikely to m
 {% endif %}
 {# debt_complaints is player-level (not per hold); an authority hears of every complaint. #}
 {% set debtComplaints = debt_complaints(actorUUID) %}
-{% if debtComplaints != "" %}
+{% if debtComplaints != "" and not exists("stealthHiddenPlayer") %}
 ## Outstanding Debt Complaints
 Citizens have filed the following complaints against {{ playerName }}:
 {{ debtComplaints }}

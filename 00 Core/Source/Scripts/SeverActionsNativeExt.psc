@@ -1304,18 +1304,18 @@ String Function Native_GetWorkLocationName(Actor akActor) Global Native
 Function Native_SetWorkLocationName(Actor akActor, String value) Global Native
 
 ; === Truce probes (read-only diagnostics) ===
-; Would this actor be pacified, and if not, which gate refused it: quest alias,
-; unique, essential / protected, frenzied, quest-scoped faction, raidable dungeon,
-; or not in an enabled faction.
+; Would this actor be pacified ("held by the truce" when it already is), and if not,
+; which gate refused it: quest alias, unique, essential / protected, frenzied,
+; quest-scoped faction, raidable dungeon, or not in an enabled faction.
 String Function Native_Truce_ExplainActor(Actor akActor, Bool abNecromancers, Bool abForsworn, Bool abVampires) Global Native
 
 ; Same, for the actor under the crosshair. Vampires count only with abVampires
 ; AND a vampire PLAYER.
 String Function Native_Truce_ExplainTarget(Bool abNecromancers, Bool abForsworn, Bool abVampires) Global Native
 
-; Log a verdict for every in-scope loaded actor within afRadius (<= 0 = 3000),
-; skipping out-of-scope ones, so one call reads a whole camp. Returns a one-line
-; summary.
+; Log a verdict for every in-scope or held loaded actor within afRadius (<= 0 =
+; 3000; a held one counts as eligible, reason "held"), skipping the rest, so one
+; call reads a whole camp. Returns a one-line summary.
 String Function Native_Truce_ExplainNearby(Float afRadius, Bool abNecromancers, Bool abForsworn, Bool abVampires) Global Native
 
 ; === Camp probes (diagnostics) ===

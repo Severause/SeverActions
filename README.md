@@ -6,12 +6,12 @@
 </p>
 
 <p align="center">
-  <code>119 Actions</code> &nbsp;&middot;&nbsp; <code>79 Prompt Templates</code>
+  <code>130 Actions</code> &nbsp;&middot;&nbsp; <code>83 Prompt Templates</code>
 </p>
 
 <p align="center">
   <code>Skyrim SE &middot; AE &middot; VR</code> &nbsp;&middot;&nbsp; <code>SkyrimNet 0.25+</code> &nbsp;&middot;&nbsp;
-  <code>Magelight UI 1.7 included</code>
+  <code>Magelight UI 1.8 included</code>
 </p>
 
 <p align="center">
@@ -25,44 +25,49 @@
 > **Upgrading from 3.9.x?** Reinstall with **Replace**; don't merge into the old mod. See
 > [Installing and upgrading](#installing-and-upgrading).
 
-**Contents:** [What's new in 4.1](#whats-new-in-41) · [What's new in 4.0](#whats-new-in-40) · [Overview](#overview) · [Features](#features) ·
+**Contents:** [What's new in 4.8](#whats-new-in-48) · [Earlier releases](#earlier-releases) · [Overview](#overview) · [Features](#features) ·
 [Requirements](#requirements) · [Compatibility](#compatibility) · [Installing and upgrading](#installing-and-upgrading) ·
 [Settings](#settings) · [Support and troubleshooting](#support-and-troubleshooting) · [Under the hood](#under-the-hood) ·
 [Credits](#credits)
 
 ---
 
-## What's new in 4.1
+## What's new in 4.8
 
-- **Wait and Follow answer at the first press**, Wait All and Follow All included: a command now undoes only what
-  SeverActions actually put on a follower.
-- **Faster loading**: on a long-running save, start-up after a load drops from about a minute to about twelve
-  seconds, and commands given right after a load no longer wait behind it.
-- **Magelight UI 0.30.5**: the menus show with DLSS and frame generation behind NVIDIA Streamline, with Community
-  Shaders' frame generation and with NVIDIA Smooth Motion, and a new cursor. When the UI cannot draw, the menu and
-  wheel keys say so.
-- **Fixes**: mouse and gamepad buttons work as the menu and quick wheel keys again, casual follow works in Tracking
-  mode, and companions in the follow pool are no longer pushed back onto their follow package every few seconds.
-
-The full list is in [CHANGELOG.md](CHANGELOG.md).
-
-## What's new in 4.0
-
-- **A new in-game menu on Magelight UI**, which comes in the download and installs with the core. PrismaUI and
-  UIExtensions are no longer needed.
-- **Skyrim VR**: the menu, its popups and the quick wheel draw in the headset.
-- **Action categories**: the AI opens a category before it picks an action, and NPCs act only on what they agree to in
-  the line they just spoke. Plans for later stay talk.
-- **Portraits** for companions, retainers, NPCs you gave a home, and your own character.
-- **Companions sit down with you**, a **friendly-fire guard** stops companions turning on you or each other over a stray
-  hit, and **Walk With Me** can lead SeverActions companions.
-- **Redesigned pages**: Survival, Catalog (with a 3D item inspector), Bio Blocks, and the long lists on Enterprises.
-- **Sever's Hearth**: your first camp becomes the company's base, which you can upgrade twice, and the new **Small
-  Camp** can be pitched indoors.
-- **A quick wheel whose 8 slots you choose**, Bio Blocks other mods can add to, the Imperial Levy keeping court at the
-  Blue Palace in Solitude, and a long list of fixes.
+- **One order, several people**: send a group somewhere in one line, tell several companions to wait or follow at
+  once, and buy, sell or give several items in one trade, each for whoever it is for.
+- **Follow anyone's days**: off-screen life can follow any named NPC without giving them a home, so SeverActions never
+  moves them or touches their routine.
+- **Followers rest in bed**: lying in a bed takes off their survival fatigue by the hour, waiting and sleeping included.
+- **Injured NPCs move like it**: someone with a broken leg, a broken arm or a lost limb no longer shakes or jerks, keeps
+  the injured posture while turning, idling or fighting, and limps in step.
+- **Maimed NPCs react as themselves**: a victim no longer always begs, and whoever did it no longer always bandages
+  them; how each one reacts comes from who they are and what lies between them.
+- **Easier reading**: a Text Size option, a Plain Font switch and a High Contrast theme in Settings > UI Display.
+- **Travel**: followers sent into a walled city walk to its gate and in.
+- **Generic NPCs keep their looks**: a bandit or other generic NPC you kept no longer turns into someone else when
+  their area resets.
+- **Brawls**: bystanders become ghosts while a brawl or duel lasts, so stray blows pass through them.
+- **Steadier on installs that lose PapyrusUtil values**: the values SeverActions changes and puts back (relationships,
+  Aggression and Confidence, a brawler's party seat, a journey's follower) and its one-time steps are kept in its own
+  save data.
+- **And more**: followers remember fast travel, undressing takes weapons and quivers off, homed NPCs keep their homes
+  through bard songs and town scenes, the truce holds only outlaws, portraits keep their names when your load order
+  changes and other mods can show them, Bio Blocks can be dragged into place, and
+  SeverActions' events can be switched off one by one in SkyrimNet's Events settings.
 
 The full list is in [CHANGELOG.md](CHANGELOG.md).
+
+## Earlier releases
+
+- **4.7 Linen and Bone**: survivable dismemberment with bandages, splints and regrowth, controller support in the menu,
+  the Tallow & Soot theme and a finish for every theme, and redrawn pages.
+- **4.6 Blood and Thread**: Phantasm draws the Outfits mirror, the item view and the automatic party faces.
+- **4.5 Mirrors and Motives**, **4.3 Law and Language**, **4.2 Colours and Clarity**, **4.1 Quicker Commands**.
+- **4.0 Words and Deeds**: the in-game menu on Magelight UI, Skyrim VR, action categories, portraits and Sever's Hearth
+  base camps.
+
+Each release's notes are in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -144,7 +149,7 @@ Opens). Every page has a **?** button that explains it.
 | **Outfits** | Dress companions and nearby NPCs; presets, situations, locks |
 | **Catalog** | Armor, weapons, food, potions, ingredients and spell tomes from every plugin, in 3D, to give to your party |
 | **Survival** | Hunger, cold and fatigue for your party, your camp, and the survival rules |
-| **Life Tracker** | Companions' letters, rumours, fines and debts from their lives away |
+| **Life Tracker** | Letters, rumours, fines and debts from companions and other NPCs whose days you follow |
 | **Enterprises** | Retainers, stewards, taxes, camps, NPC labor, debts, commissions |
 | **Settings** | Almost every setting, by area, with a search box |
 
@@ -166,7 +171,12 @@ Opens). Every page has a **?** button that explains it.
   Homed NPCs Sleep at Night on, they sleep in their claimed bed from 22:00 to 6:00 (work and relax times in Settings →
   Followers → Schedule; the sleep switch and its hours in Settings → Followers → Sandboxing).
 - **Off-screen life**: dismissed companions you gave a home live their own lives (Auto Off-Screen Events). Their
-  letters, rumours, fines and debts show on the Life Tracker page, and they can tell you about it.
+  letters, rumours, fines and debts show on the Life Tracker page, and they can tell you about it. To follow anyone
+  else's days without giving them a home, and so without touching their own routine, use **+ Follow** on the Life
+  Tracker or **Follow Their Days** on the Actions page.
+- **Waiting and following together**: tell several companions at once ("Lydia, Rin, wait here", "everyone, come
+  on") and they all do, with one message for the group. Only companions and people tagging along near the one who
+  answers take the order.
 - **Companions Sit When You Sit** (Settings → Followers → Behavior, on by default): take a chair, stool, bench or
   throne and the companions following you take the nearest free seats, then stand when you do.
 - **Prevent Follower Friendly Fire** (same page, on by default): a companion hit by a stray Shout, spell or arrow from
@@ -204,8 +214,9 @@ Opens). Every page has a **?** button that explains it.
 
 - **Travel**: NPCs travel to a named place, a direction, a nearby feature or one of your markers, wait for you there
   (up to 24 game hours) or go about their business, and keep moving while out of sight. **Followers Can Travel**
-  (Settings → World → Travel) is off by default, so mentioning a place won't send your party off. The **Travel
-  Destination Popup** (on) lets you confirm or redirect a trip. Bind Drop Named Marker to drop up to 128 markers, and
+  (Settings → World → Travel) is off by default, so mentioning a place won't send your party off. Name several
+  people in one line and they all go. The **Travel Destination Popup** (on) lets you confirm or redirect a trip, once
+  for a group. Bind Drop Named Marker to drop up to 128 markers, and
   rename them on World & Travel → Markers.
 - **Crime and arrests** (Arrest Actions): only guards arrest in person; jarls and housecarls order an arrest. A guard
   won't arrest you on their own unless you owe a bounty in their hold. Under 300 gold (the default Arrest Threshold, on
@@ -312,7 +323,7 @@ the game (people, places, items, quests) appear as the game shows them.
 | | |
 |---|---|
 | **Required** | Skyrim SE 1.5.97, AE 1.6.x or 1.7.x, or Skyrim VR 1.4.15 · SKSE64 (2.3.0 or newer on 1.7.x), or SKSEVR on VR · Address Library for SKSE Plugins (the VR Address Library on VR) · [SkyrimNet](https://www.nexusmods.com/skyrimspecialedition/mods/148913) 0.25 (beta 25) or newer · PapyrusUtil · the latest Microsoft Visual C++ Redistributable 2015-2022 (x64), which the menu needs |
-| **Included** | Magelight UI 1.7.1, which draws the menu, popups and quick wheel and always installs with the core · Sever's Hearth, the camp system, on its own installer page |
+| **Included** | Magelight UI 1.8.0, which draws the menu, popups and quick wheel, and Phantasm 1.0.0, which draws the Outfits mirror, the item view and the automatic faces; both always install with the core · Sever's Hearth, the camp system, on its own installer page |
 | **Recommended** | SkyUI, only for the MCM |
 | **Optional** | See [Compatibility](#compatibility) |
 | **No longer needed** | PrismaUI and UIExtensions. Papyrus MessageBox is optional now, only a fallback for when one of SeverActions' own popups can't open |

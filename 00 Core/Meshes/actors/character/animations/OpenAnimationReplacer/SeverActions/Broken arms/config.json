@@ -1,6 +1,6 @@
 {
     "name": "Broken arms",
-    "description": "Both arms broken and no broken leg (rank 5): the right arm held against the body, the left hanging limp, leaned forward and breathing heavily. SeverActions puts their weapon away, so this set covers sheathed movement only.",
+    "description": "Both arms broken and no broken leg (rank 5): the right arm held against the body, the left hanging limp, leaned forward and breathing heavily, standing, turning in place and moving, and through the idle's own variations and head turns. SeverActions puts their weapon away, so this set covers sheathed movement only.",
     "priority": 1500000104,
     "conditions": [
         {

@@ -1,6 +1,6 @@
 {% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
 {# A retainer's standing with the player: current service, a steward's seat, how a former retainer left, a letter they sent, a steward's visit, a live inspection. Each decorator is "" when it does not apply; retainer_status answers "hostile" for one who turned on the player, whose story is sever_former_retainer's. #}
-{% if actorUUID and actorUUID != 0 %}
+{% if actorUUID and actorUUID != 0 and not exists("stealthHiddenPlayer") %}
 {% set retStatus = retainer_status(actorUUID) %}
 {% if retStatus != "" and retStatus != "hostile" %}
 ## In {{ player.name }}'s Service

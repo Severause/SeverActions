@@ -535,7 +535,7 @@ String[] Function GetPlayerDebtDetails(Bool abPlayerIsCreditor)
      when abPlayerIsCreditor, else owed BY the player. The MCM now reads the same format
      from SeverActionsNativeExt2.Native_Debt_GetPlayerViewLines.}
     Actor player = Game.GetPlayer()
-    String[] result = PapyrusUtil.StringArray(0)
+    String[] result = Utility.CreateStringArray(0)
     Float currentTime = GetGameTimeInSeconds()
     Int[] ids = SeverActionsNativeExt.Native_Debt_GetAllIDs()
     Int n = ids.Length
@@ -587,7 +587,7 @@ String[] Function GetPlayerDebtDetails(Bool abPlayerIsCreditor)
             If details != ""
                 line += " (" + details + ")"
             EndIf
-            result = PapyrusUtil.PushString(result, line)
+            result = Utility.ResizeStringArray(result, result.Length + 1, line)
         EndIf
         i += 1
     EndWhile
@@ -693,6 +693,7 @@ Function TickDebts()
             SkyrimNetApi.DirectNarration(content, creditor, debtor)
             DebugMsg("Tick collection ask: " + content)
         Else
+            ; SN-EVENT: none (no regular debt event is queued)
             SkyrimNetApi.RegisterEvent(eventName, content, creditor, debtor)
             DebugMsg("Tick regular: " + content)
         EndIf

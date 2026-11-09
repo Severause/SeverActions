@@ -1736,7 +1736,7 @@ Function MigrateToOutfitSlotSystem()
                 String[] storageNames = outfitSys.GetPresetNames(akActor)
                 ; Native names by index (avoids marshalling a String[] return).
                 Int nativeCount = SeverActionsNative.Native_Outfit_GetPresetCount(akActor)
-                String[] nativeNames = PapyrusUtil.StringArray(nativeCount)
+                String[] nativeNames = Utility.CreateStringArray(nativeCount)
                 Int ni = 0
                 While ni < nativeCount
                     nativeNames[ni] = SeverActionsNative.Native_Outfit_GetPresetNameAt(akActor, ni)
@@ -1991,8 +1991,9 @@ Function Maintenance()
     endif
 
     ; 1.5: one-time ghost-preset repair (see RepairGhostPresets). Raise the
-    ; version (1, in the test and the stamp) to run it again.
-    if StorageUtil.GetIntValue(None, "SeverActions_OutfitGhostRepairDone", 0) < 1
+    ; version (1, in the sentinel test, the ledger calls and the stamp) to run it again.
+    Bool ghostSentinel = StorageUtil.GetIntValue(None, "SeverActions_OutfitGhostRepairDone", 0) >= 1
+    if !SeverActionsNativeExt2.Migration_AdoptSentinel("OutfitGhostRepair", 1, ghostSentinel) && SeverActionsNativeExt2.Migration_TryClaim("OutfitGhostRepair", 1)
         Int ghostsCleared = 0
         Int gi = 0
         While gi < assigned.Length
@@ -2002,6 +2003,7 @@ Function Maintenance()
             gi += 1
         EndWhile
         StorageUtil.SetIntValue(None, "SeverActions_OutfitGhostRepairDone", 1)
+        SeverActionsNativeExt2.Migration_MarkDone("OutfitGhostRepair", 1)
         if ghostsCleared > 0
             Log("Maintenance: ghost-preset repair cleared " + ghostsCleared + " empty/blank presets")
         endif
@@ -2210,12 +2212,12 @@ EndFunction
 
 String[] Function MergeStringArraysUnique(String[] a, String[] b)
     {Combine two String arrays, deduplicating (exact match). Returns a new array.}
-    String[] result = PapyrusUtil.StringArray(0)
+    String[] result = Utility.CreateStringArray(0)
     if a
         Int i = 0
         While i < a.Length
             if a[i] != ""
-                result = PapyrusUtil.PushString(result, a[i])
+                result = Utility.ResizeStringArray(result, result.Length + 1, a[i])
             endif
             i += 1
         EndWhile
@@ -2233,7 +2235,7 @@ String[] Function MergeStringArraysUnique(String[] a, String[] b)
                     j += 1
                 EndWhile
                 if !found
-                    result = PapyrusUtil.PushString(result, b[i])
+                    result = Utility.ResizeStringArray(result, result.Length + 1, b[i])
                 endif
             endif
             i += 1

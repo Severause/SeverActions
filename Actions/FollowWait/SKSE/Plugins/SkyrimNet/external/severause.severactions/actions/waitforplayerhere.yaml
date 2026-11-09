@@ -3,13 +3,20 @@ name: WaitForPlayerHere
 description: "Use when {{ player.name }} tells the speaker, who is walking with them as a companion or tagging along, to wait, stay or hold here, or the speaker decides now to stay behind: they stay around this spot until {{ player.name }} calls them to follow again (ResumeFollowing). Not for telling {{ player.name }} to wait, going ahead to wait somewhere else (Journeys), or parting ways (DismissFollower; a tag-along leaving for their own business is TagAlong)."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
-executionFunctionName: CompanionWait
+executionFunctionName: CompanionWaitWith
 parameterMapping:
   - type: speaker
     name: akActor
     description: the companion staying put
+  - type: dynamic
+    name: alsoWaiting
+    description: "the other companions or people tagging along whom the player tells to wait along with the speaker in this same line, by their exact names as listed in Nearby Actors, as one text, comma-separated (e.g. 'Rin, Rayya'); for 'all of you' or 'everyone', everyone walking with the player nearby. Never the speaker, a bystander, or someone told to keep following. Leave empty when only the speaker waits"
+    optional: true
+    default: ""
 enabled: true
 defaultPriority: 7
+# CompanionGroup::Refusal (Native/src/CompanionGroup.h) applies these rules to the others in alsoWaiting:
+# a new rule here is a line there.
 eligibilityRules:
   # FOLLOWERS ONLY (field report 2026-09-04: Irileth dropped the march to the
   # Western Watchtower and started sandboxing mid-quest). Wait applies a

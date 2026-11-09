@@ -476,13 +476,16 @@ EndFunction
 ; =============================================================================
 ; ACTIONS: BuyItem / SellItem - one atomic item-for-gold action, so the gold and
 ; the goods can't be split across two LLM calls (GiveGold + GiveItem).
-; BuyItem: the SPEAKER buys. SellItem: the SPEAKER sells.
+; BuyItem: the SPEAKER buys. SellItem: the SPEAKER sells. The item text may list
+; several items, each with a count and a recipient ("2 Mead, Ale for Rin"; the
+; ItemList_* natives plan it): the buyer pays the one agreed total, then the
+; seller hands each recipient their lines.
 ; Deliberately never touches SeverActions_Debt: a purchase is not settling a tab.
 ; =============================================================================
 
-; Transaction helpers: the item half (moved from SeverActions_Loot, which keeps safe-exit
-; stubs). Unlike Loot's GiveItem: no debt growth and no item_given event (the caller fires
-; item_purchased). The walk is WalkLib's (walklib is in economy's requires closure).
+; Transaction helpers, moved from SeverActions_Loot (which keeps safe-exit stubs). Nothing
+; here calls ResolveItemForTransaction, GetTransactionAvailableQty or TransferItemForTransaction
+; any more: they stay for a frame an older save resumes inside the old _DoItemTransaction (F7).
 
 Form Function ResolveItemForTransaction(Actor akSeller, String itemName)
     {Returns the Form for itemName in akSeller's personal inventory, else their merchant
@@ -506,9 +509,7 @@ Form Function ResolveItemForTransaction(Actor akSeller, String itemName)
 EndFunction
 
 Int Function GetTransactionAvailableQty(Actor akSeller, Form akItemForm)
-    {How many of akItemForm akSeller can actually sell - the max of their
-     personal count and (if any) the merchant chest count, so the caller can
-     fail early on insufficient stock before any walk or animation.}
+    {The larger of akSeller's personal count and merchant chest count of akItemForm.}
     If !akSeller || !akItemForm
         Return 0
     EndIf
@@ -525,14 +526,28 @@ Int Function GetTransactionAvailableQty(Actor akSeller, Form akItemForm)
 EndFunction
 
 Int Function TransferItemForTransaction(Actor akSeller, Actor akBuyer, Form akItemForm, Int aiCount = 1)
-    {Walks the seller to the buyer, plays IdleGive, then moves up to aiCount of akItemForm from
-     the seller's personal inventory OR merchant chest to the buyer. Returns the count moved
-     (0 = none); the caller owns the gold half and the event.}
+    {Walks the seller to the buyer and plays IdleGive (_WalkAndOffer: a player seller is not
+     walked), then hands over up to aiCount of akItemForm (_MoveFromStock). Returns the count
+     moved; the caller owns the gold half and the event.}
     If !akSeller || !akBuyer || !akItemForm || aiCount < 1
         Return 0
     EndIf
-    If !SeverActions_WalkLib.WalkToReference(akSeller, akBuyer)
+    If !_WalkAndOffer(akSeller, akBuyer)
         Return 0
+    EndIf
+    Int transferred = _MoveFromStock(akSeller, akBuyer, akItemForm, aiCount)
+    _EndOffer(akSeller)
+    Return transferred
+EndFunction
+
+Bool Function _WalkAndOffer(Actor akSeller, Actor akTo)
+    {Walks akSeller to akTo and plays IdleGive; False when they never got there. The player is
+     never walked (no package moves them): their hand-over is immediate.}
+    If akSeller == Game.GetPlayer()
+        Return True
+    EndIf
+    If !SeverActions_WalkLib.WalkToReference(akSeller, akTo)
+        Return False
     EndIf
     ; Skyrim.esm IdleForceDefaultState, by FormID rather than an ESP-filled property (FID-FORM).
     Idle reset = Game.GetForm(0x00086840) as Idle
@@ -544,37 +559,24 @@ Int Function TransferItemForTransaction(Actor akSeller, Actor akBuyer, Form akIt
         akSeller.PlayIdle(IdleGive)
         Utility.Wait(2.0)
     EndIf
-    ; The source with the most stock, matching GetTransactionAvailableQty's MAX(personal, chest).
-    Int personal = akSeller.GetItemCount(akItemForm)
-    Int chest = 0
-    ObjectReference merchantChest = SeverActionsNative.GetMerchantContainer(akSeller)
-    If merchantChest
-        chest = merchantChest.GetItemCount(akItemForm)
+    Return True
+EndFunction
+
+Function _EndOffer(Actor akSeller)
+    {Ends _WalkAndOffer's idle.}
+    If akSeller == Game.GetPlayer()
+        Return
     EndIf
-    Int transferred = 0
-    If personal >= chest && personal > 0
-        Int toMove = aiCount
-        If toMove > personal
-            toMove = personal
-        EndIf
-        If toMove > 0
-            akSeller.RemoveItem(akItemForm, toMove, false, akBuyer)
-            transferred = toMove
-        EndIf
-    ElseIf chest > 0
-        Int toMove = aiCount
-        If toMove > chest
-            toMove = chest
-        EndIf
-        If toMove > 0
-            merchantChest.RemoveItem(akItemForm, toMove, false, akBuyer)
-            transferred = toMove
-        EndIf
-    EndIf
+    Idle reset = Game.GetForm(0x00086840) as Idle
     If reset
         akSeller.PlayIdle(reset)
     EndIf
-    Return transferred
+EndFunction
+
+Int Function _MoveFromStock(Actor akSeller, Actor akTo, Form akItemForm, Int aiCount)
+    {Hands akTo up to aiCount of akItemForm from akSeller's pack and merchant chest
+     (ItemList_HandOver: the player's plain copies first); returns the count that moved.}
+    Return SeverActionsNativeExt2.ItemList_HandOver(akSeller, akTo, akItemForm, aiCount, True)
 EndFunction
 
 Bool Function BuyItem_IsEligible(Actor akBuyer, Actor akSeller, String asItemName, Int aiQuantity, Int aiTotalGold)
@@ -602,9 +604,19 @@ EndFunction
 
 Actor PendingTradeSeller
 Actor PendingTradeBuyer
+; PendingTradeItem and PendingTradeQty are no longer written; they stay declared for older saves.
 String PendingTradeItem
 Int PendingTradeQty
 Int PendingTradeGold
+; The plan the open card shows (ItemList_Plan).
+String PendingTradePlan
+
+Function _ClearTradeSlot()
+    PendingTradeSeller = None
+    PendingTradeBuyer = None
+    PendingTradeGold = 0
+    PendingTradePlan = ""
+EndFunction
 
 Function _BeginItemTransaction(Actor akSeller, Actor akBuyer, String asItemName, Int aiQuantity, Int aiTotalGold)
     ; The LLM sometimes names the speaker as both parties: fail with a correction it can act
@@ -615,10 +627,25 @@ Function _BeginItemTransaction(Actor akSeller, Actor akBuyer, String asItemName,
             akSeller, akBuyer)
         Return
     EndIf
+    ; A list gives each entry's count in its text: a model that leaves the action's own count
+    ; at 0 still means one of a one-entry list.
+    If aiQuantity < 1
+        aiQuantity = 1
+    EndIf
 
     Actor player = Game.GetPlayer()
     If akSeller != player && akBuyer != player
         _DoItemTransaction(akSeller, akBuyer, asItemName, aiQuantity, aiTotalGold)
+        Return
+    EndIf
+
+    ; The buyer's gold and every entry's stock are checked before the card: a failure names
+    ; what is missing, so the model can retry instead of the player refusing a dead offer.
+    If !_TradeEligibleOrReport(akSeller, akBuyer, asItemName, aiQuantity, aiTotalGold)
+        Return
+    EndIf
+    String plan = _PlanTrade(akSeller, akBuyer, asItemName, aiQuantity, aiTotalGold)
+    If plan == ""
         Return
     EndIf
 
@@ -638,25 +665,22 @@ Function _BeginItemTransaction(Actor akSeller, Actor akBuyer, String asItemName,
         ; fallback below and never overwrites it.
         PendingTradeSeller = akSeller
         PendingTradeBuyer = akBuyer
-        PendingTradeItem = asItemName
-        PendingTradeQty = aiQuantity
         PendingTradeGold = aiTotalGold
-        If SeverActionsNativeExt.Magelight_OpenTradePrompt(counterparty, aiTotalGold, counterpartyName, asItemName, aiQuantity, playerBuys, 20000)
+        PendingTradePlan = plan
+        If SeverActionsNativeExt2.Magelight_OpenTradePromptBasket(counterparty, aiTotalGold, counterpartyName, plan, playerBuys, 20000)
             ; Choice arrives asynchronously via OnTradeChoice.
             Return
         EndIf
+        _ClearTradeSlot()
     EndIf
 
     ; Fallback: the SkyMessage modal (no SkyMessage = a silent refusal).
-    String qtyStr = ""
-    If aiQuantity > 1
-        qtyStr = aiQuantity + "x "
-    EndIf
+    String goods = SeverActionsNativeExt2.Json_GetString(plan, "/summary")
     String promptText
     If playerBuys
-        promptText = counterpartyName + " offers " + qtyStr + asItemName + " for " + aiTotalGold + " gold. Buy?"
+        promptText = counterpartyName + " offers " + goods + " for " + aiTotalGold + " gold. Buy?"
     Else
-        promptText = counterpartyName + " offers " + aiTotalGold + " gold for your " + qtyStr + asItemName + ". Sell?"
+        promptText = counterpartyName + " offers " + aiTotalGold + " gold for your " + goods + ". Sell?"
     EndIf
     String result = ""
     If SeverActionsNativeExt2.Native_IsSkyMessageInstalled()
@@ -668,7 +692,7 @@ Function _BeginItemTransaction(Actor akSeller, Actor akBuyer, String asItemName,
     ElseIf result == "No"
         choice = "deny"
     EndIf
-    _ResolveTrade(choice, akSeller, akBuyer, asItemName, aiQuantity, aiTotalGold)
+    _ResolveTradePlan(choice, akSeller, akBuyer, plan, aiTotalGold)
 EndFunction
 
 Event OnTradeChoice(String asEventName, String asChoice, Float afAmount, Form akSender)
@@ -689,36 +713,64 @@ Function _ApplyTradeChoice(String asChoice)
     {The open card's answer: takes the PendingTrade* slot and resolves it.}
     Actor tSeller = PendingTradeSeller
     Actor tBuyer = PendingTradeBuyer
-    String tItem = PendingTradeItem
-    Int tQty = PendingTradeQty
     Int tGold = PendingTradeGold
+    String tPlan = PendingTradePlan
     ; Clear FIRST so a re-entrant prompt can't double-commit the same trade.
-    PendingTradeSeller = None
-    PendingTradeBuyer = None
-    PendingTradeItem = ""
-    PendingTradeQty = 0
-    PendingTradeGold = 0
-    _ResolveTrade(asChoice, tSeller, tBuyer, tItem, tQty, tGold)
+    _ClearTradeSlot()
+    If tPlan == ""
+        Debug.Trace("[SeverActions_Currency] Trade choice '" + asChoice + "' for a slot with no plan - dropped")
+        Return
+    EndIf
+    _ResolveTradePlan(asChoice, tSeller, tBuyer, tPlan, tGold)
 EndFunction
 
 Function _ResolveTrade(String asChoice, Actor tSeller, Actor tBuyer, String tItem, Int tQty, Int tGold)
-    {Commits, refuses aloud or refuses silently one player trade.}
+    {Commits, refuses aloud or refuses silently one player trade without a plan: kept for a frame
+     an older save resumes in _BeginItemTransaction's SkyMessage fallback (F7).}
     If !tSeller || !tBuyer
         Return
     EndIf
-
     If asChoice == "accept"
         _DoItemTransaction(tSeller, tBuyer, tItem, tQty, tGold)
     ElseIf asChoice == "deny"
-        ; Narrate so the NPC reacts.
-        Actor player = Game.GetPlayer()
-        Actor counterparty = tSeller
-        If tSeller == player
-            counterparty = tBuyer
-        EndIf
-        SkyrimNetApi.DirectNarration(player.GetDisplayName() + " declined the trade of " + tItem + " with " + counterparty.GetDisplayName(), counterparty)
+        _NarrateDecline(tSeller, tBuyer, tItem)
     EndIf
-    ; denySilent / dismiss - nothing happens, nothing is said.
+EndFunction
+
+Function _ResolveTradePlan(String asChoice, Actor tSeller, Actor tBuyer, String asPlan, Int tGold)
+    {Commits, refuses aloud or refuses silently (denySilent, dismiss: nothing happens) one
+     planned player trade.}
+    If !tSeller || !tBuyer
+        Return
+    EndIf
+    String goods = SeverActionsNativeExt2.Json_GetString(asPlan, "/summary")
+
+    If asChoice == "accept"
+        ; The card stood open: the buyer's gold and the seller's stock may have changed since.
+        If !_TradeEligibleOrReport(tSeller, tBuyer, goods, 1, tGold)
+            Return
+        EndIf
+        String gone = SeverActionsNativeExt2.ItemList_Shortfall(tSeller, asPlan)
+        If gone != ""
+            SkyrimNetApi.RegisterEvent("item_purchase_failed", \
+                tSeller.GetDisplayName() + " no longer has everything " + tBuyer.GetDisplayName() + " agreed to buy: " + gone + ". Nothing changed hands.", \
+                tSeller, tBuyer)
+            Return
+        EndIf
+        _CommitTrade(tSeller, tBuyer, asPlan, tGold)
+    ElseIf asChoice == "deny"
+        _NarrateDecline(tSeller, tBuyer, goods)
+    EndIf
+EndFunction
+
+Function _NarrateDecline(Actor tSeller, Actor tBuyer, String asGoods)
+    {Narrates the player's refusal so the other party reacts.}
+    Actor player = Game.GetPlayer()
+    Actor counterparty = tSeller
+    If tSeller == player
+        counterparty = tBuyer
+    EndIf
+    SkyrimNetApi.DirectNarration(player.GetDisplayName() + " declined the trade of " + asGoods + " with " + counterparty.GetDisplayName(), counterparty)
 EndFunction
 
 Bool Function _Transaction_IsEligible(Actor akSeller, Actor akBuyer, String asItemName, Int aiQuantity, Int aiTotalGold)
@@ -736,7 +788,7 @@ Bool Function _Transaction_IsEligible(Actor akSeller, Actor akBuyer, String asIt
         Return False
     EndIf
     ; The player buyer always pays real coin (conjuring would make the purchase free). An NPC
-    ; buyer may come up short when allowConjuredGold is on: _DoItemTransaction mints the shortfall.
+    ; buyer may come up short when allowConjuredGold is on: _CommitTrade mints the shortfall.
     If akBuyer == Game.GetPlayer() || !SeverActionsNativeExt2.Settings_GetBool("allowConjuredGold")
         If akBuyer.GetItemCount(Gold001) < aiTotalGold
             Return False
@@ -745,55 +797,68 @@ Bool Function _Transaction_IsEligible(Actor akSeller, Actor akBuyer, String asIt
     Return True
 EndFunction
 
+Bool Function _TradeEligibleOrReport(Actor akSeller, Actor akBuyer, String asItemName, Int aiQuantity, Int aiTotalGold)
+    {_Transaction_IsEligible, firing item_purchase_failed with the reason when it fails.}
+    If _Transaction_IsEligible(akSeller, akBuyer, asItemName, aiQuantity, aiTotalGold)
+        Return True
+    EndIf
+    ; No actor to name in an event: just log.
+    If !akSeller || !akBuyer
+        Debug.Trace("[SeverActions_Currency] Trade: missing actor - skipping")
+        Return False
+    EndIf
+    String why = " - the deal could not be struck"
+    If Gold001 && (akBuyer == Game.GetPlayer() || !SeverActionsNativeExt2.Settings_GetBool("allowConjuredGold")) && akBuyer.GetItemCount(Gold001) < aiTotalGold
+        why = " - " + akBuyer.GetDisplayName() + " does not have " + aiTotalGold + " gold"
+    EndIf
+    SkyrimNetApi.RegisterEvent("item_purchase_failed", \
+        akBuyer.GetDisplayName() + " could not complete the purchase of " + asItemName + " from " + akSeller.GetDisplayName() + why, \
+        akSeller, akBuyer)
+    Return False
+EndFunction
+
+String Function _PlanTrade(Actor akSeller, Actor akBuyer, String asItemName, Int aiQuantity, Int aiTotalGold)
+    {The ItemList plan for a trade, or "" after firing one item_purchase_failed naming what the
+     seller lacks and the closest names they do carry, so the model can retry with names that
+     resolve (on a localized game it often passes the English one).}
+    String plan = SeverActionsNativeExt2.ItemList_Plan(akSeller, akBuyer, asItemName, aiQuantity, aiTotalGold, True, False)
+    If SeverActionsNativeExt2.Json_GetInt(plan, "/ok") == 1
+        Return plan
+    EndIf
+    String missing = SeverActionsNativeExt2.Json_GetString(plan, "/missing")
+    If missing == ""
+        missing = "no item was named"
+    EndIf
+    SkyrimNetApi.RegisterEvent("item_purchase_failed", \
+        akSeller.GetDisplayName() + " cannot sell " + akBuyer.GetDisplayName() + " everything asked for: " + missing + ". Nothing changed hands.", \
+        akSeller, akBuyer)
+    Return ""
+EndFunction
+
 Function _DoItemTransaction(Actor akSeller, Actor akBuyer, String asItemName, Int aiQuantity, Int aiTotalGold)
-    {Atomic item-for-gold trade: resolves the item, checks stock and gold, moves the gold, then
-     the item, and fires one item_purchased event. A failure fires item_purchase_failed with a
-     reason; one after the gold moved refunds it.}
-
-    If !_Transaction_IsEligible(akSeller, akBuyer, asItemName, aiQuantity, aiTotalGold)
-        ; No actor to name in an event: just log.
-        If !akSeller || !akBuyer
-            Debug.Trace("[SeverActions_Currency] _DoItemTransaction: missing actor - skipping")
-            Return
-        EndIf
-        String why = " - the deal could not be struck"
-        If Gold001 && (akBuyer == Game.GetPlayer() || !SeverActionsNativeExt2.Settings_GetBool("allowConjuredGold")) && akBuyer.GetItemCount(Gold001) < aiTotalGold
-            why = " - " + akBuyer.GetDisplayName() + " does not have " + aiTotalGold + " gold"
-        EndIf
-        SkyrimNetApi.RegisterEvent("item_purchase_failed", \
-            akBuyer.GetDisplayName() + " could not complete the purchase of " + asItemName + " from " + akSeller.GetDisplayName() + why, \
-            akSeller, akBuyer)
+    {An item-for-gold trade with no card (NPC-to-NPC): checks the gold, plans the list, then
+     commits. A failure fires item_purchase_failed with a reason.}
+    If !_TradeEligibleOrReport(akSeller, akBuyer, asItemName, aiQuantity, aiTotalGold)
         Return
     EndIf
-
-    Form itemForm = ResolveItemForTransaction(akSeller, asItemName)
-    If !itemForm
-        ; On localized games the LLM often passes the English name: list the seller's closest
-        ; item names so it can retry with one that resolves.
-        String closeNames = SeverActionsNativeExt2.Native_ClosestInventoryNames(akSeller, asItemName, 5)
-        String failText = akSeller.GetDisplayName() + " doesn't have any '" + asItemName + "' to sell to " + akBuyer.GetDisplayName()
-        If closeNames != ""
-            failText += " - they do carry: " + closeNames + "."
-        Else
-            failText += " - they carry nothing called that; it may go by another name in their pack."
-        EndIf
-        SkyrimNetApi.RegisterEvent("item_purchase_failed", failText, akSeller, akBuyer)
+    String plan = _PlanTrade(akSeller, akBuyer, asItemName, aiQuantity, aiTotalGold)
+    If plan == ""
         Return
     EndIf
+    _CommitTrade(akSeller, akBuyer, plan, aiTotalGold)
+EndFunction
 
-    ; Check stock before the walk and the animation.
-    Int available = GetTransactionAvailableQty(akSeller, itemForm)
-    If available < aiQuantity
-        SkyrimNetApi.RegisterEvent("item_purchase_failed", \
-            akSeller.GetDisplayName() + " only has " + available + " " + itemForm.GetName() + " - not enough for " + akBuyer.GetDisplayName() + "'s " + aiQuantity, \
-            akSeller, akBuyer)
-        Return
-    EndIf
+Function _CommitTrade(Actor akSeller, Actor akBuyer, String asPlan, Int aiTotalGold)
+    {Moves the agreed gold once, then the seller hands each recipient their lines
+     (_HandOverLines). A line short at the hand-over refunds what it did not deliver of its
+     share (the plan's, by item value). One item_purchased event naming everything and who got
+     it, and one ledger row.}
+    String goods = SeverActionsNativeExt2.Json_GetString(asPlan, "/summary")
 
-    ; Gold first: the item half walks and animates (up to ~15 s), where a save, crash or unload
-    ; would orphan a gold-last payment; a failed item half refunds instead. An NPC buyer pays
-    ; every real coin first and only the shortfall is minted (TransferGold's conjure path would
-    ; not debit them at all); the player always pays in full.
+    ; Gold first: the item half walks and animates (up to ~15 s a recipient), where a save, crash
+    ; or unload would orphan a gold-last payment; a failed item half refunds instead. An NPC buyer
+    ; pays every real coin first and only the shortfall is minted (TransferGold's conjure path
+    ; would not debit them at all); the player always pays in full.
     Bool conjureOK = (akBuyer != Game.GetPlayer()) && SeverActionsNativeExt2.Settings_GetBool("allowConjuredGold")
     Int paid = TransferGold(akBuyer, akSeller, aiTotalGold, False)
     ; The minted part never becomes the buyer's: a refund destroys it first and returns only real coin.
@@ -813,51 +878,83 @@ Function _DoItemTransaction(Actor akSeller, Actor akBuyer, String asItemName, In
             shortNote = " - only " + paid + " of the " + aiTotalGold + " gold changed hands, and it was handed back"
         EndIf
         SkyrimNetApi.RegisterEvent("item_purchase_failed", \
-            akBuyer.GetDisplayName() + " could not finish paying " + akSeller.GetDisplayName() + " for " + asItemName + shortNote, \
+            akBuyer.GetDisplayName() + " could not finish paying " + akSeller.GetDisplayName() + " for " + goods + shortNote, \
             akSeller, akBuyer)
         Return
     EndIf
 
-    Int transferred = TransferItemForTransaction(akSeller, akBuyer, itemForm, aiQuantity)
-    If transferred <= 0
-        ; Refund; the seller holds at least aiTotalGold (just paid).
+    Actor[] takers = SeverActionsNativeExt2.ItemList_Recipients(asPlan)
+    Int count = takers.Length
+    Int[] wanted = Utility.CreateIntArray(count)
+    Int i = 0
+    While i < count
+        wanted[i] = SeverActionsNativeExt2.Json_GetInt(asPlan, "/lines/" + i + "/n")
+        ; Someone who died or went away since the plan takes nothing: the buyer, who paid, does.
+        If !takers[i] || takers[i].IsDead()
+            takers[i] = akBuyer
+        EndIf
+        i += 1
+    EndWhile
+    Int[] moved = _HandOverLines(akSeller, SeverActionsNativeExt2.ItemList_Items(asPlan), takers, wanted)
+
+    ; What each line delivered, and what a short line hands back of its share.
+    String[] got = Utility.CreateStringArray(count)
+    String[] lost = Utility.CreateStringArray(count)
+    Int refund = 0
+    Int movedAny = 0
+    i = 0
+    While i < count
+        String line = "/lines/" + i
+        Int share = SeverActionsNativeExt2.Json_GetInt(asPlan, line + "/share")
+        String itemName = SeverActionsNativeExt2.Json_GetString(asPlan, line + "/name")
+        String forWho = ""
+        If takers[i] != akBuyer
+            forWho = " (for " + SeverActionsNativeExt2.Json_GetString(asPlan, line + "/toName") + ")"
+        EndIf
+        If moved[i] > 0
+            got[i] = SeverActions_ModuleBase.CountLabel(moved[i], itemName) + forWho
+            movedAny += moved[i]
+        EndIf
+        If moved[i] < wanted[i]
+            lost[i] = SeverActions_ModuleBase.CountLabel(wanted[i] - moved[i], itemName) + forWho
+            refund += share - (((share as Float) * (moved[i] as Float) / (wanted[i] as Float)) as Int)
+        EndIf
+        i += 1
+    EndWhile
+
+    If movedAny == 0
+        ; Refund it all; the seller holds at least aiTotalGold (just paid).
         If minted > 0
             akSeller.RemoveItem(Gold001, minted, True)
         EndIf
         TransferGold(akSeller, akBuyer, aiTotalGold - minted, False)
         SkyrimNetApi.RegisterEvent("item_purchase_failed", \
-            akSeller.GetDisplayName() + " could not hand over " + asItemName + " to " + akBuyer.GetDisplayName() + " - " + (aiTotalGold - minted) + " gold refunded", \
+            akSeller.GetDisplayName() + " could not hand over " + goods + " to " + akBuyer.GetDisplayName() + " - " + (aiTotalGold - minted) + " gold refunded", \
             akSeller, akBuyer)
         Return
     EndIf
 
-    ; A race after the stock check can leave transferred short: keep the moved items and refund
-    ; the unfilled part pro-rata. A full transfer keeps the exact agreed total.
     Int chargedGold = aiTotalGold
-    If transferred < aiQuantity
-        Int pricePerUnit = aiTotalGold / aiQuantity
-        Int refund = aiTotalGold - (pricePerUnit * transferred)
-        If refund > 0
-            ; Minted coin is cancelled first; the rest goes back as real coin.
-            Int burn = refund
-            If burn > minted
-                burn = minted
-            EndIf
-            If burn > 0
-                akSeller.RemoveItem(Gold001, burn, True)
-            EndIf
-            If refund > burn
-                TransferGold(akSeller, akBuyer, refund - burn, False)
-            EndIf
-            chargedGold = aiTotalGold - refund
+    If refund > 0
+        ; Minted coin is cancelled first; the rest goes back as real coin.
+        Int burn = refund
+        If burn > minted
+            burn = minted
         EndIf
+        If burn > 0
+            akSeller.RemoveItem(Gold001, burn, True)
+        EndIf
+        If refund > burn
+            TransferGold(akSeller, akBuyer, refund - burn, False)
+        EndIf
+        chargedGold = aiTotalGold - refund
     EndIf
 
-    String itemLabel = itemForm.GetName()
-    If transferred > 1
-        itemLabel = transferred + " " + itemLabel
-    EndIf
+    String itemLabel = SeverActions_ModuleBase.JoinLabels(got)
     String eventMsg = akBuyer.GetDisplayName() + " bought " + itemLabel + " from " + akSeller.GetDisplayName() + " for " + chargedGold + " gold"
+    If refund > 0 && count > 1
+        eventMsg += "; " + SeverActions_ModuleBase.JoinLabels(lost) + " could not be handed over, so " + refund + " of the agreed " + aiTotalGold + " gold went back"
+    EndIf
     SkyrimNetApi.RegisterEvent("item_purchased", eventMsg, akSeller, akBuyer)
 
     ; Ledger source by the player's side (NPC-to-NPC logs nothing); the item label is the
@@ -868,6 +965,36 @@ Function _DoItemTransaction(Actor akSeller, Actor akBuyer, String asItemName, In
         src = "sell_item"
     EndIf
     _LogToLedger(akBuyer, akSeller, chargedGold, src, itemLabel)
+EndFunction
+
+Int[] Function _HandOverLines(Actor akSeller, Form[] akItems, Actor[] akTakers, Int[] aiWanted)
+    {The seller walks to each taker in the order the list first names them and hands over their
+     lines; returns what each line moved (0 for a taker never reached).}
+    Int count = akItems.Length
+    Int[] moved = Utility.CreateIntArray(count)
+    Bool[] served = Utility.CreateBoolArray(count)
+    Int i = 0
+    While i < count
+        If !served[i]
+            Actor taker = akTakers[i]
+            Bool reached = _WalkAndOffer(akSeller, taker)
+            Int j = i
+            While j < count
+                If !served[j] && akTakers[j] == taker
+                    served[j] = True
+                    If reached
+                        moved[j] = _MoveFromStock(akSeller, taker, akItems[j], aiWanted[j])
+                    EndIf
+                EndIf
+                j += 1
+            EndWhile
+            If reached
+                _EndOffer(akSeller)
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+    Return moved
 EndFunction
 
 ; =============================================================================

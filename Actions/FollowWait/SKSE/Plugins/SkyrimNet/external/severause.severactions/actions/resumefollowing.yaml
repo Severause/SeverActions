@@ -1,15 +1,22 @@
 customCategory: sa_companionship
 name: ResumeFollowing
-description: "Use when {{ player.name }} calls back someone who is waiting for them, a companion or someone tagging along who was told to wait ('come on', 'follow me'), and they pick up and follow again in this line. Not for someone already walking with {{ player.name }}, who needs no action, and not for rejoining after being sent home (SetCompanion)."
+description: "Use when {{ player.name }} calls back someone who is waiting for them, a companion or someone tagging along who was told to wait ('come on', 'follow me'), and they pick up and follow again in this line. Not for someone already walking with {{ player.name }}, who needs no action unless they pass the call on to others who are waiting, and not for rejoining after being sent home (SetCompanion)."
 questEditorId: SeverActions
 scriptName: SeverActions_FollowerManager
-executionFunctionName: CompanionFollow
+executionFunctionName: CompanionFollowWith
 parameterMapping:
   - type: speaker
     name: akActor
     description: the companion picking up the road again
+  - type: dynamic
+    name: alsoFollowing
+    description: "the other companions or people tagging along whom the player calls back along with the speaker in this same line, by their exact names as listed in Nearby Actors, as one text, comma-separated (e.g. 'Rin, Rayya'); for 'all of you' or 'everyone', those nearby who were waiting. Never the speaker, a bystander, someone already walking with the player, or someone told to stay. Leave empty when only the speaker comes"
+    optional: true
+    default: ""
 enabled: true
 defaultPriority: 7
+# CompanionGroup::Refusal (Native/src/CompanionGroup.h) applies these rules to the others in alsoFollowing:
+# a new rule here is a line there.
 eligibilityRules:
   # OWNERSHIP GATE — same shape as waitforplayerhere.yaml (review finding on PR
   # #466). Without one, the LLM could hand ANY NPC to StartFollowing, which

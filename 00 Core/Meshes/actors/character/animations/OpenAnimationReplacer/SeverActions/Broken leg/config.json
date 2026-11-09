@@ -1,6 +1,6 @@
 {
     "name": "Broken leg",
-    "description": "A broken right leg (rank 0), or both legs (rank 2): walking, jogging and sprinting in every direction, weapons sheathed or drawn, limp favouring the right leg; with weapons sheathed they walk hunched with the right hand on the thigh, and stand with their weight off it, rubbing the leg and wincing. SeverActions' own animations, made from the vanilla movement and idle cycles. The priority sits above locomotion styles and below situational overlays such as sneaking, diving and death animations.",
+    "description": "A broken right leg (rank 0), or both legs (rank 2): walking, jogging and sprinting in every direction, weapons sheathed or drawn, limp favouring the right leg; they stand and turn in place with their weight off it, weapons sheathed or drawn, and the idle's own variations and head turns keep it too; with weapons sheathed they walk hunched with the right hand on the thigh, and now and then rub the leg or wince. SeverActions' own animations, made from the vanilla movement, turn and idle clips. The priority sits above locomotion styles and below situational overlays such as sneaking, diving and death animations.",
     "priority": 1500000100,
     "conditions": [
         {
@@ -38,6 +38,54 @@
                     "Numeric value": {
                         "value": 2.0
                     }
+                }
+            ]
+        }
+    ],
+    "replacementAnimDatas": [
+        {
+            "projectName": "DefaultMale",
+            "path": "data\\meshes\\actors\\character\\animations\\OpenAnimationReplacer\\SeverActions\\Broken leg\\male\\_variants_mt_idle",
+            "variantMode": 0,
+            "variantStateScope": 1,
+            "blendBetweenVariants": true,
+            "resetRandomOnLoopOrEcho": true,
+            "sharePlayedHistory": false,
+            "variants": [
+                {
+                    "filename": "calm.hkx",
+                    "weight": 3.0
+                },
+                {
+                    "filename": "rub.hkx",
+                    "weight": 2.0
+                },
+                {
+                    "filename": "twinge.hkx",
+                    "weight": 1.0
+                }
+            ]
+        },
+        {
+            "projectName": "DefaultFemale",
+            "path": "data\\meshes\\actors\\character\\animations\\OpenAnimationReplacer\\SeverActions\\Broken leg\\female\\_variants_mt_idle",
+            "variantMode": 0,
+            "variantStateScope": 1,
+            "blendBetweenVariants": true,
+            "resetRandomOnLoopOrEcho": true,
+            "sharePlayedHistory": false,
+            "variants": [
+                {
+                    "filename": "calm.hkx",
+                    "weight": 3.0
+                },
+                {
+                    "filename": "rub.hkx",
+                    "weight": 2.0
+                },
+                {
+                    "filename": "twinge.hkx",
+                    "weight": 1.0
                 }
             ]
         }

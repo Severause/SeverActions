@@ -4,7 +4,7 @@ Scriptname SeverActions_Survival extends Quest
     Follower survival: hunger, fatigue and cold, with stat penalties like vanilla
     Survival Mode, sleep recovery and auto-eating from inventory.
 
-    Needs live in the native SurvivalDataStore (cosave 'SURV' v3), each 0-100
+    Needs live in the native SurvivalDataStore (cosave 'SURV' v4), each 0-100
     (0 = fine, 100 = starving / exhausted / freezing), plus lastEatAttempt (the
     hunger bracket of the last auto-eat try). Prompts read them through the
     sever_hunger / sever_fatigue / sever_cold decorators.
@@ -92,6 +92,9 @@ Float Property BASE_HUNGER_PER_HOUR = 2.5 AutoReadOnly   ; ~40 hours to starving
 Float Property BASE_FATIGUE_PER_HOUR = 1.67 AutoReadOnly ; ~60 hours to exhausted
 Float Property BASE_COLD_PER_HOUR = 5.0 AutoReadOnly     ; scaled by exposure; warmth lowers cold instead
 
+; Fatigue an hour lying in a bed removes: 8 hours = OnSleepStop's full restore.
+Float Property FATIGUE_REST_PER_HOUR = 12.5 AutoReadOnly
+
 ; The pack's "game seconds" per game hour (shared with the other scripts and SurvivalUtils.h, not
 ; the engine's 3600). Here only LastUpdateTime uses it.
 Float Property SECONDS_PER_GAME_HOUR = 3631.0 AutoReadOnly
@@ -157,7 +160,12 @@ Function Maintenance()
         SyncFollowerSurvivalToNative()
     EndIf
 
-    LastUpdateTime = GetGameTimeInSeconds()
+    ; The clock rides the save, so a load counts the game hours since the last update (a Wait just before the save
+    ; included). StartTracking restarts it.
+    Float nowSeconds = GetGameTimeInSeconds()
+    If LastUpdateTime <= 0.0 || LastUpdateTime > nowSeconds
+        LastUpdateTime = nowSeconds
+    EndIf
     ChronoArm(30.0) ; real seconds
 
     Debug.Trace("[SeverActions_Survival] Maintenance complete, update loop started")
@@ -326,11 +334,11 @@ Function UpdateAllFollowers(Float hoursPassed)
     While i < followers.Length
         Actor follower = followers[i]
         If follower && !follower.IsDead() && !IsFollowerExcluded(follower) && follower.GetDistance(player) < 10000.0
-            ; Never tracked (all zeros): seed random starting needs
+            ; Never tracked: seed random starting needs (all zeros alone is also a rested, fed, warm follower)
             Int h = GetFollowerHunger(follower)
             Int f = GetFollowerFatigue(follower)
             Int c = GetFollowerCold(follower)
-            If h == 0 && f == 0 && c == 0
+            If h == 0 && f == 0 && c == 0 && !SeverActionsNativeExt2.Survival_HasNeeds(follower)
                 h = Utility.RandomInt(10, 35)
                 f = Utility.RandomInt(10, 40)
                 c = Utility.RandomInt(0, 15)
@@ -401,15 +409,31 @@ Function UpdateFollowerSurvival(Actor akFollower, Float hoursPassed)
     EndIf
 
     If FatigueEnabled
-        Float fatigueIncrease = BASE_FATIGUE_PER_HOUR * hoursPassed * FatigueRate
-        currentFatigue = ClampInt(currentFatigue + fatigueIncrease as Int, 0, 100)
-        SetFollowerFatigue(akFollower, currentFatigue)
+        ; Hours lain in a bed since the last pass, measured natively from the bed entry, so a Wait or Sleep skip
+        ; counts: they gain no fatigue and shed FATIGUE_REST_PER_HOUR each.
+        Float bedHours = SeverActionsNativeExt2.Survival_TakeBedRest(akFollower, hoursPassed)
+        Float awakeHours = hoursPassed - bedHours
+        Float fatigueIncrease = BASE_FATIGUE_PER_HOUR * awakeHours * FatigueRate
+        If bedHours > 0.0
+            ; Through the stored float: a half hour's 6.25 would lose its fraction to the Int path on every pass.
+            SeverActionsNative.Native_Survival_AdjustNeeds(akFollower, 0.0, fatigueIncrease - bedHours * FATIGUE_REST_PER_HOUR, 0.0)
+            currentFatigue = GetFollowerFatigue(akFollower)
+            If ShowNotifications && ShowFatigueNotifications && prevFatigueLevel >= LEVEL_MILD && currentFatigue < LEVEL_MILD
+                Debug.Notification(akFollower.GetDisplayName() + " is now well rested")
+            EndIf
+            If DebugMode
+                Debug.Trace("[SeverActions_Survival] " + akFollower.GetDisplayName() + " rested " + bedHours + " h in bed, fatigue now " + currentFatigue)
+            EndIf
+        Else
+            currentFatigue = ClampInt(currentFatigue + fatigueIncrease as Int, 0, 100)
+            SetFollowerFatigue(akFollower, currentFatigue)
 
-        If ShowNotifications && ShowFatigueNotifications && GetSeverityLevel(currentFatigue) > prevFatigueLevel
-            NotifyFatigueChange(akFollower, currentFatigue)
+            If ShowNotifications && ShowFatigueNotifications && GetSeverityLevel(currentFatigue) > prevFatigueLevel
+                NotifyFatigueChange(akFollower, currentFatigue)
+            EndIf
         EndIf
 
-        ApplyFatigueDrain(akFollower, currentFatigue, hoursPassed)
+        ApplyFatigueDrain(akFollower, currentFatigue, awakeHours)
     EndIf
 
     If ColdEnabled
@@ -429,8 +453,9 @@ Function UpdateFollowerSurvival(Actor akFollower, Float hoursPassed)
 
     ; Re-read hunger from the store rather than write back the local copy: a meal handed to
     ; the items module may have lowered it since, and the local value would undo that meal.
+    ; Fatigue too, as the stored float: bed rest keeps its fraction there.
     If NativeAvailable
-        SeverActionsNative.Native_Survival_SetNeeds(akFollower, GetFollowerHunger(akFollower) as Float, currentFatigue as Float, currentCold as Float)
+        SeverActionsNative.Native_Survival_SetNeeds(akFollower, GetFollowerHunger(akFollower) as Float, SeverActionsNative.Native_Survival_GetFatigue(akFollower), currentCold as Float)
     EndIf
 EndFunction
 
@@ -714,7 +739,13 @@ EndFunction
 
 ; ---- Stat penalties ----
 
-; Per-actor StorageUtil ints: the penalty currently applied, so it can be undone exactly
+; The penalty currently applied lives in the native ledger (SeverActionsNativeExt2.Survival_SetPenalty,
+; SurvivalPenaltyCore.h kinds). These StorageUtil ints are an older build's record, read once by
+; _EnsurePenaltyLedger: a lost value there left the old penalty on and stacked the next one over it.
+Int Property PENALTY_KIND_SPEED = 0 AutoReadOnly
+Int Property PENALTY_KIND_STAMINA_REGEN = 1 AutoReadOnly
+Int Property PENALTY_KIND_MAGICKA_REGEN = 2 AutoReadOnly
+Int Property PENALTY_KIND_HEALTH_REGEN = 3 AutoReadOnly
 String Property PENALTY_SPEED_KEY = "SeverActions_Penalty_Speed" AutoReadOnly
 String Property PENALTY_STAMINA_REGEN_KEY = "SeverActions_Penalty_StaminaRegen" AutoReadOnly
 String Property PENALTY_MAGICKA_REGEN_KEY = "SeverActions_Penalty_MagickaRegen" AutoReadOnly
@@ -731,7 +762,7 @@ Int Property REGEN_PENALTY_MODERATE = 75 AutoReadOnly  ; -> 25% regen
 Int Property REGEN_PENALTY_SEVERE = 90 AutoReadOnly    ; -> 10% regen
 ; Cap after DebuffSeverity scaling: regen never drops below 10%.
 Int Property REGEN_PENALTY_FLOOR_MULT = 90 AutoReadOnly
-; Per-actor flag for MigrateRegenPenalty (1 = done)
+; Per-actor flag of an older build's MigrateRegenPenalty (1 = done); cleared by _EnsurePenaltyLedger
 String Property REGEN_MIG_KEY = "SeverActions_RegenMigDone" AutoReadOnly
 
 ; Stamina drain per game hour by hunger level
@@ -752,7 +783,7 @@ Float Property COLD_DAMAGE_SEVERE = 30.0 AutoReadOnly
 Function ApplyStatPenalties(Actor akFollower, Int hunger, Int fatigue, Int cold)
     {Apply penalties based on survival levels - speed, regen reduction}
 
-    MigrateRegenPenalty(akFollower)
+    _EnsurePenaltyLedger(akFollower)
 
     ; In bleedout: clear every penalty and give some health back
     If akFollower.IsBleedingOut()
@@ -773,7 +804,7 @@ EndFunction
 
 Function ClearAllPenalties(Actor akFollower)
     {Clear all survival penalties from a follower}
-    MigrateRegenPenalty(akFollower)
+    _EnsurePenaltyLedger(akFollower)
     ClearSpeedPenalty(akFollower)
     ClearStaminaRegenPenalty(akFollower)
     ClearMagickaRegenPenalty(akFollower)
@@ -781,34 +812,33 @@ Function ClearAllPenalties(Actor akFollower)
 EndFunction
 
 Function MigrateRegenPenalty(Actor akFollower)
-    {One-time per-actor migration: give back any regen penalty an older build subtracted from
-     the flat rate AVs (HealRate / MagickaRate / StaminaRate) and zero the stored amount, so the
-     RateMult penalties start clean.}
-    If StorageUtil.GetIntValue(akFollower, REGEN_MIG_KEY, 0) >= 1
+    {An older build's one-time refund of flat-rate regen penalties; _EnsurePenaltyLedger's adoption repairs those now.}
+    ; M-I-STUB 4.7.0 (survival penalty ledger): replaced by _EnsurePenaltyLedger
+    _EnsurePenaltyLedger(akFollower)
+EndFunction
+
+Function _EnsurePenaltyLedger(Actor akFollower)
+    {Takes the follower into the native penalty ledger once: the amounts an older build recorded in StorageUtil are
+     adopted, capped by what the actor carries, stacked regen leftovers are repaired for a tracked follower, and the
+     old keys are cleared.}
+    If SeverActionsNativeExt2.Survival_PenaltiesAdopted(akFollower)
         Return
     EndIf
-    Int sp = StorageUtil.GetIntValue(akFollower, PENALTY_STAMINA_REGEN_KEY, 0)
-    If sp > 0
-        akFollower.ModAV("StaminaRate", sp)
-        StorageUtil.SetIntValue(akFollower, PENALTY_STAMINA_REGEN_KEY, 0)
+    Int speed = StorageUtil.GetIntValue(akFollower, PENALTY_SPEED_KEY, 0)
+    Int stamina = StorageUtil.GetIntValue(akFollower, PENALTY_STAMINA_REGEN_KEY, 0)
+    Int magicka = StorageUtil.GetIntValue(akFollower, PENALTY_MAGICKA_REGEN_KEY, 0)
+    Int health = StorageUtil.GetIntValue(akFollower, PENALTY_HEALTH_REGEN_KEY, 0)
+    If SeverActionsNativeExt2.Survival_AdoptPenalties(akFollower, speed, stamina, magicka, health) > 0
+        StorageUtil.UnsetIntValue(akFollower, PENALTY_SPEED_KEY)
+        StorageUtil.UnsetIntValue(akFollower, PENALTY_STAMINA_REGEN_KEY)
+        StorageUtil.UnsetIntValue(akFollower, PENALTY_MAGICKA_REGEN_KEY)
+        StorageUtil.UnsetIntValue(akFollower, PENALTY_HEALTH_REGEN_KEY)
+        StorageUtil.UnsetIntValue(akFollower, REGEN_MIG_KEY)
     EndIf
-    Int mp = StorageUtil.GetIntValue(akFollower, PENALTY_MAGICKA_REGEN_KEY, 0)
-    If mp > 0
-        akFollower.ModAV("MagickaRate", mp)
-        StorageUtil.SetIntValue(akFollower, PENALTY_MAGICKA_REGEN_KEY, 0)
-    EndIf
-    Int hp = StorageUtil.GetIntValue(akFollower, PENALTY_HEALTH_REGEN_KEY, 0)
-    If hp > 0
-        akFollower.ModAV("HealRate", hp)
-        StorageUtil.SetIntValue(akFollower, PENALTY_HEALTH_REGEN_KEY, 0)
-    EndIf
-    StorageUtil.SetIntValue(akFollower, REGEN_MIG_KEY, 1)
 EndFunction
 
 Function ApplyColdSpeedPenalty(Actor akFollower, Int cold)
     {SpeedMult penalty by cold level: -15 moderate, -30 severe, scaled by DebuffSeverity.}
-
-    Int prevSpeedPenalty = StorageUtil.GetIntValue(akFollower, PENALTY_SPEED_KEY, 0)
 
     Int newSpeedPenalty = 0
 
@@ -820,16 +850,7 @@ Function ApplyColdSpeedPenalty(Actor akFollower, Int cold)
         newSpeedPenalty = (15.0 * DebuffSeverity) as Int
     EndIf
 
-    ; Swap the old penalty for the new one only when it changed
-    If newSpeedPenalty != prevSpeedPenalty
-        If prevSpeedPenalty > 0
-            akFollower.ModAV("SpeedMult", prevSpeedPenalty)
-        EndIf
-        If newSpeedPenalty > 0
-            akFollower.ModAV("SpeedMult", -newSpeedPenalty)
-        EndIf
-        StorageUtil.SetIntValue(akFollower, PENALTY_SPEED_KEY, newSpeedPenalty)
-    EndIf
+    SeverActionsNativeExt2.Survival_SetPenalty(akFollower, PENALTY_KIND_SPEED, newSpeedPenalty)
 EndFunction
 
 Function ApplyHungerDrain(Actor akFollower, Int hunger, Float hoursPassed)
@@ -954,30 +975,17 @@ EndFunction
 
 Function ClearSpeedPenalty(Actor akFollower)
     {Clear the speed penalty from cold}
-    Int speedPenalty = StorageUtil.GetIntValue(akFollower, PENALTY_SPEED_KEY, 0)
-
-    If speedPenalty > 0
-        akFollower.ModAV("SpeedMult", speedPenalty)
-        StorageUtil.SetIntValue(akFollower, PENALTY_SPEED_KEY, 0)
-    EndIf
+    SeverActionsNativeExt2.Survival_SetPenalty(akFollower, PENALTY_KIND_SPEED, 0)
 EndFunction
 
 ; ---- Regen penalties ----
 
 Function ApplyStaminaRegenPenalty(Actor akFollower, Int hunger)
     {Apply stamina regen penalty based on hunger level}
-    Int prevPenalty = StorageUtil.GetIntValue(akFollower, PENALTY_STAMINA_REGEN_KEY, 0)
     Int newPenalty = GetRegenPenaltyForLevel(hunger)
+    Int prevPenalty = SeverActionsNativeExt2.Survival_SetPenalty(akFollower, PENALTY_KIND_STAMINA_REGEN, newPenalty)
 
     If newPenalty != prevPenalty
-        If prevPenalty > 0
-            akFollower.ModAV("StaminaRateMult",prevPenalty)
-        EndIf
-        If newPenalty > 0
-            akFollower.ModAV("StaminaRateMult",-newPenalty)
-        EndIf
-        StorageUtil.SetIntValue(akFollower, PENALTY_STAMINA_REGEN_KEY, newPenalty)
-
         If DebugMode
             Debug.Trace("[SeverActions_Survival] " + akFollower.GetDisplayName() + " stamina regen penalty: " + prevPenalty + " -> " + newPenalty)
         EndIf
@@ -986,27 +994,15 @@ EndFunction
 
 Function ClearStaminaRegenPenalty(Actor akFollower)
     {Clear the stamina regen penalty}
-    Int penalty = StorageUtil.GetIntValue(akFollower, PENALTY_STAMINA_REGEN_KEY, 0)
-    If penalty > 0
-        akFollower.ModAV("StaminaRateMult",penalty)
-        StorageUtil.SetIntValue(akFollower, PENALTY_STAMINA_REGEN_KEY, 0)
-    EndIf
+    SeverActionsNativeExt2.Survival_SetPenalty(akFollower, PENALTY_KIND_STAMINA_REGEN, 0)
 EndFunction
 
 Function ApplyMagickaRegenPenalty(Actor akFollower, Int fatigue)
     {Apply magicka regen penalty based on fatigue level}
-    Int prevPenalty = StorageUtil.GetIntValue(akFollower, PENALTY_MAGICKA_REGEN_KEY, 0)
     Int newPenalty = GetRegenPenaltyForLevel(fatigue)
+    Int prevPenalty = SeverActionsNativeExt2.Survival_SetPenalty(akFollower, PENALTY_KIND_MAGICKA_REGEN, newPenalty)
 
     If newPenalty != prevPenalty
-        If prevPenalty > 0
-            akFollower.ModAV("MagickaRateMult",prevPenalty)
-        EndIf
-        If newPenalty > 0
-            akFollower.ModAV("MagickaRateMult",-newPenalty)
-        EndIf
-        StorageUtil.SetIntValue(akFollower, PENALTY_MAGICKA_REGEN_KEY, newPenalty)
-
         If DebugMode
             Debug.Trace("[SeverActions_Survival] " + akFollower.GetDisplayName() + " magicka regen penalty: " + prevPenalty + " -> " + newPenalty)
         EndIf
@@ -1015,27 +1011,15 @@ EndFunction
 
 Function ClearMagickaRegenPenalty(Actor akFollower)
     {Clear the magicka regen penalty}
-    Int penalty = StorageUtil.GetIntValue(akFollower, PENALTY_MAGICKA_REGEN_KEY, 0)
-    If penalty > 0
-        akFollower.ModAV("MagickaRateMult",penalty)
-        StorageUtil.SetIntValue(akFollower, PENALTY_MAGICKA_REGEN_KEY, 0)
-    EndIf
+    SeverActionsNativeExt2.Survival_SetPenalty(akFollower, PENALTY_KIND_MAGICKA_REGEN, 0)
 EndFunction
 
 Function ApplyHealthRegenPenalty(Actor akFollower, Int cold)
     {Apply health regen penalty based on cold level}
-    Int prevPenalty = StorageUtil.GetIntValue(akFollower, PENALTY_HEALTH_REGEN_KEY, 0)
     Int newPenalty = GetRegenPenaltyForLevel(cold)
+    Int prevPenalty = SeverActionsNativeExt2.Survival_SetPenalty(akFollower, PENALTY_KIND_HEALTH_REGEN, newPenalty)
 
     If newPenalty != prevPenalty
-        If prevPenalty > 0
-            akFollower.ModAV("HealRateMult",prevPenalty)
-        EndIf
-        If newPenalty > 0
-            akFollower.ModAV("HealRateMult",-newPenalty)
-        EndIf
-        StorageUtil.SetIntValue(akFollower, PENALTY_HEALTH_REGEN_KEY, newPenalty)
-
         If DebugMode
             Debug.Trace("[SeverActions_Survival] " + akFollower.GetDisplayName() + " health regen penalty: " + prevPenalty + " -> " + newPenalty)
         EndIf
@@ -1044,11 +1028,7 @@ EndFunction
 
 Function ClearHealthRegenPenalty(Actor akFollower)
     {Clear the health regen penalty}
-    Int penalty = StorageUtil.GetIntValue(akFollower, PENALTY_HEALTH_REGEN_KEY, 0)
-    If penalty > 0
-        akFollower.ModAV("HealRateMult",penalty)
-        StorageUtil.SetIntValue(akFollower, PENALTY_HEALTH_REGEN_KEY, 0)
-    EndIf
+    SeverActionsNativeExt2.Survival_SetPenalty(akFollower, PENALTY_KIND_HEALTH_REGEN, 0)
 EndFunction
 
 Int Function GetRegenPenaltyForLevel(Int survivalValue)
@@ -1131,8 +1111,8 @@ Function SyncFollowerSurvivalToNative()
             Int fatigue = GetFollowerFatigue(follower)
             Int cold = GetFollowerCold(follower)
 
-            ; All zeros = never tracked
-            If hunger == 0 && fatigue == 0 && cold == 0 && !excluded
+            ; Never tracked (all zeros alone is also a rested, fed, warm follower)
+            If hunger == 0 && fatigue == 0 && cold == 0 && !excluded && !SeverActionsNativeExt2.Survival_HasNeeds(follower)
                 hunger = Utility.RandomInt(5, 30)
                 fatigue = Utility.RandomInt(5, 35)
                 cold = Utility.RandomInt(0, 15)
@@ -1194,9 +1174,11 @@ Int Function GetFollowerHunger(Actor akFollower)
     Return SeverActionsNative.Native_Survival_GetHunger(akFollower) as Int
 EndFunction
 
+; Each setter keeps the other two needs as their stored floats: bed rest leaves fatigue with a fraction, which the
+; Int getters would cut off.
 Function SetFollowerHunger(Actor akFollower, Int value)
     SeverActionsNative.Native_Survival_SetNeeds(akFollower, value as Float, \
-        GetFollowerFatigue(akFollower) as Float, GetFollowerCold(akFollower) as Float)
+        SeverActionsNative.Native_Survival_GetFatigue(akFollower), SeverActionsNative.Native_Survival_GetCold(akFollower))
 EndFunction
 
 Int Function GetFollowerFatigue(Actor akFollower)
@@ -1205,7 +1187,7 @@ EndFunction
 
 Function SetFollowerFatigue(Actor akFollower, Int value)
     SeverActionsNative.Native_Survival_SetNeeds(akFollower, \
-        GetFollowerHunger(akFollower) as Float, value as Float, GetFollowerCold(akFollower) as Float)
+        SeverActionsNative.Native_Survival_GetHunger(akFollower), value as Float, SeverActionsNative.Native_Survival_GetCold(akFollower))
 EndFunction
 
 Int Function GetFollowerCold(Actor akFollower)
@@ -1214,7 +1196,7 @@ EndFunction
 
 Function SetFollowerCold(Actor akFollower, Int value)
     SeverActionsNative.Native_Survival_SetNeeds(akFollower, \
-        GetFollowerHunger(akFollower) as Float, GetFollowerFatigue(akFollower) as Float, value as Float)
+        SeverActionsNative.Native_Survival_GetHunger(akFollower), SeverActionsNative.Native_Survival_GetFatigue(akFollower), value as Float)
 EndFunction
 
 ; ---- Utilities ----
@@ -1644,6 +1626,7 @@ Function StartTracking()
     EndIf
 
     Enabled = true
+    LastUpdateTime = 0.0 ; the hours while off are not tracked
     Maintenance()
 EndFunction
 

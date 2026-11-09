@@ -147,6 +147,7 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_Tick_TravelCore", "OnChronoTick_TravelCore")
     StorageUtil.FormListClear(None, GREET_PENDING_KEY)   ; a greet in progress does not survive a load
     MigrateLegacySlots()
+    CopyJourneyKeysToNative()
     Actor[] waiting = SeverActionsNativeExt2.Travel_GetWaitingActors()
     Int i = 0
     While i < waiting.Length
@@ -232,7 +233,7 @@ Function MigrateLegacySlots()
                 If handle > 0 && SeverActionsNativeExt.Travel_IsActive(handle)
                     If SeverActionsNativeExt2.Travel_ArmWait(handle, deadline, waitForPlayer, place)
                         armed += 1
-                        StorageUtil.SetIntValue(npc, "SeverTravel_Handle", handle)
+                        _SetJourneyInt(npc, "handle", "SeverTravel_Handle", handle)
                     EndIf
                     StorageUtil.SetIntValue(npc, "SeverTravel_Speed", StorageUtil.GetIntValue(None, "SeverTravel_SlotSpeed_" + s, 0))
                 Else
@@ -244,19 +245,19 @@ Function MigrateLegacySlots()
             ElseIf slotState == 2
                 ObjectReference dest = StorageUtil.GetFormValue(None, "SeverTravel_SlotDest_" + s) as ObjectReference
                 Package sbx = StorageUtil.GetFormValue(None, "SeverTravel_SlotSandbox_" + s) as Package
-                If sbx && !StorageUtil.GetFormValue(npc, "SeverTravel_SandboxOverride")
-                    StorageUtil.SetFormValue(npc, "SeverTravel_SandboxOverride", sbx)
+                If sbx && !_GetJourneySandbox(npc)
+                    _SetJourneySandbox(npc, sbx)
                 EndIf
-                ; Shared-sandbox ownership moves from the slot to the actor key the
+                ; Shared-sandbox ownership moves from the slot to the actor's record the
                 ; teardown reads (-1 = no record, treated as owned).
                 Int slotSbxOwned = StorageUtil.GetIntValue(None, "SeverTravel_SlotSbxOwned_" + s, -1)
                 If slotSbxOwned != 0
-                    StorageUtil.SetIntValue(npc, "SeverTravel_SbxOwned", 1)
+                    _SetJourneyInt(npc, "sbxOwned", "SeverTravel_SbxOwned", 1)
                 EndIf
                 Int adoptedHandle = SeverActionsNativeExt2.Travel_AdoptWaiting(npc, dest, kw, deadline, waitForPlayer, place, WAIT_PIN_FIRST_ALIAS + s)
                 If adoptedHandle > 0
                     adopted += 1
-                    StorageUtil.SetIntValue(npc, "SeverTravel_Handle", adoptedHandle)
+                    _SetJourneyInt(npc, "handle", "SeverTravel_Handle", adoptedHandle)
                 Else
                     _Teardown(npc, false)
                     pin.Clear()
@@ -278,6 +279,46 @@ Function MigrateLegacySlots()
     StorageUtil.IntListClear(None, "SeverTravel_CallerCancelledHandles")
     SeverActionsNativeExt2.Migration_MarkDone(mig, migVersion)
     Debug.Trace("[SeverActions_TravelCore] Legacy travel slots migrated: " + armed + " walk(s) armed, " + adopted + " wait(s) adopted")
+EndFunction
+
+Function CopyJourneyKeysToNative()
+    {One-shot 'MIGR' copy (rule 15): a journey an older build began holds its handle and undo values in StorageUtil
+     only, and an arrival wait lasts days, so each field the native record lacks is copied from its key. Copy only:
+     the keys stay for an older pex. Idempotent: a field the record holds is left.}
+    String mig = "TravelJourneyRecordNative"
+    Int migVersion = 1
+    If SeverActionsNativeExt2.Migration_IsDone(mig, migVersion)
+        Return
+    EndIf
+    If !SeverActionsNativeExt2.Migration_TryClaim(mig, migVersion)
+        Return
+    EndIf
+    Actor[] all = SeverActionsNativeExt2.Travel_GetOrderedJourneyActors()
+    Int copied = 0
+    Int i = 0
+    While i < all.Length
+        Actor a = all[i]
+        If a && (StorageUtil.HasStringValue(a, "SeverTravel_State") || StorageUtil.GetIntValue(a, "SeverTravel_Handle", 0) > 0)
+            Int h = StorageUtil.GetIntValue(a, "SeverTravel_Handle", 0)
+            If h > 0 && SeverActionsNativeExt2.Travel_JourneyGetInt(a, "handle", -1) == -1
+                SeverActionsNativeExt2.Travel_JourneySetInt(a, "handle", h)
+            EndIf
+            If StorageUtil.HasIntValue(a, "SeverTravel_WasFollower") && SeverActionsNativeExt2.Travel_JourneyGetInt(a, "wasFollower", -1) == -1
+                SeverActionsNativeExt2.Travel_JourneySetInt(a, "wasFollower", StorageUtil.GetIntValue(a, "SeverTravel_WasFollower", 0))
+            EndIf
+            If StorageUtil.HasIntValue(a, "SeverTravel_SbxOwned") && SeverActionsNativeExt2.Travel_JourneyGetInt(a, "sbxOwned", -1) == -1
+                SeverActionsNativeExt2.Travel_JourneySetInt(a, "sbxOwned", StorageUtil.GetIntValue(a, "SeverTravel_SbxOwned", 0))
+            EndIf
+            Form sbx = StorageUtil.GetFormValue(a, "SeverTravel_SandboxOverride")
+            If sbx && !SeverActionsNativeExt2.Travel_JourneyGetForm(a, "sandbox")
+                SeverActionsNativeExt2.Travel_JourneySetForm(a, "sandbox", sbx)
+            EndIf
+            copied += 1
+        EndIf
+        i += 1
+    EndWhile
+    SeverActionsNativeExt2.Migration_MarkDone(mig, migVersion)
+    Debug.Trace("[SeverActions_TravelCore] Journey keys copied to the native record for " + copied + " journey(s)")
 EndFunction
 
 ; ── The journey primitive ─────────────────────────────────────────────────────
@@ -328,25 +369,27 @@ Bool Function DoBeginJourney(Actor akNPC, ObjectReference akDest, String asPlace
     If handle <= 0
         Debug.Trace("[SeverActions_TravelCore] BeginJourney: orchestrator rejected " + akNPC.GetDisplayName() + " -> '" + asPlaceLabel + "'")
         ; Undo the trip's dismissal.
-        If StorageUtil.GetIntValue(akNPC, "SeverTravel_WasFollower", 0) != 0
+        If _GetJourneyInt(akNPC, "wasFollower", "SeverTravel_WasFollower") != 0
             _ReinstateAfterTrip(akNPC)
         EndIf
+        SeverActionsNativeExt2.Travel_JourneyUnset(akNPC, "wasFollower")
         StorageUtil.UnsetIntValue(akNPC, "SeverTravel_WasFollower")
         Return false
     EndIf
     SeverActionsNativeExt2.Travel_ArmWait(handle, waitUntil, abWaitForPlayer, asPlaceLabel)
     ; OnTravelComplete checks the event's handle against this, so the late "cancelled"
-    ; of the journey just ended (queued to next frame) cannot tear this one down.
-    StorageUtil.SetIntValue(akNPC, "SeverTravel_Handle", handle)
+    ; of the journey just ended (queued to next frame) cannot tear this one down. The
+    ; recorded handle is also this script's "journey keys exist" marker (_HasJourneyKeys).
+    _SetJourneyInt(akNPC, "handle", "SeverTravel_Handle", handle)
     ; The same walk as an override: it keeps SkyrimNet's dialogue package from turning the
     ; traveler toward a speaker, and it drives the trip alone when the pool is exhausted.
     ActorUtil.AddPackageOverride(akNPC, travelPkg, TRAVEL_PACKAGE_PRIORITY, 1)
     akNPC.EvaluatePackage()
 
-    StorageUtil.SetFormValue(akNPC, "SeverTravel_SandboxOverride", akSandboxOverride)
+    _SetJourneySandbox(akNPC, akSandboxOverride)
     StorageUtil.SetIntValue(akNPC, "SeverTravel_Speed", aiSpeed)
-    ; SeverTravel_State doubles as this script's "journey keys exist" marker; other
-    ; code reads the native travel state (M-T).
+    ; An older pex reads SeverTravel_State as the journey-keys marker; other code reads
+    ; the native travel state (M-T).
     StorageUtil.SetStringValue(akNPC, "SeverTravel_State", "traveling")
     StorageUtil.SetStringValue(akNPC, "SeverTravel_Destination", asPlaceLabel)
     SeverActionsNative.Native_SetTravelState(akNPC, "traveling", asPlaceLabel)
@@ -364,7 +407,7 @@ Function DoCancelJourney(Actor akNPC, Bool abRestoreFollower = true)
         ; No live entry but keys left: the journey ended and its terminal event is
         ; still queued. Tear down now with the caller's choice, so that event finds
         ; no keys and cannot restore a follower the caller just parked.
-        If StorageUtil.HasStringValue(akNPC, "SeverTravel_State")
+        If _HasJourneyKeys(akNPC)
             _Teardown(akNPC, abRestoreFollower)
         EndIf
         Return
@@ -398,7 +441,7 @@ Bool Function DoSetSpeed(Actor akNPC, Int aiSpeed)
     If SeverActionsNativeExt2.Travel_GetPhaseByActor(akNPC) == 1
         ; This script's walk always carries the override; another system's journey (a kidnap
         ; leg, a courier) only when it holds no pool alias, and its own teardown strips it.
-        If StorageUtil.GetIntValue(akNPC, "SeverTravel_Handle", 0) > 0 || !SeverActionsNativeExt2.Travel_HasAliasByActor(akNPC)
+        If _JourneyHandle(akNPC) > 0 || !SeverActionsNativeExt2.Travel_HasAliasByActor(akNPC)
             _SwapWalkOverride(akNPC, aiSpeed)
         EndIf
         StorageUtil.SetIntValue(akNPC, "SeverTravel_Speed", aiSpeed)
@@ -420,7 +463,7 @@ Event OnTravelSpeedChanged(String eventName, String strArg, Float numArg, Form s
     {The web travel map re-banded a journey natively (numArg = the pace): this script's walk
      swaps its override and records the pace the load re-applies.}
     Actor npc = sender as Actor
-    If !npc || StorageUtil.GetIntValue(npc, "SeverTravel_Handle", 0) <= 0 || SeverActionsNativeExt2.Travel_GetPhaseByActor(npc) != 1
+    If !npc || _JourneyHandle(npc) <= 0 || SeverActionsNativeExt2.Travel_GetPhaseByActor(npc) != 1
         Return
     EndIf
     _SwapWalkOverride(npc, numArg as Int)
@@ -492,13 +535,13 @@ Event OnTravelComplete(String eventName, String strArg, Float numArg, Form sende
         Return
     EndIf
     ; Already torn down (DoCancelJourney): not a second teardown.
-    If !StorageUtil.HasStringValue(npc, "SeverTravel_State")
+    If !_HasJourneyKeys(npc)
         Debug.Trace("[SeverActions_TravelCore] " + npc.GetDisplayName() + " " + status + " - no journey keys, ignored")
         Return
     EndIf
     ; A late event of an older journey: the actor has a newer one (see DoBeginJourney).
     Int evHandle = numArg as Int
-    Int ownHandle = StorageUtil.GetIntValue(npc, "SeverTravel_Handle", 0)
+    Int ownHandle = _JourneyHandle(npc)
     If evHandle > 0 && ownHandle > 0 && evHandle != ownHandle
         Debug.Trace("[SeverActions_TravelCore] " + npc.GetDisplayName() + " " + status + " handle " + evHandle + " - the actor's journey is " + ownHandle + " now, ignored")
         Return
@@ -559,7 +602,7 @@ Function _OnArrivedWaiting(Actor akNPC, String asPlace)
 EndFunction
 
 Function _ApplyArrivalSandbox(Actor akNPC)
-    Package sandbox = StorageUtil.GetFormValue(akNPC, "SeverTravel_SandboxOverride") as Package
+    Package sandbox = _GetJourneySandbox(akNPC)
     Package defaultSandbox = Game.GetFormFromFile(FID_SANDBOX_PKG, "SeverActions.esp") as Package
     If !sandbox
         sandbox = defaultSandbox
@@ -568,7 +611,7 @@ Function _ApplyArrivalSandbox(Actor akNPC)
         ActorUtil.AddPackageOverride(akNPC, sandbox, TRAVEL_PACKAGE_PRIORITY, 1)
         ; The teardown strips the shared default only if this journey applied it
         ; (it is also Follow's manual-wait package).
-        StorageUtil.SetIntValue(akNPC, "SeverTravel_SbxOwned", (sandbox == defaultSandbox) as Int)
+        _SetJourneyInt(akNPC, "sbxOwned", "SeverTravel_SbxOwned", (sandbox == defaultSandbox) as Int)
     EndIf
     akNPC.EvaluatePackage()
 EndFunction
@@ -582,14 +625,14 @@ Function _Teardown(Actor akNPC, Bool abRestoreFollower)
     EndIf
     _RemoveTravelOverrides(akNPC)
     Package defaultSandbox = Game.GetFormFromFile(FID_SANDBOX_PKG, "SeverActions.esp") as Package
-    If defaultSandbox && StorageUtil.GetIntValue(akNPC, "SeverTravel_SbxOwned", 0) != 0
+    If defaultSandbox && _GetJourneyInt(akNPC, "sbxOwned", "SeverTravel_SbxOwned") != 0
         If SeverActionsNativeExt.Native_GetSandboxing(akNPC)
             Debug.Trace("[SeverActions_TravelCore] " + akNPC.GetDisplayName() + " is in a wait hold - leaving the shared sandbox package to it")
         Else
             ActorUtil.RemovePackageOverride(akNPC, defaultSandbox)
         EndIf
     EndIf
-    Package overridePkg = StorageUtil.GetFormValue(akNPC, "SeverTravel_SandboxOverride") as Package
+    Package overridePkg = _GetJourneySandbox(akNPC)
     If overridePkg && overridePkg != defaultSandbox
         ActorUtil.RemovePackageOverride(akNPC, overridePkg)
     EndIf
@@ -597,7 +640,7 @@ Function _Teardown(Actor akNPC, Bool abRestoreFollower)
     If kw
         SeverActionsNative.LinkedRef_Clear(akNPC, kw)
     EndIf
-    If abRestoreFollower && StorageUtil.GetIntValue(akNPC, "SeverTravel_WasFollower", 0) != 0
+    If abRestoreFollower && _GetJourneyInt(akNPC, "wasFollower", "SeverTravel_WasFollower") != 0
         _ReinstateAfterTrip(akNPC)
     EndIf
     _ClearJourneyKeys(akNPC)
@@ -605,9 +648,11 @@ Function _Teardown(Actor akNPC, Bool abRestoreFollower)
 EndFunction
 
 Function _ClearJourneyKeys(Actor akNPC)
+    {Every unset comes before the synced Native_SetTravelState at the end: another thread let in at that yield must
+     never see a half-cleared journey (CopyJourneyKeysToNative would copy its keys back in).}
+    SeverActionsNativeExt2.Travel_JourneyUnset(akNPC, "")
     StorageUtil.UnsetStringValue(akNPC, "SeverTravel_State")
     StorageUtil.UnsetStringValue(akNPC, "SeverTravel_Destination")
-    SeverActionsNative.Native_SetTravelState(akNPC, "", "")
     StorageUtil.UnsetStringValue(akNPC, "SeverTravel_Result")
     StorageUtil.UnsetFormValue(akNPC, "SeverTravel_SandboxOverride")
     StorageUtil.UnsetIntValue(akNPC, "SeverTravel_SbxOwned")
@@ -623,6 +668,7 @@ Function _ClearJourneyKeys(Actor akNPC)
     StorageUtil.UnsetIntValue(akNPC, "SeverTravel_Greeted")
     StorageUtil.UnsetIntValue(akNPC, "SeverTravel_WaitForPlayer")
     StorageUtil.UnsetFloatValue(akNPC, "SeverTravel_ArrivedRT")
+    SeverActionsNative.Native_SetTravelState(akNPC, "", "")
 EndFunction
 
 Function _RemoveTravelOverrides(Actor akNPC)
@@ -654,6 +700,52 @@ Function _RemoveTravelOverrides(Actor akNPC)
     EndIf
 EndFunction
 
+; ── The journey record: the DLL's (cosaved in TRVL) first, then the StorageUtil key ──
+; Both are written: an older pex frame resumed after a load, and outside readers, still find the
+; keys. A field the native record lacks belongs to a journey an older build began.
+
+Int Function _GetJourneyInt(Actor akNPC, String asField, String asLegacyKey)
+    {An Int field of akNPC's journey record, else its StorageUtil key (0 when neither holds it).}
+    Int v = SeverActionsNativeExt2.Travel_JourneyGetInt(akNPC, asField, -1)
+    If v != -1
+        Return v
+    EndIf
+    Return StorageUtil.GetIntValue(akNPC, asLegacyKey, 0)
+EndFunction
+
+Function _SetJourneyInt(Actor akNPC, String asField, String asLegacyKey, Int aiValue)
+    SeverActionsNativeExt2.Travel_JourneySetInt(akNPC, asField, aiValue)
+    StorageUtil.SetIntValue(akNPC, asLegacyKey, aiValue)
+EndFunction
+
+Int Function _JourneyHandle(Actor akNPC)
+    {This script's journey handle for akNPC, 0 when none.}
+    Int h = SeverActionsNativeExt2.Travel_JourneyGetInt(akNPC, "handle", 0)
+    If h > 0
+        Return h
+    EndIf
+    Return StorageUtil.GetIntValue(akNPC, "SeverTravel_Handle", 0)
+EndFunction
+
+Bool Function _HasJourneyKeys(Actor akNPC)
+    {A journey of this script's is not torn down yet: its handle is recorded, or an older build set its keys.}
+    Return SeverActionsNativeExt2.Travel_JourneyGetInt(akNPC, "handle", 0) > 0 || StorageUtil.HasStringValue(akNPC, "SeverTravel_State")
+EndFunction
+
+Package Function _GetJourneySandbox(Actor akNPC)
+    {The journey's arrival sandbox override, None for the default.}
+    Package p = SeverActionsNativeExt2.Travel_JourneyGetForm(akNPC, "sandbox") as Package
+    If !p
+        p = StorageUtil.GetFormValue(akNPC, "SeverTravel_SandboxOverride") as Package
+    EndIf
+    Return p
+EndFunction
+
+Function _SetJourneySandbox(Actor akNPC, Package akSandbox)
+    SeverActionsNativeExt2.Travel_JourneySetForm(akNPC, "sandbox", akSandbox)
+    StorageUtil.SetFormValue(akNPC, "SeverTravel_SandboxOverride", akSandbox)
+EndFunction
+
 ; ── The follower for the trip ────────────────────────────────────────────────
 
 Function _DismissForTrip(Actor akNPC)
@@ -664,9 +756,9 @@ Function _DismissForTrip(Actor akNPC)
     Bool isFollower = akNPC.IsPlayerTeammate()
     Bool handsOff = SeverActions_ModuleBase.IsFollowHandsOff(akNPC)
     If handsOff
-        StorageUtil.SetIntValue(akNPC, "SeverTravel_WasFollower", 0)
+        _SetJourneyInt(akNPC, "wasFollower", "SeverTravel_WasFollower", 0)
     Else
-        StorageUtil.SetIntValue(akNPC, "SeverTravel_WasFollower", isFollower as Int)
+        _SetJourneyInt(akNPC, "wasFollower", "SeverTravel_WasFollower", isFollower as Int)
     EndIf
     If isFollower
         If !handsOff

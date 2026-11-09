@@ -12,6 +12,7 @@ SeverActions_Arrest Property ArrestScript Auto
 
 Float JudgmentStartTime           ; real time the hold began
 Float JudgmentTimeLimit = 90.0    ; seconds before defaulting to jail
+Bool JudgmentEnding               ; claimed by the first EndJudgment of a hold; StartJudgment clears it
 
 ; --- Lifecycle ---
 
@@ -31,6 +32,7 @@ Function StartJudgment()
      phase 6, and from RecoverActiveDispatch on load) and marks the order
      actions' LLM speaker busy with "judgment" (see ResolveBusyTarget).}
     JudgmentStartTime = Utility.GetCurrentRealTime()
+    JudgmentEnding = false
 
     Actor target = ResolveBusyTarget()
     If target != None
@@ -100,7 +102,42 @@ Function CheckJudgmentProgress()
     Float elapsed = Utility.GetCurrentRealTime() - JudgmentStartTime
     If elapsed >= JudgmentTimeLimit
         ArrestScript.DebugMsg("Judgment timed out after " + elapsed + "s - defaulting to jail")
+        DefaultToJail()
+        Return
+    EndIf
 
+    ; Re-applied every tick: the engine can drop package overrides.
+    If prisoner != None && guard != None && ArrestScript.SeverActions_FollowGuard_Prisoner
+        ActorUtil.AddPackageOverride(prisoner, ArrestScript.SeverActions_FollowGuard_Prisoner, ArrestScript.PackagePriority, 1)
+        prisoner.EvaluatePackage()
+    EndIf
+
+    ; No tick armed here: the parent's OnChronoTick_Arrest drives this cadence.
+EndFunction
+
+Function DefaultToJail()
+    {No ruling in time: the prisoner goes to jail. Called by CheckJudgmentProgress at
+     JudgmentTimeLimit, and by SeverActions_Arrest.OnArrestSessionTimeout when the kJudgment
+     watchdog fires first (game time outran the limit: a wait, a sleep, a high timescale).}
+    If !ArrestScript
+        Return
+    EndIf
+
+    Actor guard    = ArrestScript.GetDispatchGuard()
+    Actor prisoner = ArrestScript.GetDispatchTarget()
+    Actor sender   = ArrestScript.GetDispatchSender()
+
+    If prisoner == None || prisoner.IsDead()
+        ; As CheckJudgmentProgress: the jail path would cuff and escort a corpse.
+        EndJudgment(true)
+        Return
+    EndIf
+
+    If !_ClaimEnd()
+        Return
+    EndIf
+
+    If guard != None && sender != None
         String senderName = sender.GetDisplayName()
         String prisonerName = prisoner.GetDisplayName()
         String guardName = guard.GetDisplayName()
@@ -112,18 +149,19 @@ Function CheckJudgmentProgress()
         SkyrimNetApi.RegisterPersistentEvent(eventMsg, prisoner, sender)
 
         Debug.Notification(senderName + " lost patience - " + prisonerName + " sent to jail")
-
-        EndJudgment(false)
-        Return
     EndIf
 
-    ; Re-applied every tick: the engine can drop package overrides.
-    If prisoner != None && guard != None && ArrestScript.SeverActions_FollowGuard_Prisoner
-        ActorUtil.AddPackageOverride(prisoner, ArrestScript.SeverActions_FollowGuard_Prisoner, ArrestScript.PackagePriority, 1)
-        prisoner.EvaluatePackage()
-    EndIf
+    _EndJudgmentClaimed(false)
+EndFunction
 
-    ; No tick armed here: the parent's OnChronoTick_Arrest drives this cadence.
+Bool Function _ClaimEnd()
+    {Claims the end of this hold before anything is narrated: false when another path (the tick, an
+     order action, the watchdog) already holds it. Makes no call before the set.}
+    If JudgmentEnding
+        Return false
+    EndIf
+    JudgmentEnding = true
+    Return true
 EndFunction
 
 ; --- SkyrimNet actions (orderrelease.yaml / orderjailed.yaml) ---
@@ -163,9 +201,14 @@ Bool Function OrderRelease_Execute(Actor akSender)
         Return false
     EndIf
 
+    If !_ClaimEnd()
+        ArrestScript.DebugMsg("OrderRelease refused: the judgment is already ending")
+        Return false
+    EndIf
+
     If prisoner == None || guard == None
         ArrestScript.DebugMsg("ERROR: OrderRelease - invalid state")
-        EndJudgment(true)
+        _EndJudgmentClaimed(true)
         Return false
     EndIf
 
@@ -183,7 +226,7 @@ Bool Function OrderRelease_Execute(Actor akSender)
 
     Debug.Notification(prisonerName + " has been released")
 
-    EndJudgment(true)
+    _EndJudgmentClaimed(true)
     Return true
 EndFunction
 
@@ -222,9 +265,14 @@ Bool Function OrderJailed_Execute(Actor akSender)
         Return false
     EndIf
 
+    If !_ClaimEnd()
+        ArrestScript.DebugMsg("OrderJailed refused: the judgment is already ending")
+        Return false
+    EndIf
+
     If prisoner == None || guard == None
         ArrestScript.DebugMsg("ERROR: OrderJailed - invalid state")
-        EndJudgment(false)
+        _EndJudgmentClaimed(false)
         Return false
     EndIf
 
@@ -242,7 +290,7 @@ Bool Function OrderJailed_Execute(Actor akSender)
 
     Debug.Notification(prisonerName + " will be taken to jail")
 
-    EndJudgment(false)
+    _EndJudgmentClaimed(false)
     Return true
 EndFunction
 
@@ -252,7 +300,16 @@ Function EndJudgment(Bool released)
     {Ends the hold: released = true frees the prisoner, false hands them to
      the jail escort (jails them at once while a same-cell arrest holds the
      escort slots; releases them when neither can start). Clears the dispatch
-     state, persisted and script-side, either way.}
+     state, persisted and script-side, either way. Only the first end of a hold acts (_ClaimEnd): the
+     tick, the order actions and the kJudgment watchdog can all reach one hold.}
+    If !_ClaimEnd()
+        Return
+    EndIf
+    _EndJudgmentClaimed(released)
+EndFunction
+
+Function _EndJudgmentClaimed(Bool released)
+    {EndJudgment's work, for a caller that already holds the claim.}
 
     If !ArrestScript
         Return

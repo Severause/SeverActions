@@ -251,6 +251,45 @@ String Function Secs(Float afSeconds) Global
     Return (hundredths / 100) + "." + frac + "s"
 EndFunction
 
+; Item-list labels, shared by the trade (economy) and hand-over (items) actions, whose
+; scripts may not name each other's types (DR2).
+
+String Function CountLabel(Int aiCount, String asName) Global
+    {"2 Ale", or "Ale" for one: a line as an event names it.}
+    If aiCount > 1
+        Return aiCount + " " + asName
+    EndIf
+    Return asName
+EndFunction
+
+String Function JoinLabels(String[] asLabels, Bool abLocalized = False) Global
+    {The non-empty labels as "A, B and C": in English for an event, or with abLocalized
+     in the native strings' language (hud.listJoin / hud.pairJoin) for a HUD line.}
+    String out = ""
+    Int i = asLabels.Length
+    Int joined = 0
+    While i > 0
+        i -= 1
+        If asLabels[i] != ""
+            If joined == 0
+                out = asLabels[i]
+            ElseIf abLocalized
+                String joinKey = "hud.listJoin"
+                If joined == 1
+                    joinKey = "hud.pairJoin"
+                EndIf
+                out = SeverActionsNativeExt2.Native_L10nFmt(joinKey, asLabels[i], out)
+            ElseIf joined == 1
+                out = asLabels[i] + " and " + out
+            Else
+                out = asLabels[i] + ", " + out
+            EndIf
+            joined += 1
+        EndIf
+    EndWhile
+    Return out
+EndFunction
+
 ; Verb decoding (plan 3.0 M-V). The DLL sends each UI verb (Native/data/verb_table.json)
 ; to the owning module's dispatcher as SeverActions_Verb_<Name> (callback OnVerb_<Name>,
 ; one dispatcher script per module, DR10); strArg is 8
@@ -322,4 +361,14 @@ Bool Function IsFollowHandsOff(Actor akActor) Global
         Return True
     EndIf
     Return SeverActionsNativeExt2.Native_IsTrackOnlyFollower(akActor)
+EndFunction
+
+; The brawl bystanders' ghost flag
+
+Function SetGhostFor(Actor akActor, Bool abGhost) Global
+    {Ghosts or un-ghosts a brawl's bystander. Called only by the DLL (BrawlManager, a static call): a ghost's
+     flag lives in extra data the DLL cannot create itself.}
+    If akActor
+        akActor.SetGhost(abGhost)
+    EndIf
 EndFunction

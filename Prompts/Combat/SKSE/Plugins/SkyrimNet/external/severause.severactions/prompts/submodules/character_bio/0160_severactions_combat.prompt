@@ -48,7 +48,7 @@ You surrendered but were attacked anyway. The betrayal stings, but you are not b
 {% if not yield_broken and (recent_ceasefire or recent_yield_given or recent_yield_received) %}
 ## Recent Truce
 {% if recent_yield_given %}
-You just surrendered. You are shaken, humiliated, or simply relieved to be alive, and you will not turn hostile again: you valued your life enough to yield. Show deference or wariness toward the one you yielded to.
+You just surrendered. You are shaken, humiliated, bitter, or simply relieved to be alive, and you will not turn hostile again: you valued your life enough to yield. Show deference, wariness or quiet resentment toward the one you yielded to, as fits who you are.
 {% elif recent_yield_received %}
 Someone just surrendered to you. You have the upper hand: be magnanimous, threatening, or dismissive, but the fight is OVER. You will not attack someone who has yielded unless they provoke you again.
 {% elif recent_ceasefire %}

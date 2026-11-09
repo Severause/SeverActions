@@ -4,7 +4,7 @@
    these fighters are. sever_war_band is the same player-state text for everyone; "" when none. #}
 {% if actorUUID and actorUUID != 0 %}
 {% set warband = sever_war_band(actorUUID) %}
-{% if warband != "" %}
+{% if warband != "" and not exists("stealthHiddenPlayer") %}
 {% if sever_camp_mustered(actorUUID) != "1" and actorUUID != player.UUID and not is_follower(actorUUID) and is_sever_follower(actorUUID) == "" %}
 ## The Company {{ player.name }} Keeps
 {{ warband }}

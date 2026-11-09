@@ -22,7 +22,7 @@ state to strip, filled only on an ESP that predates the pool.}
 
 ; ── 200-alias follow pool (FLWD v18) ──
 ; Every follower rides an alias of SeverActions_FollowQuest, whose CK packages
-; (Close above V2) re-apply natively on cell load; PO3 overrides drop on 3D
+; (Close above V2) re-apply natively on cell load; ActorUtil overrides drop on 3D
 ; unload and nothing re-heals them mid-session. The override pair survives
 ; only as the >200 fallback.
 Int Property FOLLOW_QUEST_FORMID    = 0x0016A78D AutoReadOnly
@@ -33,7 +33,7 @@ Int Property FOLLOW_ALIAS_POOL_SIZE = 200 AutoReadOnly
 
 ; ── Camp persistence pool ──
 ; SeverActions_CampPersist: 300 package-free aliases keeping sworn camp members
-; persistent (resolvable anywhere, immune to the leveled-actor re-roll).
+; persistent (resolvable anywhere; NeverResetGuard, not the alias, stops the leveled re-roll).
 Int Property CAMP_PERSIST_QUEST_FORMID = 0x16A793 AutoReadOnly
 Int Property CAMP_PERSIST_POOL_SIZE = 300 AutoReadOnly
 
@@ -659,7 +659,7 @@ Event OnSafeInteriorChanged(String eventName, String strArg, Float numArg, Form 
         Package interiorPkg = GetSafeInteriorPackage()
         If interiorPkg && !IsSandboxing(akActor)
             ; Override FIRST, so a valid high-priority package is always there
-            ; (SkyrimNet's FollowPlayer hook ignores PO3 priority and races a door
+            ; (SkyrimNet's FollowPlayer hook ignores ActorUtil priority and races a door
             ; transition into the FE/FF fallback). 4th arg 0 = no AI reset: the
             ; EvaluatePackage below picks it up without the churn flag 1 causes.
             ActorUtil.AddPackageOverride(akActor, interiorPkg, SafeInteriorSandboxPriority, 0)
@@ -1190,7 +1190,7 @@ Function _AssignLegacyFollowerSlot(Actor akActor)
     i = 0
     While i < FollowerSlots.Length
         If FollowerSlots[i] && !FollowerSlots[i].GetActorRef()
-            ; Strip overflow overrides first, or the alias package and the PO3
+            ; Strip overflow overrides first, or the alias package and the override
             ; pair run together (AI flicker).
             If StorageUtil.GetIntValue(akActor, "SeverFollow_Overflow", 0) == 1
                 RemoveOverflowFollow(akActor)
@@ -1202,7 +1202,7 @@ Function _AssignLegacyFollowerSlot(Actor akActor)
         i += 1
     EndWhile
 
-    ; All 21 slots taken: ride the same packages as PO3 overrides (appending
+    ; All 21 slots taken: ride the same packages as ActorUtil overrides (appending
     ; aliases to this quest hangs the engine). Their own conditions still gate
     ; them (Close on CloseFollowFaction, both on WaitingForPlayer == 0), and
     ; FollowDriftMonitor re-asserts drift.
@@ -1338,7 +1338,7 @@ EndFunction
 Function SweepFollowAliasesOnLoad(Actor[] followers)
     {Load-time follow-pool reconciliation (FollowerManager.RunDeferredMaintenance,
      before ReapplyFollowTracking so that pass sees pool state).
-     Migration (one-shot, sentinel SeverActions_FollowPoolMigDone): adopt
+     Migration (one-shot, ledger FollowPoolAdopt v1): adopt
      followers from legacy CK slots or the overflow pair into the pool.
      Verify (every load): empty aliases holding deleted/disabled actors or
      non-followers (a seat Enterprises' war-band record names excepted), resolve duplicates
@@ -1350,8 +1350,9 @@ Function SweepFollowAliasesOnLoad(Actor[] followers)
     EndIf
     SeverActions_FollowerManager fmSwp = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
 
-    ; ── Migration half (one-shot) ──
-    If StorageUtil.GetIntValue(None, "SeverActions_FollowPoolMigDone", 0) == 0
+    ; ── Migration half (one-shot; ledger claim, the old sentinel adopted, rule 15) ──
+    Bool poolSentinel = StorageUtil.GetIntValue(None, "SeverActions_FollowPoolMigDone", 0) >= 1
+    If !SeverActionsNativeExt2.Migration_AdoptSentinel("FollowPoolAdopt", 1, poolSentinel) && SeverActionsNativeExt2.Migration_TryClaim("FollowPoolAdopt", 1)
         Int mi = 0
         While mi < followers.Length
             Actor mf = followers[mi]
@@ -1390,7 +1391,8 @@ Function SweepFollowAliasesOnLoad(Actor[] followers)
             mi += 1
         EndWhile
         StorageUtil.SetIntValue(None, "SeverActions_FollowPoolMigDone", 1)
-        Debug.Trace("[SeverActions_Follow] FollowPool migration pass complete (sentinel set)")
+        SeverActionsNativeExt2.Migration_MarkDone("FollowPoolAdopt", 1)
+        Debug.Trace("[SeverActions_Follow] FollowPool migration pass complete")
     EndIf
 
     ; ── Verify half (every load) ──

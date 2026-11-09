@@ -31,7 +31,7 @@ Int Property FOLLOW_QUEST_FORMID = 0x0016A78D AutoReadOnly
 Int Property FOLLOW_POOL_SIZE = 200 AutoReadOnly
 Int Property CAMP_PERSIST_QUEST_FORMID = 0x16A793 AutoReadOnly
 {SeverActions_CampPersist: 300 package-free aliases keeping every sworn camp member persistent
- (resolvable anywhere, immune to the leveled re-roll). Native seats; this script frees.}
+ (resolvable anywhere; NeverResetGuard, not the alias, stops the leveled re-roll). Native seats; this script frees.}
 Int Property CAMP_PERSIST_POOL_SIZE = 300 AutoReadOnly
 Int Property RETAINER_PERSIST_QUEST_FORMID = 0x16B000 AutoReadOnly
 {SeverActions_RetainerPersist: 500 package-free aliases keeping every active retainer
@@ -217,7 +217,7 @@ EndFunction
 Function ApplyFinalAuditCourtPackage()
     {Court sandbox override (priority 100) on the General, then the escort and the garrisons.
      An override is required: the TPLT template makes the engine ignore the base record's
-     package list. Idempotent (PO3 cosaves overrides); the load path and the deploy event call it.}
+     package list. Idempotent (PapyrusUtil cosaves overrides); the load path and the deploy event call it.}
     Package courtPkg = Game.GetFormFromFile(0x00165676, "SeverActions.esp") as Package
     If !courtPkg
         Debug.Trace("[SeverActions] Final Audit: court package 0x165676 missing")

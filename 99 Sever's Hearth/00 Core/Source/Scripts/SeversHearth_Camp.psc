@@ -1605,9 +1605,18 @@ EndFunction
 ; CampSandboxPackage override until it ends), unset = parked under Hearth's own sandbox, or not
 ; listed. Only the first answers a travel event.
 String Property JOURNEY_TRACKED_KEY = "SeversHearth_JourneyTracked" AutoReadOnly
-; The journey's orchestrator handle (the travel core's SeverTravel_Handle), matched against
-; each travel event's numArg.
+; The journey's orchestrator handle (_TravelCoreHandle), matched against each travel event's numArg.
 String Property JOURNEY_HANDLE_KEY = "SeversHearth_JourneyHandle" AutoReadOnly
+
+Int Function _TravelCoreHandle(Actor a)
+    {The travel core's handle of a's journey: its native journey record first, then its SeverTravel_Handle key (a
+     journey an older SeverActions began); 0 when none.}
+    Int h = SeverActionsNativeExt2.Travel_JourneyGetInt(a, "handle", 0)
+    If h > 0
+        Return h
+    EndIf
+    Return StorageUtil.GetIntValue(a, "SeverTravel_Handle", 0)
+EndFunction
 
 Function _SetJourneyTracked(Actor a, Bool tracked)
     If !a
@@ -1615,7 +1624,7 @@ Function _SetJourneyTracked(Actor a, Bool tracked)
     EndIf
     If tracked
         StorageUtil.SetIntValue(a, JOURNEY_TRACKED_KEY, 1)
-        StorageUtil.SetIntValue(a, JOURNEY_HANDLE_KEY, StorageUtil.GetIntValue(a, "SeverTravel_Handle", 0))
+        StorageUtil.SetIntValue(a, JOURNEY_HANDLE_KEY, _TravelCoreHandle(a))
     Else
         StorageUtil.UnsetIntValue(a, JOURNEY_TRACKED_KEY)
         StorageUtil.UnsetIntValue(a, JOURNEY_HANDLE_KEY)

@@ -3,7 +3,7 @@ name: TravelToPlace
 description: "Use only when the speaker sets off for a place in this very line, going ahead of {{ player.name }} or without them: {{ player.name }} sends them on ('go to…', 'meet me at…', 'wait for me at…'), the speaker goes ahead to wait there for {{ player.name }}, or the speaker takes their leave now on business of their own. Not for plans or possibilities ('we could', 'maybe', 'someday', 'tomorrow'), questions, or a place just being mentioned. Not for going together: someone already walking with {{ player.name }} simply comes along, and agreeing now to come along is TagAlong or Companionship. {{ player.name }}'s camp or base is Camping; a nearby spot (upstairs, outside, the bar) is fine."
 questEditorId: SeverActions
 scriptName: SeverActions_Travel
-executionFunctionName: TravelToPlace
+executionFunctionName: TravelToPlaceWith
 parameterMapping:
   - type: speaker
     name: akNPC
@@ -26,7 +26,14 @@ parameterMapping:
   - type: dynamic
     name: waitForPlayer
     description: "true = the speaker waits at the destination to meet the player there; false = the speaker goes about business of their own there and afterwards returns to their routine"
+  - type: dynamic
+    name: alsoSending
+    description: "the other people the player sends there along with the speaker in this same line, by their exact names as listed in Nearby Actors, as one text, comma-separated (e.g. 'Rin, Rayya'); for 'all of you', only those the player is speaking to. Never the speaker, a bystander, or someone only mentioned or told to stay. They set off too. Leave empty when only the speaker goes"
+    optional: true
+    default: ""
 enabled: true
+# TravelGroup::Refusal (Native/src/TravelGroup.h) applies these rules to the people sent along in alsoSending:
+# a new rule here is a line there.
 eligibilityRules:
   - conditions:
       - decoratorName: "is_in_combat"

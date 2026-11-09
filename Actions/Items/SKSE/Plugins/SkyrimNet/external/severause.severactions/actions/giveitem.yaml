@@ -1,6 +1,6 @@
 customCategory: items
 name: GiveItem
-description: "Use when the speaker hands an item from their own pack (or, for a merchant, their shop stock) to someone in this line, holding it out or agreeing to a request for it: a gift, a loan, a draught pressed into a friend's hand. Not for an offer or promise for later, 'I could give you…', or selling (Economy). A courier's letter is handed over by itself; no action. If the receiver owes the speaker on an open tab, the item's value is added to it."
+description: "Use when the speaker hands items from their own pack (or, for a merchant, their shop stock) to someone in this line, holding them out or agreeing to a request for them: a gift, a loan, a draught pressed into a friend's hand. One call can hand out several. Not for an offer or promise for later, 'I could give you…', or selling (Economy). A courier's letter is handed over by itself; no action. If a receiver owes the speaker on an open tab, the items' value is added to it."
 questEditorId: SeverActions
 scriptName: SeverActions_Loot
 executionFunctionName: GiveItem_Execute
@@ -10,13 +10,13 @@ parameterMapping:
     description: the actor parting with the item
   - type: dynamic
     name: recipient
-    description: "who receives it: exact name as listed in Nearby Actors, or the player's name"
+    description: "the main person receiving: exact name as listed in Nearby Actors, or the player's name; an item with its own 'for' goes to that person instead"
   - type: dynamic
     name: item
-    description: "the item as named in the speaker's inventory (e.g. 'Iron Sword', 'Health Potion', 'Sweet Roll')"
+    description: "the item as named in the speaker's inventory (e.g. 'Iron Sword', 'Health Potion', 'Sweet Roll'); several items comma-separated, each with an optional count before it and, to hand that one to someone else, 'for' and their exact name as listed in Nearby Actors, or the player's name, after it (e.g. 'Sweet Roll, 2 Health Potion for Rin')"
   - type: dynamic
     name: count
-    description: "how many, a whole number, 1 or more"
+    description: "how many, a whole number, 1 or more; with several items, put 1 here and each item's count before its name"
     optional: true
     default: 1
 enabled: true

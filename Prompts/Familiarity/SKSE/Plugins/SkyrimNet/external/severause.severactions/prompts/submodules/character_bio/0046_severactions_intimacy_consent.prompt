@@ -1,7 +1,7 @@
 {% if render_mode == "stable" or render_mode == "thoughts" or render_mode == "transform" or (render_mode == "full" and not default(stable_split, false)) %}
 {# How open this NPC is to intimacy with the player: the LLM-set stance (sever_intimacy_stance), never derived from rank; #}
 {# marriage is read here. Gate: player_familiarity's intimacySurfaced (IntimacyGate::ShouldSurface); followers included. 0045 owns the name line. #}
-{% if isValidActor(actorUUID) and not is_player(actorUUID) and not decnpc(actorUUID).isChild %}
+{% if isValidActor(actorUUID) and not is_player(actorUUID) and not decnpc(actorUUID).isChild and not exists("stealthHiddenPlayer") %}
 {% set fam = player_familiarity(actorUUID) %}
 {% if fam and fam.intimacySurfaced %}
 {% set st = sever_intimacy_stance(actorUUID) %}

@@ -4,7 +4,7 @@
 {% set _actionsOffered = render_mode == "action" or (render_mode == "full" and default(responseTarget.type, "none") != "none") %}
 {% if isValidActor(actorUUID) %}
 {% set tax_ctx = hold_tax_rate(actorUUID) %}
-{% if tax_ctx != "" %}
+{% if tax_ctx != "" and not exists("stealthHiddenPlayer") %}
 ## Hold Taxes
 {{ tax_ctx }}
 {% if render_mode == "dialogue_target" or render_mode == "action" %}

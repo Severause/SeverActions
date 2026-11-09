@@ -7,13 +7,14 @@
 {% set actor = decnpc(actorUUID) %}
 ## Visible Wounds
 {{ actor.name }} {{ missing_seen }}.
+How you treat {{ actor.name }} comes from who you are and what lies between you. If you did this to them, or they are your enemy, a criminal you punished or someone you despise, you owe them nothing and may show it: scorn, threats, satisfaction, or leaving them to their fate. A stranger reacts as their own nature leads: horror, pity, disgust, unease or looking away. Comfort and care come from someone who cares about them or is merciful by nature.
 {% endif %}
 {% else %}
 {% set missing_limb = sever_missing_limb(actorUUID) %}
 {% if missing_limb != "" %}
 ## Wounds
 {{ missing_limb }}
-Your wounds change what you can do and how you carry yourself. How you feel about them, and about whoever did it (pain, shock, grief, rage, fear or grim endurance), depends on who you are and on how lasting the harm is. Never speak or act as if a lost limb were still there, or a broken one whole.
+Your wounds change what you can do and how you carry yourself. How you feel about them, and about whoever did it (pain, shock, grief, rage, hatred, fear, defiance or grim endurance), depends on who you are and on how lasting the harm is: a proud or hardened person may curse them, defy them or refuse to beg, a frightened one may plead, a broken one may go quiet. Do not expect whoever did it to help you. Never speak or act as if a lost limb were still there, or a broken one whole.
 {% endif %}
 {% endif %}
 {% endif %}

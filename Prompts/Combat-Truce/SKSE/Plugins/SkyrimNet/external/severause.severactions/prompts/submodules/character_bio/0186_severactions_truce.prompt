@@ -4,7 +4,7 @@
    the camp state, and anything that asserts a death also checks sever_camp_leader_fell. #}
 {% if actorUUID and actorUUID != 0 %}
 {% set truce = sever_truce(actorUUID) %}
-{% if truce != "" %}
+{% if truce != "" and not exists("stealthHiddenPlayer") %}
 {% set campstate = sever_camp_state(actorUUID) %}
 {% if campstate == "sworn" %}
 ## You Answer to {{ player.name }} Now

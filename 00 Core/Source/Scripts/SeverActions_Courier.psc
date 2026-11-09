@@ -29,6 +29,11 @@ Float Property CourierMinIntervalDays = 7.0 AutoReadOnly
 Form[] CourierWsBlacklist
 Bool CourierWsBlacklistBuilt = false
 
+; True while TryDispatchQueuedCourier runs. A call on another object or a synced native lets
+; another thread into this script, so without it two dispatches can read the same letter
+; and the second pops the one behind it. Cleared by Maintenance on every load.
+Bool _courierDispatching = false
+
 ; Single-courier rule: at most one courier at a time and one per
 ; CourierMinIntervalDays. Every letter queues; the courier hands over the first
 ; with ceremony and the rest of the queue with it. Urgent (ransom) letters bypass
@@ -42,6 +47,7 @@ EndEvent
 Function Maintenance()
     {Load recovery from the couriers provider's stage 1 (idempotent, DR20): re-registers the
      listeners and re-arms the poll while letters wait or a courier is out (ticks do not survive a load).}
+    _courierDispatching = false
     _RegisterEvents()
     If StorageUtil.StringListCount(self, "SeverTravel_CourierQ_Body") > 0 || ActiveCourierLive()
         ChronoArm(TICK_INTERVAL)
@@ -185,7 +191,19 @@ EndFunction
 Bool Function TryDispatchQueuedCourier()
     {The gate for every courier spawn (outdoors, no live courier, cooldown). Moves the first
      queued letter onto the courier; the rest stay queued and go with it at delivery, so a
-     lost courier costs at most one letter. Returns true when a courier was dispatched.}
+     lost courier costs at most one letter. Returns true when a courier was dispatched;
+     false at once while another call is dispatching.}
+    If _courierDispatching
+        Return false
+    EndIf
+    _courierDispatching = true
+    Bool sent = _DispatchFirstLetter()
+    _courierDispatching = false
+    Return sent
+EndFunction
+
+Bool Function _DispatchFirstLetter()
+    {TryDispatchQueuedCourier's body; only it calls this.}
     If StorageUtil.StringListCount(self, "SeverTravel_CourierQ_Body") == 0
         Return false
     EndIf
@@ -287,18 +305,18 @@ Function QueueCourierLetter(Actor akSender, String asSubject, String asBody, Str
      string lists on self. The sender rides as a FormID string (a None in a FormList would
      desync the lists) and its name is snapshotted now, since the sender can be gone by
      delivery and the letter view needs its from-line.}
+    ; Both reads come before the first add: a call on the sender lets another thread into
+    ; this script, and the five lists must grow together.
     Int senderFid = 0
+    String qSenderNm = ""
     If akSender
         senderFid = akSender.GetFormID()
+        qSenderNm = akSender.GetDisplayName()
     EndIf
     StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_SenderFid", senderFid as String)
     StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_Subject", asSubject)
     StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_Body", asBody)
     StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_Reason", asReason)
-    String qSenderNm = ""
-    If akSender
-        qSenderNm = akSender.GetDisplayName()
-    EndIf
     StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_SenderName", qSenderNm)
 EndFunction
 
@@ -310,8 +328,8 @@ Bool Function ProcessCourierQueue()
 EndFunction
 
 Function DeliverCourierLetter(Actor akCourier)
-    {Narrate and hand over the stashed letter and the rest of the queue, free the lock, then
-     leave the courier to loiter and despawn.}
+    {Narrate and hand over the stashed letter and the rest of the queue, leave the courier to
+     loiter and despawn, then free the lock.}
     If akCourier == None
         Return
     EndIf
@@ -408,9 +426,6 @@ Function DeliverCourierLetter(Actor akCourier)
         EndIf
     EndWhile
 
-    ; Free the single-courier lock.
-    StorageUtil.UnsetFormValue(self, "SeverTravel_ActiveCourier")
-
     If extraDelivered > 0
         Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("travel.courierHandsYouLetters", ("" + (extraDelivered + 1))))
     Else
@@ -445,4 +460,8 @@ Function DeliverCourierLetter(Actor akCourier)
     ; CourierManager's linger: despawn once 2 game hours have passed and the player has left
     ; the cell, or at 8 hours regardless.
     SeverActionsNativeExt.Courier_Release(akCourier)
+
+    ; Free the single-courier lock last: the next dispatch reuses this actor, so a dispatch let
+    ; in before the clear above would lose its letter to it and have its courier set to despawn.
+    StorageUtil.UnsetFormValue(self, "SeverTravel_ActiveCourier")
 EndFunction

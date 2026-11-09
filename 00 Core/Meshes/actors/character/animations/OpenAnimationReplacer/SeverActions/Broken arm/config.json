@@ -1,6 +1,6 @@
 {
     "name": "Broken arm",
-    "description": "A broken right arm and no broken leg (rank 3): the arm held against the stomach while they stand, walk, jog or sprint, with weapons sheathed or fighting on with the other hand (a one-handed weapon, a spell or fists).",
+    "description": "A broken right arm and no broken leg (rank 3): the arm held against the stomach while they stand, turn in place, walk, jog or sprint, with weapons sheathed or fighting on with the other hand (a one-handed weapon, a spell or fists), and through the idle's own variations and head turns.",
     "priority": 1500000102,
     "conditions": [
         {

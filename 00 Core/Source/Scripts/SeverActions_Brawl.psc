@@ -54,6 +54,20 @@ Int Property OverlayRetryCount = 0 Auto Hidden
 ; SeverBrawl_Active / _Opponent (live mirror), _WasTeammate / _WasNFF / _NFFSparFac (strip markers).
 ; SeverDuel_WasVanillaSeat    - Int (a duel took them out of the vanilla follower alias; re-seated after)
 ; On the quest: form lists SeverBrawl_OpenChallengers, _StrippedTeammates, _PendingRerecruit.
+; The strip markers and the two strip lists are kept natively too (Brawl_Strip*, saved in 'BRWU'), and every read
+; asks the native record first: a dropped StorageUtil value must not lose a companion. The keys are still written for
+; an older pex frame resumed after a load.
+
+; The native strip record's bits (BrawlStripCore.h; the values must stay equal).
+Int Property STRIP_WAS_TEAMMATE = 1 AutoReadOnly
+Int Property STRIP_WAS_NFF      = 2 AutoReadOnly
+Int Property STRIP_SPAR_FACTION = 4 AutoReadOnly
+Int Property STRIP_LISTED       = 8 AutoReadOnly
+Int Property STRIP_RERECRUIT    = 16 AutoReadOnly
+Int Property STRIP_RESEAT_NFF   = 32 AutoReadOnly
+Int Property STRIP_VANILLA_SEAT = 64 AutoReadOnly
+; The bits a restore clears: all but the re-seat queue's two and the vanilla seat.
+Int Property STRIP_RESTORE_BITS = 15 AutoReadOnly
 
 SeverActions_Brawl Function GetInstance() Global
     Quest kQuest = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as Quest
@@ -150,10 +164,11 @@ Function OnGameLoaded()
     EndWhile
     StorageUtil.FormListClear(self, "SeverBrawl_OpenChallengers")
     ; Brawls are not cosaved, but a save made mid-brawl keeps the stripped IsPlayerTeammate flag and
-    ; our strip markers: put them back.
+    ; our strip markers: put them back. It walks the StorageUtil lists too, so a save from before the
+    ; native record needs no copy.
     RestoreStrippedTeammatesAfterReload()
     ; A save inside the TrackOnlyRerecruitDelay window lost its tick; re-arm it.
-    If StorageUtil.FormListCount(self, "SeverBrawl_PendingRerecruit") > 0
+    If _HasPendingRerecruit()
         ChronoArm(TrackOnlyRerecruitDelay)
     EndIf
 EndFunction
@@ -541,7 +556,7 @@ Function AcceptBrawl_Execute(Actor akAccepter, Actor akChallenger = None)
 
     ; An NFF dismissal from the strip tears down asynchronously and kills combat started too early:
     ; settle first. Must follow the strips, which set WasNFF.
-    If StorageUtil.GetIntValue(challenger, "SeverBrawl_WasNFF", 0) == 1 || StorageUtil.GetIntValue(akAccepter, "SeverBrawl_WasNFF", 0) == 1
+    If _StripHas(challenger, STRIP_WAS_NFF) || _StripHas(akAccepter, STRIP_WAS_NFF)
         Debug.Trace("[SeverBrawl] Accept: NFF release in flight - settling 2.0s before combat")
         Utility.Wait(2.0)
     EndIf
@@ -634,24 +649,28 @@ EndFunction
 ; ---- Teammate strip / restore ----
 ; A brawling follower would draw the player's other followers in: teammate defense keys on
 ; IsPlayerTeammate, which DGIntimidateFaction does not gate. The flag is cleared for the fight; native
-; TeammateMonitor suppresses the removal and keeps them tracked meanwhile. Markers: per-actor
-; SeverBrawl_WasTeammate, and the quest list SeverBrawl_StrippedTeammates for the load path.
+; TeammateMonitor suppresses the removal and keeps them tracked meanwhile. The strip record is the native
+; one (Brawl_Strip*) and its StorageUtil copy: per-actor SeverBrawl_WasTeammate / _WasNFF / _NFFSparFac,
+; the quest list SeverBrawl_StrippedTeammates for the load path and SeverBrawl_PendingRerecruit for the
+; re-seat queue.
 
 Function StripTeammateForBrawl(Actor a)
     If !a || a == Game.GetPlayer()
         Return
     EndIf
     ; Tracking-only followers are stripped too (their framework reads it as a dismiss) and are
-    ; re-recruited at brawl end through SeverBrawl_PendingRerecruit.
+    ; re-recruited at brawl end through the re-seat queue.
     If a.IsPlayerTeammate()
+        ; Recorded before the flag changes, so a save in between still restores it.
+        SeverActionsNativeExt2.Brawl_StripMark(a, STRIP_WAS_TEAMMATE + STRIP_LISTED)
         StorageUtil.SetIntValue(a, "SeverBrawl_WasTeammate", 1)
         StorageUtil.FormListAdd(self, "SeverBrawl_StrippedTeammates", a, False)
         a.SetPlayerTeammate(false, false)
         Debug.Trace("[SeverBrawl] StripTeammateForBrawl: cleared IsPlayerTeammate on " + a.GetDisplayName())
     EndIf
     ; NFF suppresses combat for a follower it seats, whatever flag we clear (StartCombat is silently
-    ; dropped), so an NFF brawler is dismissed through NFF's controller for the fight and re-seated via
-    ; PendingRerecruit. WasNFF marks that, since IsTrackOnlyFollower may answer false afterwards.
+    ; dropped), so an NFF brawler is dismissed through NFF's controller for the fight and re-seated through
+    ; the re-seat queue. WasNFF marks that, since IsTrackOnlyFollower may answer false afterwards.
     If SeverActionsNativeExt2.Native_IsNFFManaged(a)
         ; Static calls into fwlib (N2), so this works without the Followers module. Joining NFF's spar
         ; faction alone does not hold off its suppression; it stays as a belt for the teardown window.
@@ -659,13 +678,14 @@ Function StripTeammateForBrawl(Actor a)
         If SeverActionsNativeExt2.Native_IsNFFInstalled()
             sparFac = SeverActions_NFFLib.NFFSparFaction()
         EndIf
+        ; Listed even when the teammate flag read false (SA travel and muster clear it), or the reload
+        ; restore, which walks the list, would never bring them back.
+        SeverActionsNativeExt2.Brawl_StripMark(a, STRIP_WAS_NFF + STRIP_LISTED, sparFac)
         If sparFac
             StorageUtil.SetIntValue(a, "SeverBrawl_NFFSparFac", 1)
             a.AddToFaction(sparFac)
         EndIf
         StorageUtil.SetIntValue(a, "SeverBrawl_WasNFF", 1)
-        ; Listed even when the teammate flag read false (SA travel and muster clear it), or the reload
-        ; restore, which walks this list, would never bring them back.
         StorageUtil.FormListAdd(self, "SeverBrawl_StrippedTeammates", a, False)
         ; Silent dismissal, as NFF's own spar flow does it (SparPrep dismisses, SparEnd re-recruits).
         If SeverActionsNativeExt2.Native_IsNFFInstalled()
@@ -683,127 +703,228 @@ Function RestoreTeammateAfterBrawl(Actor a)
     If !a || a == Game.GetPlayer()
         Return
     EndIf
-    Bool wasTeammate = StorageUtil.GetIntValue(a, "SeverBrawl_WasTeammate", 0) == 1
-    If wasTeammate || StorageUtil.GetIntValue(a, "SeverBrawl_WasNFF", 0) == 1
-        ; Restore at once, or TeammateMonitor reads the strip as a dismiss and untracks them.
-        If wasTeammate
-            a.SetPlayerTeammate(true, false)
-        EndIf
-        StorageUtil.UnsetIntValue(a, "SeverBrawl_WasTeammate")
-        StorageUtil.FormListRemove(self, "SeverBrawl_StrippedTeammates", a, True)
-
-        ; Leave NFF's spar faction directly: the controller's SparEnd services NFF's own spar flow,
-        ; which we never entered.
-        If StorageUtil.GetIntValue(a, "SeverBrawl_NFFSparFac", 0) == 1
-            StorageUtil.UnsetIntValue(a, "SeverBrawl_NFFSparFac")
-            Faction sparFacR
-            If SeverActionsNativeExt2.Native_IsNFFInstalled()
-                sparFacR = SeverActions_NFFLib.NFFSparFaction()
-            EndIf
-            If sparFacR
-                a.RemoveFromFaction(sparFacR)
-                Debug.Trace("[SeverBrawl] RestoreTeammateAfterBrawl: " + a.GetDisplayName() + " leaves NFF's spar faction")
-            EndIf
-        EndIf
-        Bool wasNFF = StorageUtil.GetIntValue(a, "SeverBrawl_WasNFF", 0) == 1
-        If wasNFF
-            StorageUtil.UnsetIntValue(a, "SeverBrawl_WasNFF")
-        EndIf
-        ; The flag does not refill a framework's alias (NFF / DLC / custom-AI), so a tracking-only
-        ; follower (the kernel's verdict, never a FollowerManager cast) is re-seated by
-        ; ProcessPendingRerecruit. Full-SA followers need only the flag.
-        If wasNFF || SeverActionsNativeExt2.Native_IsTrackOnlyFollower(a)
-            StorageUtil.FormListAdd(self, "SeverBrawl_PendingRerecruit", a, False)
-            ; By re-recruit time the NFF teardown is done and Native_IsNFFManaged reads false, so in
-            ; SeverActions mode (FrameworkMode 0) NFFRecruit would keep them in SA. Force the NFF re-seat
-            ; (one-shot flag), for real NFF followers only.
-            If wasNFF
-                StorageUtil.SetIntValue(a, "SeverActions_NFFReseatForce", 1)
-            EndIf
-            Debug.Trace("[SeverBrawl] RestoreTeammateAfterBrawl: queued re-recruit for " + a.GetDisplayName() + " (wasNFF=" + wasNFF + ")")
-        EndIf
-
-        Debug.Trace("[SeverBrawl] RestoreTeammateAfterBrawl: restored IsPlayerTeammate on " + a.GetDisplayName())
+    Int bits = _StripBits(a)
+    Bool wasTeammate = Math.LogicalAnd(bits, STRIP_WAS_TEAMMATE) != 0
+    Bool wasNFF = Math.LogicalAnd(bits, STRIP_WAS_NFF) != 0
+    If !wasTeammate && !wasNFF
+        Return
     EndIf
+    ; Restore at once, or TeammateMonitor reads the strip as a dismiss and untracks them.
+    If wasTeammate
+        a.SetPlayerTeammate(true, false)
+    EndIf
+    ; Leave NFF's spar faction directly: the controller's SparEnd services NFF's own spar flow,
+    ; which we never entered.
+    If Math.LogicalAnd(bits, STRIP_SPAR_FACTION) != 0 && _LeaveSparFaction(a)
+        Debug.Trace("[SeverBrawl] RestoreTeammateAfterBrawl: " + a.GetDisplayName() + " leaves NFF's spar faction")
+    EndIf
+    _ClearStrip(a)
+    ; The flag does not refill a framework's alias (NFF / DLC / custom-AI), so a tracking-only
+    ; follower (the kernel's verdict, never a FollowerManager cast) is re-seated by
+    ; ProcessPendingRerecruit. Full-SA followers need only the flag.
+    If wasNFF || SeverActionsNativeExt2.Native_IsTrackOnlyFollower(a)
+        _QueueRerecruit(a, wasNFF)
+        Debug.Trace("[SeverBrawl] RestoreTeammateAfterBrawl: queued re-recruit for " + a.GetDisplayName() + " (wasNFF=" + wasNFF + ")")
+    EndIf
+    Debug.Trace("[SeverBrawl] RestoreTeammateAfterBrawl: restored IsPlayerTeammate on " + a.GetDisplayName())
+EndFunction
+
+Int Function _StripBits(Actor a)
+    {a's strip record (the STRIP_* bits): the native one, or while it holds nothing the StorageUtil copy (a save from
+     before the native record, or an older pex's write). 0 for None.}
+    If !a
+        Return 0
+    EndIf
+    Int bits = SeverActionsNativeExt2.Brawl_StripBits(a)
+    If bits != 0
+        Return bits
+    EndIf
+    Return _StripBitsFromStorage(a)
+EndFunction
+
+Int Function _StripBitsFromStorage(Actor a)
+    {a's strip record as the StorageUtil keys hold it.}
+    Int bits = 0
+    If StorageUtil.GetIntValue(a, "SeverBrawl_WasTeammate", 0) == 1
+        bits += STRIP_WAS_TEAMMATE
+    EndIf
+    If StorageUtil.GetIntValue(a, "SeverBrawl_WasNFF", 0) == 1
+        bits += STRIP_WAS_NFF
+    EndIf
+    If StorageUtil.GetIntValue(a, "SeverBrawl_NFFSparFac", 0) == 1
+        bits += STRIP_SPAR_FACTION
+    EndIf
+    If StorageUtil.FormListFind(self, "SeverBrawl_StrippedTeammates", a) >= 0
+        bits += STRIP_LISTED
+    EndIf
+    If StorageUtil.FormListFind(self, "SeverBrawl_PendingRerecruit", a) >= 0
+        bits += STRIP_RERECRUIT
+        If StorageUtil.GetIntValue(a, "SeverActions_NFFReseatForce", 0) == 1
+            bits += STRIP_RESEAT_NFF
+        EndIf
+    EndIf
+    Return bits
+EndFunction
+
+Bool Function _StripHas(Actor a, Int aiBit)
+    Return Math.LogicalAnd(_StripBits(a), aiBit) != 0
+EndFunction
+
+Bool Function _HasPendingRerecruit()
+    Return Math.LogicalAnd(SeverActionsNativeExt2.Brawl_StripBits(None), STRIP_RERECRUIT) != 0 || StorageUtil.FormListCount(self, "SeverBrawl_PendingRerecruit") > 0
+EndFunction
+
+Function _ClearStrip(Actor a)
+    {Clears a's strip record, both copies. The re-seat queue is not part of it.}
+    SeverActionsNativeExt2.Brawl_StripUnmark(a, STRIP_RESTORE_BITS)
+    StorageUtil.UnsetIntValue(a, "SeverBrawl_WasTeammate")
+    StorageUtil.UnsetIntValue(a, "SeverBrawl_WasNFF")
+    StorageUtil.UnsetIntValue(a, "SeverBrawl_NFFSparFac")
+    StorageUtil.FormListRemove(self, "SeverBrawl_StrippedTeammates", a, True)
+EndFunction
+
+Bool Function _LeaveSparFaction(Actor a)
+    {Takes a out of the NFF spar faction the strip joined: the one the native record names, else NFF's own. Call before
+     _ClearStrip, which forgets the faction. False when there is none to leave.}
+    Faction sparFac = SeverActionsNativeExt2.Brawl_StripSparFaction(a)
+    If SeverActionsNativeExt2.Native_IsNFFInstalled() && !sparFac
+        sparFac = SeverActions_NFFLib.NFFSparFaction()
+    EndIf
+    If !sparFac
+        Return False
+    EndIf
+    a.RemoveFromFaction(sparFac)
+    Return True
+EndFunction
+
+Function _QueueRerecruit(Actor a, Bool abNFF)
+    {Queues a for ProcessPendingRerecruit. abNFF: by re-recruit time the NFF teardown is done and Native_IsNFFManaged
+     reads false, so in SeverActions mode (FrameworkMode 0) NFFRecruit would keep them in SA; the one-shot force flag
+     sends a real NFF follower back to NFF.}
+    Int queueBits = STRIP_RERECRUIT
+    If abNFF
+        queueBits += STRIP_RESEAT_NFF
+        StorageUtil.SetIntValue(a, "SeverActions_NFFReseatForce", 1)
+    EndIf
+    SeverActionsNativeExt2.Brawl_StripMark(a, queueBits)
+    StorageUtil.FormListAdd(self, "SeverBrawl_PendingRerecruit", a, False)
 EndFunction
 
 Function ProcessPendingRerecruit()
-{Drains SeverBrawl_PendingRerecruit: each actor is re-seated unconditionally through the Followers
- provider's "rerecruit" (RegisterFollower, idempotent), or without Followers through
- SeverActions_FollowerFrameworkLib.ReseatExternal. Not gated on IsPlayerTeammate: the restore has
- already set it. Runs from the tick after TrackOnlyRerecruitDelay, and at once on the load path.}
+{Drains the re-seat queue, the native one first and then any SeverBrawl_PendingRerecruit entry it lacks: each
+ actor is re-seated unconditionally through the Followers provider's "rerecruit" (RegisterFollower, idempotent),
+ or without Followers through SeverActions_FollowerFrameworkLib.ReseatExternal. Not gated on IsPlayerTeammate:
+ the restore has already set it. Runs from the tick after TrackOnlyRerecruitDelay, and at once on the load path.}
     Int n = StorageUtil.FormListCount(self, "SeverBrawl_PendingRerecruit")
-    If n <= 0
+    Actor[] queued
+    Int nQueued = 0
+    If Math.LogicalAnd(SeverActionsNativeExt2.Brawl_StripBits(None), STRIP_RERECRUIT) != 0
+        queued = SeverActionsNativeExt2.Brawl_StripActors(STRIP_RERECRUIT)
+        nQueued = queued.Length
+    EndIf
+    If nQueued <= 0 && n <= 0
         Return
     EndIf
-    ; Without Followers the service answers False; ReseatExternal (B17) picks NFF when the force flag
-    ; is set, else Serana / custom-AI / vanilla.
+    Int k = 0
+    While k < nQueued
+        _RerecruitOne(queued[k])
+        k += 1
+    EndWhile
     Int i = 0
     While i < n
-        Form f = StorageUtil.FormListGet(self, "SeverBrawl_PendingRerecruit", i)
-        Actor a = f as Actor
-        If a && a != Game.GetPlayer() && !a.IsDead()
-            If SeverActions_ModuleBase.CallBool("followers", "rerecruit", a)
-                Debug.Trace("[SeverBrawl] ProcessPendingRerecruit: re-recruited track-only " + a.GetDisplayName())
-            Else
-                Bool wasNFFSeat = StorageUtil.GetIntValue(a, "SeverActions_NFFReseatForce", 0) == 1
-                Bool reseated = SeverActions_FollowerFrameworkLib.ReseatExternal(a, wasNFFSeat)
-                Debug.Trace("[SeverBrawl] ProcessPendingRerecruit: no FollowerManager - ReseatExternal(" + a.GetDisplayName() + ", wasNFF=" + wasNFFSeat + ") -> " + reseated)
-            EndIf
-        EndIf
-        ; The queue owner clears the force flag: RegisterFollower can return before NFFRecruit reads it,
-        ; and skipped actors never reach it, so a leftover would force NFF on a later unrelated recruit.
-        If a
-            StorageUtil.UnsetIntValue(a, "SeverActions_NFFReseatForce")
+        Actor a = StorageUtil.FormListGet(self, "SeverBrawl_PendingRerecruit", i) as Actor
+        If a && (nQueued <= 0 || queued.Find(a) < 0)
+            _RerecruitOne(a)
         EndIf
         i += 1
     EndWhile
     StorageUtil.FormListClear(self, "SeverBrawl_PendingRerecruit")
 EndFunction
 
-Function RestoreStrippedTeammatesAfterReload()
-    Int n = StorageUtil.FormListCount(self, "SeverBrawl_StrippedTeammates")
-    If n <= 0
+Function _RerecruitOne(Actor a)
+    {ProcessPendingRerecruit for one actor; drops them from the native queue (the caller clears the list).}
+    If !a
         Return
     EndIf
-    Debug.Trace("[SeverBrawl] RestoreStrippedTeammatesAfterReload: recovering " + n + " stripped teammate marker(s)")
-    Int i = 0
-    While i < n
-        Form f = StorageUtil.FormListGet(self, "SeverBrawl_StrippedTeammates", i)
-        Actor a = f as Actor
-        If a && a != Game.GetPlayer() && !a.IsDead()
-            a.SetPlayerTeammate(true, false)
-            StorageUtil.UnsetIntValue(a, "SeverBrawl_WasTeammate")
-            ; The spar-faction membership and its marker both persist in the save.
-            If StorageUtil.GetIntValue(a, "SeverBrawl_NFFSparFac", 0) == 1
-                StorageUtil.UnsetIntValue(a, "SeverBrawl_NFFSparFac")
-                Faction sparFacL
-                If SeverActionsNativeExt2.Native_IsNFFInstalled()
-                    sparFacL = SeverActions_NFFLib.NFFSparFaction()
-                EndIf
-                If sparFacL
-                    a.RemoveFromFaction(sparFacL)
-                EndIf
-            EndIf
-            ; Same re-seat queue and NFF force flag as RestoreTeammateAfterBrawl.
-            Bool wasNFFReload = StorageUtil.GetIntValue(a, "SeverBrawl_WasNFF", 0) == 1
-            If wasNFFReload
-                StorageUtil.UnsetIntValue(a, "SeverBrawl_WasNFF")
-            EndIf
-            If wasNFFReload || SeverActionsNativeExt2.Native_IsTrackOnlyFollower(a)
-                StorageUtil.FormListAdd(self, "SeverBrawl_PendingRerecruit", a, False)
-                If wasNFFReload
-                    StorageUtil.SetIntValue(a, "SeverActions_NFFReseatForce", 1)
-                EndIf
-                Debug.Trace("[SeverBrawl] RestoreStrippedTeammatesAfterReload: queued track-only re-recruit for " + a.GetDisplayName() + " (wasNFF=" + wasNFFReload + ")")
-            EndIf
-            _ReseatVanillaAfterDuel(a)
+    Bool forceNFF = Math.LogicalAnd(_StripBits(a), STRIP_RESEAT_NFF) != 0
+    If forceNFF
+        ; Written again from the native record: NFFRecruit reads, and consumes, the StorageUtil key.
+        StorageUtil.SetIntValue(a, "SeverActions_NFFReseatForce", 1)
+    EndIf
+    If a != Game.GetPlayer() && !a.IsDead()
+        ; Without Followers the service answers False; ReseatExternal (B17) picks NFF when forced, else
+        ; Serana / custom-AI / vanilla.
+        If SeverActions_ModuleBase.CallBool("followers", "rerecruit", a)
+            Debug.Trace("[SeverBrawl] ProcessPendingRerecruit: re-recruited track-only " + a.GetDisplayName())
+        Else
+            Bool reseated = SeverActions_FollowerFrameworkLib.ReseatExternal(a, forceNFF)
+            Debug.Trace("[SeverBrawl] ProcessPendingRerecruit: no FollowerManager - ReseatExternal(" + a.GetDisplayName() + ", wasNFF=" + forceNFF + ") -> " + reseated)
         EndIf
-        i += 1
+    EndIf
+    ; The queue owner clears the force flag: RegisterFollower can return before NFFRecruit reads it,
+    ; and skipped actors never reach it, so a leftover would force NFF on a later unrelated recruit.
+    StorageUtil.UnsetIntValue(a, "SeverActions_NFFReseatForce")
+    SeverActionsNativeExt2.Brawl_StripUnmark(a, STRIP_RERECRUIT + STRIP_RESEAT_NFF)
+EndFunction
+
+Function RestoreStrippedTeammatesAfterReload()
+    {A save made mid-fight keeps the stripped teammate flag: puts back what the strip record lists, the native one
+     first and then any SeverBrawl_StrippedTeammates entry it lacks, then drains the re-seat queue at once.}
+    Actor[] listed
+    Int nListed = 0
+    If Math.LogicalAnd(SeverActionsNativeExt2.Brawl_StripBits(None), STRIP_RESTORE_BITS) != 0
+        listed = SeverActionsNativeExt2.Brawl_StripActors(STRIP_RESTORE_BITS)
+        nListed = listed.Length
+    EndIf
+    Int n = StorageUtil.FormListCount(self, "SeverBrawl_StrippedTeammates")
+    If nListed <= 0 && n <= 0
+        Return
+    EndIf
+    Debug.Trace("[SeverBrawl] RestoreStrippedTeammatesAfterReload: recovering " + nListed + " native and " + n + " StorageUtil stripped teammate marker(s)")
+    Int k = 0
+    While k < nListed
+        _RestoreAfterReload(listed[k])
+        k += 1
+    EndWhile
+    ; Counted again and walked backwards: each restore takes its actor off the list.
+    Int i = StorageUtil.FormListCount(self, "SeverBrawl_StrippedTeammates")
+    While i > 0
+        i -= 1
+        Actor a = StorageUtil.FormListGet(self, "SeverBrawl_StrippedTeammates", i) as Actor
+        If a && (nListed <= 0 || listed.Find(a) < 0)
+            _RestoreAfterReload(a)
+        EndIf
     EndWhile
     StorageUtil.FormListClear(self, "SeverBrawl_StrippedTeammates")
     ; Drain now: the delay is for a live brawl to finish, and brawls do not survive a load.
     ProcessPendingRerecruit()
+EndFunction
+
+Function _RestoreAfterReload(Actor a)
+    {RestoreStrippedTeammatesAfterReload for one listed actor. The flag goes back on every listed actor: an NFF
+     follower's can read false at the strip (SA travel and muster clear it).}
+    If !a
+        Return
+    EndIf
+    Int bits = _StripBits(a)
+    If a == Game.GetPlayer() || a.IsDead()
+        _ClearStrip(a)
+        _ReseatVanillaAfterDuel(a)   ; clears the seat's record; re-seats nobody dead
+        Return
+    EndIf
+    a.SetPlayerTeammate(true, false)
+    ; The spar-faction membership and its marker both persist in the save.
+    If Math.LogicalAnd(bits, STRIP_SPAR_FACTION) != 0
+        _LeaveSparFaction(a)
+    EndIf
+    Bool wasNFF = Math.LogicalAnd(bits, STRIP_WAS_NFF) != 0
+    _ClearStrip(a)
+    ; Same re-seat queue and NFF force flag as RestoreTeammateAfterBrawl.
+    If wasNFF || SeverActionsNativeExt2.Native_IsTrackOnlyFollower(a)
+        _QueueRerecruit(a, wasNFF)
+        Debug.Trace("[SeverBrawl] RestoreStrippedTeammatesAfterReload: queued track-only re-recruit for " + a.GetDisplayName() + " (wasNFF=" + wasNFF + ")")
+    EndIf
+    _ReseatVanillaAfterDuel(a)
 EndFunction
 
 ; ---- Duels (another mod's sanctioned fights, DuelManager) ----
@@ -827,7 +948,7 @@ Event OnDuelPrepare(String eventName, String strArg, Float numArg, Form sender)
     _ReleaseVanillaSeatForDuel(a)
     _ReleaseVanillaSeatForDuel(b)
     ; NFF's dismissal tears its seat down asynchronously and swallows combat started too early, as in a brawl.
-    If StorageUtil.GetIntValue(a, "SeverBrawl_WasNFF", 0) == 1 || StorageUtil.GetIntValue(b, "SeverBrawl_WasNFF", 0) == 1
+    If _StripHas(a, STRIP_WAS_NFF) || _StripHas(b, STRIP_WAS_NFF)
         Utility.Wait(2.0)
     EndIf
     If !_PrepareStillLive(a, b, handle)
@@ -901,13 +1022,14 @@ Function _RestoreDuelFighter(Actor akActor)
     RestoreTeammateAfterBrawl(akActor)
     _ReseatVanillaAfterDuel(akActor)
     ; A vanilla seat with no teammate flag to restore was listed only for the reload pass.
+    SeverActionsNativeExt2.Brawl_StripUnmark(akActor, STRIP_LISTED)
     StorageUtil.FormListRemove(self, "SeverBrawl_StrippedTeammates", akActor, True)
 EndFunction
 
 Function _ArmRerecruit()
     {Arms the re-recruit tick when RestoreTeammateAfterBrawl queued framework re-seats: they wait TrackOnlyRerecruitDelay
      for the framework to settle, as after a brawl.}
-    If StorageUtil.FormListCount(self, "SeverBrawl_PendingRerecruit") > 0
+    If _HasPendingRerecruit()
         ChronoArm(TrackOnlyRerecruitDelay)
     EndIf
 EndFunction
@@ -920,6 +1042,7 @@ Function _ReleaseVanillaSeatForDuel(Actor akActor)
         Return
     EndIf
     If SeverActions_FollowerFrameworkLib.ReleaseVanillaSeat(akActor)
+        SeverActionsNativeExt2.Brawl_StripMark(akActor, STRIP_LISTED + STRIP_VANILLA_SEAT)
         StorageUtil.SetIntValue(akActor, "SeverDuel_WasVanillaSeat", 1)
         StorageUtil.FormListAdd(self, "SeverBrawl_StrippedTeammates", akActor, False)
     EndIf
@@ -927,9 +1050,14 @@ EndFunction
 
 Function _ReseatVanillaAfterDuel(Actor akActor)
     {Puts a follower _ReleaseVanillaSeatForDuel took out back in the vanilla alias, unless someone else holds it.}
-    If !akActor || StorageUtil.GetIntValue(akActor, "SeverDuel_WasVanillaSeat", 0) != 1
+    If !akActor
         Return
     EndIf
+    Bool wasSeated = Math.LogicalAnd(SeverActionsNativeExt2.Brawl_StripBits(akActor), STRIP_VANILLA_SEAT) != 0 || StorageUtil.GetIntValue(akActor, "SeverDuel_WasVanillaSeat", 0) == 1
+    If !wasSeated
+        Return
+    EndIf
+    SeverActionsNativeExt2.Brawl_StripUnmark(akActor, STRIP_VANILLA_SEAT)
     StorageUtil.UnsetIntValue(akActor, "SeverDuel_WasVanillaSeat")
     If akActor.IsDead()
         Return
@@ -1006,7 +1134,7 @@ Event OnBrawlEnded(String eventName, String strArg, Float numArg, Form sender)
     EndIf
 
     ; Re-recruits queued above wait for the external framework to settle.
-    If StorageUtil.FormListCount(self, "SeverBrawl_PendingRerecruit") > 0
+    If _HasPendingRerecruit()
         ChronoArm(TrackOnlyRerecruitDelay)
     EndIf
 

@@ -780,6 +780,7 @@ Function TickCommissions()
         ElseIf kind == 2
             SkyrimNetApi.RegisterPersistentEvent(content, crafter, customer)
         Else
+            ; SN-EVENT: none (no regular commission event is queued)
             SkyrimNetApi.RegisterEvent(eventName, content, crafter, customer)
         EndIf
 

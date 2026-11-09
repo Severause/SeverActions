@@ -459,6 +459,12 @@ String Property KEY_MORALITY = "SeverFollower_Morality" AutoReadOnly
 String Property KEY_ORIG_AGGRESSION = "SeverFollower_OrigAggression" AutoReadOnly
 String Property KEY_ORIG_CONFIDENCE = "SeverFollower_OrigConfidence" AutoReadOnly
 String Property KEY_ORIG_RELRANK = "SeverFollower_OrigRelRank" AutoReadOnly
+; The recruit undo record's fields (SeverActionsNativeExt2.Follower_*Undo; THE RECRUIT UNDO RECORD).
+Int Property UNDO_ORIG_AGGRESSION = 0 AutoReadOnly
+Int Property UNDO_ORIG_CONFIDENCE = 1 AutoReadOnly
+Int Property UNDO_ORIG_RELRANK = 2 AutoReadOnly
+Int Property UNDO_RANK_BEFORE_TURN = 3 AutoReadOnly
+Int Property UNDO_HANDS_OFF = 4 AutoReadOnly
 
 ; Cooldown tracking for AdjustRelationship (real-time seconds via Utility.GetCurrentRealTime)
 String Property KEY_LAST_REL_ADJUST = "SeverFollower_LastRelAdjust" AutoReadOnly
@@ -603,6 +609,20 @@ Event OnInit()
     Maintenance()
 EndEvent
 
+Bool Function _MigrationDue(String asName, Int aiVersion, String asSentinelKey)
+    {A one-shot's gate (rule 15): true once per save, when neither the 'MIGR' ledger nor the old
+     StorageUtil sentinel (adopted as a done signal) says it ran and this session claimed it.
+     Do the work, then _MigrationDone.}
+    Bool sentinel = StorageUtil.GetIntValue(None, asSentinelKey, 0) >= aiVersion
+    Return !SeverActionsNativeExt2.Migration_AdoptSentinel(asName, aiVersion, sentinel) && SeverActionsNativeExt2.Migration_TryClaim(asName, aiVersion)
+EndFunction
+
+Function _MigrationDone(String asName, Int aiVersion, String asSentinelKey)
+    {Records a one-shot _MigrationDue let through: the sentinel (an older pex reads it) and the ledger.}
+    StorageUtil.SetIntValue(None, asSentinelKey, aiVersion)
+    SeverActionsNativeExt2.Migration_MarkDone(asName, aiVersion)
+EndFunction
+
 Function Maintenance()
     {Called on init and game load to set up the update loop}
     LastTickTime = GetGameTimeInSeconds()
@@ -616,11 +636,11 @@ Function Maintenance()
 
     ; One-shot: move saves still on the old MaxFollowers default (20) to 100; a
     ; different custom value is kept.
-    If StorageUtil.GetIntValue(None, "SeverActions_MaxFollowersMigDone", 0) < 1
+    If _MigrationDue("MaxFollowersDefault100", 1, "SeverActions_MaxFollowersMigDone")
         If MaxFollowers == 20
             MaxFollowers = 100
         EndIf
-        StorageUtil.SetIntValue(None, "SeverActions_MaxFollowersMigDone", 1)
+        _MigrationDone("MaxFollowersDefault100", 1, "SeverActions_MaxFollowersMigDone")
     EndIf
 
     If !PendingDismissQueue
@@ -690,9 +710,9 @@ Function Maintenance()
     ; auto density applies until the user moves a slider (the twin of the
     ; frontend's prismaui-scale-mig-135 one-shot; without it a stored explicit
     ; value would re-mark the user explicit).
-    If StorageUtil.GetIntValue(None, "SeverActions_UIScale135Mig", 0) < 1
+    If _MigrationDue("UIScaleUnset135", 1, "SeverActions_UIScale135Mig")
         SeverActionsNativeExt2.Settings_Set("uiScale", "1.0")
-        StorageUtil.SetIntValue(None, "SeverActions_UIScale135Mig", 1)
+        _MigrationDone("UIScaleUnset135", 1, "SeverActions_UIScale135Mig")
     EndIf
 
     SyncUIScaleToStorageUtil()
@@ -721,7 +741,7 @@ Function Maintenance()
     RegisterForModEvent("SeverActions_VanillaFollowTopic", "OnVanillaFollowTopic")
 
     ; Re-apply home sandbox overrides for track-only followers on cell load
-    ; (a cell transition can drop a PO3 override from the active stack)
+    ; (a cell transition can drop an ActorUtil override from the active stack)
     RegisterForModEvent("SeverActions_CellLoaded", "OnCellLoadedReapplyHome")
 
     ; HomeSandboxVerifier found a dismissed homed NPC on no package or an engine
@@ -847,8 +867,7 @@ Function RunDeferredMaintenance()
 
     ; NFF present: default to Tracking mode once (the supported way to coexist).
     ; One-shot, so a player who switches back to SeverActions mode keeps it.
-    If SeverActionsNativeExt2.Native_IsNFFInstalled() && StorageUtil.GetIntValue(None, "SeverActions_NFFModeDefaulted", 0) < 1
-        StorageUtil.SetIntValue(None, "SeverActions_NFFModeDefaulted", 1)
+    If SeverActionsNativeExt2.Native_IsNFFInstalled() && _MigrationDue("NFFTrackingDefault", 1, "SeverActions_NFFModeDefaulted")
         If SeverActionsNativeExt2.Settings_GetInt("frameworkMode") != 1
             SeverActionsNativeExt2.Settings_Set("frameworkMode", "1")
             ; Settings_Set writes this save's Authority row only, not the global
@@ -858,6 +877,7 @@ Function RunDeferredMaintenance()
             Debug.Notification(SeverActionsNativeExt2.Native_L10n("followermanager.nethersFollowerFrameworkDetected"))
             Debug.Trace("[SeverActions_FollowerManager] NFF detected - FrameworkMode defaulted to Tracking (1)")
         EndIf
+        _MigrationDone("NFFTrackingDefault", 1, "SeverActions_NFFModeDefaulted")
     EndIf
 
     ; GetAllFollowers() is a full cell scan; do it once and pass the array down.
@@ -894,9 +914,9 @@ Function RunDeferredMaintenance()
 
     ; One-shot: import the legacy StorageUtil pair relationships into the native
     ; pair store (current saves write the cosave directly).
-    If StorageUtil.GetIntValue(None, "SeverActions_PairSyncMigDone", 0) < 1
+    If _MigrationDue("PairRelationshipsToNative", 1, "SeverActions_PairSyncMigDone")
         SyncAllPairRelationshipsOnLoad(cachedFollowers)
-        StorageUtil.SetIntValue(None, "SeverActions_PairSyncMigDone", 1)
+        _MigrationDone("PairRelationshipsToNative", 1, "SeverActions_PairSyncMigDone")
 
         ; The kPostLoadGame hydrator built companionOpinions from the empty pair
         ; store; rebuild it from the imported pairs.
@@ -905,21 +925,21 @@ Function RunDeferredMaintenance()
 
     ; T1-B one-shot: copy the legacy per-follower scalars and dedup watermarks
     ; from StorageUtil into native FollowerData.
-    If StorageUtil.GetIntValue(None, "SeverActions_T1BMigrationDone", 0) == 0
+    If _MigrationDue("FollowerScalarsToNative", 1, "SeverActions_T1BMigrationDone")
         SyncFollowerScalarsOnLoad(cachedFollowers)
-        StorageUtil.SetIntValue(None, "SeverActions_T1BMigrationDone", 1)
+        _MigrationDone("FollowerScalarsToNative", 1, "SeverActions_T1BMigrationDone")
     EndIf
 
     ; One-shot: add BardAudienceExcludedFaction to the existing roster so they do
     ; not drop their follow package to watch a bard (onboarding adds it, dismiss
     ; clears it). A faction add, so safe on track-only followers.
-    If StorageUtil.GetIntValue(None, "SeverActions_BardExcludeMigDone", 0) < 1
+    If _MigrationDue("BardAudienceExclude", 1, "SeverActions_BardExcludeMigDone")
         Int bardIdx = 0
         While bardIdx < cachedFollowers.Length
             AddBardAudienceExclusion(cachedFollowers[bardIdx])
             bardIdx += 1
         EndWhile
-        StorageUtil.SetIntValue(None, "SeverActions_BardExcludeMigDone", 1)
+        _MigrationDone("BardAudienceExclude", 1, "SeverActions_BardExcludeMigDone")
     EndIf
 
     ; Essential comes from the quest's alias slots (works live on templated NPCs).
@@ -929,22 +949,24 @@ Function RunDeferredMaintenance()
 
     ; T1-A.2 one-shot: CompanionOpinions + LifeEventHistory from StorageUtil into
     ; native FollowerData (for LifeEventHistory the only way across).
-    If StorageUtil.GetIntValue(None, "SeverActions_T1A2MigrationDone", 0) == 0
+    If _MigrationDue("FollowerBlobsToNative", 1, "SeverActions_T1A2MigrationDone")
         SyncFollowerStringBlobsOnLoad(cachedFollowers)
-        StorageUtil.SetIntValue(None, "SeverActions_T1A2MigrationDone", 1)
+        _MigrationDone("FollowerBlobsToNative", 1, "SeverActions_T1A2MigrationDone")
     EndIf
 
+    _CopyRecruitUndoToNative(cachedFollowers)
+
     ; T1-A.3 one-shot: the LifeSummary / WorkLocation / PlayLocation labels.
-    If StorageUtil.GetIntValue(None, "SeverActions_T1A3MigrationDone", 0) == 0
+    If _MigrationDue("FollowerLabelsToNative", 1, "SeverActions_T1A3MigrationDone")
         SyncFollowerStringLabelsOnLoad(cachedFollowers)
-        StorageUtil.SetIntValue(None, "SeverActions_T1A3MigrationDone", 1)
+        _MigrationDone("FollowerLabelsToNative", 1, "SeverActions_T1A3MigrationDone")
     EndIf
 
     ; One-shot: borrow-a-home-slot workers onto the Route B pool, once its records
     ; resolve.
-    If GetWorkAnchorKeyword() && StorageUtil.GetIntValue(None, KEY_WORKPOOL_MIG, 0) < 1
+    If GetWorkAnchorKeyword() && _MigrationDue("WorkPoolRouteB", 1, KEY_WORKPOOL_MIG)
         MigrateWorkPoolOnLoad()
-        StorageUtil.SetIntValue(None, KEY_WORKPOOL_MIG, 1)
+        _MigrationDone("WorkPoolRouteB", 1, KEY_WORKPOOL_MIG)
     EndIf
 
     Float tm6 = SeverActionsNativeExt2.Kernel_RealTime()
@@ -982,8 +1004,8 @@ Function RunDeferredMaintenance()
     EndIf
     Float tm9 = SeverActionsNativeExt2.Kernel_RealTime()
 
-    ; PO3's override survives in its cosave, but a cell transition or 3D unload
-    ; can drop it from the active stack and PO3's re-apply timing is not
+    ; An ActorUtil override survives in PapyrusUtil's cosave, but a cell transition or 3D unload
+    ; can drop it from the active stack and PapyrusUtil's re-apply timing is not
     ; guaranteed, so re-apply the home sandboxes on every load.
     ReapplyHomeSandboxing()
 
@@ -1019,12 +1041,12 @@ Function RunDeferredMaintenance()
     ; from today's Tracking, so only 2 is folded: never map 1 -> 0, which
     ; silently reverted a Tracking choice on load. Sentinel 2 re-runs the
     ; corrected pass once for saves that took the old one.
-    If StorageUtil.GetIntValue(None, "SeverActions_FrameworkModeMigrated", 0) < 2
+    If _MigrationDue("FrameworkModeFold", 2, "SeverActions_FrameworkModeMigrated")
         If SeverActionsNativeExt2.Settings_GetInt("frameworkMode") >= 2
             SeverActionsNativeExt2.Settings_Set("frameworkMode", "1")  ; old "Tracking Only" -> new "Tracking"
             Debug.Trace("[SeverActions_FollowerManager] Migrated FrameworkMode 2 -> 1 (Tracking)")
         EndIf
-        StorageUtil.SetIntValue(None, "SeverActions_FrameworkModeMigrated", 2)
+        _MigrationDone("FrameworkModeFold", 2, "SeverActions_FrameworkModeMigrated")
     EndIf
 
     Float tmEnd = SeverActionsNativeExt2.Kernel_RealTime()
@@ -1631,7 +1653,7 @@ Event OnCellLoadedReapplyHome(string eventName, string strArg, float numArg, For
         If akActor && akActor.Is3DLoaded() && !IsRegisteredFollower(akActor) && !_OnJourney(akActor)
             Int slot = SeverActionsNative.Native_GetHomeMarkerSlot(akActor)
             If slot >= 0 && slot < HomeSlots.Length
-                ; Only track-only NPCs need the PO3 override back (the rest ride the home
+                ; Only track-only NPCs need the ActorUtil override back (the rest ride the home
                 ; alias package), but everyone gets the re-evaluate: the engine does not
                 ; guarantee an AI tick on 3D load.
                 If SeverActionsNativeExt2.Native_IsTrackOnlyFollower(akActor)
@@ -2024,10 +2046,10 @@ Function ReconcileTrackOnlyOwnership()
         EndIf
         ; A follower onboarded before the record existed: SA led them if it holds
         ; their follow flag or seat and no framework owns them (see WasSALedRecruit).
-        If a && !StorageUtil.HasIntValue(a, "SeverActions_HandsOffAtRecruit")
+        If a && !_HasRecruitUndo(a, UNDO_HANDS_OFF)
             Bool followPkg = SeverActionsNative.Native_GetHasFollowPkg(a)
             Bool saLed = !SeverActionsNativeExt2.Native_IsTrackOnlyFollower(a) && (followPkg || aliasHeld)
-            StorageUtil.SetIntValue(a, "SeverActions_HandsOffAtRecruit", (!saLed) as Int)
+            _SetRecruitUndo(a, UNDO_HANDS_OFF, (!saLed) as Int)
         EndIf
         ; The mismatch is SA's flag or seat, never a leftover follow LinkedRef: the
         ; release's StopSandbox zeroes WaitingForPlayer, ending a wait the owning
@@ -2186,15 +2208,118 @@ Function _ReleaseSAWait(Actor akActor)
     SeverActionsNative.UnregisterSandboxUser(akActor)
 EndFunction
 
+; === THE RECRUIT UNDO RECORD ===
+; What a recruit or a turn on the player changed, in FollowerData (FLWD v23) and in the old StorageUtil key (an older
+; pex reads it); read from FollowerData first, so a value StorageUtil dropped is still put back. ClearData keeps it.
+
+Function _SetRecruitUndo(Actor akActor, Int aiField, Float afValue)
+    SeverActionsNativeExt2.Follower_SetUndo(akActor, aiField, afValue)
+    If aiField == UNDO_ORIG_AGGRESSION
+        StorageUtil.SetFloatValue(akActor, KEY_ORIG_AGGRESSION, afValue)
+    ElseIf aiField == UNDO_ORIG_CONFIDENCE
+        StorageUtil.SetFloatValue(akActor, KEY_ORIG_CONFIDENCE, afValue)
+    ElseIf aiField == UNDO_ORIG_RELRANK
+        StorageUtil.SetIntValue(akActor, KEY_ORIG_RELRANK, afValue as Int)
+    ElseIf aiField == UNDO_RANK_BEFORE_TURN
+        StorageUtil.SetIntValue(akActor, KEY_RANK_BEFORE_TURN, afValue as Int)
+    Else
+        StorageUtil.SetIntValue(akActor, "SeverActions_HandsOffAtRecruit", afValue as Int)
+    EndIf
+EndFunction
+
+Bool Function _HasRecruitUndo(Actor akActor, Int aiField)
+    If SeverActionsNativeExt2.Follower_HasUndo(akActor, aiField)
+        Return true
+    ElseIf aiField == UNDO_ORIG_AGGRESSION
+        Return StorageUtil.HasFloatValue(akActor, KEY_ORIG_AGGRESSION)
+    ElseIf aiField == UNDO_ORIG_CONFIDENCE
+        Return StorageUtil.HasFloatValue(akActor, KEY_ORIG_CONFIDENCE)
+    ElseIf aiField == UNDO_ORIG_RELRANK
+        Return StorageUtil.HasIntValue(akActor, KEY_ORIG_RELRANK)
+    ElseIf aiField == UNDO_RANK_BEFORE_TURN
+        Return StorageUtil.HasIntValue(akActor, KEY_RANK_BEFORE_TURN)
+    EndIf
+    Return StorageUtil.HasIntValue(akActor, "SeverActions_HandsOffAtRecruit")
+EndFunction
+
+Float Function _GetRecruitUndo(Actor akActor, Int aiField, Float afMissing)
+    {The recorded value, or afMissing when neither FollowerData nor the old key has one.}
+    If SeverActionsNativeExt2.Follower_HasUndo(akActor, aiField)
+        Return SeverActionsNativeExt2.Follower_GetUndo(akActor, aiField)
+    ElseIf !_HasRecruitUndo(akActor, aiField)
+        Return afMissing
+    ElseIf aiField == UNDO_ORIG_AGGRESSION
+        Return StorageUtil.GetFloatValue(akActor, KEY_ORIG_AGGRESSION, afMissing)
+    ElseIf aiField == UNDO_ORIG_CONFIDENCE
+        Return StorageUtil.GetFloatValue(akActor, KEY_ORIG_CONFIDENCE, afMissing)
+    ElseIf aiField == UNDO_ORIG_RELRANK
+        Return StorageUtil.GetIntValue(akActor, KEY_ORIG_RELRANK, 0) as Float
+    ElseIf aiField == UNDO_RANK_BEFORE_TURN
+        Return StorageUtil.GetIntValue(akActor, KEY_RANK_BEFORE_TURN, 0) as Float
+    EndIf
+    Return StorageUtil.GetIntValue(akActor, "SeverActions_HandsOffAtRecruit", 0) as Float
+EndFunction
+
+Function _ClearRecruitUndo(Actor akActor, Int aiField)
+    SeverActionsNativeExt2.Follower_ClearUndo(akActor, aiField)
+    If aiField == UNDO_ORIG_AGGRESSION
+        StorageUtil.UnsetFloatValue(akActor, KEY_ORIG_AGGRESSION)
+    ElseIf aiField == UNDO_ORIG_CONFIDENCE
+        StorageUtil.UnsetFloatValue(akActor, KEY_ORIG_CONFIDENCE)
+    ElseIf aiField == UNDO_ORIG_RELRANK
+        StorageUtil.UnsetIntValue(akActor, KEY_ORIG_RELRANK)
+    ElseIf aiField == UNDO_RANK_BEFORE_TURN
+        StorageUtil.UnsetIntValue(akActor, KEY_RANK_BEFORE_TURN)
+    Else
+        StorageUtil.UnsetIntValue(akActor, "SeverActions_HandsOffAtRecruit")
+    EndIf
+EndFunction
+
+Function _CopyRecruitUndoToNative(Actor[] akRoster)
+    {MIGR RecruitUndoToNative v1: copies the recruit undo keys an older build kept only in StorageUtil into FollowerData,
+     for the roster and the homed former companions. Copy only (an older pex still reads the keys); a field FollowerData
+     already holds is left alone. Anyone else is read from the key on use (_GetRecruitUndo).}
+    If !SeverActionsNativeExt2.Migration_TryClaim("RecruitUndoToNative", 1)
+        Return
+    EndIf
+    Int copied = _CopyRecruitUndoFor(akRoster)
+    copied += _CopyRecruitUndoFor(SeverActionsNative.Native_GetAllTrackedFollowers())
+    SeverActionsNativeExt2.Migration_MarkDone("RecruitUndoToNative", 1)
+    Debug.Trace("[SeverActions_FollowerManager] RecruitUndoToNative: copied " + copied + " value(s)")
+EndFunction
+
+Int Function _CopyRecruitUndoFor(Actor[] akActors)
+    If !akActors
+        Return 0
+    EndIf
+    Int copied = 0
+    Int i = 0
+    While i < akActors.Length
+        Actor a = akActors[i]
+        If a
+            Int f = 0
+            While f <= UNDO_HANDS_OFF
+                If !SeverActionsNativeExt2.Follower_HasUndo(a, f) && _HasRecruitUndo(a, f)
+                    SeverActionsNativeExt2.Follower_SetUndo(a, f, _GetRecruitUndo(a, f, 0.0))
+                    copied += 1
+                EndIf
+                f += 1
+            EndWhile
+        EndIf
+        i += 1
+    EndWhile
+    Return copied
+EndFunction
+
 Bool Function WasHandsOffAtRecruit(Actor akActor)
-    {Dismiss-time test: hands-off now, or at onboarding (SeverActions_HandsOffAtRecruit,
+    {Dismiss-time test: hands-off now, or at onboarding (the recruit undo record's UNDO_HANDS_OFF,
      set at onboarding, cleared at dismiss). The live verdict alone misses an
      NFF-dialogue dismiss: NFF empties its seat first, so the native then says SA's
      and SA's own teardown would run on an NPC NFF just released.}
     If !akActor
         Return false
     EndIf
-    Return IsFollowHandsOff(akActor) || StorageUtil.GetIntValue(akActor, "SeverActions_HandsOffAtRecruit", 0) == 1
+    Return IsFollowHandsOff(akActor) || _GetRecruitUndo(akActor, UNDO_HANDS_OFF, 0.0) == 1.0
 EndFunction
 
 Bool Function WasSALedRecruit(Actor akActor)
@@ -2205,9 +2330,9 @@ Bool Function WasSALedRecruit(Actor akActor)
     If !akActor || SeverActionsNativeExt2.Native_IsTrackOnlyFollower(akActor)
         Return false
     EndIf
-    Int recorded = StorageUtil.GetIntValue(akActor, "SeverActions_HandsOffAtRecruit", -1)
+    Int recorded = _GetRecruitUndo(akActor, UNDO_HANDS_OFF, -1.0) as Int
     If recorded == -1
-        Return StorageUtil.HasFloatValue(akActor, KEY_ORIG_AGGRESSION)
+        Return _HasRecruitUndo(akActor, UNDO_ORIG_AGGRESSION)
     EndIf
     Return recorded == 0
 EndFunction
@@ -2939,9 +3064,9 @@ Function PurgeFollower(Actor akActor)
     StorageUtil.UnsetStringValue(akActor, KEY_COMBAT_STYLE)
     StorageUtil.UnsetFloatValue(akActor, KEY_LAST_INTERACTION)
     StorageUtil.UnsetIntValue(akActor, KEY_MORALITY)
-    StorageUtil.UnsetFloatValue(akActor, KEY_ORIG_AGGRESSION)
-    StorageUtil.UnsetFloatValue(akActor, KEY_ORIG_CONFIDENCE)
-    StorageUtil.UnsetIntValue(akActor, KEY_ORIG_RELRANK)
+    _ClearRecruitUndo(akActor, UNDO_ORIG_AGGRESSION)
+    _ClearRecruitUndo(akActor, UNDO_ORIG_CONFIDENCE)
+    _ClearRecruitUndo(akActor, UNDO_ORIG_RELRANK)
     StorageUtil.UnsetFormValue(akActor, "SeverFollower_OrigCombatStyleForm")
     StorageUtil.UnsetFloatValue(akActor, KEY_LAST_REL_ADJUST)
     StorageUtil.UnsetFloatValue(akActor, KEY_LAST_ASSESS_GT)
@@ -3074,7 +3199,7 @@ Function SoftResetFollower(Actor akActor)
     ; recruits, and its trade topic needs both. Mode alone does not count: a follower SA recruited
     ; itself has SA's flags, which the reset must clear.
     Bool frameworkLed = SeverActionsNativeExt2.Native_IsTrackOnlyFollower(akActor) \
-        || StorageUtil.GetIntValue(akActor, "SeverActions_HandsOffAtRecruit", 0) == 1
+        || _GetRecruitUndo(akActor, UNDO_HANDS_OFF, 0.0) == 1.0
     If !frameworkLed
         Faction currentFollowerFaction = Game.GetFormFromFile(0x0005C84E, "Skyrim.esm") as Faction
         If currentFollowerFaction
@@ -3312,7 +3437,7 @@ Function _OnboardTrackingMode(Actor akActor, Bool isFirstRecruit)
     EndIf
     _ReleaseSAWait(akActor)
     _ReleaseCasualFollow(akActor)
-    StorageUtil.SetIntValue(akActor, "SeverActions_HandsOffAtRecruit", 1)
+    _SetRecruitUndo(akActor, UNDO_HANDS_OFF, 1.0)
     Float now = GetGameTimeInSeconds()
     Bool wasRegistered = IsRegisteredFollower(akActor)
     SeverActionsNative.Native_SetIsFollower(akActor, true)
@@ -3598,10 +3723,10 @@ Function RegisterFollower(Actor akActor)
 
         ; Snapshot the original AI values for dismiss, only if none exists: a
         ; repeat RegisterFollower (hotkey/wheel) would snapshot boosted values.
-        If !StorageUtil.HasFloatValue(akActor, KEY_ORIG_AGGRESSION)
-            StorageUtil.SetFloatValue(akActor, KEY_ORIG_AGGRESSION, akActor.GetAV("Aggression"))
-            StorageUtil.SetFloatValue(akActor, KEY_ORIG_CONFIDENCE, akActor.GetAV("Confidence"))
-            StorageUtil.SetIntValue(akActor, KEY_ORIG_RELRANK, akActor.GetRelationshipRank(Game.GetPlayer()))
+        If !_HasRecruitUndo(akActor, UNDO_ORIG_AGGRESSION)
+            _SetRecruitUndo(akActor, UNDO_ORIG_AGGRESSION, akActor.GetAV("Aggression"))
+            _SetRecruitUndo(akActor, UNDO_ORIG_CONFIDENCE, akActor.GetAV("Confidence"))
+            _SetRecruitUndo(akActor, UNDO_ORIG_RELRANK, akActor.GetRelationshipRank(Game.GetPlayer()))
         EndIf
 
         ; Raise the AVs so passive NPCs fight (actor values only, not the
@@ -3704,9 +3829,9 @@ Function RegisterFollower(Actor akActor)
     ; re-register of a follower SA led records 0: the Tracking branch strips none of the
     ; flags SA set, so the dismiss must still undo them.
     If wasRegistered && WasSALedRecruit(akActor)
-        StorageUtil.SetIntValue(akActor, "SeverActions_HandsOffAtRecruit", 0)
+        _SetRecruitUndo(akActor, UNDO_HANDS_OFF, 0.0)
     Else
-        StorageUtil.SetIntValue(akActor, "SeverActions_HandsOffAtRecruit", isTrackOnly as Int)
+        _SetRecruitUndo(akActor, UNDO_HANDS_OFF, isTrackOnly as Int)
     EndIf
 
     If isFirstRecruit
@@ -3782,6 +3907,7 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true, Bool abDelibera
     ; and TeammateMonitor would re-onboard them. The WasFollower unset is a belt.
     ; The event frees a Hearth camp claim, as follow/wait do.
     SeverActions_ModuleBase.CallBool("travelcore", "cancelJourney", akActor, None, "", 0.0)
+    SeverActionsNativeExt2.Travel_JourneyUnset(akActor, "wasFollower")
     StorageUtil.UnsetIntValue(akActor, "SeverTravel_WasFollower")
     Int dismissEvt = ModEvent.Create("SeverActions_FollowerCalledByPlayer")
     If dismissEvt
@@ -3864,7 +3990,7 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true, Bool abDelibera
     ; touching them can re-activate its follow packages or break its dismiss flow.
     ElseIf WasHandsOffAtRecruit(akActor) && !saOwnRecruit
         DebugMsg("Tracking mode dismiss (bookkeeping only): " + akActor.GetDisplayName())
-        StorageUtil.UnsetIntValue(akActor, "SeverActions_HandsOffAtRecruit")
+        _ClearRecruitUndo(akActor, UNDO_HANDS_OFF)
         ; RegisterFollower set this plain actor flag in every mode; undo it.
         akActor.IgnoreFriendlyHits(False)
         ; SA's own follow LinkedRef, left on a follower SA led before they turned
@@ -3944,7 +4070,7 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true, Bool abDelibera
         ; recruiting was a friendly act): max(stored original, current), with a
         ; missing stored value defaulting to the current rank.
         Int currentRelRank = akActor.GetRelationshipRank(Game.GetPlayer())
-        Int origRelRank = StorageUtil.GetIntValue(akActor, KEY_ORIG_RELRANK, currentRelRank)
+        Int origRelRank = _GetRecruitUndo(akActor, UNDO_ORIG_RELRANK, currentRelRank) as Int
         Int finalRelRank = origRelRank
         If currentRelRank > finalRelRank
             finalRelRank = currentRelRank
@@ -3952,8 +4078,8 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true, Bool abDelibera
         If finalRelRank != currentRelRank
             akActor.SetRelationshipRank(Game.GetPlayer(), finalRelRank)
         EndIf
-        Float origAggression = StorageUtil.GetFloatValue(akActor, KEY_ORIG_AGGRESSION, -1.0)
-        Float origConfidence = StorageUtil.GetFloatValue(akActor, KEY_ORIG_CONFIDENCE, -1.0)
+        Float origAggression = _GetRecruitUndo(akActor, UNDO_ORIG_AGGRESSION, -1.0)
+        Float origConfidence = _GetRecruitUndo(akActor, UNDO_ORIG_CONFIDENCE, -1.0)
         If origAggression >= 0.0
             akActor.SetAV("Aggression", origAggression)
         EndIf
@@ -4015,7 +4141,7 @@ Function UnregisterFollower(Actor akActor, Bool sendHome = true, Bool abDelibera
 
     DebugMsg("Unregistered follower: " + akActor.GetDisplayName())
 
-    StorageUtil.UnsetIntValue(akActor, "SeverActions_HandsOffAtRecruit")
+    _ClearRecruitUndo(akActor, UNDO_HANDS_OFF)
 EndFunction
 
 Bool Function IsRegisteredFollower(Actor akActor)
@@ -4248,7 +4374,7 @@ Function SyncAllPairRelationshipsOnLoad(Actor[] followers)
 EndFunction
 
 Function SyncFollowerScalarsOnLoad(Actor[] followers)
-    {One-shot migration (sentinel SeverActions_T1BMigrationDone): copies the legacy
+    {One-shot migration (ledger FollowerScalarsToNative v1): copies the legacy
      StorageUtil scalars and assess watermarks into FollowerData. A field the
      native store already holds off-default is left alone.}
     Int i = 0
@@ -4321,7 +4447,7 @@ Function SyncFollowerScalarsOnLoad(Actor[] followers)
 EndFunction
 
 Function SyncFollowerStringBlobsOnLoad(Actor[] followers)
-    {One-shot migration (sentinel SeverActions_T1A2MigrationDone): copies the
+    {One-shot migration (ledger FollowerBlobsToNative v1): copies the
      CompanionOpinions and LifeEventHistory blobs into FollowerData where the
      native field is still empty.}
     Int i = 0
@@ -4345,7 +4471,7 @@ Function SyncFollowerStringBlobsOnLoad(Actor[] followers)
 EndFunction
 
 Function SyncFollowerStringLabelsOnLoad(Actor[] followers)
-    {One-shot migration (sentinel SeverActions_T1A3MigrationDone): copies the
+    {One-shot migration (ledger FollowerLabelsToNative v1): copies the
      LifeSummary, WorkLocation and PlayLocation labels into FollowerData where the
      native field is still empty.}
     Int i = 0
@@ -6165,10 +6291,11 @@ EndFunction
 Bool Function FillSchedAlias(Actor akActor, Int aiType, Bool abParkTeammate = false)
     {Seats the NPC in a free schedule alias of aiType; its V2 package applies on ForceRefTo. A missing anchor link is
      re-made first (_EnsureSchedAnchor). Idempotent. Guard mode also takes a guard alias (the priority-110 override
-     when that pool is full). Refuses, noting why, under _SchedHoldBlock, for HOME during a vanilla scene, and when the
-     pool is full. A track-only follower also gets the V2 package as an override: her framework may drive her by
-     overrides, which outrank any quest alias. abParkTeammate: a dismiss's park of a teammate whose framework keeps the
-     flag (the WaitingForPlayer 2 stamp then exempts her from the reconcile's teammate arm).}
+     when that pool is full). Refuses, noting why, under _SchedHoldBlock, for HOME while a scene that needs it released
+     holds her (the scene-suspend flag), and when the pool is full. A track-only follower also gets the V2 package as
+     an override: her framework may drive her by overrides, which outrank any quest alias. abParkTeammate: a dismiss's
+     park of a teammate whose framework keeps the flag (the WaitingForPlayer 2 stamp then exempts her from the
+     reconcile's teammate arm).}
     If !akActor
         Return false
     EndIf
@@ -6192,10 +6319,11 @@ Bool Function FillSchedAlias(Actor akActor, Int aiType, Bool abParkTeammate = fa
         _NoteSchedHold(akActor, why)
         Return false
     EndIf
-    ; HOME never pulls an actor out of a vanilla scene: mark suspended and retry
-    ; later (CheckSceneSuspendedHomes / the tick).
-    If aiType == SCHEDULE_HOME && SeverActionsNative.Native_IsActorInScene(akActor)
-        SeverActionsNativeExt.Native_SetHomeSceneSuspended(akActor, true)
+    ; HOME waits out a scene whose quest seats her in an alias with packages: CheckSceneSuspendedHomes
+    ; sets the flag (Sched_GetSceneSuspendMismatched, SceneHold.h) and restores the hold when it ends; an
+    ; ambient scene sets none. Only while loaded: the restore skips an actor without 3D, and an unloaded
+    ; one is seated as before (the fill clears the flag).
+    If aiType == SCHEDULE_HOME && akActor.Is3DLoaded() && SeverActionsNativeExt.Native_GetHomeSceneSuspended(akActor)
         _NoteSchedHold(akActor, SCHED_HOLD_SCENE)
         Return false
     EndIf
@@ -6477,18 +6605,18 @@ EndFunction
 
 Function SweepGuardAliasesOnLoad()
     {Load-time guard-pool sweep (the SweepSchedAliasesOnLoad pattern). Once
-     (sentinel SeverActions_GuardPoolMigDone): adopt override-era guards. Every
+     (ledger GuardPoolAdopt v1): adopt override-era guards. Every
      load: empty aliases holding deleted/disabled or non-guard actors, resolve
      duplicates to the recorded index, adopt mismatches, drop stale indices.}
     Quest gq = GetGuardQuest()
     If !gq
         Return
     EndIf
-    If StorageUtil.GetIntValue(None, "SeverActions_GuardPoolMigDone", 0) == 0
+    If _MigrationDue("GuardPoolAdopt", 1, "SeverActions_GuardPoolMigDone")
         _AdoptOverrideGuardsFromList(KEY_HOMED_NPCS)
         _AdoptOverrideGuardsFromList(KEY_WORK_ONLY_NPCS)
-        StorageUtil.SetIntValue(None, "SeverActions_GuardPoolMigDone", 1)
-        Debug.Trace("[SeverActions] GuardPool migration pass complete (sentinel set)")
+        _MigrationDone("GuardPoolAdopt", 1, "SeverActions_GuardPoolMigDone")
+        Debug.Trace("[SeverActions] GuardPool migration pass complete")
     EndIf
     ; Pool side: the filled seats only (an empty one needs nothing), from one native read.
     Int[] filled = SeverActionsNativeExt2.Pool_FilledIndices(gq)
@@ -7671,7 +7799,7 @@ Function ApplyHomeSandbox(Actor akActor, ObjectReference homeMarker, Int slot)
         Package homePkg = GetHomeSandboxPackage(slot)
         If homePkg
             ActorUtil.AddPackageOverride(akActor, homePkg, 100, 1)
-            DebugMsg("ApplyHomeSandbox: Added PO3 override (priority 100) for track-only " + akActor.GetDisplayName())
+            DebugMsg("ApplyHomeSandbox: Added ActorUtil override (priority 100) for track-only " + akActor.GetDisplayName())
         EndIf
     EndIf
 
@@ -7786,8 +7914,10 @@ EndFunction
 ; SCENE-AWARE HOME SUSPEND/RESTORE
 ; A vanilla BGSScene can pull an NPC into scripted behavior (Serana in her
 ; mother's lab); a home hold at the same time fights the scene and can break
-; the quest. Each tick the hold is released for a homed NPC inside a scene and
-; restored when it ends. Only BGSScene pulls are caught, not plain quest-alias
+; the quest. Each tick the hold is released for a homed NPC inside a scene whose
+; quest seats her in an alias with packages (SceneHold.h) and restored when it
+; ends; an ambient scene keeps the hold. Saves not yet on the alias pools keep
+; the old any-scene test. Only BGSScene pulls are caught, not plain quest-alias
 ; packages or forced MoveTo overrides.
 ; =============================================================================
 
@@ -7840,8 +7970,9 @@ EndFunction
 
 Function CheckSceneSuspendedHomes(Actor[] followers, Actor[] homed, Bool schedActive)
     {Per-tick scene-aware home suspend/restore: an NPC who entered a vanilla
-     scene has the home hold released and the flag set; a suspended NPC whose
-     scene ended gets the hour's hold back. Idempotent per actor.
+     scene that needs the hold released (its quest's alias packages) has the
+     home hold released and the flag set; a suspended NPC whose scene ended, or
+     turned out ambient, gets the hour's hold back. Idempotent per actor.
      Alias era: Sched_GetSceneSuspendMismatched returns exactly the actors whose
      live scene state disagrees with the cosaved flag (home and 3D gates
      applied natively); followers and homed are unused. Route B: walks
@@ -8689,7 +8820,7 @@ Function ReapplyHomeSandboxing()
                         ; own OnInit can reset (Inigo forces -1 when not a teammate).
                         akActor.SetAV("WaitingForPlayer", 2)
 
-                        ; Track-only: re-apply the PO3 override, which a cell transition
+                        ; Track-only: re-apply the ActorUtil override, which a cell transition
                         ; can drop (see Maintenance's ReapplyHomeSandboxing call).
                         If SeverActionsNativeExt2.Native_IsTrackOnlyFollower(akActor)
                             Package homePkg = GetHomeSandboxPackage(slot)
@@ -8744,8 +8875,8 @@ Function PatchUpVanillaFollowerStatus(Actor[] followers)
             If !IsFollowHandsOff(follower)
                 If follower.GetRelationshipRank(player) < 3
                     ; Remember the original rank once (-99 = not saved yet).
-                    If StorageUtil.GetIntValue(follower, KEY_ORIG_RELRANK, -99) == -99
-                        StorageUtil.SetIntValue(follower, KEY_ORIG_RELRANK, follower.GetRelationshipRank(player))
+                    If !_HasRecruitUndo(follower, UNDO_ORIG_RELRANK)
+                        _SetRecruitUndo(follower, UNDO_ORIG_RELRANK, follower.GetRelationshipRank(player))
                     EndIf
                     follower.SetRelationshipRank(player, 3)
                     DebugMsg("Patched RelationshipRank to Ally for " + follower.GetDisplayName())
@@ -8835,12 +8966,83 @@ Function DismissCompanion(Actor akActor)
 EndFunction
 
 Function CompanionWait(Actor akActor)
-    {Wait and sandbox at the current location (waitforplayerhere.yaml). The YAML's first
-     eligibility rule limits the LLM to the player's own followers, so a quest NPC is
-     never parked under a priority-100 override; the wheel / UI paths are ungated.
-     SIGNATURE IS A YAML CONTRACT (parameterMapping count): batch options go on
+    {CompanionWaitWith with nobody else: the Companions and Actions pages, the hotkey and the
+     wheel (ungated: the player's own choice of who waits) and an older YAML's
+     executionFunctionName. SIGNATURE IS A CONTRACT for those: batch options go on
      _CompanionWaitCore.}
-    _CompanionWaitCore(akActor, false)
+    CompanionWaitWith(akActor, "")
+EndFunction
+
+Function CompanionWaitWith(Actor akActor, String alsoWaiting = "")
+    {Action entry (waitforplayerhere.yaml): the wait for the speaker and for the others the
+     player told to wait in the same line (alsoWaiting, the LLM's comma-separated list, resolved
+     and gated natively), with one notification for a group. The YAML's first eligibility rule
+     keeps the LLM to the player's own followers, so a quest NPC is never parked under a
+     priority-100 override. SIGNATURE IS A YAML CONTRACT.}
+    Actor[] others
+    Int n = 0
+    If alsoWaiting != ""
+        others = _ResolveCompanionGroup(akActor, alsoWaiting, true)
+        n = others.Length
+    EndIf
+    Bool isGroup = n > 0
+    Int waited = 0
+    Actor lastWaited = None
+    Int i = -1
+    While i < n
+        Actor a = akActor
+        If i >= 0
+            a = others[i]
+        EndIf
+        If _CompanionWaitCore(a, isGroup)
+            waited += 1
+            lastWaited = a
+        EndIf
+        i += 1
+    EndWhile
+    If isGroup && waited > 0 && SeverActionsNativeExt2.Settings_GetBool("showNotifications")
+        If waited == 1
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.isWaitingHereFor", ("" + lastWaited.GetDisplayName())))
+        Else
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.companionsAreWaitingHere", ("" + waited)))
+        EndIf
+    EndIf
+EndFunction
+
+Actor[] Function _ResolveCompanionGroup(Actor akSpeaker, String asNames, Bool abWait)
+    {The others asNames names near akSpeaker who may wait (abWait) or follow with them
+     (Follow_ResolveGroup); for a wait, minus anyone SA already parks outside a safe-interior
+     relax, which a wait takes over (the YAML's rule; its flag is StorageUtil's, so it is read
+     here). Never None.}
+    If !akSpeaker || asNames == ""
+        Return PapyrusUtil.ActorArray(0)
+    EndIf
+    Actor[] found = SeverActionsNativeExt2.Follow_ResolveGroup(akSpeaker, asNames, abWait)
+    Int n = 0
+    If found
+        n = found.Length
+    EndIf
+    If n == 0
+        Return PapyrusUtil.ActorArray(0)
+    ElseIf !abWait
+        Return found
+    EndIf
+    ; Both reads are free (StorageUtil, and a tasklet-callable native).
+    Actor[] keep = PapyrusUtil.ActorArray(n)
+    Int kept = 0
+    Int i = 0
+    While i < n
+        Actor a = found[i]
+        If StorageUtil.GetIntValue(a, "SeverActions_InSafeInteriorSandbox", 0) == 1 || !SeverActionsNativeExt.Native_GetSandboxing(a)
+            keep[kept] = a
+            kept += 1
+        Else
+            ; The Actor's own text, not GetDisplayName: that costs a frame even with debug off.
+            DebugMsg("Wait group: " + a + " is already waiting")
+        EndIf
+        i += 1
+    EndWhile
+    Return PapyrusUtil.ResizeActorArray(keep, kept)
 EndFunction
 
 Bool Function _RefuseInCustody(Actor akActor, Bool abQuiet)
@@ -8856,9 +9058,10 @@ Bool Function _RefuseInCustody(Actor akActor, Bool abQuiet)
     Return True
 EndFunction
 
-Function _CompanionWaitCore(Actor akActor, Bool abQuiet)
-    {The wait. abQuiet (Wait All) skips only the per-follower notification; the
-     follow-state event stays per actor (each bio reads its own).
+Bool Function _CompanionWaitCore(Actor akActor, Bool abQuiet)
+    {The wait; False when refused (no actor, in custody), which the group count reads. abQuiet
+     (Wait All, a group order) skips only the per-follower notification; the follow-state event
+     stays per actor (each bio reads its own).
      - NFF-owned: NFF's own wait.
      - Hands-off (another framework, or Tracking mode): no SA package; strip stale SA
        state, then set WaitingForPlayer (Serana: through her own brain; a roster follower
@@ -8868,7 +9071,7 @@ Function _CompanionWaitCore(Actor akActor, Bool abQuiet)
      Stays in Papyrus: Sandbox() writes PapyrusUtil's override store, SkyrimNet's
      package registry and StorageUtil flags, none reachable from C++.}
     If !akActor || _RefuseInCustody(akActor, abQuiet)
-        Return
+        Return False
     EndIf
 
     ; What SA holds on them, read once: each step below runs only for state present (-1, unknown: every step).
@@ -8902,7 +9105,7 @@ Function _CompanionWaitCore(Actor akActor, Bool abQuiet)
             Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.isWaitingHereFor", ("" + akActor.GetDisplayName())))
         EndIf
         RegisterFollowStateEvent(akActor, "companion_waiting",             akActor.GetDisplayName() + " is waiting for " + Game.GetPlayer().GetDisplayName() + " at the current location.")
-        Return
+        Return True
     EndIf
 
     ; Player-directed: Hearth's camp releases the actor instead of walking them
@@ -8981,16 +9184,59 @@ Function _CompanionWaitCore(Actor akActor, Bool abQuiet)
 
     RegisterFollowStateEvent(akActor, "companion_waiting", \
         akActor.GetDisplayName() + " is waiting for " + Game.GetPlayer().GetDisplayName() + " at the current location.")
+    Return True
 EndFunction
 
 Function CompanionFollow(Actor akActor)
-    {Resume following (resumefollowing.yaml). SIGNATURE IS A YAML CONTRACT
-     (parameterMapping count): batch options go on _CompanionFollowCore.}
-    _CompanionFollowCore(akActor, false)
+    {CompanionFollowWith with nobody else: the Companions and Actions pages, the hotkey and
+     the wheel, and an older YAML's executionFunctionName. SIGNATURE IS A CONTRACT for those:
+     batch options go on _CompanionFollowCore.}
+    CompanionFollowWith(akActor, "")
 EndFunction
 
-Function _CompanionFollowCore(Actor akActor, Bool abQuiet)
-    {The resume. abQuiet (Follow All) skips only the per-follower notification.
+Function CompanionFollowWith(Actor akActor, String alsoFollowing = "")
+    {Action entry (resumefollowing.yaml): the resume for the speaker and for the others the
+     player called back in the same line (alsoFollowing, the LLM's comma-separated list, resolved
+     and gated natively), with one notification for those of a group who follow again and the
+     core's own line for anyone who only stops waiting. SIGNATURE IS A YAML CONTRACT.}
+    Actor[] others
+    Int n = 0
+    If alsoFollowing != ""
+        others = _ResolveCompanionGroup(akActor, alsoFollowing, false)
+        n = others.Length
+    EndIf
+    Bool isGroup = n > 0
+    Bool notify = isGroup && SeverActionsNativeExt2.Settings_GetBool("showNotifications")
+    Int followed = 0
+    Actor lastFollowed = None
+    Int i = -1
+    While i < n
+        Actor a = akActor
+        If i >= 0
+            a = others[i]
+        EndIf
+        Int result = _CompanionFollowCore(a, isGroup)
+        If result == 1
+            followed += 1
+            lastFollowed = a
+        ElseIf result == 2 && notify
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.stopsWaiting", ("" + a.GetDisplayName())))
+        EndIf
+        i += 1
+    EndWhile
+    If notify && followed > 0
+        If followed == 1
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.isFollowingYouAgain", ("" + lastFollowed.GetDisplayName())))
+        Else
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.companionsAreFollowingAgain", ("" + followed)))
+        EndIf
+    EndIf
+EndFunction
+
+Int Function _CompanionFollowCore(Actor akActor, Bool abQuiet)
+    {The resume: 0 refused (no actor, in custody), 1 follows again, 2 only stops waiting (an
+     NPC no framework leads in Tracking mode); the group order counts these. abQuiet (Follow
+     All, a group order) skips only the per-follower notification.
      - Hands-off: NFF / Serana resume through their own framework, SA state is
        stripped, WaitingForPlayer cleared. A roster follower who lost her NFF seat in
        Tracking mode is seated with NFF again (_NffLostSeat).
@@ -8998,7 +9244,7 @@ Function _CompanionFollowCore(Actor akActor, Bool abQuiet)
      - Casual followers: StopSandbox + StartFollowing, in Tracking mode too.
      For any other NPC no framework leads in Tracking mode this only ends SA's wait; her schedule takes her back.}
     If !akActor || _RefuseInCustody(akActor, abQuiet)
-        Return
+        Return 0
     EndIf
     ; What SA holds on them, read once: each step below runs only for state present (-1, unknown: every step).
     SeverActions_Follow followSys = GetFollowScript()
@@ -9117,10 +9363,11 @@ Function _CompanionFollowCore(Actor akActor, Bool abQuiet)
     If stopsWaitingOnly
         RegisterFollowStateEvent(akActor, "companion_stopped_waiting", \
             akActor.GetDisplayName() + " stopped waiting for " + Game.GetPlayer().GetDisplayName() + ".")
-    Else
-        RegisterFollowStateEvent(akActor, "companion_resumed_following", \
-            akActor.GetDisplayName() + " stopped waiting and is following " + Game.GetPlayer().GetDisplayName() + " again.")
+        Return 2
     EndIf
+    RegisterFollowStateEvent(akActor, "companion_resumed_following", \
+        akActor.GetDisplayName() + " stopped waiting and is following " + Game.GetPlayer().GetDisplayName() + " again.")
+    Return 1
 EndFunction
 
 Function FollowerLeaves(Actor akActor)
@@ -9166,7 +9413,7 @@ Bool Function LeaveToAttack(Actor akActor, Actor akTarget)
     ; UnregisterFollower keeps the higher of the recruit's rank and the original; a companion
     ; who turned on the player keeps neither. The rank they had is kept for RelationshipStartOver.
     If akTarget == player && akActor.GetRelationshipRank(player) > 0
-        StorageUtil.SetIntValue(akActor, KEY_RANK_BEFORE_TURN, akActor.GetRelationshipRank(player))
+        _SetRecruitUndo(akActor, UNDO_RANK_BEFORE_TURN, akActor.GetRelationshipRank(player))
         akActor.SetRelationshipRank(player, 0)
     EndIf
     Return True
@@ -9183,11 +9430,11 @@ Function RelationshipStartOver(Actor akActor)
     EndIf
     SeverActionsNativeExt2.Assess_SetTime(akActor, 2, GetGameTimeInSeconds())   ; 2 = the bond's Start over
     Actor player = Game.GetPlayer()
-    Int saved = StorageUtil.GetIntValue(akActor, KEY_RANK_BEFORE_TURN, -99)
+    Int saved = _GetRecruitUndo(akActor, UNDO_RANK_BEFORE_TURN, -99.0) as Int
     Int now = akActor.GetRelationshipRank(player)
     Int want = now
     If saved != -99
-        StorageUtil.UnsetIntValue(akActor, KEY_RANK_BEFORE_TURN)
+        _ClearRecruitUndo(akActor, UNDO_RANK_BEFORE_TURN)
         If saved > now
             want = saved
         EndIf

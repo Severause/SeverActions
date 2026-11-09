@@ -1,0 +1,11 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" %}
+{# A follower who just made a trip with the player, by the map, a carriage or a ferry. Only the party holds this line,
+   and it lapses a few game hours after arriving (JourneyAwareness.h). #}
+{% if actorUUID and actorUUID != 0 %}
+{% set journey = sever_recent_journey(actorUUID) %}
+{% if journey != "" %}
+## Recent Travel
+{{ journey }}
+{% endif %}
+{% endif %}
+{% endif %}

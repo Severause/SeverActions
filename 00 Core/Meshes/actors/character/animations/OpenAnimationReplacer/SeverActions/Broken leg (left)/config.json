@@ -23,5 +23,53 @@
                 "value": 1.0
             }
         }
+    ],
+    "replacementAnimDatas": [
+        {
+            "projectName": "DefaultMale",
+            "path": "data\\meshes\\actors\\character\\animations\\OpenAnimationReplacer\\SeverActions\\Broken leg (left)\\male\\_variants_mt_idle",
+            "variantMode": 0,
+            "variantStateScope": 1,
+            "blendBetweenVariants": true,
+            "resetRandomOnLoopOrEcho": true,
+            "sharePlayedHistory": false,
+            "variants": [
+                {
+                    "filename": "calm.hkx",
+                    "weight": 3.0
+                },
+                {
+                    "filename": "rub.hkx",
+                    "weight": 2.0
+                },
+                {
+                    "filename": "twinge.hkx",
+                    "weight": 1.0
+                }
+            ]
+        },
+        {
+            "projectName": "DefaultFemale",
+            "path": "data\\meshes\\actors\\character\\animations\\OpenAnimationReplacer\\SeverActions\\Broken leg (left)\\female\\_variants_mt_idle",
+            "variantMode": 0,
+            "variantStateScope": 1,
+            "blendBetweenVariants": true,
+            "resetRandomOnLoopOrEcho": true,
+            "sharePlayedHistory": false,
+            "variants": [
+                {
+                    "filename": "calm.hkx",
+                    "weight": 3.0
+                },
+                {
+                    "filename": "rub.hkx",
+                    "weight": 2.0
+                },
+                {
+                    "filename": "twinge.hkx",
+                    "weight": 1.0
+                }
+            ]
+        }
     ]
 }

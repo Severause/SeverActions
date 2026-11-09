@@ -35,7 +35,7 @@
 {% if consensus != "" and sever_camp_takeover(actorUUID) != "" %}
 - {{ consensus }}
 {% endif %}
-{% if sever_camp_state(actorUUID) == "sworn" %}
+{% if sever_camp_state(actorUUID) == "sworn" and not exists("stealthHiddenPlayer") %}
 - The oath cuts both ways: service for fair treatment. Betrayal, killing your own, or contempt past bearing can snap it.
 - Only the one who leads can renounce it for everyone, and once those words are out it is steel, not talk: a last word, never a bargaining chip.
 - If the one who leads raises arms against {{ player.name }} or their companions, that is the renunciation too, and the whole camp follows them into the fight.

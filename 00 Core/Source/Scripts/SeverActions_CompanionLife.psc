@@ -1,6 +1,6 @@
 Scriptname SeverActions_CompanionLife extends Quest
-{Companion Life (companions module): off-screen life for dismissed companions - the
- LLM-authored events, their consequences (arrest, bounty, gold, debt, items) and the gossip
+{Companion Life (companions module): off-screen life for dismissed companions, homed NPCs and
+ the story subjects the player marked (no home; OffScreenLifeDataStore.h) - the LLM-authored events, their consequences (arrest, bounty, gold, debt, items) and the gossip
  ring per location - plus the follower banter director. FollowerManager keeps a safe-exit
  stub for each function moved here (F7). Maintenance runs from the companions provider's
  stage 1 on every load and new game (DR20). An off-screen arrest's jailing goes to the arrest
@@ -9,7 +9,7 @@ Scriptname SeverActions_CompanionLife extends Quest
 
 Float Property SECONDS_PER_GAME_HOUR = 3631.0 AutoReadOnly ; not 3600: the native stores decode these timestamps with 3631 (CosaveUtils.h)
 Float Property OffScreenLifeMinRealGapSeconds = 180.0 AutoReadOnly
-{Minimum real seconds between two off-screen life dispatches (widened past 50 tracked followers).}
+{Minimum real seconds between two off-screen life dispatches (widened past 50 tracked NPCs, followers and story subjects).}
 Float Property OffScreenGracePeriodHours = 6.0 AutoReadOnly
 {Game hours after a dismissal before the first off-screen life event can fire.}
 Int Property BanterHistoryMax = 12 AutoReadOnly
@@ -347,23 +347,34 @@ Function RecordBanterTopic(String speakerName, String targetName, String topicTe
 EndFunction
 
 Function CheckOffScreenLifeEvents()
-    {Fires an off-screen life event for the dismissed follower with a home who is most overdue,
-     at most one per tick. Each NPC has its own randomized next-eligible time.}
+    {Fires an off-screen life event for the NPC most overdue, at most one per tick: a dismissed
+     follower or NPC with a home, or a story subject (an NPC the player marked, with no home).
+     Each NPC has its own randomized next-eligible time.}
     If SeverActionsNativeExt2.LLMLane_IsHeld("companions.offscreenLife")
         Return
     EndIf
 
-    ; Every tracked follower in the native cosave, dismissed ones included
+    ; Every tracked follower in the native cosave, dismissed ones included, and the story subjects
+    ; who may get an event now (OffScreen_StorySubjects).
     Actor[] allTracked = SeverActionsNative.Native_GetAllTrackedFollowers()
-    If !allTracked || allTracked.Length == 0
+    Actor[] subjects = SeverActionsNativeExt2.OffScreen_StorySubjects()
+    Int trackedCount = 0
+    If allTracked
+        trackedCount = allTracked.Length
+    EndIf
+    Int subjectCount = 0
+    If subjects
+        subjectCount = subjects.Length
+    EndIf
+    If trackedCount + subjectCount == 0
         Return
     EndIf
 
-    ; Global pacing floor, widened past 50 tracked followers, so a big roster whose windows
+    ; Global pacing floor, widened past 50 tracked NPCs, so a big roster whose windows
     ; have all expired cannot fire every tick.
     Float gapO = OffScreenLifeMinRealGapSeconds
-    If allTracked.Length > 50
-        gapO = gapO * (1.0 + (allTracked.Length - 50) / 50.0)
+    If trackedCount + subjectCount > 50
+        gapO = gapO * (1.0 + (trackedCount + subjectCount - 50) / 50.0)
     EndIf
     Float dtO = Utility.GetCurrentRealTime() - LastOffScreenLifeFireRT
     If LastOffScreenLifeFireRT > 0.0 && dtO >= 0.0 && dtO < gapO
@@ -374,12 +385,12 @@ Function CheckOffScreenLifeEvents()
     Float gracePeriodSeconds = OffScreenGracePeriodHours * SECONDS_PER_GAME_HOUR
     Cell playerCell = Game.GetPlayer().GetParentCell()
 
-    ; The dismissed follower most overdue for a life event
+    ; The NPC most overdue for a life event
     Actor bestCandidate = None
     Float bestOverdue = 0.0
 
     Int i = 0
-    While i < allTracked.Length
+    While i < trackedCount
         Actor follower = allTracked[i]
         If follower && !follower.IsDead() && !_IsFollower(follower)
             ; Not while they share the player's cell (the player can see them)
@@ -400,48 +411,10 @@ Function CheckOffScreenLifeEvents()
                 String home = SeverActionsNative.Native_GetHome(follower)
                 If home != ""
                     If !SeverActionsNative.Native_GetOffscreenExcluded(follower)
-                        ; A per-NPC override (Life Tracker page; 0 = none) replaces the global window.
-                        Float overrideHours = SeverActionsNative.Native_OffScreen_GetCooldownOverride(follower)
-                        Float windowMaxHours = SeverActionsNativeExt2.Settings_GetFloat("offScreenCooldownMax")
-                        If overrideHours > 0.0
-                            windowMaxHours = overrideHours
-                        EndIf
-                        ; Keep the stagger window at least Min wide: a Max of 0 (or below Min)
-                        ; would make every NPC eligible at once.
-                        If windowMaxHours < SeverActionsNativeExt2.Settings_GetFloat("offScreenCooldownMin")
-                            windowMaxHours = SeverActionsNativeExt2.Settings_GetFloat("offScreenCooldownMin")
-                        EndIf
-                        If windowMaxHours <= 0.0
-                            windowMaxHours = 1.0
-                        EndIf
-
-                        Float nextEligible = StorageUtil.GetFloatValue(follower, KEY_NEXT_LIFE_EVENT_GT, 0.0)
-                        If nextEligible == 0.0
-                            Float lastEvent = StorageUtil.GetFloatValue(follower, KEY_LAST_LIFE_EVENT_GT, 0.0)
-                            If lastEvent == 0.0
-                                ; First sight: a random offset inside the window staggers a wave of
-                                ; dismissals; persisted so it rolls once per NPC.
-                                Float initialOffset = Utility.RandomFloat(0.0, windowMaxHours) * SECONDS_PER_GAME_HOUR
-                                nextEligible = now + initialOffset
-                                StorageUtil.SetFloatValue(follower, KEY_NEXT_LIFE_EVENT_GT, nextEligible)
-                            Else
-                                ; Older save: lastEvent without nextEligible.
-                                Float legacyCooldown = SeverActionsNativeExt2.Settings_GetFloat("offScreenCooldownMin")
-                                If overrideHours > 0.0
-                                    legacyCooldown = overrideHours
-                                EndIf
-                                nextEligible = lastEvent + (legacyCooldown * SECONDS_PER_GAME_HOUR)
-                            EndIf
-                        EndIf
-
-                        ; A kidnap or restraint captive has no free day to narrate, and an arrest
-                        ; consequence would jail them out of captivity. Asked only of a due NPC: it is a synced call.
-                        If now >= nextEligible && SeverActionsNativeExt.Native_Kidnap_GetPhase(follower) == 0
-                            Float overdue = now - nextEligible
-                            If !bestCandidate || overdue > bestOverdue
-                                bestCandidate = follower
-                                bestOverdue = overdue
-                            EndIf
+                        Float overdue = _LifeEventOverdue(follower, now)
+                        If overdue >= 0.0 && (!bestCandidate || overdue > bestOverdue)
+                            bestCandidate = follower
+                            bestOverdue = overdue
                         EndIf
                     EndIf
                 EndIf
@@ -450,9 +423,73 @@ Function CheckOffScreenLifeEvents()
         i += 1
     EndWhile
 
+    ; The native list already left out anyone the home path above covers or the player can see. A
+    ; former follower marked to be followed gets the same grace after a dismissal.
+    i = 0
+    While i < subjectCount
+        Actor subject = subjects[i]
+        Float dismissedAt = 0.0
+        If subject
+            dismissedAt = StorageUtil.GetFloatValue(subject, KEY_DISMISS_GT, 0.0)
+        EndIf
+        If subject && (dismissedAt <= 0.0 || (now - dismissedAt) >= gracePeriodSeconds)
+            Float overdueS = _LifeEventOverdue(subject, now)
+            If overdueS >= 0.0 && (!bestCandidate || overdueS > bestOverdue)
+                bestCandidate = subject
+                bestOverdue = overdueS
+            EndIf
+        EndIf
+        i += 1
+    EndWhile
+
     If bestCandidate
         FireOffScreenLifeEvent(bestCandidate)
     EndIf
+EndFunction
+
+Float Function _LifeEventOverdue(Actor akActor, Float now)
+    {Game seconds akActor is past their next-eligible time, or -1.0 when they are not due (or held
+     captive). The first sight rolls and stores that time; the per-NPC override (Life Tracker page;
+     0 = none) replaces the global window.}
+    Float overrideHours = SeverActionsNative.Native_OffScreen_GetCooldownOverride(akActor)
+    Float windowMaxHours = SeverActionsNativeExt2.Settings_GetFloat("offScreenCooldownMax")
+    If overrideHours > 0.0
+        windowMaxHours = overrideHours
+    EndIf
+    ; Keep the stagger window at least Min wide: a Max of 0 (or below Min)
+    ; would make every NPC eligible at once.
+    If windowMaxHours < SeverActionsNativeExt2.Settings_GetFloat("offScreenCooldownMin")
+        windowMaxHours = SeverActionsNativeExt2.Settings_GetFloat("offScreenCooldownMin")
+    EndIf
+    If windowMaxHours <= 0.0
+        windowMaxHours = 1.0
+    EndIf
+
+    Float nextEligible = StorageUtil.GetFloatValue(akActor, KEY_NEXT_LIFE_EVENT_GT, 0.0)
+    If nextEligible == 0.0
+        Float lastEvent = StorageUtil.GetFloatValue(akActor, KEY_LAST_LIFE_EVENT_GT, 0.0)
+        If lastEvent == 0.0
+            ; First sight: a random offset inside the window staggers a wave of
+            ; dismissals; persisted so it rolls once per NPC.
+            Float initialOffset = Utility.RandomFloat(0.0, windowMaxHours) * SECONDS_PER_GAME_HOUR
+            nextEligible = now + initialOffset
+            StorageUtil.SetFloatValue(akActor, KEY_NEXT_LIFE_EVENT_GT, nextEligible)
+        Else
+            ; Older save: lastEvent without nextEligible.
+            Float legacyCooldown = SeverActionsNativeExt2.Settings_GetFloat("offScreenCooldownMin")
+            If overrideHours > 0.0
+                legacyCooldown = overrideHours
+            EndIf
+            nextEligible = lastEvent + (legacyCooldown * SECONDS_PER_GAME_HOUR)
+        EndIf
+    EndIf
+
+    ; A kidnap or restraint captive has no free day to narrate, and an arrest
+    ; consequence would jail them out of captivity. Asked only of a due NPC: it is a synced call.
+    If now >= nextEligible && SeverActionsNativeExt.Native_Kidnap_GetPhase(akActor) == 0
+        Return now - nextEligible
+    EndIf
+    Return -1.0
 EndFunction
 
 Function FireOffScreenLifeEvent(Actor akActor)
@@ -475,7 +512,7 @@ Function FireOffScreenLifeEvent(Actor akActor)
     EndIf
     StorageUtil.SetFloatValue(akActor, KEY_NEXT_LIFE_EVENT_GT, nowTime + nextCooldown)
 
-    ; Native context: home, social graph, nearby dismissed followers, consequence eligibility
+    ; Native context: the home or a story subject's place, social graph, the people nearby, consequence eligibility
     Float lastConsequence = StorageUtil.GetFloatValue(akActor, KEY_LAST_CONSEQUENCE_GT, 0.0)
     Float consequenceCooldown = SeverActionsNativeExt2.Settings_GetFloat("consequenceCooldown") * SECONDS_PER_GAME_HOUR
 
@@ -507,8 +544,7 @@ Function FireOffScreenLifeEvent(Actor akActor)
         DebugMsg("Off-screen life LLM dispatch failed for " + akActor.GetDisplayName() \
             + " (SkyrimNet v8 PublicSendCustomPromptToLLM unavailable?)")
     Else
-        String home = SeverActionsNative.Native_GetHome(akActor)
-        DebugMsg("Off-screen life event queued via C++ for " + akActor.GetDisplayName() + " at " + home)
+        DebugMsg("Off-screen life event queued via C++ for " + akActor.GetDisplayName() + " at " + SeverActionsNativeExt2.OffScreen_StoryPlace(akActor))
     EndIf
 EndFunction
 
@@ -554,7 +590,12 @@ Event OnOffScreenLifeReady(string eventName, string strArg, float numArg, Form s
     EndIf
 
     String actorName = akActor.GetDisplayName()
-    String home = SeverActionsNative.Native_GetHome(akActor)
+    ; Their home, or for a story subject the place the event was set in.
+    String home = SeverActionsNativeExt2.OffScreen_StoryPlace(akActor)
+    ; A reply for someone with no home is a story subject's: the parser dropped any other. Writing their summary
+    ; would create a FollowerDataStore row, which a subject must never get (OffScreenLifeDataStore.h), and they have
+    ; no needs to re-roll.
+    Bool storySubject = SeverActionsNative.Native_GetHome(akActor) == ""
     Float currentGameTime = GetGameTimeInSeconds()
 
     ; 15 fields, indices 0-14, in the native parser's order; 2 and 5 (the gossip flags) are not read
@@ -568,15 +609,18 @@ Event OnOffScreenLifeReady(string eventName, string strArg, float numArg, Form s
         Return
     EndIf
 
-    ; The life summary, read by prompts through the sever_life_summary decorator.
+    ; The life summary, read by prompts through the sever_life_summary decorator. A story subject's
+    ; bio reads the store's event lines instead (sever_life_event_history).
     String lifeSummary = summary1
     If summary2 != ""
         lifeSummary += " " + summary2
     EndIf
-    SeverActionsNativeExt.Native_SetLifeSummary(akActor, lifeSummary)
+    If !storySubject
+        SeverActionsNativeExt.Native_SetLifeSummary(akActor, lifeSummary)
+    EndIf
 
     ; Re-roll survival needs to stand in for eating, resting and exposure while away.
-    If !SeverActionsNative.Native_Survival_IsExcluded(akActor)
+    If !storySubject && !SeverActionsNative.Native_Survival_IsExcluded(akActor)
         Int newHunger = Utility.RandomInt(5, 45)
         Int newFatigue = Utility.RandomInt(5, 50)
         Int newCold = Utility.RandomInt(0, 20)
@@ -585,14 +629,20 @@ Event OnOffScreenLifeReady(string eventName, string strArg, float numArg, Form s
     EndIf
 
     ; The event history, read by prompts through the sever_life_event_history decorator.
-    String eventHistory = SeverActionsNative.Native_OffScreen_GetRecentLifeEvents(akActor, 10, currentGameTime)
-    If eventHistory != ""
-        SeverActionsNativeExt.Native_SetLifeEventHistory(akActor, eventHistory)
+    If !storySubject
+        String eventHistory = SeverActionsNative.Native_OffScreen_GetRecentLifeEvents(akActor, 10, currentGameTime)
+        If eventHistory != ""
+            SeverActionsNativeExt.Native_SetLifeEventHistory(akActor, eventHistory)
+        EndIf
     EndIf
 
     ; Persistent events, so the follower remembers them. They say the player was away: SkyrimNet's diary
     ; and dialogue read them without the event's context.
     String away = " (while " + Game.GetPlayer().GetDisplayName() + " was away): "
+    If storySubject && !SeverActionsNativeExt2.Native_WasEverFollower(akActor)
+        ; A subject who never travelled with the player does not measure their days by the player's absence.
+        away = " (lately): "
+    EndIf
     SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(actorName + away + summary1), akActor, None)
     If summary2 != ""
         SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(actorName + away + summary2), akActor, None)
@@ -893,10 +943,11 @@ Function ProcessOffScreenArrest(Actor akActor, String home, String crime, Int bo
     SeverActionsNative.Native_OffScreen_AddEvent(akActor, actorName + " was arrested for " + crimeStr + " in " + home, "significant", GetGameTimeInSeconds(), true, "arrest", bounty, crimeStr, "")
 
     ; The physical jailing is SeverActions_Arrest's; it resolves the hold's jail from the home
-    ; name. An async verb (DR3): without the arrest module the bounty stands and nobody moves.
+    ; name, or a story subject's hold (who reaches here only with storySubjectArrests on). An async
+    ; verb (DR3): without the arrest module the bounty stands and nobody moves.
     ; args = target|target2|str|int|str2|targetFid|target2Fid (the actionId is prepended);
-    ; the target is the sender, str the home.
-    SeverActionsNativeExt2.Verb_Send("arrest", "offscreenJail", "||" + home, akActor)
+    ; the target is the sender, str the home or hold.
+    SeverActionsNativeExt2.Verb_Send("arrest", "offscreenJail", "||" + SeverActionsNativeExt2.OffScreen_StoryHold(akActor), akActor)
 
     If SeverActionsNativeExt2.Settings_GetBool("showNotifications")
         Debug.Notification(actorName + " was arrested in " + home + "! (" + bounty + " bounty)")

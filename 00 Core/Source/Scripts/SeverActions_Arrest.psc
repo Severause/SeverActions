@@ -305,6 +305,7 @@ Int ArrestState ; 0=none, 1=approaching, 2=arresting, 3=escorting, 4=escort plea
 ; (the NPC twin of ArrestPlayer's PersuadeAttempted).
 Float EscortPleaStartTime
 Bool EscortPleaAttempted
+Bool EscortPleaEnding     ; claimed by the first path that ends the plea; cleared on resume
 
 ; Legacy jailed-NPC list: MigrateJailedNPCsToNative moves it into the native
 ; JailedNPCStore ('JAIL') once and empties it. Nothing else adds to it.
@@ -686,8 +687,24 @@ Event OnArrestSessionTimeout(string eventName, string strArg, float numArg, Form
         Return
     EndIf
 
+    ; The watchdog re-sends every second until the state changes, so events can queue behind a
+    ; handler that already moved the session on. Each branch below leaves the state first; a
+    ; queued event for the old state is dropped here, or it would act on the new one.
+    If SeverActionsNative.Native_ArrestSession_GetState(akPrisoner) != (strArg as Int)
+        DebugMsg("ArrestSessionTimeout: stale event (state " + strArg + ") - ignored")
+        Return
+    EndIf
+
     ; Same-cell arrest (CancelCurrentArrest ends the native session itself).
     If CurrentPrisoner == akPrisoner && ArrestState > 0
+        ; A plea event after the plea ended (the resume races the watchdog, or a save made mid-plea
+        ; loads as ArrestState 3): the march is already back on, so only the session catches up.
+        If strArg == "8" && ArrestState != 4
+            DebugMsg("ArrestSessionTimeout: kEscortPlea after the plea ended - session back to kEscort")
+            SeverActionsNative.Native_ArrestSession_UpdateState(akPrisoner, 3, 0)
+            Return
+        EndIf
+
         ; An escort timeout pushes the jailing through: the arrest is committed, the engine
         ; only failed to walk them there. State 3 only - in state 5 OnArrivedAtJail is already
         ; running and re-entering it would jail twice.
@@ -734,6 +751,15 @@ Event OnArrestSessionTimeout(string eventName, string strArg, float numArg, Form
             Return
         EndIf
 
+        ; An escort-plea timeout resumes the march, as the plea's own time limit does; cancelling
+        ; would set the prisoner free. kEscort (3) first stops the re-fire, as above.
+        If ArrestState == 4
+            DebugMsg("ArrestSessionTimeout: kEscortPlea - resuming the escort")
+            SeverActionsNative.Native_ArrestSession_UpdateState(akPrisoner, 3, 0)
+            _EndPleaOutOfPatience()
+            Return
+        EndIf
+
         DebugMsg("ArrestSessionTimeout: cancelling same-cell arrest for " + akPrisoner.GetDisplayName())
         CancelCurrentArrest()
         Return
@@ -741,6 +767,15 @@ Event OnArrestSessionTimeout(string eventName, string strArg, float numArg, Form
 
     ; Dispatch (CancelDispatch ends the native session itself).
     If DispatchTarget == akPrisoner && DispatchPhase > 0
+        ; A judgment timeout sends the prisoner to jail, as the judgment's own time limit does;
+        ; cancelling would set them free. Restamping kJudgment first stops the re-fire while
+        ; EndJudgment runs.
+        If DispatchPhase == 6 && JudgmentScript != None
+            DebugMsg("ArrestSessionTimeout: kJudgment - no ruling, defaulting to jail")
+            SeverActionsNative.Native_ArrestSession_UpdateState(akPrisoner, 6, 6)
+            JudgmentScript.DefaultToJail()
+            Return
+        EndIf
         DebugMsg("ArrestSessionTimeout: cancelling dispatch for " + akPrisoner.GetDisplayName())
         CancelDispatch()
         Return
@@ -1941,8 +1976,9 @@ Bool Function AppealDuringEscort_Internal(Actor akPrisoner)
     ArrestState = 4
     EscortPleaStartTime = Utility.GetCurrentRealTime()
     EscortPleaAttempted = true
+    EscortPleaEnding = false
 
-    ; kEscortPlea (8): a 15-game-minute watchdog, shown as Escort Plea on the Magelight arrests page.
+    ; kEscortPlea (8): a one-game-hour backstop, shown as Escort Plea on the Magelight arrests page.
     ; It also latches the plea for the session: sever_is_escorted_prisoner stops offering the appeal.
     SeverActionsNative.Native_ArrestSession_UpdateState(CurrentPrisoner, 8, 0)
 
@@ -1975,7 +2011,7 @@ EndFunction
 Function CheckEscortPleaProgress()
     {Tick while ArrestState == 4: ends the plea on a timeout, the prisoner walking off, or a death.}
 
-    If ArrestState != 4
+    If ArrestState != 4 || EscortPleaEnding
         Return
     EndIf
 
@@ -1996,20 +2032,15 @@ Function CheckEscortPleaProgress()
     ; Timeout — guard runs out of patience, silent resume with annoyed narration
     If elapsed >= EscortPleaTimeLimit
         DebugMsg("Escort plea timed out after " + elapsed + "s - resuming escort")
-        String narration = "*" + CurrentGuard.GetDisplayName() + " grows tired of " + CurrentPrisoner.GetDisplayName() + "'s excuses, cuts the plea short and orders them to keep moving.*"
-        SkyrimNetApi.DirectNarration(narration, CurrentPrisoner, CurrentGuard)
-
-        String eventMsg = CurrentGuard.GetDisplayName() + " grew tired of " + CurrentPrisoner.GetDisplayName() + "'s pleading and resumed the march to jail."
-        SkyrimNetApi.RegisterPersistentEvent(eventMsg, CurrentGuard, CurrentPrisoner)
-
-        ResumeEscortFromPlea()
+        _EndPleaOutOfPatience()
         Return
     EndIf
 
     ; Distance — prisoner moved too far. Treated as escape attempt; guard
     ; resumes escort with a "trying to slip away" narration.
     Float distance = CurrentGuard.GetDistance(CurrentPrisoner)
-    If distance > EscortPleaFollowDistance
+    If distance > EscortPleaFollowDistance && !EscortPleaEnding
+        EscortPleaEnding = true
         DebugMsg("Escort plea: prisoner moved " + distance + "u from guard - resuming escort")
         String narration = "*" + CurrentGuard.GetDisplayName() + " catches up, gripping " + CurrentPrisoner.GetDisplayName() + " firmly - no more slipping away; the march goes on.*"
         SkyrimNetApi.DirectNarration(narration, CurrentPrisoner, CurrentGuard)
@@ -2025,6 +2056,27 @@ Function CheckEscortPleaProgress()
     ChronoArm(UpdateInterval)
 EndFunction
 
+Function _EndPleaOutOfPatience()
+    {The guard cuts the plea short and resumes the march: the plea's time limit, and the kEscortPlea
+     watchdog when game time outruns it (a wait, a sleep, a high timescale). Claims the plea's end
+     before any call, so the tick and the watchdog never both narrate it.}
+    If ArrestState != 4 || EscortPleaEnding
+        Return
+    EndIf
+    EscortPleaEnding = true
+    If CurrentGuard == None || CurrentPrisoner == None
+        ResumeEscortFromPlea()
+        Return
+    EndIf
+    String narration = "*" + CurrentGuard.GetDisplayName() + " grows tired of " + CurrentPrisoner.GetDisplayName() + "'s excuses, cuts the plea short and orders them to keep moving.*"
+    SkyrimNetApi.DirectNarration(narration, CurrentPrisoner, CurrentGuard)
+
+    String eventMsg = CurrentGuard.GetDisplayName() + " grew tired of " + CurrentPrisoner.GetDisplayName() + "'s pleading and resumed the march to jail."
+    SkyrimNetApi.RegisterPersistentEvent(eventMsg, CurrentGuard, CurrentPrisoner)
+
+    ResumeEscortFromPlea()
+EndFunction
+
 Bool Function AcceptEscortPlea_Internal(Actor akGuard)
     {Guard accepts the prisoner's plea — release them mid-escort.
      Wired via acceptescortplea.yaml (speaker = guard).}
@@ -2034,8 +2086,8 @@ Bool Function AcceptEscortPlea_Internal(Actor akGuard)
         Return false
     EndIf
 
-    If ArrestState != 4
-        DebugMsg("AcceptEscortPlea rejected: ArrestState=" + ArrestState + " (need 4=escort plea)")
+    If ArrestState != 4 || EscortPleaEnding
+        DebugMsg("AcceptEscortPlea rejected: ArrestState=" + ArrestState + " (need 4=escort plea, not already ending)")
         Return false
     EndIf
 
@@ -2048,6 +2100,10 @@ Bool Function AcceptEscortPlea_Internal(Actor akGuard)
         DebugMsg("AcceptEscortPlea rejected: no current prisoner")
         Return false
     EndIf
+
+    ; Claim the plea's end before any call, so the tick and the watchdog cannot resume the march
+    ; while the release runs (ClearArrestState clears it).
+    EscortPleaEnding = true
 
     ; Rope off (one of the four escort exits, with arrival, cancel and jail release). BELOW the
     ; rejections: a rejected call leaves the escort live, and nothing would re-attach the rope.
@@ -2108,8 +2164,8 @@ Bool Function RejectEscortPlea_Internal(Actor akGuard)
         Return false
     EndIf
 
-    If ArrestState != 4
-        DebugMsg("RejectEscortPlea rejected: ArrestState=" + ArrestState + " (need 4=escort plea)")
+    If ArrestState != 4 || EscortPleaEnding
+        DebugMsg("RejectEscortPlea rejected: ArrestState=" + ArrestState + " (need 4=escort plea, not already ending)")
         Return false
     EndIf
 
@@ -2117,6 +2173,9 @@ Bool Function RejectEscortPlea_Internal(Actor akGuard)
         DebugMsg("RejectEscortPlea rejected: " + akGuard.GetDisplayName() + " is not the active escorting guard")
         Return false
     EndIf
+
+    ; Claimed before any call, as in AcceptEscortPlea_Internal; ResumeEscortFromPlea clears it.
+    EscortPleaEnding = true
 
     DebugMsg(akGuard.GetDisplayName() + " rejected " + CurrentPrisoner.GetDisplayName() + "'s plea - resuming escort")
 
@@ -2132,7 +2191,18 @@ EndFunction
 
 Function ResumeEscortFromPlea()
     {Back to the escort (ArrestState 3) after a rejected, timed-out or abandoned plea. The native
-     EscortPackageReapplier stays armed across the plea (same actor pair), so it is not re-begun here.}
+     EscortPackageReapplier stays armed across the plea (same actor pair), so it is not re-begun here.
+     A no-op once the plea is over: ArrestState leaves 4 before any call, so a second ending finds it gone.}
+
+    If ArrestState != 4
+        Return
+    EndIf
+    ArrestState = 3
+    ; The session follows at once (and the watchdog restarts on the escort budget), so no plea
+    ; timeout lands while the march is back on.
+    If CurrentPrisoner != None
+        SeverActionsNative.Native_ArrestSession_UpdateState(CurrentPrisoner, 3, 0)
+    EndIf
 
     If CurrentGuard == None || CurrentPrisoner == None || CurrentJailMarker == None
         DebugMsg("ERROR: ResumeEscortFromPlea - invalid state, canceling")
@@ -2161,12 +2231,9 @@ Function ResumeEscortFromPlea()
     ; Re-arm stuck tracking — the guard is moving toward jail again
     SeverActionsNativeExt.Stuck_StartTracking(CurrentGuard)
 
-    ArrestState = 3
     EscortStartTime = Utility.GetCurrentRealTime()
     EscortPleaStartTime = 0.0
-
-    ; Reset the watchdog timer to the escort budget
-    SeverActionsNative.Native_ArrestSession_UpdateState(CurrentPrisoner, 3, 0)
+    EscortPleaEnding = false
 
     ; Re-register the jail arrival the plea cancelled.
     SeverActionsNativeExt.Arrival_Register(CurrentGuard, CurrentJailMarker, ArrivalDistance, "arrest_escort_arrived")
@@ -2820,6 +2887,7 @@ Function ClearArrestState()
     ; The next arrest gets a fresh plea.
     EscortPleaStartTime = 0.0
     EscortPleaAttempted = false
+    EscortPleaEnding = false
 
     ; The EscortPackageReapplier (idempotent).
     SeverActionsNative.Native_EscortReapply_End()
