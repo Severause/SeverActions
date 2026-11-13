@@ -13,7 +13,7 @@ parameterMapping:
     description: "the main person receiving: exact name as listed in Nearby Actors, or the player's name; an item with its own 'for' goes to that person instead"
   - type: dynamic
     name: item
-    description: "the item as named in the speaker's inventory (e.g. 'Iron Sword', 'Health Potion', 'Sweet Roll'); several items comma-separated, each with an optional count before it and, to hand that one to someone else, 'for' and their exact name as listed in Nearby Actors, or the player's name, after it (e.g. 'Sweet Roll, 2 Health Potion for Rin')"
+    description: "the item as named in the speaker's inventory (e.g. 'Iron Sword', 'Health Potion', 'Sweet Roll'); several items comma-separated, each with an optional count before it and, to hand that one to someone else, 'for' and their exact name as listed in Nearby Actors, or the player's name, after it (e.g. 'Sweet Roll, 2 Health Potion for Rin'); copy the full name exactly as written in the inventory or object list, never as the player phrased it (player says 'эльфийские сапоги', the list has 'Стальные эльфийские лёгкие сапоги': pass 'Стальные эльфийские лёгкие сапоги'), keeping its capital first letter and every letter including ё"
   - type: dynamic
     name: count
     description: "how many, a whole number, 1 or more; with several items, put 1 here and each item's count before its name"

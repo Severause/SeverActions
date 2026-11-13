@@ -10,7 +10,7 @@ parameterMapping:
     description: the actor pulling gear on
   - type: dynamic
     name: itemNames
-    description: "what to put on, by item name, comma-separated for several (e.g. 'steel gauntlets, iron helmet'); only things the speaker carries"
+    description: "what to put on, by item name, comma-separated for several (e.g. 'Steel Gauntlets, Iron Helmet'); only things the speaker carries; copy the full name exactly as written in the inventory or object list, never as the player phrased it (player says 'эльфийские сапоги', the list has 'Стальные эльфийские лёгкие сапоги': pass 'Стальные эльфийские лёгкие сапоги'), keeping its capital first letter and every letter including ё"
 enabled: true
 eligibilityRules:
   - conditions:

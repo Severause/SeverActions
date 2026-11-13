@@ -10,7 +10,7 @@ parameterMapping:
     description: the actor reaching for something in their pack
   - type: dynamic
     name: item
-    description: "the food, drink, potion or ingredient to consume, by its inventory name (e.g. 'Health Potion', 'Bread', 'Frost Mirriam')"
+    description: "the food, drink, potion or ingredient to consume, by its inventory name (e.g. 'Health Potion', 'Bread', 'Frost Mirriam'); copy the full name exactly as written in the inventory or object list, never as the player phrased it (player says 'эльфийские сапоги', the list has 'Стальные эльфийские лёгкие сапоги': pass 'Стальные эльфийские лёгкие сапоги'), keeping its capital first letter and every letter including ё"
 enabled: true
 eligibilityRules:
   - conditions:
