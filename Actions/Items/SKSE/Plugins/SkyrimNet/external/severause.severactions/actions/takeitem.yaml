@@ -13,7 +13,7 @@ parameterMapping:
     description: "who hands it over: exact name as listed in Nearby Actors, or the player's name"
   - type: dynamic
     name: item
-    description: "the item being handed over, by name (e.g. 'Iron Key', 'Iron Sword'); not coin; several items from the same giver comma-separated, each with an optional count before it (e.g. 'Iron Key, 2 Iron Arrow')"
+    description: "the item being handed over, by name (e.g. 'Iron Key', 'Iron Sword'); not coin; several items from the same giver comma-separated, each with an optional count before it (e.g. 'Iron Key, 2 Iron Arrow'); copy the full name exactly as written in the inventory or object list, never as the player phrased it (player says 'эльфийские сапоги', the list has 'Стальные эльфийские лёгкие сапоги': pass 'Стальные эльфийские лёгкие сапоги'), keeping its capital first letter and every letter including ё"
   - type: dynamic
     name: count
     description: "how many, a whole number, 1 or more; with several items, put 1 here and each item's count before its name"

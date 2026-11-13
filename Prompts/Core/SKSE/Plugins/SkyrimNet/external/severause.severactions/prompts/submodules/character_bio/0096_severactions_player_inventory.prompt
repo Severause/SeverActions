@@ -25,13 +25,13 @@ Kept out of sight in {{ player.name }}'s pack: bring an item up only once {{ pla
 {% if existsIn(grouped, "weapon") and lim_weapon > 0 %}
 **Weapons ({{ length(grouped.weapon) }}):**
 {% for item in grouped.weapon %}{% if loop.index1 <= lim_weapon %}- {{ item.name }}{% if item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.value }}g
-{% endif %}{% endfor %}{% if length(grouped.weapon) > lim_weapon %}- ... +{{ length(grouped.weapon) - lim_weapon }} more
+{% endif %}{% endfor %}{% if length(grouped.weapon) > lim_weapon %}- Also: {% for item in grouped.weapon %}{% if loop.index1 > lim_weapon %}{% if loop.index1 > lim_weapon + 1 %}, {% endif %}{{ item.name }}{% if item.count > 1 %} x{{ item.count }}{% endif %}{% endif %}{% endfor %}
 {% endif %}
 {% endif %}
 {% if existsIn(grouped, "armor") and lim_armor > 0 %}
 **Armor & Jewelry ({{ length(grouped.armor) }}):**
 {% for item in grouped.armor %}{% if loop.index1 <= lim_armor %}- {{ item.name }}{% if item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.value }}g
-{% endif %}{% endfor %}{% if length(grouped.armor) > lim_armor %}- ... +{{ length(grouped.armor) - lim_armor }} more
+{% endif %}{% endfor %}{% if length(grouped.armor) > lim_armor %}- Also: {% for item in grouped.armor %}{% if loop.index1 > lim_armor %}{% if loop.index1 > lim_armor + 1 %}, {% endif %}{{ item.name }}{% if item.count > 1 %} x{{ item.count }}{% endif %}{% endif %}{% endfor %}
 {% endif %}
 {% endif %}
 {% if existsIn(grouped, "potion") and lim_potion > 0 %}

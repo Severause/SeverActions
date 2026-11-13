@@ -10,7 +10,7 @@ parameterMapping:
     description: the actor reaching down to grab it
   - type: dynamic
     name: item
-    description: "name or kind of the loose item nearby (e.g. 'Iron Sword', 'potion', 'mountain flower')"
+    description: "name or kind of the loose item nearby (e.g. 'Iron Sword', 'potion', 'mountain flower'); copy the full name exactly as written in the inventory or object list, never as the player phrased it (player says 'эльфийские сапоги', the list has 'Стальные эльфийские лёгкие сапоги': pass 'Стальные эльфийские лёгкие сапоги'), keeping its capital first letter and every letter including ё"
 enabled: true
 eligibilityRules:
   - conditions:
