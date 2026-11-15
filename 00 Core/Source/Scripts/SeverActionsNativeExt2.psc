@@ -118,9 +118,9 @@ Bool Function Familiarity_ImportBlurb(Actor akActor, String asText) Global Nativ
  impression in the DLL. True when it wrote one.}
 Function Native_Familiarity_SetTier(Actor akActor, String asTier) Global Native
 {Store the reputation assessment's familiarity verdict: "stranger" / "passing" /
- "met_once" / "acquainted" / "familiar". The player_familiarity decorator prefers
- it over the conversation-count ladder (hard bonds still set a floor). An unknown
- token is ignored.}
+ "met_once" / "acquainted" / "familiar". It replaces an earlier verdict; the
+ player_familiarity decorator reports it when it is above the contact ladder's tier
+ (hard bonds set a floor too). An unknown token is ignored.}
 
 Bool Function Native_IsLeashFrameworkInstalled() Global Native
 {Leash Framework (Nexus 187303) present: LeashFramework.dll loaded AND
@@ -1008,6 +1008,10 @@ Int Function Follow_HeldState(Actor akActor, Faction akWaitingFaction, Faction a
  HELD_* properties). HELD_VALID is set on every answer, so 0 (an older DLL) or -1 (None) means unknown. The factions
  are the Follow script's waiting and actively-following fills.}
 
+Actor[] Function Native_ScanPlayerCellFollowerCandidates(Faction akOurFaction) Global Native
+{Native_ScanPlayerCellForLiveActors, cut to the actors FollowerManager's load scans can act on: a member of
+ akOurFaction, of CurrentFollowerFaction or of Serana's faction, or a holder of the custom-AI keyword.}
+
 Int Function Native_HydrateFollowerSystem_RebuildOpinions() Global Native
 {Only the FollowerSystemHydrator's opinions pass: rebuild every rostered
  follower's companionOpinions string from the pair store. For mid-session
@@ -1024,15 +1028,19 @@ String Function Camp_ConsentTally(Actor akActor) Global Native
 ; Return only the actors the 30s FollowerManager schedule pass must touch. The
 ; filter never decides anything: it can only prove "nothing to do" and omit, so
 ; anything it cannot see is returned and the Papyrus reconcile runs with every
-; guard. Results are sorted by FormID so the caller's chunk cursor is stable.
+; guard. One bounded exception: a block the reconcile already noted (see
+; Sched_GetTransitionDue). Results are sorted by FormID so the caller's chunk
+; cursor is stable.
 
 Actor[] Function Sched_GetTransitionDue(Float afGameHour, Float afWorkStart, Float afWorkEnd, Float afPlayStart, Float afPlayEnd) Global Native
 {Every NPC due this pass: a home/work/relax transition (a relax-only NPC included), a registered follower still
  holding a schedule alias, an on-shift guard due its reinforce, an orphaned alias hold, or a held NPC in a hold the
- schedule yields to (Sched_HoldYield). The caller passes the four schedule window rows it reads with
- Settings_GetFloat; per-NPC work-hour overrides are read natively, as DetermineScheduleTypeFor
- applies them. Alias system only (Route B keys on KEY_LAST_SCHEDULED_TYPE):
- gate on SchedSystemActive().}
+ schedule yields to (Sched_HoldYield). An NPC with no schedule alias whose block the reconcile already noted
+ (Sched_NoteHold: a journey, a follow, a wait, a teammate, a framework seat, a yield that is not an arrest's) is left
+ out while what _SchedHoldBlock reads is unchanged, and is returned again within ten passes. The caller passes the
+ four schedule window rows it reads with Settings_GetFloat; per-NPC work-hour overrides are read natively, as
+ DetermineScheduleTypeFor applies them. Alias system only (Route B keys on KEY_LAST_SCHEDULED_TYPE): gate on
+ SchedSystemActive().}
 
 Actor[] Function Sched_GetSceneSuspendMismatched() Global Native
 {Homed, 3D-loaded NPCs whose live scene state disagrees with the cosaved
@@ -1040,8 +1048,8 @@ Actor[] Function Sched_GetSceneSuspendMismatched() Global Native
  empty). Flagged actors whose home was cleared are included, so a suspend can
  always be undone.}
 
-; The schedule's other natives, not filters: Sched_HoldYield and Sched_GetAssignedRows (ScheduleTickFilter.h),
-; Sched_NoteHold (HomeSandboxVerifier.h).
+; The schedule's other natives, not filters: Sched_HoldYield, Sched_GetAssignedRows and Sched_GetHomedRoster
+; (ScheduleTickFilter.h), Sched_NoteHold (HomeSandboxVerifier.h).
 
 Int Function Sched_HoldYield(Actor akActor) Global Native
 {Which other hold the schedule gives way to: 0 none, 1 crafting (CrafterAlias 3 or CrafterApproachAlias 6 of quest
@@ -1052,10 +1060,25 @@ Int Function Sched_HoldYield(Actor akActor) Global Native
 
 Int Function Sched_NoteHold(Actor akActor, Int aiReason) Global Native
 {Records why the schedule holds nothing on akActor (FollowerManager's SCHED_HOLD_* codes; 0 drops the note) for the
- Assigned NPCs card. Returns the previous code (0 when none). Not saved: cleared on revert.}
+ Assigned NPCs card and for Sched_GetTransitionDue, which leaves a noted block out. The DLL reads what
+ _SchedHoldBlock reads at this call and keeps it only if it still shows the block, so note once the caller's own
+ changes to her are done. Returns the previous code (0 when none). Not saved: cleared on revert.}
 
 Actor[] Function Sched_GetAssignedRows() Global Native
 {Every living actor whose row holds a home, a work spot or a relax spot, follower or not, sorted by FormID.}
+
+Actor[] Function Sched_GetHomedRoster(Bool abLoadedOnly) Global Native
+{The actors with a home who are in memory and not deleted (the dead included), sorted by FormID; with abLoadedOnly,
+ only those whose 3D is loaded. Empty when there are none.}
+
+Int Function Sched_BlockInputs(Actor akActor) Global Native
+{What FollowerManager._SchedHoldBlock reads on akActor, in one call: 1 (always set, so 0 is None or an older DLL), 2 a
+ live journey, 4 the guard of a live arrest, 8 a member of SeverActions_ActivelyFollowing, 16 a player teammate, 32 an
+ NFF seat, 64 x (WaitingForPlayer + 1) and 512 x Sched_HoldYield. Decode by division (FollowerManager's BLOCKIN_*).}
+
+Actor[] Function Sched_SleepersToRouse(Actor[] akSleepers) Global Native
+{Of the home sleepers given, the ones ProcessHomeSleep must act on inside the sleep window: dead, a registered follower
+ again, a player teammate, or no longer using furniture (FurnitureLib.IsUsing). The deleted are left out.}
 
 ; --- Intimacy gates ----------------------------------------------------------
 ; Main tracks no intimate history (that is the NSFW sibling's
@@ -1125,9 +1148,9 @@ Bool Function BioApi_Exists(String asKey) Global Native
 ; it replaces the NPC's other blocks of that tab, already applied or not. Apply ONCE, on your own event, never on
 ; every load: the player may remove it from that NPC.
 Bool Function BioApi_Apply(Actor akActor, String asKey) Global Native
-; Remove the keyed block from an NPC. False when the key is unknown or the block was not applied to them.
+; Remove the keyed block from an NPC in this save; False when it was not applied in it. An every-save one stays.
 Bool Function BioApi_Unapply(Actor akActor, String asKey) Global Native
-; True when the keyed block is applied to this NPC (a faction rule's grant does not count).
+; True when the keyed block is applied to this NPC, in this save or every save (a faction grant does not count).
 Bool Function BioApi_IsApplied(Actor akActor, String asKey) Global Native
 ; v2. Every block the NPC's bio shows (v3: one per one-block tab), one TAB-separated record each (split with
 ; StringUtil.Split(s, "\t")): "direct" or "faction", the tab, the title, then the key, absent for the player's own
@@ -1405,6 +1428,11 @@ Function Magelight_SetCampKit(Int kit) Global Native
 
 ; ── LLM relays ──
 
+Bool Function LLM_DispatchBanter(Actor[] followers, String[] recentBanter, String modEventName) Global Native
+{Native_LLM_Dispatch for sever_follower_banter with the context built in the DLL: each follower's mood and
+combat style, every pair's values and blurbs, and recentBanter's JSON objects (None followers are skipped).
+False when nothing was sent.}
+
 Bool Function Native_LLM_DispatchRelationshipAssess(Actor akActor, String modEventName) Global Native
 {Native_LLM_Dispatch for sever_relationship_assess with the context built in
  C++ (FormID, trimmed social graph and relationship memories, capped). The
@@ -1477,6 +1505,14 @@ Int[] Function Pool_FilledIndices(Quest akQuest, ObjectReference akHolder = None
 {The GetNthAlias indices of akQuest's reference aliases that hold a reference
  (only those holding akHolder when it is given), ascending, in one call: a
  Papyrus walk pays a frame per GetNthAlias. Empty for None or no match.}
+
+ReferenceAlias[] Function Pool_AliasesAt(Quest akQuest, Int[] aiIndices) Global Native
+{akQuest's aliases at the given GetNthAlias indices, same length and order (None for an index out of range or one that
+ is no reference alias), in one call.}
+
+Actor[] Function Pool_KeepableHoldersAt(Quest akQuest, Int[] aiIndices) Global Native
+{For each of the given GetNthAlias seats, the actor it holds when she is neither deleted nor disabled, else None; same
+ length and order. A sweep that finds that same actor in the seat can skip its IsDeleted and IsDisabled reads.}
 Int Function Hotkey_GetCode(String asId) Global Native
 {The bound DirectInput code of a hotkey id (an int keybind row of the settings
  table: FollowToggleKey ... SetupSmallCampKey ... TieUntieKey, ConfigMenuKey, WheelMenuKey), read
@@ -1517,6 +1553,9 @@ ObjectReference Function Furniture_SeatFor(Actor akActor, ObjectReference akFurn
 Bool Function Native_OutfitSlot_UsesPresetOutfit(Actor akActor) Global Native
 {True when akActor's default or sleep outfit is one of the 1600 preset BGSOutfits, the only
  case in which the engine reads a preset's LeveledItem.}
+
+Actor[] Function Native_OutfitSlot_GetActorsUsingPresetOutfit() Global Native
+{The outfit slot owners Native_OutfitSlot_UsesPresetOutfit is true for, in one call. Usually empty.}
 
 Bool Function Native_OutfitSlot_GivesPieces(Actor akActor, Int presetIdx) Global Native
 {True when the player gave akActor the pieces of that preset (the Outfits page's Give): they are
@@ -1606,6 +1645,15 @@ Function CombatUndo_Clear(Actor akActor, Int aiField) Global Native
 Function CombatUndo_SetPartner(Actor akActor, Actor akPartner) Global Native
 Actor Function CombatUndo_GetPartner(Actor akActor) Global Native
 
+; SA's sandbox overrides and SexLab / OStim scenes ('SCYD', SceneYield.h). Called by SeverActions_ModuleBase's
+; AddSandboxOverride, RemoveSandboxOverride and _SceneYieldSwap only.
+Bool Function SceneYield_Defer(Actor akActor, Package akPackage, Int aiPriority, Int aiFlags) Global Native
+{Records the override. True when akActor is in a scene: add nothing now, the DLL adds it when the scene is over.}
+Bool Function SceneYield_Release(Actor akActor, Package akPackage) Global Native
+{Drops the override's record. True when a scene had it off (the owner still held it).}
+Bool Function SceneYield_IsOn(Actor akActor, Package akPackage) Global Native
+{True while the record says the override should be on.}
+
 ; What a recruit or a turn on the player changed (FollowerData, FLWD v23), put back at dismissal or Start over. aiField:
 ; 0 the original Aggression, 1 the original Confidence, 2 the original rank toward the player, 3 the rank before a turn
 ; on the player, 4 hands-off at recruit (1 or 0). A dismissal keeps it.
@@ -1628,3 +1676,16 @@ String Function OffScreen_StoryPlace(Actor akActor) Global Native
 {Where akActor's off-screen story is told from: their home, a subject's last place, or "".}
 String Function OffScreen_StoryHold(Actor akActor) Global Native
 {The hold their rumors go under and an off-screen arrest jails them in: their home, a subject's hold, or "".}
+Int Function OffScreen_DispatchLifeEvent(Actor akActor, Bool consequencesEnabled, Float consequenceCooldownSec, Float lastConsequenceGT, Float currentGameTime) Global Native
+{Builds the off-screen life prompt's context and sends it in one call, so the context never enters Papyrus.
+1 sent (SeverActions_OffScreenLifeReady follows, as after Native_OffScreen_RequestLifeEventLLM), 0 no event for
+akActor now (no home and no place), -1 the dispatch was refused. The times are game seconds.}
+Function OffScreen_StoreLifeEventHistory(Actor akActor, Int maxEvents, Float currentGameTime) Global Native
+{Writes akActor's newest maxEvents life events (Native_OffScreen_GetRecentLifeEvents' lines) to their life event
+history in the DLL, so the text never passes through a script.}
+
+; A text too long for one script string, in parts of at most 3500 bytes: part 0, 1, 2... until "".
+String Function Book_TextPart(Form akBook, Int part) Global Native
+{Part `part` of akBook's text (GetBookText's), "" past the end. Ask for part 0 first: it reads the book.}
+String Function Magelight_SelectedDiaryPart(Int part) Global Native
+{Part `part` of the diary entry the player picked in the diary viewer, "" past the end.}

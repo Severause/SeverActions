@@ -372,3 +372,49 @@ Function SetGhostFor(Actor akActor, Bool abGhost) Global
         akActor.SetGhost(abGhost)
     EndIf
 EndFunction
+
+; SA's sandbox overrides and SexLab / OStim scenes (SceneYield.h)
+; A scene holds its actors with a stand-still package. A sandbox override of SA's at or above its priority, or any
+; override against a framework that holds by alias, walks them out of it. Every ActorUtil override of a sandbox package
+; goes through the two functions below, so the DLL takes it off while the NPC is in a scene and puts it back after.
+
+Function AddSandboxOverride(Actor akActor, Package akPackage, Int aiPriority, Int aiFlags) Global
+    {ActorUtil.AddPackageOverride for a sandbox package, recorded for scenes. While akActor is in a SexLab or OStim
+     scene nothing is added: the DLL adds it once the scene is over. No EvaluatePackage (the caller's).}
+    If akActor && akPackage && !SeverActionsNativeExt2.SceneYield_Defer(akActor, akPackage, aiPriority, aiFlags)
+        ActorUtil.AddPackageOverride(akActor, akPackage, aiPriority, aiFlags)
+    EndIf
+EndFunction
+
+Bool Function RemoveSandboxOverride(Actor akActor, Package akPackage) Global
+    {ActorUtil.RemovePackageOverride for a sandbox package, and its record. True when one came off, or when a scene
+     already had it off.}
+    If !akActor || !akPackage
+        Return False
+    EndIf
+    ; Record first: _SceneYieldSwap's restore re-tests the record after its add.
+    Bool held = SeverActionsNativeExt2.SceneYield_Release(akActor, akPackage)
+    Return ActorUtil.RemovePackageOverride(akActor, akPackage) || held
+EndFunction
+
+Bool Function _SceneYieldSwap(Actor akActor, Package akPackage, Int aiPriority, Int aiFlags, Bool abRestore) Global
+    {Called only by the DLL (SceneYield, a static call). Takes every copy of the override off; with abRestore puts one
+     back unless its owner removed it meanwhile. True when a copy came off.}
+    If !akActor || !akPackage
+        Return False
+    EndIf
+    ; PapyrusUtil can stack an override added twice, and one remove leaves the rest on.
+    Int removed = 0
+    While removed < 5 && ActorUtil.RemovePackageOverride(akActor, akPackage)
+        removed += 1
+    EndWhile
+    If abRestore && SeverActionsNativeExt2.SceneYield_IsOn(akActor, akPackage)
+        ActorUtil.AddPackageOverride(akActor, akPackage, aiPriority, aiFlags)
+        ; An owner's RemoveSandboxOverride can land between the test and the add.
+        If !SeverActionsNativeExt2.SceneYield_IsOn(akActor, akPackage)
+            ActorUtil.RemovePackageOverride(akActor, akPackage)
+        EndIf
+    EndIf
+    akActor.EvaluatePackage()
+    Return removed > 0
+EndFunction

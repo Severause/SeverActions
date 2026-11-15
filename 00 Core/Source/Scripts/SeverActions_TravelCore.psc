@@ -608,7 +608,7 @@ Function _ApplyArrivalSandbox(Actor akNPC)
         sandbox = defaultSandbox
     EndIf
     If sandbox
-        ActorUtil.AddPackageOverride(akNPC, sandbox, TRAVEL_PACKAGE_PRIORITY, 1)
+        SeverActions_ModuleBase.AddSandboxOverride(akNPC, sandbox, TRAVEL_PACKAGE_PRIORITY, 1)
         ; The teardown strips the shared default only if this journey applied it
         ; (it is also Follow's manual-wait package).
         _SetJourneyInt(akNPC, "sbxOwned", "SeverTravel_SbxOwned", (sandbox == defaultSandbox) as Int)
@@ -629,12 +629,12 @@ Function _Teardown(Actor akNPC, Bool abRestoreFollower)
         If SeverActionsNativeExt.Native_GetSandboxing(akNPC)
             Debug.Trace("[SeverActions_TravelCore] " + akNPC.GetDisplayName() + " is in a wait hold - leaving the shared sandbox package to it")
         Else
-            ActorUtil.RemovePackageOverride(akNPC, defaultSandbox)
+            SeverActions_ModuleBase.RemoveSandboxOverride(akNPC, defaultSandbox)
         EndIf
     EndIf
     Package overridePkg = _GetJourneySandbox(akNPC)
     If overridePkg && overridePkg != defaultSandbox
-        ActorUtil.RemovePackageOverride(akNPC, overridePkg)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akNPC, overridePkg)
     EndIf
     Keyword kw = Game.GetFormFromFile(FID_TRAVEL_TARGET_KW, "SeverActions.esp") as Keyword
     If kw

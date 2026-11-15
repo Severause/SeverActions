@@ -60,6 +60,13 @@ Recent dialogue between {{ npc.name }} and {{ player.name }}, oldest first (a li
 No new dialogue between them since the last assessment.
 {% endif %}
 
+{# What a companion plugin says happened in front of them (the native API's bond request). Shown to one assessment. #}
+{% set seenNow = default(witnessed, "") %}
+{% if seenNow != "" %}
+What {{ npc.name }} has just seen with their own eyes, not weighed before:
+- {{ seenNow }}
+{% endif %}
+
 {% set recent_foes = sever_recent_foes(npcUUID) %}
 {% if recent_foes != "" %}
 Recent fights - these were hostile to {{ player.name }} and their companions on their own account and fought them: {{ recent_foes }}. A battle account that calls one of them "not actively engaged in combat" means they fell before striking a blow, not that they were a bystander.
@@ -115,6 +122,9 @@ Rules:
 - Rapport, Trust, Loyalty: change only in response to things involving {{ player.name }} — their words and deeds, and the companion's own NEW diary reflections about them. Range: -15 to +15.
 - Mood: Can change from ANY source (combat stress, pleasant surroundings, humor, insults, fear). Range: -20 to +20.
 - ZERO IS THE DEFAULT. Most conversations change nothing about how someone feels. Move a number only for a specific, nameable cause in the NEW dialogue or a NEW diary entry — something you could point to. Small talk, banter, orders given and followed, a curt reply, a joke at their expense: 0. If you cannot name the cause, it is 0.
+{% if seenNow != "" %}
+- What {{ npc.name }} has just seen (above) is NEW, like new dialogue: a specific thing that happened in front of them. Weigh it by who {{ npc.name }} is and what {{ player.name }} is to them. It may move rapport, trust or loyalty either way, or leave them unmoved; it is never ignored because it was not said in words. It has no tag: never put it in "sources".
+{% endif %}
 - Memories are BACKGROUND for the blurb. They explain the numbers as they stand; they do not move them again. A memory you are shown here has almost certainly been counted already.
 - Scale: 1-3 a real but small moment, 4-7 meaningful, 8-12 important, 13-15 extraordinary life-changing moments. A diary entry earns a change only when it reacts to something new, and then on this same scale.
 - Consider the companion's personality and values when judging reactions to events.
@@ -136,9 +146,9 @@ Include a "blurb" — a 3-5 sentence summary (40-80 words) of how {{ npc.name }}
 - The relationship is not fixed, and the blurb should feel that way — but NEVER spell out what would change their mind. The player can read this blurb, and a stated price ("if they apologised…", "one more rescue and…") becomes a recipe. Convey the openness through tone, not terms; and some wounds are simply not for mending soon — it is fine for a blurb to offer nothing.
 The blurb should reflect the TOTAL relationship state, not just the latest change. If all changes are 0, still write a blurb reflecting the current state (voice example — never reuse its content: "You're still sizing them up — that reckless charge into the barrow earned a grudging nod, but you're not convinced they won't get you both killed.").
 
-Include a "cause": when any number moves, a few words naming the specific thing that moved it (for rapport, trust or loyalty, something in the NEW dialogue or diary), as the companion would put it (e.g. "you pulled me out of the river", "you mocked my faith"); empty when nothing moved. It is shown to the player beside the change.
+Include a "cause": when any number moves, a few words naming the specific thing that moved it (for rapport, trust or loyalty, something in the NEW dialogue or diary{% if seenNow != "" %}, or what they have just seen{% endif %}), as the companion would put it (e.g. "you pulled me out of the river", "you mocked my faith"); empty when nothing moved. It is shown to the player beside the change.
 
-Include "sources": the tags of at most 3 lines above, written without brackets (like "e:1234" for dialogue, "m:56" for a memory, "d:7" for the diary): first the NEW line or diary entry behind any change, then what most shaped the blurb; [] when nothing stood out. Use only tags shown above. Tags go only in "sources", never in the blurb or the cause. The player can see these lines beside the change.
+Include "sources": the tags of at most 3 lines above, written without brackets (like "e:1234" for dialogue, "m:56" for a memory, "d:7" for the diary): first the NEW line or diary entry behind any change, then what most shaped the blurb; [] when nothing stood out{% if seenNow != "" %}, or when what they have just seen is the only cause{% endif %}. Use only tags shown above. Tags go only in "sources", never in the blurb or the cause. The player can see these lines beside the change.
 
 Respond with ONLY this JSON. No spaces after colons. No explanation. One line.
 Include "eid" with the value {{ maxEventId }}, "mid" with the value {{ maxMemoryId }}, and "did" with the value {{ diaryId }} so the system knows which events, memories, and diary entries were assessed:

@@ -172,74 +172,6 @@ Function FireFollowerBanter(Actor[] eligible, Int count)
     Float nextCooldown = Utility.RandomFloat(SeverActionsNativeExt2.Settings_GetFloat("banterCooldownMin"), SeverActionsNativeExt2.Settings_GetFloat("banterCooldownMax")) * SECONDS_PER_GAME_HOUR
     StorageUtil.SetFloatValue(None, KEY_NEXT_BANTER_GT, now + nextCooldown)
 
-    ; followers[]
-    String contextJson = "{\"followers\":["
-    Int i = 0
-    While i < count
-        Actor fol = eligible[i]
-        If i > 0
-            contextJson += ","
-        EndIf
-        Float folMood = SeverActionsNative.Native_GetMood(fol)
-        String folStyle = GetCombatStyle(fol)
-        contextJson += "{\"formId\":" + fol.GetFormID()
-        contextJson += ",\"mood\":" + (folMood as Int)
-        contextJson += ",\"combatStyle\":\"" + folStyle + "\"}"
-        i += 1
-    EndWhile
-    contextJson += "]"
-
-    ; pairs[]: every combination, both directions
-    contextJson += ",\"pairs\":["
-    Bool firstPair = true
-    i = 0
-    While i < count
-        Int j = i + 1
-        While j < count
-            Actor a = eligible[i]
-            Actor b = eligible[j]
-            If a && b
-                Float affinityAB = SeverActionsNative.Native_GetPairAffinity(a, b)
-                Float respectAB = SeverActionsNative.Native_GetPairRespect(a, b)
-                Float affinityBA = SeverActionsNative.Native_GetPairAffinity(b, a)
-                Float respectBA = SeverActionsNative.Native_GetPairRespect(b, a)
-                String blurbAB = SeverActionsNativeExt.Native_GetPairBlurb(a, b)
-                String blurbBA = SeverActionsNativeExt.Native_GetPairBlurb(b, a)
-
-                If !firstPair
-                    contextJson += ","
-                EndIf
-                contextJson += "{\"formIdA\":" + a.GetFormID()
-                contextJson += ",\"formIdB\":" + b.GetFormID()
-                contextJson += ",\"affinityAB\":" + (affinityAB as Int)
-                contextJson += ",\"respectAB\":" + (respectAB as Int)
-                contextJson += ",\"affinityBA\":" + (affinityBA as Int)
-                contextJson += ",\"respectBA\":" + (respectBA as Int)
-                ; LLM-written blurbs: a quote or newline unescaped makes SkyrimNet drop the whole context.
-                contextJson += ",\"blurbAB\":\"" + SeverActionsNative.EscapeJsonString(blurbAB) + "\""
-                contextJson += ",\"blurbBA\":\"" + SeverActionsNative.EscapeJsonString(blurbBA) + "\"}"
-                firstPair = false
-            EndIf
-            j += 1
-        EndWhile
-        i += 1
-    EndWhile
-    contextJson += "]"
-
-    ; recentBanter[]: the persisted topic history for the prompt's anti-repetition and rotation
-    ; sections (get_recent_events does not surface our gamemaster_dialogue topics).
-    contextJson += ",\"recentBanter\":["
-    Int hcount = StorageUtil.StringListCount(None, KEY_BANTER_HISTORY)
-    Int h = 0
-    While h < hcount
-        If h > 0
-            contextJson += ","
-        EndIf
-        contextJson += StorageUtil.StringListGet(None, KEY_BANTER_HISTORY, h)
-        h += 1
-    EndWhile
-    contextJson += "]}"
-
     ; Skip if the prompt is not installed.
     If !SeverActionsNative.Native_IsPromptAvailable("sever_follower_banter")
         SeverActionsNativeExt2.LLMLane_Release("companions.banter")
@@ -248,15 +180,16 @@ Function FireFollowerBanter(Actor[] eligible, Int count)
     EndIf
 
     ; Through the C++ bridge relay (the Background AI master toggle covers it), on a
-    ; per-dispatch reply event name.
+    ; per-dispatch reply event name. The DLL builds the context (every follower and pair, the topic
+    ; history): with a full party it is longer than a script may hold across a save.
     If BanterEventNameCur != ""
         UnregisterForModEvent(BanterEventNameCur)
     EndIf
     BanterSeq += 1
     BanterEventNameCur = "SeverActions_LLM_Banter_" + BanterSeq
     RegisterForModEvent(BanterEventNameCur, "OnLLMBanterReady")
-    Bool sent = SeverActionsNativeExt.Native_LLM_Dispatch("sever_follower_banter", contextJson, \
-        BanterEventNameCur)
+    Bool sent = SeverActionsNativeExt2.LLM_DispatchBanter(eligible, \
+        StorageUtil.StringListToArray(None, KEY_BANTER_HISTORY), BanterEventNameCur)
 
     If !sent
         SeverActionsNativeExt2.LLMLane_Release("companions.banter")
@@ -334,12 +267,14 @@ Function OnFollowerBanter(String response, Int success)
 EndFunction
 
 Function RecordBanterTopic(String speakerName, String targetName, String topicText)
-    {Appends a pre-escaped JSON object (speaker, target, topic) to the rolling banter history
+    {Appends a pre-escaped JSON object (speaker, target, topic, day) to the rolling banter history
      (StorageUtil StringList on None, capped at BanterHistoryMax); FireFollowerBanter sends it
-     as the prompt's "recentBanter".}
+     as the prompt's "recentBanter". day is the whole game day, which the prompt compares with
+     the DLL's "gameDay".}
     String obj = "{\"speaker\":\"" + SeverActionsNative.EscapeJsonString(speakerName) + "\","
     obj += "\"target\":\"" + SeverActionsNative.EscapeJsonString(targetName) + "\","
-    obj += "\"topic\":\"" + SeverActionsNative.EscapeJsonString(topicText) + "\"}"
+    obj += "\"topic\":\"" + SeverActionsNative.EscapeJsonString(topicText) + "\","
+    obj += "\"day\":" + (Utility.GetCurrentGameTime() as Int) + "}"
     StorageUtil.StringListAdd(None, KEY_BANTER_HISTORY, obj, true)
     While StorageUtil.StringListCount(None, KEY_BANTER_HISTORY) > BanterHistoryMax
         StorageUtil.StringListRemoveAt(None, KEY_BANTER_HISTORY, 0)
@@ -493,8 +428,8 @@ Float Function _LifeEventOverdue(Actor akActor, Float now)
 EndFunction
 
 Function FireOffScreenLifeEvent(Actor akActor)
-    {Claims the off-screen life lane (120 s TTL), rolls the NPC's next cooldown, builds the
-     context natively and dispatches the sever_offscreen_life prompt (1-2 daily events).}
+    {Claims the off-screen life lane (120 s TTL), rolls the NPC's next cooldown and has the DLL build
+     the context and dispatch the sever_offscreen_life prompt (1-2 daily events).}
     If !SeverActionsNativeExt2.LLMLane_TryClaim("companions.offscreenLife", 120.0)
         Return
     EndIf
@@ -512,19 +447,9 @@ Function FireOffScreenLifeEvent(Actor akActor)
     EndIf
     StorageUtil.SetFloatValue(akActor, KEY_NEXT_LIFE_EVENT_GT, nowTime + nextCooldown)
 
-    ; Native context: the home or a story subject's place, social graph, the people nearby, consequence eligibility
+    ; What the DLL's context needs from the script: when the last consequence was, and the cooldown.
     Float lastConsequence = StorageUtil.GetFloatValue(akActor, KEY_LAST_CONSEQUENCE_GT, 0.0)
     Float consequenceCooldown = SeverActionsNativeExt2.Settings_GetFloat("consequenceCooldown") * SECONDS_PER_GAME_HOUR
-
-    String contextJson = SeverActionsNative.Native_OffScreen_BuildContext(akActor, \
-        SeverActionsNativeExt2.Settings_GetBool("consequencesEnabled"), consequenceCooldown, lastConsequence, nowTime)
-
-    If contextJson == ""
-        SeverActionsNativeExt2.LLMLane_Release("companions.offscreenLife")
-        PendingOffScreenLifeActor = None
-        DebugMsg("Off-screen life: native context build failed for " + akActor.GetDisplayName())
-        Return
-    EndIf
 
     ; Skip if the prompt is not installed.
     If !SeverActionsNative.Native_IsPromptAvailable("sever_offscreen_life")
@@ -534,11 +459,16 @@ Function FireOffScreenLifeEvent(Actor akActor)
         Return
     EndIf
 
-    ; Dispatched natively: a Papyrus SendCustomPromptToLLM reply truncates near 1024 chars.
-    ; The native parser stores the events, gossip and memories, then fires
-    ; SeverActions_OffScreenLifeReady (OnOffScreenLifeReady).
-    Bool sent = SeverActionsNative.Native_OffScreen_RequestLifeEventLLM(akActor, contextJson, GetGameTimeInSeconds())
-    If !sent
+    ; Built and dispatched in the DLL: the context is longer than a script may hold across a save, and a
+    ; Papyrus SendCustomPromptToLLM reply truncates near 1024 chars. The native parser stores the events,
+    ; gossip and memories, then fires SeverActions_OffScreenLifeReady (OnOffScreenLifeReady).
+    Int sent = SeverActionsNativeExt2.OffScreen_DispatchLifeEvent(akActor, \
+        SeverActionsNativeExt2.Settings_GetBool("consequencesEnabled"), consequenceCooldown, lastConsequence, nowTime)
+    If sent == 0
+        SeverActionsNativeExt2.LLMLane_Release("companions.offscreenLife")
+        PendingOffScreenLifeActor = None
+        DebugMsg("Off-screen life: no event for " + akActor.GetDisplayName() + " (no home or place to set it in)")
+    ElseIf sent < 0
         SeverActionsNativeExt2.LLMLane_Release("companions.offscreenLife")
         PendingOffScreenLifeActor = None
         DebugMsg("Off-screen life LLM dispatch failed for " + akActor.GetDisplayName() \
@@ -630,10 +560,7 @@ Event OnOffScreenLifeReady(string eventName, string strArg, float numArg, Form s
 
     ; The event history, read by prompts through the sever_life_event_history decorator.
     If !storySubject
-        String eventHistory = SeverActionsNative.Native_OffScreen_GetRecentLifeEvents(akActor, 10, currentGameTime)
-        If eventHistory != ""
-            SeverActionsNativeExt.Native_SetLifeEventHistory(akActor, eventHistory)
-        EndIf
+        SeverActionsNativeExt2.OffScreen_StoreLifeEventHistory(akActor, 10, currentGameTime)
     EndIf
 
     ; Persistent events, so the follower remembers them. They say the player was away: SkyrimNet's diary
@@ -1107,9 +1034,9 @@ Function ProcessOffScreenPurchase(Actor akActor, Int cost, String reason, String
 
     String eventText
     If gotItem
-        eventText = actorName + " spent " + cost + " gold on " + resolvedName + " — " + reason
+        eventText = actorName + " spent " + cost + " gold on " + resolvedName + " - " + reason
     Else
-        eventText = actorName + " spent " + cost + " gold — " + reason
+        eventText = actorName + " spent " + cost + " gold - " + reason
     EndIf
     SkyrimNetApi.RegisterEvent("persistent_generic", WrapPersistentEvent(eventText + "."), akActor, None)
     SeverActionsNative.Native_OffScreen_AddEvent(akActor, eventText, "notable", GetGameTimeInSeconds(), true, "gold_change", 0 - cost, "", "")
@@ -1168,8 +1095,8 @@ Function ProcessOffScreenItemAcquired(Actor akActor, String itemName, String cat
 EndFunction
 
 String Function GetCombatStyle(Actor akActor)
-    {The native combat style, with "" and the legacy "balanced" read as "no combat style" (a
-     copy of FollowerManager's reader, for the banter context).}
+    {The native combat style, with "" and the legacy "balanced" read as "no combat style". No
+     caller in this build (the DLL builds the banter context); an older build's saved frame may call it.}
     If !akActor
         Return "no combat style"
     EndIf

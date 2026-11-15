@@ -19,11 +19,16 @@ Bool Function WalkToReferenceAt(Actor akActor, ObjectReference akTarget, float m
     Package walkPkg = Game.GetFormFromFile(0x02B051, "SeverActions.esp") as Package
     Keyword walkKW = Game.GetFormFromFile(0x02B050, "SeverActions.esp") as Keyword
     if !akActor || !akTarget
+        Debug.Trace("[SeverActions_WalkLib] WalkToReference: no walker or no target")
         return false
     endif
     ; Someone walking beside a traveler can still be handed something; nothing pulls them off the road.
     if SeverActionsNativeExt2.Travel_GetPhaseByActor(akActor) == 1
-        return _FlatDistance(akActor, akTarget) <= 150.0
+        Float roadDist = _FlatDistance(akActor, akTarget)
+        if roadDist > 150.0
+            Debug.Trace("[SeverActions_WalkLib] WalkToReference: " + akActor.GetDisplayName() + " is on a journey and " + (roadDist as Int) + " units away; no detour")
+        endif
+        return roadDist <= 150.0
     endif
 
     Bool usingPackage = walkPkg && walkKW
@@ -67,7 +72,11 @@ Bool Function WalkToReferenceAt(Actor akActor, ObjectReference akTarget, float m
     ; The position decides: the monitor drops its entry both on arrival and when it
     ; auto-cancels for a dead actor. Flat, as the monitor measures: the package parks the walker at
     ; its 150 radius, so a target up a step or on a table would fail a 3D test.
-    return _FlatDistance(akActor, akTarget) <= 150.0
+    Float dist = _FlatDistance(akActor, akTarget)
+    if dist > 150.0
+        Debug.Trace("[SeverActions_WalkLib] WalkToReference: " + akActor.GetDisplayName() + " ended " + (dist as Int) + " units away (arrival is 150)")
+    endif
+    return dist <= 150.0
 EndFunction
 
 Float Function _FlatDistance(ObjectReference a, ObjectReference b) Global

@@ -408,7 +408,8 @@ Function DispatchAmbientAction(Actor akActor, String actionName, String destinat
 
     ElseIf actionName == "GiveItem"
         If akTarget && itemName != ""
-            SeverActionsNativeExt2.Verb_Send("items", "giveItem", _VerbTail(akTarget, itemName, aiQty, ""), akActor)
+            ; str2 "ambient": the items dispatcher shows no HUD note for a give the player did not order.
+            SeverActionsNativeExt2.Verb_Send("items", "giveItem", _VerbTail(akTarget, itemName, aiQty, "ambient"), akActor)
         EndIf
 
     ElseIf actionName == "GiveGold"

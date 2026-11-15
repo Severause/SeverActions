@@ -484,8 +484,9 @@ Int Function GetPositionSnapshotCount() Global Native
 ; === BOOKS ===
 
 String Function GetBookText(Form akForm) Global Native
-{Full text of a book, markup ([pagebreak], <p>, <font>, ...) stripped and whitespace normalized.
-When DBF maps the book to a .txt file, that file's contents instead.}
+{The start of a book's text (at most 3500 bytes; SeverActionsNativeExt2.Book_TextPart gives all of it), markup
+([pagebreak], <p>, <font>, ...) stripped and whitespace normalized. When DBF maps the book to a .txt file, that
+file's contents instead.}
 
 Form Function FindBookInInventory(Actor akActor, String bookName) Global Native
 {Book in akActor's inventory matching bookName (case-insensitive partial match), or None.}
@@ -543,10 +544,10 @@ ObjectReference Function FindInteriorMarkerForDoor(ObjectReference doorRef, Acto
 
 Function RegisterYieldedActor(Actor akActor, Float originalAggression, Faction surrenderedFaction) Global Native
 {Watch a yielded actor for player hits: SetYieldHitThreshold hits revert the surrender and fire
-SeverActionsNative_YieldBroken. surrenderedFaction (SeverSurrenderedFaction) is cached on first use.}
+SeverActionsNative_YieldBroken. Holds the base's aggro radius off. surrenderedFaction (SeverSurrenderedFaction) is cached on first use.}
 
 Function UnregisterYieldedActor(Actor akActor) Global Native
-{Stop watching a yielded actor (ReturnToCrime, FullCleanup, dismissal).}
+{Stop watching a yielded actor (ReturnToCrime, FullCleanup, dismissal); the aggro radius comes back once no hold needs it.}
 
 Bool Function IsYieldMonitored(Actor akActor) Global Native
 {True while akActor is watched.}
@@ -560,8 +561,8 @@ Function SetYieldHitThreshold(Int threshold) Global Native
 ; === CEASEFIRE MONITOR ===
 
 Function Ceasefire_Register(Actor akActor, Float originalAggression) Global Native
-{Watch a ceasefire'd actor: a player hit breaks the ceasefire for it and its tracked allies, restoring
-aggression and factions, and fires SeverActionsNative_CeasefireBroken for Papyrus's cleanup.}
+{Watch a ceasefire'd actor: a player weapon hit, or a fight it keeps being forced into, breaks the ceasefire
+for it and its tracked allies, restoring aggression and factions, and fires SeverActionsNative_CeasefireBroken.}
 
 Function Ceasefire_Unregister(Actor akActor) Global Native
 {Stop watching akActor.}
@@ -573,8 +574,8 @@ Function Ceasefire_ClearAll() Global Native
 {Clear all ceasefire tracking.}
 
 Actor[] Function Ceasefire_FindNearbyAllies(Actor akActor, Float radius) Global Native
-{Living, loaded actors within radius in akActor's cell (neighbours not scanned) sharing one of its
-base-record factions, player excluded; to spread a group ceasefire.}
+{Living, loaded actors within radius (every loaded cell in range outdoors, akActor's cell indoors) sharing one
+of its base-record factions, player excluded; to spread a group ceasefire.}
 
 ; === OFF-SCREEN TRAVEL ESTIMATE (unloaded NPCs, ~18000 units per game hour) ===
 
@@ -889,7 +890,8 @@ Bool Function Magelight_IsDiaryViewerOpen() Global Native
 {True while the diary viewer is open.}
 
 String Function Magelight_GetSelectedDiaryContent() Global Native
-{Full text of the entry the player picked; valid only after the selection event.}
+{The start of the entry the player picked (at most 3500 bytes; SeverActionsNativeExt2.Magelight_SelectedDiaryPart
+gives all of it); valid only after the selection event.}
 
 String Function Magelight_GetSelectedDiaryTitle() Global Native
 {Title / date of the entry the player picked; valid only after the selection event.}
@@ -1373,18 +1375,17 @@ summary1|type1|gossip1|summary2|type2|gossip2|conseqAction|conseqAmount|conseqRe
 ("" on a parse failure).}
 
 Bool Function Native_OffScreen_RequestLifeEventLLM(Actor akActor, String contextJson, Float gameTime) Global Native
-{Send the off-screen life prompt through the SkyrimNet bridge, keeping the full reply in C++ (a
-Papyrus callback truncates it at ~1024 chars). The parsed result arrives as
-SeverActions_OffScreenLifeReady (sender = akActor, strArg in ParseLLMResponse's format, numArg =
-success). False if the custom-prompt API is unavailable or SkyrimNet refused the request.}
+{For an older script only; SeverActionsNativeExt2.OffScreen_DispatchLifeEvent replaces it. Sends the off-screen
+life prompt with contextJson; the parsed reply arrives as SeverActions_OffScreenLifeReady (sender = akActor, strArg
+in ParseLLMResponse's format, numArg = success). False when nothing was sent.}
 
 String Function Native_OffScreen_BuildContext(Actor akActor, Bool consequencesEnabled, Float consequenceCooldownSec, Float lastConsequenceGT, Float currentGameTime) Global Native
-{The off-screen life prompt's context JSON, built natively: home, SkyrimNet social graph, dismissed
-followers nearby in the same hold, consequence eligibility. "" on failure.}
+{For an older script only; SeverActionsNativeExt2.OffScreen_DispatchLifeEvent replaces it. The off-screen life
+prompt's context JSON; "" for no event, and when the context is longer than a script string may be.}
 
 String Function Native_OffScreen_GetRecentLifeEvents(Actor akActor, Int maxEvents, Float currentGameTime) Global Native
 {akActor's life events for a prompt, newest first, one "- [time ago] summary [type] (with NPC)" line
-each, up to maxEvents (0 = all); "" when none.}
+each, up to maxEvents (0 = all) and cut at 3500 bytes; "" when none.}
 
 Float Function Native_OffScreen_GetCooldownOverride(Actor akActor) Global Native
 {akActor's off-screen life cooldown in game hours; 0 = none (the global min/max window applies).}
@@ -1444,7 +1445,7 @@ Function Native_OnFollowerRecruited(Actor akActor) Global Native
 
 Actor Function Native_PopReputationAssessRequestActor() Global Native
 {The next NPC queued for a reputation blurb, or None. The player_familiarity decorator queues NPCs
-who never followed (at dialogue milestones, or when their bond with the player rises) and fires
+who never followed (when an impression of the player is due, or when their bond with the player rises) and fires
 SeverActions_ReputationAssess; SeverActions_Familiarity drains the queue one at a time. An Actor,
 not an Int FormID, which would sign-extend for ESL and high-index plugins.}
 

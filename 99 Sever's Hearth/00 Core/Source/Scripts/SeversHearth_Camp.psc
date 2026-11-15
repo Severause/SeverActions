@@ -156,7 +156,7 @@ Event OnFollowerCalledByPlayer(string eventName, string strArg, float numArg, Fo
         ; travel hand-off race): the running package, by form, is the detector.
         Debug.Trace("[SeversHearth] OnFollowerCalledByPlayer: releasing ORPHANED camp sandbox on " + a.GetDisplayName() + " (verb=" + strArg + ")")
         If CampSandboxPackage
-            ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
+            _RemoveCampSandbox(a, CampSandboxPackage)
         EndIf
         If a.GetAV("WaitingForPlayer") == 1.0
             a.SetAV("WaitingForPlayer", 0)
@@ -300,7 +300,7 @@ Function _ParkAfterJourney(Actor a)
         Return
     EndIf
     If CampSandboxPackage
-        ActorUtil.AddPackageOverride(a, CampSandboxPackage, 100, 0)
+        _AddCampSandbox(a, CampSandboxPackage, 100, 0)
     EndIf
     a.SetAV("WaitingForPlayer", 1)
     a.EvaluatePackage()
@@ -1581,7 +1581,7 @@ Function _ApplyBaseSandbox(Actor occupant)
         _ReleaseFromCampSandbox(occupant)   ; moving from the field camp to the base
     EndIf
     occupant.SetAV("WaitingForPlayer", 1)
-    ActorUtil.AddPackageOverride(occupant, CampSandboxPackage, 100, 0)
+    _AddCampSandbox(occupant, CampSandboxPackage, 100, 0)
     occupant.EvaluatePackage()
     BaseSandboxedActorTracking[BaseSandboxedActorCount] = occupant
     BaseSandboxedActorCount += 1
@@ -1593,7 +1593,7 @@ Function _ReleaseFromBaseSandbox(Actor a)
         Return
     EndIf
     If CampSandboxPackage
-        ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
+        _RemoveCampSandbox(a, CampSandboxPackage)
     EndIf
     a.SetAV("WaitingForPlayer", 0)
     a.EvaluatePackage()
@@ -1764,7 +1764,7 @@ Function _ClearBaseSandbox()
         Actor a = BaseSandboxedActorTracking[i]
         If a
             If CampSandboxPackage
-                ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
+                _RemoveCampSandbox(a, CampSandboxPackage)
             EndIf
             a.SetAV("WaitingForPlayer", 0)
             If _SeverActionsInstalled()
@@ -1903,7 +1903,7 @@ Function _ApplyCampSandbox(Actor occupant)
     ; follower frameworks and SA's follower tracking are untouched.
     occupant.SetAV("WaitingForPlayer", 1)
 
-    ActorUtil.AddPackageOverride(occupant, CampSandboxPackage, 100, 0)
+    _AddCampSandbox(occupant, CampSandboxPackage, 100, 0)
     occupant.EvaluatePackage()
     SandboxedActorTracking[SandboxedActorCount] = occupant
     SandboxedActorCount += 1
@@ -1918,7 +1918,7 @@ Function _ReleaseFromCampSandbox(Actor a)
         Return
     EndIf
     If CampSandboxPackage
-        ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
+        _RemoveCampSandbox(a, CampSandboxPackage)
     EndIf
     a.SetAV("WaitingForPlayer", 0)
     a.EvaluatePackage()
@@ -2003,7 +2003,7 @@ Function _ClearCampSandbox()
         Actor a = SandboxedActorTracking[i]
         If a
             If CampSandboxPackage
-                ActorUtil.RemovePackageOverride(a, CampSandboxPackage)
+                _RemoveCampSandbox(a, CampSandboxPackage)
             EndIf
             a.SetAV("WaitingForPlayer", 0)
 
@@ -2031,6 +2031,24 @@ EndFunction
 Bool Function _SeverActionsInstalled()
     {True when SeverActions.esp is loaded (a cheap lookup).}
     Return Game.GetModByName("SeverActions.esp") != 255
+EndFunction
+
+Function _AddCampSandbox(Actor akActor, Package akPackage, Int aiPriority, Int aiFlags)
+    {The camp or base sandbox override. With SeverActions it steps aside for a SexLab or OStim scene
+     (SeverActions_ModuleBase.AddSandboxOverride).}
+    If _SeverActionsInstalled()
+        SeverActions_ModuleBase.AddSandboxOverride(akActor, akPackage, aiPriority, aiFlags)
+    Else
+        ActorUtil.AddPackageOverride(akActor, akPackage, aiPriority, aiFlags)
+    EndIf
+EndFunction
+
+Bool Function _RemoveCampSandbox(Actor akActor, Package akPackage)
+    {Removes what _AddCampSandbox put on. True when one came off, or a scene already had it off.}
+    If _SeverActionsInstalled()
+        Return SeverActions_ModuleBase.RemoveSandboxOverride(akActor, akPackage)
+    EndIf
+    Return ActorUtil.RemovePackageOverride(akActor, akPackage)
 EndFunction
 
 Bool Function _IntelEngineInstalled()

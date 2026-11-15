@@ -52,7 +52,7 @@ You just surrendered. You are shaken, humiliated, bitter, or simply relieved to 
 {% elif recent_yield_received %}
 Someone just surrendered to you. You have the upper hand: be magnanimous, threatening, or dismissive, but the fight is OVER. You will not attack someone who has yielded unless they provoke you again.
 {% elif recent_ceasefire %}
-You just stopped fighting. The tension is still high, but you are holding back: be cold, wary, or resentful if you like, but say nothing that sounds like a threat or an insult that could start it again.
+You and your side just stood down from a fight. The tension is still high, but you are holding back: be cold, wary, or resentful if you like, but say nothing that sounds like a threat or an insult that could start it again.
 {% endif %}
 {% endif %}
 {% if not yield_broken and (post_truce_ceasefire or post_truce_yield) %}
@@ -71,7 +71,7 @@ You are in a fight right now. Keep your lines short and reactive, focused on sur
 - {{ actor.name }} is in the middle of a fight.
 {% elif recent_ceasefire or recent_yield_given or recent_yield_received %}
 ## Recent Truce
-- {{ actor.name }} stopped fighting a short while ago, and the tension has not left them.
+- {{ actor.name }} stood down from a fight a short while ago, and the tension has not left them.
 {% endif %}
 {% endif %}
 {% endif %}

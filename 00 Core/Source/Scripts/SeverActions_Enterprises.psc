@@ -227,7 +227,7 @@ Function ApplyFinalAuditCourtPackage()
     ; chase a moving anchor, so it would strand them when he walks off. They keep the Follow.
     Actor general = SeverActionsNativeExt2.Venture_Audit_Collector(0)
     If general && !general.IsDead()
-        ActorUtil.AddPackageOverride(general, courtPkg, 100, 1)
+        SeverActions_ModuleBase.AddSandboxOverride(general, courtPkg, 100, 1)
         general.EvaluatePackage()
     EndIf
     EnsureFinalAuditEscort()
@@ -269,10 +269,10 @@ Function PostFinalAuditGarrisons()
         Actor s = SeverActionsNativeExt2.Venture_Audit_Collector(i)
         If s && !s.IsDead()
             If courtPkg
-                ActorUtil.RemovePackageOverride(s, courtPkg)
+                SeverActions_ModuleBase.RemoveSandboxOverride(s, courtPkg)
             EndIf
             If workPkg
-                ActorUtil.RemovePackageOverride(s, workPkg)
+                SeverActions_ModuleBase.RemoveSandboxOverride(s, workPkg)
             EndIf
             s.EvaluatePackage()
             posted += 1
@@ -297,9 +297,9 @@ Event OnLevySquadDwell(String eventName, String strArg, Float numArg, Form sende
         Return
     EndIf
     If strArg == "dwell"
-        ActorUtil.AddPackageOverride(s, dwellPkg, 100, 1)
+        SeverActions_ModuleBase.AddSandboxOverride(s, dwellPkg, 100, 1)
     Else
-        ActorUtil.RemovePackageOverride(s, dwellPkg)
+        SeverActions_ModuleBase.RemoveSandboxOverride(s, dwellPkg)
     EndIf
     s.EvaluatePackage()
 EndEvent
@@ -359,9 +359,9 @@ Function SetFinalAuditEscortSandbox(Bool abSandbox)
         If escort && !escort.IsDead()
             If abSandbox
                 ActorUtil.RemovePackageOverride(escort, guardPkg)
-                ActorUtil.AddPackageOverride(escort, courtPkg, 100, 1)
+                SeverActions_ModuleBase.AddSandboxOverride(escort, courtPkg, 100, 1)
             Else
-                ActorUtil.RemovePackageOverride(escort, courtPkg)
+                SeverActions_ModuleBase.RemoveSandboxOverride(escort, courtPkg)
                 ActorUtil.AddPackageOverride(escort, guardPkg, 110, 1)
             EndIf
             escort.EvaluatePackage()
@@ -394,7 +394,7 @@ Function ApplyFinalAuditApproachPackages()
     Actor cassius = SeverActionsNativeExt2.Venture_Audit_Collector(0)
     If cassius && !cassius.IsDead()
         If courtPkg
-            ActorUtil.RemovePackageOverride(cassius, courtPkg)
+            SeverActions_ModuleBase.RemoveSandboxOverride(cassius, courtPkg)
         EndIf
         ActorUtil.AddPackageOverride(cassius, followPkg, 110, 1)
         cassius.EvaluatePackage()
@@ -406,7 +406,7 @@ Function ApplyFinalAuditApproachPackages()
     While i < detail
         Actor escort = SeverActionsNativeExt2.Venture_Audit_Collector(i)
         If escort && !escort.IsDead() && courtPkg
-            ActorUtil.RemovePackageOverride(escort, courtPkg)
+            SeverActions_ModuleBase.RemoveSandboxOverride(escort, courtPkg)
         EndIf
         i += 1
     EndWhile
@@ -467,7 +467,7 @@ Function DisbandFinalAudit()
         Actor c = SeverActionsNativeExt2.Venture_Audit_Collector(i)
         If c
             If courtPkg
-                ActorUtil.RemovePackageOverride(c, courtPkg)
+                SeverActions_ModuleBase.RemoveSandboxOverride(c, courtPkg)
             EndIf
             If guardPkg
                 ActorUtil.RemovePackageOverride(c, guardPkg)
@@ -476,10 +476,10 @@ Function DisbandFinalAudit()
                 ActorUtil.RemovePackageOverride(c, followPkg)
             EndIf
             If workPkg
-                ActorUtil.RemovePackageOverride(c, workPkg)
+                SeverActions_ModuleBase.RemoveSandboxOverride(c, workPkg)
             EndIf
             If dwellPkg
-                ActorUtil.RemovePackageOverride(c, dwellPkg)
+                SeverActions_ModuleBase.RemoveSandboxOverride(c, dwellPkg)
             EndIf
             If !c.IsDead()
                 c.SheatheWeapon()
@@ -949,7 +949,7 @@ Function PostStewardVisit(Actor akSteward, Actor akTarget)
     ; Permanent, like the workplace link it stands in for: PackageManager's 30-day
     ; prune and LinkedRef_ClearAll both leave it.
     SeverActionsNativeExt.LinkedRef_SetPermanent(akSteward, akTarget, anchorKw)
-    ActorUtil.AddPackageOverride(akSteward, sandboxPkg, STEWARD_VISIT_PRIORITY, 1)
+    SeverActions_ModuleBase.AddSandboxOverride(akSteward, sandboxPkg, STEWARD_VISIT_PRIORITY, 1)
     akSteward.EvaluatePackage()
     DebugMsg("StewardVisit: " + akSteward.GetDisplayName() + " is now keeping company with " + akTarget.GetDisplayName())
 EndFunction
@@ -971,7 +971,7 @@ Function EndStewardVisit(Actor akSteward)
     SeverActionsNativeExt.Travel_CancelByActor(akSteward)
     _ClearTravelQuietly(akSteward)
     If sandboxPkg
-        ActorUtil.RemovePackageOverride(akSteward, sandboxPkg)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akSteward, sandboxPkg)
     EndIf
     If anchorKw
         ; Restore the work anchor, never just clear it, or the steward's work sandbox has no
@@ -1004,7 +1004,7 @@ Event OnFinalAuditTravel(String eventName, String strArg, Float numArg, Form sen
     ; too, but the walk must not depend on that event.
     Package courtPkg = Game.GetFormFromFile(0x00165676, "SeverActions.esp") as Package
     If courtPkg
-        ActorUtil.RemovePackageOverride(legate, courtPkg)
+        SeverActions_ModuleBase.RemoveSandboxOverride(legate, courtPkg)
     EndIf
     ; Quiet: no quest arrow gives the taxman away. Arrival radius: see AUDIT_FOLLOW_HANDOFF.
     Int handle = SeverActionsNativeExt.Travel_Begin(legate, player, _TravelKW(), \
@@ -1594,7 +1594,7 @@ Event OnRetainerWorkLoc(string eventName, string strArg, float numArg, Form send
         If !protectee && targetName != ""
             protectee = SeverActionsNative.FindActorByName(targetName)
             If protectee
-                DebugMsg("OnRetainerWorkLoc: guard FormID '" + hexId + "' stale — resolved '" + targetName + "' by name instead")
+                DebugMsg("OnRetainerWorkLoc: guard FormID '" + hexId + "' stale, resolved '" + targetName + "' by name instead")
             EndIf
         EndIf
         If protectee
@@ -1672,7 +1672,8 @@ Function SyncAllPremisesFromWork()
         Int i = 0
         While i < n
             Actor npc = StorageUtil.FormListGet(None, listKey, i) as Actor
-            If npc
+            ; Only a venture row has premises: that test is free, the sync costs a frame.
+            If npc && SeverActionsNativeExt2.Venture_IsRetainer(npc)
                 ObjectReference wm = StorageUtil.GetFormValue(npc, "SeverActions_WorkMarkerRef") as ObjectReference
                 If SeverActionsNativeExt2.Venture_SyncPremisesFromWork(npc, wm)
                     synced += 1

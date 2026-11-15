@@ -500,8 +500,8 @@ Function FireInterFollowerAssessment(Actor akActor, Actor[] followers)
         Return
     EndIf
 
-    ; Bridge relay and per-dispatch channel, as in FireRelationshipAssessment (the reply's
-    ; pair array grows with the party, so the full-length reply matters most here).
+    ; Bridge relay and per-dispatch channel, as in FireRelationshipAssessment. The reply's pair
+    ; array grows with the party; one past 3500 bytes arrives cut, and Json_Get* then reads what is whole.
     InterAssessSeq += 1
     InterAssessEventNameCur = "SeverActions_LLM_InterAssess_" + InterAssessSeq
     RegisterForModEvent(InterAssessEventNameCur, "OnLLMInterAssessReady")

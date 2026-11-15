@@ -270,9 +270,9 @@ tracking still runs, only the sever_quest_awareness calls stop (C++ also skips
 them when that prompt is missing).}
 
 Bool Property AutoNPCReputation = true Auto
-{Enable the LLM reputation blurb when a non-follower NPC's familiarity tier
-changes. Off = the tier still tracks, the bio shows it without a blurb (C++ also
-skips the call when sever_reputation_assess is missing).}
+{Enable the LLM impression a non-follower NPC forms of the player
+(sever_reputation_assess). Off = no new impressions; stored ones still show in
+the bio (C++ also skips the call when sever_reputation_assess is missing).}
 
 Bool Property AutoOffScreenLife = true Auto
 {Enable off-screen life events (memories, gossip) for dismissed followers with homes.}
@@ -1109,12 +1109,6 @@ Function DetectExistingFollowers()
     {Onboard (Tracking Mode) followers in the player's cell that SA does not track
      yet. With followers already in the cosave only custom-AI teammates are checked
      (TeammateMonitor catches new recruits); otherwise any follower-faction member.}
-    Actor player = Game.GetPlayer()
-    Cell playerCell = player.GetParentCell()
-    If !playerCell
-        Return
-    EndIf
-
     ; The cosave is authoritative once it has followers (see the hasNativeData arm).
     Actor[] nativeTracked = SeverActionsNative.Native_GetAllTrackedFollowers()
     Bool hasNativeData = nativeTracked && nativeTracked.Length > 0
@@ -1124,8 +1118,8 @@ Function DetectExistingFollowers()
     ; Serana uses DLC1SeranaFaction instead of CurrentFollowerFaction
     Faction seranaFaction = Game.GetFormFromFile(0x000183A5, "Dawnguard.esm") as Faction
 
-    ; Already filtered natively to live, non-player, non-commanded actors.
-    Actor[] cellActors = SeverActionsNativeExt.Native_ScanPlayerCellForLiveActors()
+    ; Live, non-player, non-commanded actors, and of those only the ones a test below can pass.
+    Actor[] cellActors = _FollowerCandidatesInCell()
     Int numRefs = cellActors.Length
     Int detected = 0
     Int i = 0
@@ -1209,25 +1203,32 @@ Function DetectExistingFollowers()
     EndIf
 EndFunction
 
+Actor[] Function _FollowerCandidatesInCell()
+    {The live actors in the player's cell that DetectExistingFollowers or RecoverCustomAIFollowers can act on: in
+     SeverActions_FollowerFaction, CurrentFollowerFaction or Serana's faction, or holding the custom-AI keyword. One
+     native call, where a test per actor costs a frame each. A new test in either scan that admits another kind of
+     actor needs its case in Native_ScanPlayerCellFollowerCandidates. An older DLL answers every live actor.}
+    If SeverActionsNativeExt2.Kernel_AbiVersion() >= 49
+        Return SeverActionsNativeExt2.Native_ScanPlayerCellFollowerCandidates(SeverActions_FollowerFaction)
+    EndIf
+    Return SeverActionsNativeExt.Native_ScanPlayerCellForLiveActors()
+EndFunction
+
 Function RecoverCustomAIFollowers()
     {Re-onboard actors in the player's cell who hold SeverActions_FollowerFaction
      (added on every registration, persists in the save) or are custom-AI teammates,
      but have lost their tracking. Explicitly dismissed actors are skipped.}
-    Actor player = Game.GetPlayer()
-    Cell playerCell = player.GetParentCell()
-    If !playerCell
-        Return
-    EndIf
-
-    Int numRefs = playerCell.GetNumRefs(43)
+    ; The scan leaves out the player, the dead and commanded actors (thralls and summons, never followers), and
+    ; answers nobody when the player has no cell.
+    Actor[] cellActors = _FollowerCandidatesInCell()
+    Int numRefs = cellActors.Length
     Int recovered = 0
     Int i = 0
 
     While i < numRefs
-        ObjectReference ref = playerCell.GetNthRef(i, 43)
-        Actor actorRef = ref as Actor
+        Actor actorRef = cellActors[i]
 
-        If actorRef && actorRef != player && !actorRef.IsDead()
+        If actorRef
             If !IsRegisteredFollower(actorRef)
                 Bool shouldRecover = false
 
@@ -1659,7 +1660,7 @@ Event OnCellLoadedReapplyHome(string eventName, string strArg, float numArg, For
                 If SeverActionsNativeExt2.Native_IsTrackOnlyFollower(akActor)
                     Package homePkg = GetHomeSandboxPackage(slot)
                     If homePkg
-                        ActorUtil.AddPackageOverride(akActor, homePkg, 100, 1)
+                        SeverActions_ModuleBase.AddSandboxOverride(akActor, homePkg, 100, 1)
                     EndIf
                 EndIf
                 akActor.SetAV("WaitingForPlayer", 2)
@@ -2621,7 +2622,8 @@ Function TraceTickTimings(Int followerCount, Int homedCount, \
     {Log one tick's per-pass real-time breakdown when it exceeds
      TICK_TRACE_BUDGET_SEC, or always under debugMode. The stamps are absolute
      Kernel_RealTime readings in _OnUpdatePass order; the span starts after the
-     relationship, death and track-only sweeps, measuring the roster-scaling passes.}
+     relationship, death and track-only sweeps, measuring the roster-scaling passes.
+     due is the schedule fast lane's due set (-1 when the full walks ran instead).}
     Float total = tEnd - tPrologue
     If total < TICK_TRACE_BUDGET_SEC && !SeverActionsNativeExt2.Settings_GetBool("debugMode")
         Return
@@ -2631,7 +2633,7 @@ Function TraceTickTimings(Int followerCount, Int homedCount, \
     Debug.Trace("[SeverActions_FollowerManager] tick " + total + "s" \
         + " (followers=" + followerCount + " homed=" + homedCount + ")" \
         + " homedRoster=" + (tHomedRoster - tPrologue) \
-        + " schedPasses=" + (tSchedPasses - tHomedRoster) \
+        + " schedPasses=" + (tSchedPasses - tHomedRoster) + " due=" + _tickDueCount \
         + " homeSleep=" + (tHomeSleep - tSchedPasses) \
         + " roomHops=" + (tRoomHops - tHomeSleep) \
         + " followerRoster=" + (tFollowerRoster - tRoomHops) \
@@ -3744,7 +3746,7 @@ Function RegisterFollower(Actor akActor)
                 akActor.SetAV("Assistance", 2)  ; Helps Allies
             EndIf
         Else
-            DebugMsg("RegisterFollower: " + akActor.GetDisplayName() + " is set to the coward style — leaving Confidence/Aggression/Assistance alone")
+            DebugMsg("RegisterFollower: " + akActor.GetDisplayName() + " is set to the coward style, leaving Confidence/Aggression/Assistance alone")
         EndIf
 
         akActor.SetPlayerTeammate(true)
@@ -4767,14 +4769,14 @@ ObjectReference Function GetScheduleAnchorForNPC(Actor akActor, Int slot, Int sc
         ; No home fallback: the caller would log a work swap while the marker
         ; went home. None skips the swap (retried next tick). Usual cause: the
         ; workLoc failed to resolve on load.
-        DebugMsg("ScheduleAnchor: WORK swap skipped for " + akActor.GetDisplayName() + " — no work loc (resolve failed on load?)")
+        DebugMsg("ScheduleAnchor: WORK swap skipped for " + akActor.GetDisplayName() + ": no work loc (resolve failed on load?)")
         Return None
     ElseIf scheduleType == SCHEDULE_PLAY
         ObjectReference playMarker = SeverActionsNative.Native_GetPlayLoc(akActor)
         If playMarker
             Return playMarker
         EndIf
-        DebugMsg("ScheduleAnchor: PLAY swap skipped for " + akActor.GetDisplayName() + " — no play loc (resolve failed on load?)")
+        DebugMsg("ScheduleAnchor: PLAY swap skipped for " + akActor.GetDisplayName() + ": no play loc (resolve failed on load?)")
         Return None
     EndIf
     ; Home fallback — use TrueHomeAnchor_NN
@@ -4952,7 +4954,7 @@ Function ApplyWorkSandbox(Actor akActor)
         Return
     EndIf
     ; 110 outranks stubborn vanilla schedule packages; WFP 2 marks a work shift.
-    ActorUtil.AddPackageOverride(akActor, workPkg, 110, 1)
+    _AddWorkOverride(akActor, workPkg)
     akActor.SetAV("WaitingForPlayer", 2)
     akActor.EvaluatePackage()
 EndFunction
@@ -4973,7 +4975,7 @@ Function _RemoveWorkSandboxHeld(Actor akActor, Int aiHeld, Bool abFinish)
     Package sandboxPkg = GetWorkSandboxPackage()
     Package guardPkg = GetWorkGuardPackage()
     If sandboxPkg
-        ActorUtil.RemovePackageOverride(akActor, sandboxPkg)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akActor, sandboxPkg)
     EndIf
     If guardPkg
         ActorUtil.RemovePackageOverride(akActor, guardPkg)
@@ -4993,7 +4995,7 @@ Function _RemoveWorkSandboxHeld(Actor akActor, Int aiHeld, Bool abFinish)
             ; No seat held: skip EmptySchedAlias, whose guard-seat search costs a frame; only its V2 assist strip.
             Package workV2 = GetSchedPackageForType(SCHEDULE_WORK)
             If workV2
-                ActorUtil.RemovePackageOverride(akActor, workV2)
+                SeverActions_ModuleBase.RemoveSandboxOverride(akActor, workV2)
             EndIf
         EndIf
     EndIf
@@ -5158,8 +5160,18 @@ Function ReinforceWorkPackage(Actor akActor)
     If akActor.GetAV("WaitingForPlayer") == 1.0
         Return
     EndIf
-    ActorUtil.AddPackageOverride(akActor, workPkg, 110, 1)
+    _AddWorkOverride(akActor, workPkg)
     akActor.EvaluatePackage()
+EndFunction
+
+Function _AddWorkOverride(Actor akActor, Package akWorkPkg)
+    {The work override at 110. The roam sandbox steps aside for a SexLab or OStim scene (AddSandboxOverride); the
+     guard-mode bodyguard package is a follow and stays, like the guard pool's.}
+    If akWorkPkg == GetWorkGuardPackage()
+        ActorUtil.AddPackageOverride(akActor, akWorkPkg, 110, 1)
+    Else
+        SeverActions_ModuleBase.AddSandboxOverride(akActor, akWorkPkg, 110, 1)
+    EndIf
 EndFunction
 
 String Function ResolveRoutineLocName(ObjectReference target, String asNameOverride)
@@ -5261,6 +5273,8 @@ Function SetRoutineLocHere(Actor akActor, String kind, ObjectReference akDest = 
     ; Route B's play override needs a home (a legacy slot or an anchor marker); the relax pool does not.
     If GetAssignedHome(akActor) == "" && !SchedSystemActive()
         DebugMsg("SetRoutineLocHere: " + akActor.GetDisplayName() + " has no home - assign home first")
+        ; setPlayLocHere wrote the name before this ran; a spot that was not placed must not show.
+        SeverActionsNativeExt.Native_SetPlayLocationName(akActor, "")
         Return
     EndIf
 
@@ -5705,7 +5719,7 @@ Function ApplyPlaySandboxB(Actor akActor)
         Return
     EndIf
     SeverActionsNativeExt.LinkedRef_SetPermanent(akActor, playMarker, playKw)
-    ActorUtil.AddPackageOverride(akActor, playPkg, 105, 1)
+    SeverActions_ModuleBase.AddSandboxOverride(akActor, playPkg, 105, 1)
     akActor.EvaluatePackage()
 EndFunction
 
@@ -5719,7 +5733,7 @@ Function _RemovePlaySandboxHeld(Actor akActor, Bool abFinish)
     {RemovePlaySandboxB; abFinish false (the follow core, which evaluates once at its end) skips the evaluate.}
     Package playPkg = GetPlaySandboxBPackage()
     If playPkg
-        ActorUtil.RemovePackageOverride(akActor, playPkg)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akActor, playPkg)
     EndIf
     If SchedSystemActive()
         EmptySchedAlias(akActor, SCHEDULE_PLAY)
@@ -5754,7 +5768,7 @@ String Property KEY_SCHED_POOL_EXHAUSTED   = "SeverActions_SchedPoolExhausted_" 
  attempt found no free alias of that type (MCM warning + one notification).}
 
 ; Why the schedule holds nothing on an NPC (Sched_NoteHold; 0 = held, or released unblocked). HomeHoldCore::HoldNote is the native twin the
-; Assigned NPCs card reads: keep both in step.
+; Assigned NPCs card reads: keep both in step. The schedule's fast lane reads them too (HomeHoldCore::NoteIsSteadyBlock).
 Int Property SCHED_HOLD_JAILED           = 1  AutoReadOnly
 Int Property SCHED_HOLD_JOURNEY          = 2  AutoReadOnly
 Int Property SCHED_HOLD_ARREST           = 3  AutoReadOnly
@@ -5771,6 +5785,17 @@ Int Property SCHED_HOLD_TEAMMATE_NO_HOME = 17 AutoReadOnly
 Int Property SCHED_HOLD_ANCHOR_MISSING   = 18 AutoReadOnly
 Int Property SCHED_HOLD_ARRESTED         = 19 AutoReadOnly   ; Sched_HoldYield 6 (7 notes ARREST)
 Int Property SCHED_HOLD_CONFRONTING      = 20 AutoReadOnly   ; Sched_HoldYield 8
+
+; Sched_BlockInputs' packing (HomeHoldCore::kBlockIn*, the same values: keep both in step). A flag is
+; (inputs / BLOCKIN_X) % 2, WaitingForPlayer (inputs / BLOCKIN_WAITING_UNIT) % 8 - 1, the yield
+; (inputs / BLOCKIN_YIELD_UNIT) % 16.
+Int Property BLOCKIN_JOURNEY        = 2   AutoReadOnly
+Int Property BLOCKIN_ARREST_GUARD   = 4   AutoReadOnly
+Int Property BLOCKIN_FOLLOW_FACTION = 8   AutoReadOnly
+Int Property BLOCKIN_TEAMMATE       = 16  AutoReadOnly
+Int Property BLOCKIN_NFF_SEAT       = 32  AutoReadOnly
+Int Property BLOCKIN_WAITING_UNIT   = 64  AutoReadOnly
+Int Property BLOCKIN_YIELD_UNIT     = 512 AutoReadOnly
 
 ; Guard-duty alias pool (FLWD v19): a guard-mode retainer (work target is an Actor)
 ; holds a SeverActions_GuardQuest alias in work hours, because an alias package
@@ -5822,7 +5847,7 @@ Bool Function EnsureSchedQuests()
     EndIf
     If !_schedHomeQuest || !_schedWorkQuest || !_schedRelaxQuest \
         || !_schedHomePackageV2 || !_schedWorkPackageV2 || !_schedRelaxPackageV2
-        Debug.Trace("[SeverActions] SCHEDULE ALIAS POOLS UNAVAILABLE — SchedHome/Work/Relax quests or V2 packages failed to resolve from SeverActions.esp (outdated ESP?). Alias scheduling disabled; legacy Route B scheduling remains active.")
+        Debug.Trace("[SeverActions] SCHEDULE ALIAS POOLS UNAVAILABLE: SchedHome/Work/Relax quests or V2 packages failed to resolve from SeverActions.esp (outdated ESP?). Alias scheduling disabled; legacy Route B scheduling remains active.")
         Return false
     EndIf
     _schedQuestsResolved = true
@@ -5969,7 +5994,7 @@ Quest Function GetGuardQuest()
     EndIf
     _guardQuest = Game.GetFormFromFile(GUARD_QUEST_FORMID, "SeverActions.esp") as Quest
     If !_guardQuest
-        Debug.Trace("[SeverActions] GUARD ALIAS POOL UNAVAILABLE — SeverActions_GuardQuest failed to resolve from SeverActions.esp (outdated ESP?). Alias guard duty disabled; the prio-110 override assist remains active.")
+        Debug.Trace("[SeverActions] GUARD ALIAS POOL UNAVAILABLE: SeverActions_GuardQuest failed to resolve from SeverActions.esp (outdated ESP?). Alias guard duty disabled; the prio-110 override assist remains active.")
         Return None
     EndIf
     _guardQuestResolved = true
@@ -6028,7 +6053,7 @@ Bool Function FillGuardAlias(Actor akActor)
     EndIf
     ReferenceAlias al = GetGuardAlias(freeIdx)
     If !al
-        Debug.Trace("[SeverActions] GuardAlias: GetNthAlias(" + freeIdx + ") on SeverActions_GuardQuest returned a non-ReferenceAlias — ESP corrupt?")
+        Debug.Trace("[SeverActions] GuardAlias: GetNthAlias(" + freeIdx + ") on SeverActions_GuardQuest returned a non-ReferenceAlias - ESP corrupt?")
         Return false
     EndIf
     al.ForceRefTo(akActor)
@@ -6069,25 +6094,38 @@ EndFunction
 Int Function _SchedHoldBlock(Actor akActor, Bool abParkTeammate = false)
     {Why the schedule must hold nothing on akActor now (a SCHED_HOLD_* code), or 0. ReconcileSchedAliasesFor releases
      and FillSchedAlias refuses on this one verdict. abParkTeammate skips the unregistered-teammate arm (a hands-off
-     dismiss's park).}
+     dismiss's park). HomeHoldCore::BlockInputs (read by ScheduleTickFilter::BlockInputsOf) holds every value read
+     below, for the fast lane's skip of a noted block: a new read here needs a field there, or an NPC stays left out
+     for minutes after that read changes. The reads come in one call (Sched_BlockInputs), where a read each costs a
+     frame; on an older DLL _BlockInputsByReads packs the same reads. The verdict is made here either way.}
     If SeverActionsNativeExt.Native_Jailed_IsJailed(akActor)
         Return SCHED_HOLD_JAILED
     EndIf
-    If _OnJourney(akActor)
+    Int inputs = 0
+    If SeverActionsNativeExt2.Kernel_AbiVersion() >= 49
+        inputs = SeverActionsNativeExt2.Sched_BlockInputs(akActor)
+    EndIf
+    If inputs <= 0
+        inputs = _BlockInputsByReads(akActor)
+    EndIf
+    If (inputs / BLOCKIN_JOURNEY) % 2 == 1
         Return SCHED_HOLD_JOURNEY
     EndIf
-    If _IsMakingArrest(akActor)
+    If (inputs / BLOCKIN_ARREST_GUARD) % 2 == 1
         Return SCHED_HOLD_ARREST
     EndIf
-    If IsActorActivelyFollowing(akActor)
+    Bool teammate = (inputs / BLOCKIN_TEAMMATE) % 2 == 1
+    ; IsActorActivelyFollowing: False without the faction, True with it for a teammate or a registered follower; its
+    ; other proofs (a pool slot, the FollowPlayer package) are read only for the few it leaves.
+    If (inputs / BLOCKIN_FOLLOW_FACTION) % 2 == 1 && (teammate || IsRegisteredFollower(akActor) || IsActorActivelyFollowing(akActor))
         Return SCHED_HOLD_FOLLOWING
     EndIf
-    Float wfp = akActor.GetAV("WaitingForPlayer")
-    Bool teammate = akActor.IsPlayerTeammate()
-    If teammate && wfp != -1.0 && IsRegisteredFollower(akActor)
+    ; WaitingForPlayer only takes whole values (-1 dismissed, 0, 1 waiting, 2 the schedule's own stamp).
+    Int wfp = (inputs / BLOCKIN_WAITING_UNIT) % 8 - 1
+    If teammate && wfp != -1 && IsRegisteredFollower(akActor)
         Return SCHED_HOLD_REGISTERED
     EndIf
-    If wfp == 1.0
+    If wfp == 1
         If SeverActionsNativeExt.Native_GetSandboxing(akActor)
             Return SCHED_HOLD_SA_WAIT
         EndIf
@@ -6095,19 +6133,53 @@ Int Function _SchedHoldBlock(Actor akActor, Bool abParkTeammate = false)
     EndIf
     ; WFP 2 is SA's own hold: a hands-off dismiss parks a follower whose framework keeps the teammate flag
     ; (abParkTeammate, ApplyHomeSandboxIfHomed: the fill stamps the 2), and the reconcile then leaves her there.
-    If teammate && wfp != -1.0 && wfp != 2.0 && !abParkTeammate
+    If teammate && wfp != -1 && wfp != 2 && !abParkTeammate
         Return SCHED_HOLD_TEAMMATE
     EndIf
-    If SeverActionsNativeExt2.Native_IsNFFManaged(akActor)
+    If (inputs / BLOCKIN_NFF_SEAT) % 2 == 1
         Return SCHED_HOLD_NFF
     EndIf
-    ; Holds the schedule would beat: its aliases (101) beat yields 1-5, and its own fallback overrides (100-110) beat
-    ; or tie the arrest's overrides of yields 6-8 (any override beats every alias). It steps aside while they last.
-    Int yieldTo = SeverActionsNativeExt2.Sched_HoldYield(akActor)
+    Int yieldTo = (inputs / BLOCKIN_YIELD_UNIT) % 16
     If yieldTo > 0
         Return _NoteForYield(yieldTo)
     EndIf
     Return 0
+EndFunction
+
+Int Function _BlockInputsByReads(Actor akActor)
+    {Sched_BlockInputs' answer from a read each, for a DLL without it: the same values in the same BLOCKIN_* units
+     (HomeHoldCore::PackBlockInputs), so _SchedHoldBlock has one verdict.}
+    Int inputs = 1
+    If _OnJourney(akActor)
+        inputs += BLOCKIN_JOURNEY
+    EndIf
+    If _IsMakingArrest(akActor)
+        inputs += BLOCKIN_ARREST_GUARD
+    EndIf
+    Faction af = GetActivelyFollowingFaction()
+    If af && akActor.IsInFaction(af)
+        inputs += BLOCKIN_FOLLOW_FACTION
+    EndIf
+    If akActor.IsPlayerTeammate()
+        inputs += BLOCKIN_TEAMMATE
+    EndIf
+    If SeverActionsNativeExt2.Native_IsNFFManaged(akActor)
+        inputs += BLOCKIN_NFF_SEAT
+    EndIf
+    Int wfp = akActor.GetAV("WaitingForPlayer") as Int
+    If wfp < -1
+        wfp = -1
+    ElseIf wfp > 6
+        wfp = 6
+    EndIf
+    inputs += (wfp + 1) * BLOCKIN_WAITING_UNIT
+    Int yieldTo = SeverActionsNativeExt2.Sched_HoldYield(akActor)
+    If yieldTo < 0
+        yieldTo = 0
+    ElseIf yieldTo > 15
+        yieldTo = 15
+    EndIf
+    Return inputs + yieldTo * BLOCKIN_YIELD_UNIT
 EndFunction
 
 Int Function _NoteForYield(Int aiYield)
@@ -6130,7 +6202,8 @@ EndFunction
 
 Function _NoteSchedHold(Actor akActor, Int aiWhy)
     {Records why the schedule holds nothing on akActor (0 = held, or released with nothing blocking her) for the Assigned NPCs card. In debug mode, logs
-     a reason once, when it changes: the 30 s tick reaches the same verdict again.}
+     a reason once, when it changes: the 30 s tick reaches the same verdict again. The DLL keeps what _SchedHoldBlock
+     reads beside a steady reason, and Sched_GetTransitionDue then leaves her out until one of them changes.}
     If !akActor
         Return
     EndIf
@@ -6335,7 +6408,7 @@ Bool Function FillSchedAlias(Actor akActor, Int aiType, Bool abParkTeammate = fa
     EndIf
     ReferenceAlias al = GetSchedAlias(aiType, freeIdx)
     If !al
-        Debug.Trace("[SeverActions] SchedAlias: GetNthAlias(" + freeIdx + ") on " + GetSchedTypeName(aiType) + " quest returned a non-ReferenceAlias — ESP corrupt?")
+        Debug.Trace("[SeverActions] SchedAlias: GetNthAlias(" + freeIdx + ") on " + GetSchedTypeName(aiType) + " quest returned a non-ReferenceAlias - ESP corrupt?")
         Return false
     EndIf
     Int anchorState = _EnsureSchedAnchor(akActor, aiType)
@@ -6362,7 +6435,7 @@ Bool Function FillSchedAlias(Actor akActor, Int aiType, Bool abParkTeammate = fa
             ElseIf aiType == SCHEDULE_PLAY
                 prio = 105
             EndIf
-            ActorUtil.AddPackageOverride(akActor, v2, prio, 1)
+            SeverActions_ModuleBase.AddSandboxOverride(akActor, v2, prio, 1)
             addedAssist = true
         EndIf
     EndIf
@@ -6401,7 +6474,7 @@ Function EmptySchedAlias(Actor akActor, Int aiType)
     ; A no-op when it was never added.
     Package v2 = GetSchedPackageForType(aiType)
     If v2
-        ActorUtil.RemovePackageOverride(akActor, v2)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akActor, v2)
     EndIf
     ; The guard-duty override too: ReinforceSchedWorkGuard adds it with no WORK alias when that pool is full.
     If aiType == SCHEDULE_WORK
@@ -6447,6 +6520,9 @@ Int Function ReconcileSchedAliasesFor(Actor akActor)
     EndIf
     Int why = _SchedHoldBlock(akActor)
     If why > 0
+        ; For an NPC with no alias this branch only notes the reason again, except under the three arrest reasons.
+        ; HomeHoldCore::NoteIsSteadyBlock lists the others, and the fast lane skips them: work added here for one of
+        ; them runs only once in up to ten ticks unless that list changes with it.
         If HoldsAnySchedAlias(akActor)
             EmptyAllSchedAliases(akActor)
             akActor.EvaluatePackage()
@@ -6516,7 +6592,7 @@ Bool Function _DropSchedOverrides(Actor akActor)
         Int t = 0
         While t < 3
             Package v2 = GetSchedPackageForType(t)
-            If v2 && ActorUtil.RemovePackageOverride(akActor, v2)
+            If v2 && SeverActions_ModuleBase.RemoveSandboxOverride(akActor, v2)
                 dropped = true
             EndIf
             t += 1
@@ -6556,6 +6632,21 @@ Function ReinforceSchedWorkGuard(Actor akActor)
     akActor.EvaluatePackage()
 EndFunction
 
+; Load sweeps: an alias from the sweep's one read of its pool (the reads are SeverActions_Follow's _Pool* Globals)
+
+ReferenceAlias Function _GuardAliasIn(Int aiIndex, Int[] aiSeats, ReferenceAlias[] akAliases)
+    {GetGuardAlias for the load sweep: an index among the pool's filled seats aiSeats takes its alias from
+     akAliases, the sweep's one read of them. Any other index, and every index when akAliases is empty, is read
+     by GetGuardAlias.}
+    If akAliases && aiIndex >= 0 && aiIndex < GUARD_ALIAS_POOL_SIZE
+        Int seat = aiSeats.Find(aiIndex)
+        If seat >= 0
+            Return akAliases[seat]
+        EndIf
+    EndIf
+    Return GetGuardAlias(aiIndex)
+EndFunction
+
 ; Guard pool: load-time adoption and reconciliation sweep
 
 Function _AdoptOverrideGuardsFromList(String listKey)
@@ -6584,7 +6675,16 @@ EndFunction
 
 Function _DropStaleGuardIndicesFromList(String listKey)
     {Drops recorded indices whose alias no longer holds the retainer (the next
-     FillSchedAlias re-seats them).}
+     FillSchedAlias re-seats them), reading each alias by itself. The load sweep calls
+     _DropStaleGuardIndicesFromListIn; a sweep frame a save holds calls this.}
+    Int[] noSeats
+    ReferenceAlias[] noAliases
+    _DropStaleGuardIndicesFromListIn(listKey, noSeats, noAliases)
+EndFunction
+
+Function _DropStaleGuardIndicesFromListIn(String listKey, Int[] aiSeats, ReferenceAlias[] akAliases)
+    {_DropStaleGuardIndicesFromList for the load sweep, which hands over the pool's filled seats and their
+     aliases (_GuardAliasIn) so a recorded index costs no alias read of its own.}
     Int count = StorageUtil.FormListCount(None, listKey)
     Int i = 0
     While i < count
@@ -6592,7 +6692,7 @@ Function _DropStaleGuardIndicesFromList(String listKey)
         If npc
             Int idx = SeverActionsNativeExt.Native_GetGuardAliasIndex(npc)
             If idx >= 0
-                ReferenceAlias al = GetGuardAlias(idx)
+                ReferenceAlias al = _GuardAliasIn(idx, aiSeats, akAliases)
                 If !al || al.GetReference() != npc
                     SeverActionsNativeExt.Native_SetGuardAliasIndex(npc, -1)
                     Debug.Trace("[SeverActions] GuardPool sweep: dropped stale index " + idx + " for " + npc.GetDisplayName())
@@ -6620,17 +6720,21 @@ Function SweepGuardAliasesOnLoad()
     EndIf
     ; Pool side: the filled seats only (an empty one needs nothing), from one native read.
     Int[] filled = SeverActionsNativeExt2.Pool_FilledIndices(gq)
+    ; Their aliases and holders in one call each, where a read per seat costs a frame. Both are empty on an older
+    ; DLL, and every seat is then read by itself.
+    ReferenceAlias[] seatAliases = SeverActions_Follow._PoolAliasesAt(gq, filled)
+    Actor[] seatHolders = SeverActions_Follow._PoolKeepableHoldersAt(gq, filled)
     Int k = 0
     While k < filled.Length
         Int i = filled[k]
         ReferenceAlias al = None
         If i < GUARD_ALIAS_POOL_SIZE
-            al = gq.GetNthAlias(i) as ReferenceAlias
+            al = SeverActions_Follow._PoolSeatAlias(gq, i, seatAliases, k)
         EndIf
         If al
             Actor a = al.GetReference() as Actor
             If a
-                If a.IsDeleted() || a.IsDisabled()
+                If SeverActions_Follow._SeatHolderGone(a, seatHolders, k)
                     al.Clear()
                     Debug.Trace("[SeverActions] GuardPool sweep: emptied alias " + i + " (deleted/disabled holder)")
                 ElseIf !(SeverActionsNative.Native_GetWorkLoc(a) as Actor)
@@ -6643,7 +6747,7 @@ Function SweepGuardAliasesOnLoad()
                     Int claimed = SeverActionsNativeExt.Native_GetGuardAliasIndex(a)
                     If claimed != i
                         If claimed >= 0
-                            ReferenceAlias other = GetGuardAlias(claimed)
+                            ReferenceAlias other = _GuardAliasIn(claimed, filled, seatAliases)
                             If other && other.GetReference() == a
                                 al.Clear()   ; duplicate fill — the recorded one wins
                                 Debug.Trace("[SeverActions] GuardPool sweep: emptied duplicate alias " + i + " for " + a.GetDisplayName())
@@ -6660,8 +6764,8 @@ Function SweepGuardAliasesOnLoad()
         k += 1
     EndWhile
     ; Roster side.
-    _DropStaleGuardIndicesFromList(KEY_HOMED_NPCS)
-    _DropStaleGuardIndicesFromList(KEY_WORK_ONLY_NPCS)
+    _DropStaleGuardIndicesFromListIn(KEY_HOMED_NPCS, filled, seatAliases)
+    _DropStaleGuardIndicesFromListIn(KEY_WORK_ONLY_NPCS, filled, seatAliases)
     DebugMsg("GuardAlias: load sweep complete")
 EndFunction
 
@@ -6672,6 +6776,8 @@ EndFunction
 Int _tickCounter = 0
 Int _schedCursor = 0
 Int _slowCursor  = 0
+; The fast lane's due set size this tick, -1 when it did not run: TraceTickTimings prints it.
+Int _tickDueCount = -1
 
 Int Property SCHED_CHUNK_THRESHOLD = 16 AutoReadOnly
 {At or below this many scheduled NPCs the full walk runs every tick. Chunking
@@ -6694,8 +6800,10 @@ Function ProcessSchedulePasses(Bool schedActive)
     {Routes this tick's schedule and work-only passes. Small roster or Route B:
      the full walks every tick. Large alias-era roster: the native due set every
      tick (fast lane) plus the slow lane every SCHED_SLOW_LANE_TICKS. The native
-     filter only proves "nothing to do" (ScheduleTickFilter.h).}
+     filter only proves "nothing to do", a block this script already noted aside
+     (ScheduleTickFilter.h).}
     _tickCounter += 1
+    _tickDueCount = -1
     Int scheduledCount = StorageUtil.FormListCount(None, KEY_HOMED_NPCS) \
         + StorageUtil.FormListCount(None, KEY_WORK_ONLY_NPCS)
     If !schedActive || scheduledCount <= SCHED_CHUNK_THRESHOLD
@@ -6763,13 +6871,20 @@ Function ProcessHomeMarkerHops(Actor[] homed, Bool sleepOpen)
      them there. Only in the HOME slot, outside the sleep window (ProcessHomeSleep
      owns it), 3D-loaded (an unseen hop is churn), and out of combat and
      dialogue. No track-only gate: homes are SA-owned post-dismissal state.}
+    ; The NPCs with 3D, from one native call: an NPC in an unloaded cell costs no engine read, and her timer is left
+    ; alone, so a hop that came due while she was away happens on the first tick after her cell loads.
+    Actor[] loaded = SeverActionsNativeExt2.Sched_GetHomedRoster(true)
+    If !loaded || loaded.Length == 0
+        Return
+    EndIf
     Float now = GetGameTimeInSeconds()
     Int i = 0
     While i < homed.Length
         Actor npc = homed[i]
-        If npc && !npc.IsDeleted() && npc.Is3DLoaded() && !npc.IsDead()
+        If npc && loaded.Find(npc) >= 0
             Float nextHop = StorageUtil.GetFloatValue(npc, KEY_NEXT_ROOM_HOP_GT, 0.0)
-            If now >= nextHop
+            ; The timer first: it is free, and each engine read costs a frame.
+            If now >= nextHop && !npc.IsDeleted() && npc.Is3DLoaded() && !npc.IsDead()
                 ; Re-arm first, even when a gate fails or no marker exists, so
                 ; a markerless home is not rescanned every tick.
                 StorageUtil.SetFloatValue(npc, KEY_NEXT_ROOM_HOP_GT, now + Utility.RandomFloat(1.0, 3.0) * SECONDS_PER_GAME_HOUR)
@@ -6799,11 +6914,40 @@ Function ProcessHomeSleep(Actor[] homed, Bool windowOpen)
      alike. The SeverActions_HomeSleeping flag marks our sleepers, so the wake
      path never stands up an NPC the player seated. _OnUpdatePass computes the
      roster and window once per tick.}
+    ; Only a flagged sleeper, or inside the window an NPC with 3D (one native call names them), can need anything.
+    ; The flag and the membership test are free; every engine read costs a frame, so nobody else pays one.
+    Actor[] loaded
+    Bool anyLoaded = false
+    ; Inside the window a sleeper needs nothing while she is alive, still dismissed and still in bed: one native call
+    ; names the ones who are not (rouse), where the tests cost four frames a sleeper. An older DLL tests each.
+    Actor[] rouse
+    Bool rouseKnown = false
+    If windowOpen
+        loaded = SeverActionsNativeExt2.Sched_GetHomedRoster(true)
+        If loaded
+            anyLoaded = loaded.Length > 0
+        EndIf
+        If SeverActionsNativeExt2.Kernel_AbiVersion() >= 49
+            Actor[] sleepers = PapyrusUtil.ActorArray(0)
+            Int s = 0
+            While s < homed.Length
+                If homed[s] && StorageUtil.GetIntValue(homed[s], "SeverActions_HomeSleeping", 0) == 1
+                    sleepers = PapyrusUtil.PushActor(sleepers, homed[s])
+                EndIf
+                s += 1
+            EndWhile
+            If sleepers.Length > 0
+                rouse = SeverActionsNativeExt2.Sched_SleepersToRouse(sleepers)
+            EndIf
+            rouseKnown = true
+        EndIf
+    EndIf
     Int i = 0
     While i < homed.Length
         Actor npc = homed[i]
-        If npc && !npc.IsDeleted()
-            Bool asleep = StorageUtil.GetIntValue(npc, "SeverActions_HomeSleeping", 0) == 1
+        Bool asleep = npc && StorageUtil.GetIntValue(npc, "SeverActions_HomeSleeping", 0) == 1
+        Bool resting = asleep && rouseKnown && !(rouse && rouse.Find(npc) >= 0)
+        If npc && !resting && (asleep || (anyLoaded && loaded.Find(npc) >= 0)) && !npc.IsDeleted()
             If asleep
                 If !windowOpen || npc.IsDead() || IsRegisteredFollower(npc) || npc.IsPlayerTeammate()
                     ; Morning, death, or re-recruitment - stand them up.
@@ -6931,8 +7075,10 @@ Function ProcessScheduleDueAliases()
         GetCurrentGameHour(), SeverActionsNativeExt2.Settings_GetFloat("scheduleWorkStart"), SeverActionsNativeExt2.Settings_GetFloat("scheduleWorkEnd"), \
         SeverActionsNativeExt2.Settings_GetFloat("schedulePlayStart"), SeverActionsNativeExt2.Settings_GetFloat("schedulePlayEnd"))
     If !due || due.Length == 0
+        _tickDueCount = 0
         Return
     EndIf
+    _tickDueCount = due.Length
 
     ; A small due set is processed whole; deferring it would make NPCs visibly
     ; late for work.
@@ -7053,7 +7199,7 @@ Int Function ReclaimSchedAliasesHeld(Actor akActor, Bool abEngineSeats)
             ; RemovePackageOverride's bool reads true for a waiting follower who holds
             ; no V2 at all, so a drop in the override count is the test.
             Int overridesBefore = ActorUtil.CountPackageOverride(akActor)
-            ActorUtil.RemovePackageOverride(akActor, v2)
+            SeverActions_ModuleBase.RemoveSandboxOverride(akActor, v2)
             If ActorUtil.CountPackageOverride(akActor) < overridesBefore
                 released += 1
                 Debug.Trace("[SeverActions_FollowerManager] SchedAlias: reclaimed orphaned " + GetSchedTypeName(t) + " V2 override for " + akActor.GetDisplayName())
@@ -7120,7 +7266,7 @@ Function BeginSchedAliasMigration()
         Return   ; ESP too old — stay on legacy scheduling, retry next load
     EndIf
     SeverActionsNativeExt.Native_SetAliasesMigrated(true)
-    Debug.Trace("[SeverActions] Schedule alias migration: flag set — draining rosters onto the alias pools in 0.5s batches...")
+    Debug.Trace("[SeverActions] Schedule alias migration: flag set, draining rosters onto the alias pools in 0.5s batches...")
     _migHomed = GetAllHomedNPCs()
     _migHomedIdx = 0
     _migWorkIdx = 0
@@ -7205,7 +7351,7 @@ Function MigrateOneNpcToAliases(Actor npc)
             EndIf
             StorageUtil.SetIntValue(npc, KEY_TRUEHOME_MIGRATED, 1)
         Else
-            Debug.Trace("[SeverActions] Schedule migration: could not spawn home marker for " + npc.GetDisplayName() + " — HOME fills will no-op until a marker exists")
+            Debug.Trace("[SeverActions] Schedule migration: could not spawn home marker for " + npc.GetDisplayName() + ": HOME fills will no-op until a marker exists")
         EndIf
     EndIf
 
@@ -7237,36 +7383,61 @@ EndFunction
 Function SweepSchedAliasesOnLoad()
     {Post-migration load sweep, the only full-pool scan (one Pool_FilledIndices
      read per quest, then the filled seats): clears aliases holding
-     deleted/disabled actors or actors in no schedule roster, resolves duplicates
-     to the recorded index, adopts mismatches, and drops stale FLWD indices (the
-     next tick refills them).}
+     deleted/disabled actors, releases the whole hold of an actor in no schedule
+     roster, resolves duplicates to the recorded index, adopts mismatches, and
+     drops stale FLWD indices (the next tick refills them).}
     If !SchedSystemActive() || SchedMigrationPending
         Return
     EndIf
+    ; Each pool's filled seats and their aliases, kept for pass 2 (the aliases empty where they were not read).
+    Int[] homeSeats
+    ReferenceAlias[] homeAliases
+    Int[] workSeats
+    ReferenceAlias[] workAliases
+    Int[] relaxSeats
+    ReferenceAlias[] relaxAliases
     Int t = 0
     While t < 3
         Quest q = GetSchedQuestForType(t)
         Int[] filled = SeverActionsNativeExt2.Pool_FilledIndices(q)
+        ; Their aliases and holders in one call each, where a read per seat costs a frame. Both are empty on an
+        ; older DLL, and every seat is then read by itself.
+        ReferenceAlias[] seatAliases = SeverActions_Follow._PoolAliasesAt(q, filled)
+        Actor[] seatHolders = SeverActions_Follow._PoolKeepableHoldersAt(q, filled)
+        If t == SCHEDULE_HOME
+            homeSeats = filled
+            homeAliases = seatAliases
+        ElseIf t == SCHEDULE_WORK
+            workSeats = filled
+            workAliases = seatAliases
+        Else
+            relaxSeats = filled
+            relaxAliases = seatAliases
+        EndIf
         Int k = 0
         While k < filled.Length
             Int i = filled[k]
             ReferenceAlias al = None
             If i < SCHED_ALIAS_POOL_SIZE
-                al = q.GetNthAlias(i) as ReferenceAlias
+                al = SeverActions_Follow._PoolSeatAlias(q, i, seatAliases, k)
             EndIf
             If al
                 Actor a = al.GetReference() as Actor
                 If a
-                    If a.IsDeleted() || a.IsDisabled()
+                    If SeverActions_Follow._SeatHolderGone(a, seatHolders, k)
                         al.Clear()
                     ElseIf !StorageUtil.FormListHas(None, KEY_HOMED_NPCS, a as Form) \
                         && !StorageUtil.FormListHas(None, KEY_WORK_ONLY_NPCS, a as Form)
-                        al.Clear()   ; orphaned — holder left every roster
+                        ; In no schedule roster: the whole hold goes with the seat (her recorded indices, a guard
+                        ; seat, the fallback overrides). No tick pass reaches her at or below SCHED_CHUNK_THRESHOLD.
+                        al.Clear()
+                        EmptyAllSchedAliases(a)
+                        a.EvaluatePackage()
                     Else
                         Int claimed = SeverActionsNativeExt.Native_GetSchedAliasIndex(a, t)
                         If claimed != i
                             If claimed >= 0
-                                ReferenceAlias other = GetSchedAlias(t, claimed)
+                                ReferenceAlias other = _SchedAliasIn(t, claimed, filled, seatAliases)
                                 If other && other.GetReference() == a
                                     al.Clear()   ; duplicate fill — the recorded one wins
                                 Else
@@ -7287,19 +7458,44 @@ Function SweepSchedAliasesOnLoad()
     Actor[] homed = GetAllHomedNPCs()
     Int h = 0
     While h < homed.Length
-        _DropStaleSchedIndices(homed[h])
+        _DropStaleSchedIndicesIn(homed[h], homeSeats, homeAliases, workSeats, workAliases, relaxSeats, relaxAliases)
         h += 1
     EndWhile
     Int wc = StorageUtil.FormListCount(None, KEY_WORK_ONLY_NPCS)
     Int w = 0
     While w < wc
-        _DropStaleSchedIndices(StorageUtil.FormListGet(None, KEY_WORK_ONLY_NPCS, w) as Actor)
+        _DropStaleSchedIndicesIn(StorageUtil.FormListGet(None, KEY_WORK_ONLY_NPCS, w) as Actor, \
+            homeSeats, homeAliases, workSeats, workAliases, relaxSeats, relaxAliases)
         w += 1
     EndWhile
     DebugMsg("SchedAlias: load sweep complete")
 EndFunction
 
+ReferenceAlias Function _SchedAliasIn(Int aiType, Int aiIndex, Int[] aiSeats, ReferenceAlias[] akAliases)
+    {GetSchedAlias for the load sweep: an index among the filled seats aiSeats of the aiType pool takes its alias
+     from akAliases, the sweep's one read of them. Any other index, and every index when akAliases is empty, is
+     read by GetSchedAlias.}
+    If akAliases && aiIndex >= 0 && aiIndex < SCHED_ALIAS_POOL_SIZE
+        Int seat = aiSeats.Find(aiIndex)
+        If seat >= 0
+            Return akAliases[seat]
+        EndIf
+    EndIf
+    Return GetSchedAlias(aiType, aiIndex)
+EndFunction
+
 Function _DropStaleSchedIndices(Actor npc)
+    {Drops npc's recorded indices whose alias no longer holds them, reading each alias by itself. The load sweep
+     calls _DropStaleSchedIndicesIn; a sweep frame a save holds calls this.}
+    Int[] noSeats
+    ReferenceAlias[] noAliases
+    _DropStaleSchedIndicesIn(npc, noSeats, noAliases, noSeats, noAliases, noSeats, noAliases)
+EndFunction
+
+Function _DropStaleSchedIndicesIn(Actor npc, Int[] aiHomeSeats, ReferenceAlias[] akHomeAliases, \
+    Int[] aiWorkSeats, ReferenceAlias[] akWorkAliases, Int[] aiRelaxSeats, ReferenceAlias[] akRelaxAliases)
+    {_DropStaleSchedIndices for the load sweep, which hands over each pool's filled seats and their aliases
+     (_SchedAliasIn) so a recorded index costs no alias read of its own.}
     If !npc
         Return
     EndIf
@@ -7307,7 +7503,14 @@ Function _DropStaleSchedIndices(Actor npc)
     While t < 3
         Int idx = SeverActionsNativeExt.Native_GetSchedAliasIndex(npc, t)
         If idx >= 0
-            ReferenceAlias al = GetSchedAlias(t, idx)
+            ReferenceAlias al = None
+            If t == SCHEDULE_HOME
+                al = _SchedAliasIn(t, idx, aiHomeSeats, akHomeAliases)
+            ElseIf t == SCHEDULE_WORK
+                al = _SchedAliasIn(t, idx, aiWorkSeats, akWorkAliases)
+            Else
+                al = _SchedAliasIn(t, idx, aiRelaxSeats, akRelaxAliases)
+            EndIf
             If !al || al.GetReference() != npc
                 SeverActionsNativeExt.Native_SetSchedAliasIndex(npc, t, -1)
             EndIf
@@ -7335,14 +7538,18 @@ Function ReapplyTrackOnlySchedAssists()
 EndFunction
 
 Function _ReassertSchedAssistsFor(Actor npc)
-    If !npc || npc.IsDeleted() || _OnJourney(npc)
+    ; The free read first: every assist below goes with a held schedule alias, and most rows hold none.
+    If !npc || !HoldsAnySchedAlias(npc)
         Return
     EndIf
     Int workIdx = SeverActionsNativeExt.Native_GetSchedAliasIndex(npc, SCHEDULE_WORK)
     Bool guardDuty = workIdx >= 0 && (SeverActionsNative.Native_GetWorkLoc(npc) as Actor)
     Bool trackOnly = SeverActionsNativeExt2.Native_IsTrackOnlyFollower(npc)
+    If !(guardDuty || trackOnly)
+        Return
+    EndIf
     ; A hold the schedule yields to (an arrest begun since the caller's alias check) gets none of them back.
-    If !(guardDuty || trackOnly) || SeverActionsNativeExt2.Sched_HoldYield(npc) > 0
+    If npc.IsDeleted() || _OnJourney(npc) || SeverActionsNativeExt2.Sched_HoldYield(npc) > 0
         Return
     EndIf
     If guardDuty
@@ -7363,7 +7570,7 @@ Function _ReassertSchedAssistsFor(Actor npc)
                     ElseIf t == SCHEDULE_PLAY
                         prio = 105
                     EndIf
-                    ActorUtil.AddPackageOverride(npc, v2, prio, 1)
+                    SeverActions_ModuleBase.AddSandboxOverride(npc, v2, prio, 1)
                 EndIf
             EndIf
             t += 1
@@ -7798,7 +8005,7 @@ Function ApplyHomeSandbox(Actor akActor, ObjectReference homeMarker, Int slot)
     If SeverActionsNativeExt2.Native_IsTrackOnlyFollower(akActor)
         Package homePkg = GetHomeSandboxPackage(slot)
         If homePkg
-            ActorUtil.AddPackageOverride(akActor, homePkg, 100, 1)
+            SeverActions_ModuleBase.AddSandboxOverride(akActor, homePkg, 100, 1)
             DebugMsg("ApplyHomeSandbox: Added ActorUtil override (priority 100) for track-only " + akActor.GetDisplayName())
         EndIf
     EndIf
@@ -7868,7 +8075,7 @@ Function ApplyHomeSandboxB(Actor akActor)
     If legacySlot >= 0
         Package legacyPkg = GetHomeSandboxPackage(legacySlot)
         If legacyPkg
-            ActorUtil.RemovePackageOverride(akActor, legacyPkg)
+            SeverActions_ModuleBase.RemoveSandboxOverride(akActor, legacyPkg)
         EndIf
         If HomeSlots && legacySlot < HomeSlots.Length
             HomeSlots[legacySlot].Clear()
@@ -7877,7 +8084,7 @@ Function ApplyHomeSandboxB(Actor akActor)
         DebugMsg("ApplyHomeSandboxB: stripped legacy home slot " + legacySlot + " from " + akActor.GetDisplayName() + " (split-brain repair)")
     EndIf
 
-    ActorUtil.AddPackageOverride(akActor, homePkg, 100, 1)
+    SeverActions_ModuleBase.AddSandboxOverride(akActor, homePkg, 100, 1)
     akActor.SetAV("WaitingForPlayer", 2)
     SeverActionsNative.EscalatedReEvaluate(akActor, 1500)
     DebugMsg("ApplyHomeSandboxB: " + akActor.GetDisplayName())
@@ -7941,7 +8148,7 @@ Function SuspendHomeSandbox(Actor akActor, Int slot)
         ; Route B homed — the sandbox is a single shared override, not an alias.
         Package homePkgB = GetHomeSandboxBPackage()
         If homePkgB
-            ActorUtil.RemovePackageOverride(akActor, homePkgB)
+            SeverActions_ModuleBase.RemoveSandboxOverride(akActor, homePkgB)
         EndIf
         akActor.SetAV("WaitingForPlayer", 0)
         akActor.EvaluatePackage()
@@ -7957,7 +8164,7 @@ Function SuspendHomeSandbox(Actor akActor, Int slot)
     If SeverActionsNativeExt2.Native_IsTrackOnlyFollower(akActor)
         Package homePkg = GetHomeSandboxPackage(slot)
         If homePkg
-            ActorUtil.RemovePackageOverride(akActor, homePkg)
+            SeverActions_ModuleBase.RemoveSandboxOverride(akActor, homePkg)
         EndIf
     EndIf
 
@@ -8074,7 +8281,7 @@ Function _RemoveHomeSandboxHeld(Actor akActor, Bool abFinish)
     If slot >= 0 && HomeSlots && slot < HomeSlots.Length
         Package homePkg = GetHomeSandboxPackage(slot)
         If homePkg
-            ActorUtil.RemovePackageOverride(akActor, homePkg)
+            SeverActions_ModuleBase.RemoveSandboxOverride(akActor, homePkg)
         EndIf
         HomeSlots[slot].Clear()
         DebugMsg("Cleared " + akActor.GetDisplayName() + " from HomeSlot_" + slot)
@@ -8083,13 +8290,13 @@ Function _RemoveHomeSandboxHeld(Actor akActor, Bool abFinish)
     ; Route B home override (shared package) — safe no-op when absent.
     Package homePkgB = GetHomeSandboxBPackage()
     If homePkgB
-        ActorUtil.RemovePackageOverride(akActor, homePkgB)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akActor, homePkgB)
     EndIf
     ; ...and the schedule pool's home V2 override (see EmptySchedAlias), which
     ; ClearHome would otherwise leave with no marker to anchor to.
     Package homeV2 = GetSchedPackageForType(SCHEDULE_HOME)
     If homeV2
-        ActorUtil.RemovePackageOverride(akActor, homeV2)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akActor, homeV2)
     EndIf
 
     If SchedSystemActive()
@@ -8170,13 +8377,31 @@ Actor[] Function GetAllHomedNPCs()
      cleared. Keeps an entry that does not resolve now: a non-persistent NPC in an unloaded cell resolves when it loads.}
     Int count = StorageUtil.FormListCount(None, KEY_HOMED_NPCS)
     Actor[] result = PapyrusUtil.ActorArray(0)
+    If count <= 0
+        Return result
+    EndIf
+    ; The rows that pass, from one native call (an engine read per row costs a frame each). It can only KEEP a row:
+    ; one it does not name is read live before it is pruned, since she may have come into memory after the call (and
+    ; an older DLL, lacking the native, names nobody).
+    Actor[] valid = SeverActionsNativeExt2.Sched_GetHomedRoster(false)
+    Bool haveValid = false
+    If valid
+        haveValid = valid.Length > 0
+    EndIf
     Int i = 0
     While i < count
         Form entry = StorageUtil.FormListGet(None, KEY_HOMED_NPCS, i)
         Actor actorRef = entry as Actor
+        Bool keep = false
+        If actorRef
+            keep = haveValid && valid.Find(actorRef) >= 0
+            If !keep
+                keep = !actorRef.IsDeleted() && GetAssignedHome(actorRef) != ""
+            EndIf
+        EndIf
         If !entry
             i += 1
-        ElseIf actorRef && !actorRef.IsDeleted() && GetAssignedHome(actorRef) != ""
+        ElseIf keep
             result = PapyrusUtil.PushActor(result, actorRef)
             i += 1
         Else
@@ -8743,7 +8968,7 @@ Function RefreshTrapImmunity(Actor[] followers)
         EndIf
         i += 1
     EndWhile
-    DebugMsg("Trap immunity (LightFoot) — granted to " + changed + " of " + followers.Length + " followers")
+    DebugMsg("Trap immunity (LightFoot): granted to " + changed + " of " + followers.Length + " followers")
 EndFunction
 
 Function ReapplyHomeSandboxing()
@@ -8825,7 +9050,7 @@ Function ReapplyHomeSandboxing()
                         If SeverActionsNativeExt2.Native_IsTrackOnlyFollower(akActor)
                             Package homePkg = GetHomeSandboxPackage(slot)
                             If homePkg
-                                ActorUtil.AddPackageOverride(akActor, homePkg, 100, 1)
+                                SeverActions_ModuleBase.AddSandboxOverride(akActor, homePkg, 100, 1)
                             EndIf
                         EndIf
 
@@ -10169,6 +10394,12 @@ Event OnVerb_Followers(String eventName, String strArg, Float numArg, Form sende
         ; Any NPC; opens the retainer popup so the player picks workplace and job
         ; (the frontend closes the dashboard first so the non-pausing popup shows).
         AssignWork(target, "")
+
+    ElseIf actionId == "assignRelax"
+        ; Any NPC; the relax spot at the player, as the Companions page's Relax row (no home needed once the
+        ; schedule pools run).
+        SetRoutineLocHere(target, "play")
+        repaintCompanions = true
 
     ElseIf actionId == "setCombatStyle"
         SetCombatStyle(target, strParam)

@@ -1,8 +1,10 @@
-# SeverActions native API (v2)
+# SeverActions native API (v3)
 
 For **SKSE plugins** that need to cooperate with SeverActions from C++: leave alone the NPCs SeverActions is holding,
 read an NPC's intimacy stance, report the outcome of an intimate scene, send background SkyrimNet prompts under
-SeverActions' Background AI switch, and show the same picture of a character that SeverActions' pages show. Papyrus mods use the Papyrus APIs instead (see `BIO_BLOCKS_API.md` and `DUEL_API.md`).
+SeverActions' Background AI switch, show the same picture of a character that SeverActions' pages show, report a
+crime someone saw to SeverActions' bounty ledger, and ask for a companion's bond to be reassessed after something
+happened in front of them. Papyrus mods use the Papyrus APIs instead (see `BIO_BLOCKS_API.md` and `DUEL_API.md`).
 
 ## Getting the functions
 
@@ -29,7 +31,7 @@ signature never changes and a function is never removed. A later capability is a
 
 | Function | Thread | Does |
 |---|---|---|
-| `SAAPI_GetVersion()` | any | `2` (`1` before the portrait functions). |
+| `SAAPI_GetVersion()` | any | `3` (`2` before the crime report and the bond request, `1` before the portrait functions). |
 | `SAAPI_GetBusyReasons(formId)` | game | The bits of what holds the actor (below). `0` = nothing SeverActions holds. |
 | `SAAPI_IsKnownChild(formId)` | any | `1` when SeverActions knows the actor is a child (`0` while it does not know yet). |
 | `SAAPI_IntimacyEnabled()` | any | `1` while the player has SeverActions' intimacy features on. |
@@ -40,6 +42,8 @@ signature never changes and a function is never removed. A later capability is a
 | `SAAPI_GetUiTheme(out, cap)` / `SAAPI_GetUiLanguage(out, cap)` | any | The colour theme id and the UI language code SeverActions' pages use, so another plugin's pages can match. Theme ids: ledger, tallow, windhelm, dwemer, soulcairn, vellum, contrast (High Contrast); more may be added, so treat an unknown id as your default. |
 | `SAAPI_GetPortraitPath(formId, out, cap, kindOut)` | any | Version 2. The full path of the picture SeverActions' pages show for the actor (below). |
 | `SAAPI_GetPortraitStamp(formId)` | any | Version 2. A number that changes whenever that picture does; `0` for none. |
+| `SAAPI_ReportCrime(offender, at, gold, crime, holdOut, cap)` | game | Version 3. A crime that was seen: adds `gold` to the offender's bounty in the hold where `at` stands (below). Returns the gold added, `0` when nothing was charged. |
+| `SAAPI_RequestBondAssessment(formId, what)` | game | Version 3. Something happened in front of a companion: `what` is weighed in their bond with the player (below). `1` asked now, `2` kept for their next assessment, `0` no companion. |
 | `SAAPI_SetIntimacyHistoryProvider(provider)` | any | Installs your account of an NPC's intimate history with the player (`nullptr` removes it; the last call wins). SeverActions calls `provider(formId, out, cap)` on the game thread whenever it assesses that NPC's intimacy stance and gives the text to the assessment; return its length, `0` for nothing. Return quickly and never call back into SeverActions from it. |
 
 ### Busy reasons
@@ -65,6 +69,50 @@ A plugin that moves NPCs (a package override, a walk, a scene) should leave any 
 
 `0` none (never assessed), `1` unwilling, `2` uncertain, `3` receptive, `4` willing, `5` withdrawn. Withdrawn is
 sticky: only repair over time, or the player's own edit, lifts it.
+
+### Crimes
+
+`SAAPI_ReportCrime` puts a charge in SeverActions' own bounty ledger, the one its guards, jarls and prompts read
+(what the offender is wanted for, the hold's wanted list, an arrest). It is not the game's own crime gold.
+
+- `offender` is an actor reference; `0x14` is the player. An NPC gets a bounty of their own in that hold.
+- `at` is any reference standing where it happened: the offender, the victim or the witness. The hold is the one whose
+  law covers that place. Where no hold does (the wilds beyond any hold, a place another mod never assigned), nothing
+  is charged.
+- `gold` is 1 to 5000 (`kMaxCrimeGold`) for one charge.
+- `crime` labels the charge: `assault`, `theft`, `murder`, `trespass`, `pickpocket`, `contempt`, `abuse_of_power`, or
+  a short label of your own (lower-cased, cut to 64 bytes). Null, empty or a label with nothing left once cleaned
+  reads as `assault`. Guards read the label back as written ("wanted for ..."), so use a plain word for the crime.
+- `holdOut` receives the hold's name (may be null).
+- It returns `0`, with an empty name, when nothing was charged: no hold there, an offender that does not resolve or
+  is dead, gold out of range, or an install without SeverActions' arrest module.
+- You decide who saw it, and you charge once for one crime: SeverActions adds whatever it is given. It shows the player
+  its usual bounty notice when the charge is on them or on one of their people.
+- It records no SkyrimNet event. The charge is in the ledger at once, so guards and the offender know of it through
+  SeverActions' prompts; register an event of your own if the people nearby should hear how it came about.
+
+### Bonds
+
+`SAAPI_RequestBondAssessment(formId, what)` (version 3, game thread): something happened in front of a companion that
+their bond with the player (rapport, trust, loyalty and mood) should weigh.
+
+- `what` says it in a sentence or two, as plain fact ("Lydia saw ..."). At most 400 bytes are kept for one companion;
+  null or empty adds nothing.
+- **This text is how the assessment learns of it.** The assessment reads only the dialogue between the two and the
+  companion's diary, so an event you register with SkyrimNet never reaches it. The text is shown as something new
+  they saw, and the model decides what it changes, if anything. It stays until an assessment that was shown it has
+  its reply applied, so a failed model call does not use it up.
+- It returns `1` (`kBondAsked`) when an assessment was asked for now, the one the Companions page's refresh runs.
+- It returns `2` (`kBondKept`) when none was asked for: an assessment is already under way, for this companion or
+  another; another request was made in the last ten seconds; or the player turned Track Relationships off. The text
+  is kept and weighed at this companion's next assessment. Call again later with no text if it should not wait.
+- **Ask for one companion at a time.** An assessment asked for takes the place of whichever is in flight, so several
+  companions who saw the same thing are asked for in turn, each once the one before has come back.
+- It returns `0` (`kBondNotACompanion`), keeping nothing, when the actor is not a living companion on SeverActions'
+  roster or the install has no companions module.
+- SeverActions' Background AI switch still decides whether an assessment runs. Each one is a model call, so do not
+  ask for one companion more often than something new has happened. What is kept does not survive a load, and the
+  player's Start over on the Companions page drops it.
 
 ### Portraits
 

@@ -572,9 +572,9 @@ EndFunction
 ; === CEASEFIRE FUNCTION ===
 
 Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
-{Stop two actors fighting and extend the ceasefire to nearby faction allies
- (native CeasefireMonitor::PropagateGroup does the per-actor work). Indefinite:
- aggression stays 0 until the player attacks them or an NPC calls AttackTarget.}
+{Stop two actors fighting and extend the ceasefire to nearby faction allies. Indefinite:
+ aggression stays 0 until the player attacks them, an NPC calls AttackTarget, or the
+ native combat re-assert gives up on a fight something keeps forcing.}
 
     If !akActor1
         Debug.Trace("[SeverCombat] CeaseFire: Actor1 is None")
@@ -598,7 +598,7 @@ Function CeaseFire_Execute(Actor akActor1, Actor akActor2)
         StorageUtil.UnsetIntValue(akStoredTarget, "SeverCombat_InForcedCombat")
     EndIf
 
-    ; Initiator + partner + nearby combat-active faction allies; returns the affected actors.
+    ; Initiator + partner + their group nearby (CeasefireCore::JoinsGroup); returns the affected actors.
     Actor[] affected = SeverActionsNativeExt.Ceasefire_PropagateGroup(akActor1, akStoredTarget, 4096.0)
 
     ; The prompt reads these two keys through papyrus_util(), so they live in StorageUtil.
@@ -653,9 +653,9 @@ EndFunction
 
 Function Yield_Execute(Actor akYielder)
 {Makes an actor yield/surrender. Native Yield_ConvertToSurrendered swaps
- factions, zeroes aggression and registers the monitor; Papyrus stops combat,
- restores relationship ranks (CommonLibSSE-NG has no rank API), and keeps the
- prompt keys, the yield slot and the cooldown.}
+ factions, zeroes aggression, holds the aggro radius off and registers the
+ monitor; Papyrus stops combat, restores relationship ranks (CommonLibSSE-NG
+ has no rank API), and keeps the prompt keys, the yield slot and the cooldown.}
 
     If !akYielder
         Debug.Trace("[SeverCombat] Yield: Yielder is None")
@@ -1248,9 +1248,9 @@ Function OnGameLoaded()
 EndFunction
 
 Event OnCeasefireBroken(String eventName, String strArg, Float numArg, Form sender)
-    {A player hit broke a ceasefire. CeasefireMonitor already restored aggression
-     and factions (ranks were restored when the ceasefire was made, so the pair
-     turns on the player, not each other); this clears the prompt and legacy keys.}
+    {A player weapon hit, or a fight CeasefireMonitor gave up stopping, broke a group's
+     ceasefire. CeasefireMonitor already restored aggression and factions (ranks were
+     restored when the ceasefire was made); this clears the prompt and legacy keys.}
     Actor akActor = sender as Actor
     If !akActor
         Return

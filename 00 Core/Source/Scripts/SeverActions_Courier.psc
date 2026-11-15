@@ -118,11 +118,11 @@ Function _ClearCourierHolds(Actor akCourier)
      SkyrimNet's talk package.}
     Package loiter = Game.GetFormFromFile(0x165673, "SeverActions.esp") as Package
     If loiter
-        ActorUtil.RemovePackageOverride(akCourier, loiter)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akCourier, loiter)
     EndIf
     Package sandbox = Game.GetFormFromFile(FID_SANDBOX_PKG, "SeverActions.esp") as Package
     If sandbox
-        ActorUtil.RemovePackageOverride(akCourier, sandbox)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akCourier, sandbox)
     EndIf
     SeverActions_TravelCore.StripTravelOverrides(akCourier)
     SkyrimNetApi.UnregisterPackage(akCourier, "TalkToPlayer")
@@ -441,9 +441,9 @@ Function DeliverCourierLetter(Actor akCourier)
     Package courierLoiterPkg = Game.GetFormFromFile(0x165673, "SeverActions.esp") as Package
     Package fallbackSandbox = Game.GetFormFromFile(FID_SANDBOX_PKG, "SeverActions.esp") as Package
     If courierLoiterPkg != None
-        ActorUtil.AddPackageOverride(akCourier, courierLoiterPkg, 100, 1)
+        SeverActions_ModuleBase.AddSandboxOverride(akCourier, courierLoiterPkg, 100, 1)
     ElseIf fallbackSandbox != None
-        ActorUtil.AddPackageOverride(akCourier, fallbackSandbox, TRAVEL_PACKAGE_PRIORITY, 1)
+        SeverActions_ModuleBase.AddSandboxOverride(akCourier, fallbackSandbox, TRAVEL_PACKAGE_PRIORITY, 1)
     EndIf
     If player != None
         SkyrimNetApi.UnregisterPackage(akCourier, "TalkToPlayer")

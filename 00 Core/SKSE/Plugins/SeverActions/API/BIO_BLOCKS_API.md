@@ -2,7 +2,10 @@
 
 SeverActions' Bio Blocks are bio snippets the player keeps in a library and applies to NPCs; each NPC's blocks render
 into their SkyrimNet character bio. This API lets **another mod** add its own blocks to that library and apply them
-to NPCs from its own scripts, and (v4) list and apply the blocks SeverActions ships and other mods provide.
+to NPCs from its own scripts, and (v4) list and apply the blocks SeverActions ships and other mods provide. The
+player can carry blocks too: theirs render in their own bio and, from SeverActions 4.9.0, in what an NPC talking to
+them is told about them (not while the player is unseen, and a block of an intimate tab only to an NPC known to be an
+adult). A faction rule never applies to the player.
 
 **Do you need it?** A mod that only wants fixed bio text for its OWN NPCs needs nothing from SeverActions: ship a
 `character_bio` submodule in your own SkyrimNet external layer (`SKSE/Plugins/SkyrimNet/external/<author>.<mod>/`).
@@ -22,8 +25,8 @@ and `BioApi_GetContent` `4`).
 | `Bool BioApi_Define(String asKey, String asTitle, String asContent, String asTab)` | Creates the block, or updates its title and content. `asTab` is used only when the block is created (`""` = the first tab); after that the player decides where it lives. `False` when refused - a malformed or reserved key, an empty title, a `{` in the title or content (see below) - or when the player deleted this block. |
 | `Bool BioApi_Exists(String asKey)` | `True` while the block is in the library. |
 | `Bool BioApi_Apply(Actor akActor, String asKey)` | Applies the block to the NPC. Already applied counts as `True`; a key not defined (or deleted by the player) is `False`. In a one-block tab (v3) it replaces the NPC's other blocks of that tab, and applying one they already hold keeps it and removes the others. |
-| `Bool BioApi_Unapply(Actor akActor, String asKey)` | Removes it from the NPC. `False` when the key is unknown or the block was not applied to them. |
-| `Bool BioApi_IsApplied(Actor akActor, String asKey)` | `True` when it is applied to the NPC. A faction rule the player set up does not count. |
+| `Bool BioApi_Unapply(Actor akActor, String asKey)` | Removes it from the NPC in this save. `False` when the key is unknown or the block was not applied to them in this save. A block the player assigned to the NPC for every save stays (see "Every-save assignments"). |
+| `Bool BioApi_IsApplied(Actor akActor, String asKey)` | `True` when it is applied to the NPC, in this save or for every save. A faction rule the player set up does not count. |
 | `String[] BioApi_ListApplied(Actor akActor)` | v2. Every block the NPC's bio shows, the player's own included, one record each (see "What an NPC carries"). |
 | `Bool BioApi_SetTabExclusive(String asTab, Bool abExclusive)` | v3. Marks a tab one-block, or unmarks it (see "One block per NPC"). `False` when the tab does not exist, or when the player set it by hand. |
 | `Bool BioApi_IsTabExclusive(String asTab)` | v3. `True` when the tab is one-block. |
@@ -89,11 +92,11 @@ player to use a faction rule on the Bio Blocks page.
 
 `BioApi_ListApplied(akNpc)` returns one record per block the NPC's bio shows, in that order: the ones applied to the
 NPC, then the ones a faction rule grants (from a one-block tab, only the one shown: see "One block per NPC"). Blocks of
-an intimate tab are listed even while the bio leaves them out (see "Intimacy tabs"). A record is four fields separated
-by a TAB:
+an intimate tab are listed even where the bio leaves them out (a child's; see "Intimacy tabs"). A record is four fields
+separated by a TAB:
 
-1. `direct` (applied to this NPC, by the player or a mod) or `faction` (a faction rule the player set up grants it to
-   every member; matched against the NPC's factions when you call, so a living NPC answers the same loaded or
+1. `direct` (applied to this NPC, by the player or a mod, in this save or by the player for every save) or `faction`
+   (a faction rule the player set up grants it to every member; matched against the NPC's factions when you call, so a living NPC answers the same loaded or
    unloaded, and the answer follows them joining or leaving the faction. A dead NPC loses their faction grants only
    while their body is loaded: Skyrim's death flag cannot be trusted on an unloaded NPC).
 2. The tab.
@@ -209,6 +212,10 @@ the handler go through the bridge as usual.
 - **Nothing fires for what a load does:** loading a save, a faction rule matching an NPC as they come into view, or a
   save naming a block the library no longer has. Read the state with `BioApi_ListApplied` when your mod loads, and use
   the event for changes during play.
+- **Every-save assignments arrive without an event.** A block the player assigned to an NPC for every save is in
+  force from the moment a save loads, a new game included; it sends `applied` only when the player makes the
+  assignment and `removed` when they take it away. Moving a block between this save and every save sends nothing:
+  the NPC carries it before and after.
 - **Faction grants move without an event.** A `faction` record follows the NPC's membership: nothing fires when they
   join or leave the faction, or die. Call `BioApi_ListApplied` when you need the answer rather than keeping it. A
   `rules` event names the block, not the faction or any NPC: re-read `BioApi_ListApplied` for the NPCs you track
@@ -245,7 +252,7 @@ EndIf
 - **The bio shows one, whatever is stored.** An NPC can still hold two blocks of the tab from before it was marked, from
   an import, or from a block moved between tabs; nothing is deleted. The bio, the intimacy section and
   `BioApi_ListApplied` show one: the newest one applied to the NPC, or, with none applied, the first a faction rule
-  grants. `BioApi_IsApplied` still answers for each block.
+  grants (a block the player assigned for every save sits between the two: see "Every-save assignments"). `BioApi_IsApplied` still answers for each block.
 - **The player's choice stands.** The player switches a tab in Manage Tabs on the Bio Blocks page. After that,
   `BioApi_SetTabExclusive` on that tab returns `False` and changes nothing, so calling it on every load is safe.
 - **Mark only your own tab, and name it after your mod.** Tabs are shared by name, so a plain name like `Attachment`
@@ -258,6 +265,27 @@ EndIf
   import keeps them unless the player already decided that tab, and an imported mark is not the player's choice, so
   `BioApi_SetTabExclusive` can still change it. An older SeverActions ignores the setting and drops it the next time
   it saves the library.
+
+## Every-save assignments
+
+From SeverActions 4.9.0 (`BioApi_Version()` is still `4`: nothing was added to the API). The player can apply a block
+to an NPC for every save: the Bio Blocks page keeps that assignment in the library file, keyed to the NPC, and it
+holds in every playthrough of the install. No function sets one: `BioApi_Apply` applies in the running save only.
+
+- **Reading:** `BioApi_IsApplied` is `True` for it and `BioApi_ListApplied` lists it as `direct`, like a block applied
+  in this save.
+- **Applying over it:** `BioApi_Apply` of a block the NPC already carries for every save is `True` and adds nothing
+  to the save. In a one-block tab it still takes this save's other blocks of that tab off (a `removed` event each),
+  so the every-save block is the one shown.
+- **Removing:** `BioApi_Unapply` removes only this save's application. A block the player assigned for every save
+  stays, so `BioApi_IsApplied` can still be `True` after an `Unapply` that returned `True`; only the player removes
+  an every-save assignment.
+- **One-block tabs:** this save's block beats an every-save block of the same tab, and either beats a faction grant.
+  So a `BioApi_Apply` in a one-block tab is shown in this save while the player's every-save block of that tab stays
+  for the others.
+- **Who can have one:** an NPC a plugin places, with a base record of their own, while they are in memory. The
+  player, an NPC created at runtime and a leveled or leveled-templated NPC carry blocks in the running save only.
+- An older SeverActions ignores the assignments and drops them the next time it saves the library.
 
 ## What the player can do
 
@@ -284,13 +312,15 @@ EndIf
 - **When it shows:** on the NPC's next bio render. SkyrimNet may cache a render for about a minute.
 - **Intimacy tabs:** a tab counts as intimate when its name contains any of these, in any case and anywhere in the
   name: `sexual`, `kink`, `erotic`, `intimac`, `nsfw`, `lewd`, `romanc`, `sensual`, `fetish`, `bdsm`, `lover`,
-  `courtesan`, `escort`, `prostitut`, `whore`, `harlot`, `brothel`, `paramour`. While SeverActions' intimacy setting
-  (the Intimacy & Consent Section, on by default) is on, every block in such a tab also feeds the NPC's
-  intimate-persona section; while it is off, and always for a child, the bio leaves such blocks out.
-  `BioApi_ListBlocks` marks them `intimate` and `BioApi_ListApplied` lists them whatever the setting. Watch for accidental
+  `courtesan`, `escort`, `prostitut`, `whore`, `harlot`, `brothel`, `paramour`. From SeverActions 4.9.0 the bio prints
+  such blocks whatever SeverActions' intimacy setting (the Intimacy & Consent Section) says, and never for a child
+  (before, it left them out while that setting was off). While that setting is on,
+  every block in such a tab also feeds the NPC's intimate-persona section. `BioApi_ListBlocks` marks them `intimate` and
+  `BioApi_ListApplied` lists them for a child too. Watch for accidental
   matches ("Necromancers", "Caravan Escorts", "Clover"): give your tab a neutral name unless the content is intimate.
 - **Where things live:** the library, with your blocks and the player's deletions, is per install
-  (`My Games/.../SKSE/SeverActions_BioBlocks.json`); who carries which block is per save. A block's identity comes
+  (`My Games/.../SKSE/SeverActions_BioBlocks.json`); who carries which block is per save, except the player's
+  every-save assignments, which are in the library file (see "Every-save assignments"). A block's identity comes
   from its key, so if the player resets the library file, your next `Define` brings the block back and the NPCs that
   carried it in their saves carry it again. A block the player deleted and restored comes back unapplied in the
   running game, while a save made before the deletion keeps what it had: check `BioApi_IsApplied` rather than

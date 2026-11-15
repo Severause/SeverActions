@@ -210,7 +210,7 @@ String Property FOLLOW_ROW = "SeverActions_Follow" AutoReadOnly
 
 Function _ApplyWaitPackage(Actor akActor, Package akWaitPkg)
     {Put the manual-wait package on akActor (the ActorUtil override) and list it in SkyrimNet.}
-    ActorUtil.AddPackageOverride(akActor, akWaitPkg, SandboxPackagePriority, 0)
+    SeverActions_ModuleBase.AddSandboxOverride(akActor, akWaitPkg, SandboxPackagePriority, 0)
     If akWaitPkg == SandboxPackage
         _ListWaitRow(akActor, WAIT_NAME_WIDE)
     Else
@@ -238,11 +238,11 @@ Function RemoveWaitSandboxPackages(Actor akActor)
         Return
     EndIf
     If SandboxPackage
-        ActorUtil.RemovePackageOverride(akActor, SandboxPackage)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akActor, SandboxPackage)
     EndIf
     Package tightPkg = ResolveWaitInPlacePackage()
     If tightPkg
-        ActorUtil.RemovePackageOverride(akActor, tightPkg)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akActor, tightPkg)
     EndIf
     If SeverActionsNativeExt2.Kernel_SkyrimNetPackageApi() >= 1
         SkyrimNetApi.UnregisterPackageEx(akActor, WAIT_NAME_WIDE, PKG_OWNER)
@@ -276,11 +276,13 @@ Function _ListPoolSeats(Quest akPool)
         Return
     EndIf
     Int[] seats = SeverActionsNativeExt2.Pool_FilledIndices(akPool)
+    ; Their aliases in one call, where a GetNthAlias per seat costs a frame; empty on an older DLL, which reads per seat.
+    ReferenceAlias[] seatAliases = _PoolAliasesAt(akPool, seats)
     Int n = 0
     Int k = 0
     While k < seats.Length
         If seats[k] < FOLLOW_ALIAS_POOL_SIZE && SeverActionsNativeExt2.FollowPool_OwnerOf(seats[k]) == "follow"
-            ReferenceAlias al = akPool.GetNthAlias(seats[k]) as ReferenceAlias
+            ReferenceAlias al = _PoolSeatAlias(akPool, seats[k], seatAliases, k)
             Actor a = None
             If al
                 a = al.GetReference() as Actor
@@ -662,7 +664,7 @@ Event OnSafeInteriorChanged(String eventName, String strArg, Float numArg, Form 
             ; (SkyrimNet's FollowPlayer hook ignores ActorUtil priority and races a door
             ; transition into the FE/FF fallback). 4th arg 0 = no AI reset: the
             ; EvaluatePackage below picks it up without the churn flag 1 causes.
-            ActorUtil.AddPackageOverride(akActor, interiorPkg, SafeInteriorSandboxPriority, 0)
+            SeverActions_ModuleBase.AddSandboxOverride(akActor, interiorPkg, SafeInteriorSandboxPriority, 0)
 
             ; Drop a legacy SkyrimNet casual's registration (no-op for everyone else).
             SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
@@ -726,7 +728,7 @@ Function ExitSafeInteriorSandbox(Actor akActor)
                 Bool sharedWithArrival = relaxPkg == SandboxPackage && SeverActionsNativeExt2.Travel_GetPhaseByActor(akActor) == 2
                 Int travelIter = 0
                 While travelIter < 5 && relaxPkg && !sharedWithArrival
-                    ActorUtil.RemovePackageOverride(akActor, relaxPkg)
+                    SeverActions_ModuleBase.RemoveSandboxOverride(akActor, relaxPkg)
                     travelIter += 1
                 EndWhile
                 If !ownWait
@@ -782,7 +784,7 @@ Function ExitSafeInteriorSandbox(Actor akActor)
             If SeverActions_ModuleBase.IsFollowHandsOff(akActor)
                 akActor.MoveTo(Game.GetPlayer())
                 akActor.EvaluatePackage()
-                Debug.Trace("[SeverActions_Follow] Safe interior sandbox ended (hands-off release): " + akActor.GetDisplayName() + " — override removed, their own follow resumes")
+                Debug.Trace("[SeverActions_Follow] Safe interior sandbox ended (hands-off release): " + akActor.GetDisplayName() + " - override removed, their own follow resumes")
             Else
                 ; Not seated: a legacy SkyrimNet casual, re-register FollowPlayer.
                 If !IsInFollowerSlot(akActor)
@@ -874,7 +876,7 @@ Bool Function YieldSafeInteriorToWait(Actor akActor, Package akWaitPackage)
     If relaxPkg && relaxPkg != akWaitPackage
         Int removeIter = 0
         While removeIter < 5
-            ActorUtil.RemovePackageOverride(akActor, relaxPkg)
+            SeverActions_ModuleBase.RemoveSandboxOverride(akActor, relaxPkg)
             removeIter += 1
         EndWhile
     EndIf
@@ -919,7 +921,7 @@ Event OnSafeInteriorReassert(String eventName, String strArg, Float numArg, Form
     If interiorPkg
         ; WaitingForPlayer / faction / flags from the enter are still right.
         ; 4th arg 0 = no AI reset, as on enter.
-        ActorUtil.AddPackageOverride(akActor, interiorPkg, SafeInteriorSandboxPriority, 0)
+        SeverActions_ModuleBase.AddSandboxOverride(akActor, interiorPkg, SafeInteriorSandboxPriority, 0)
         akActor.EvaluatePackage()
         Debug.Trace("[SeverActions_Follow] Safe interior sandbox RE-ASSERTED off FF fallback: " + akActor.GetDisplayName())
     EndIf
@@ -1096,7 +1098,7 @@ Quest Function GetFollowQuest()
     EndIf
     _followQuest = Game.GetFormFromFile(FOLLOW_QUEST_FORMID, "SeverActions.esp") as Quest
     If !_followQuest
-        Debug.Trace("[SeverActions_Follow] FOLLOW ALIAS POOL UNAVAILABLE — SeverActions_FollowQuest failed to resolve from SeverActions.esp (outdated ESP?). Pool seating disabled; legacy 21-slot + overflow follow remains active.")
+        Debug.Trace("[SeverActions_Follow] FOLLOW ALIAS POOL UNAVAILABLE: SeverActions_FollowQuest failed to resolve from SeverActions.esp (outdated ESP?). Pool seating disabled; legacy 21-slot + overflow follow remains active.")
         Return None
     EndIf
     _followQuestResolved = true
@@ -1112,6 +1114,70 @@ ReferenceAlias Function GetFollowAlias(Int aiIndex)
         Return None
     EndIf
     Return pool.GetNthAlias(aiIndex) as ReferenceAlias
+EndFunction
+
+; A pool's filled seats in one read, for the load sweeps here and in SeverActions_FollowerManager (Global: they
+; keep no state)
+
+ReferenceAlias[] Function _PoolAliasesAt(Quest akPool, Int[] aiSeats) Global
+    {akPool's aliases at the GetNthAlias indices aiSeats, same order, in one call: a GetNthAlias per seat costs a
+     frame each. Empty on an older DLL or an answer that does not match aiSeats; the caller then reads per seat.}
+    ReferenceAlias[] unread
+    If !aiSeats || SeverActionsNativeExt2.Kernel_AbiVersion() < 49
+        Return unread
+    EndIf
+    ReferenceAlias[] aliases = SeverActionsNativeExt2.Pool_AliasesAt(akPool, aiSeats)
+    If aliases.Length != aiSeats.Length
+        Return unread
+    EndIf
+    Return aliases
+EndFunction
+
+Actor[] Function _PoolKeepableHoldersAt(Quest akPool, Int[] aiSeats) Global
+    {For each of akPool's seats aiSeats, same order, the actor it holds when she is neither deleted nor disabled,
+     else None, in one call (Pool_KeepableHoldersAt): an IsDeleted and an IsDisabled per seat cost a frame each.
+     Empty on an older DLL or an answer that does not match aiSeats; _SeatHolderGone then reads the holder.}
+    Actor[] unread
+    If !aiSeats || SeverActionsNativeExt2.Kernel_AbiVersion() < 49
+        Return unread
+    EndIf
+    Actor[] holders = SeverActionsNativeExt2.Pool_KeepableHoldersAt(akPool, aiSeats)
+    If holders.Length != aiSeats.Length
+        Return unread
+    EndIf
+    Return holders
+EndFunction
+
+ReferenceAlias Function _PoolSeatAlias(Quest akPool, Int aiIndex, ReferenceAlias[] akAliases, Int aiSeat) Global
+    {The alias at akPool's GetNthAlias index aiIndex, which is seat aiSeat of the list akAliases was read for;
+     read by itself when akAliases is empty.}
+    If akAliases
+        Return akAliases[aiSeat]
+    EndIf
+    Return akPool.GetNthAlias(aiIndex) as ReferenceAlias
+EndFunction
+
+Bool Function _SeatHolderGone(Actor akHolder, Actor[] akKeepable, Int aiSeat) Global
+    {True when akHolder, the actor a sweep finds in its seat aiSeat, is deleted or disabled. akKeepable
+     (_PoolKeepableHoldersAt) spares the two reads only while the seat still holds the actor it named: the sweep
+     waits frames after that read, so any other holder is read by herself.}
+    If akKeepable && akKeepable[aiSeat] == akHolder
+        Return false
+    EndIf
+    Return akHolder.IsDeleted() || akHolder.IsDisabled()
+EndFunction
+
+ReferenceAlias Function _FollowAliasIn(Int aiIndex, Int[] aiSeats, ReferenceAlias[] akAliases)
+    {GetFollowAlias for the load sweep: an index among the pool's filled seats aiSeats takes its alias from
+     akAliases, the sweep's one read of them. Any other index, and every index when akAliases is empty, is read
+     by GetFollowAlias.}
+    If akAliases && aiIndex >= 0 && aiIndex < FOLLOW_ALIAS_POOL_SIZE
+        Int seat = aiSeats.Find(aiIndex)
+        If seat >= 0
+            Return akAliases[seat]
+        EndIf
+    EndIf
+    Return GetFollowAlias(aiIndex)
 EndFunction
 
 Function AssignFollowerSlot(Actor akActor)
@@ -1340,10 +1406,11 @@ Function SweepFollowAliasesOnLoad(Actor[] followers)
      before ReapplyFollowTracking so that pass sees pool state).
      Migration (one-shot, ledger FollowPoolAdopt v1): adopt
      followers from legacy CK slots or the overflow pair into the pool.
-     Verify (every load): empty aliases holding deleted/disabled actors or
-     non-followers (a seat Enterprises' war-band record names excepted), resolve duplicates
-     to the recorded index, adopt unrecorded fills, release claims on empty
-     aliases, drop stale roster indices.}
+     Verify (every load): empty aliases holding deleted/disabled actors,
+     non-followers (a seat Enterprises' war-band record names excepted) or
+     anything that is no actor, each with its claim and the holder's recorded
+     index; resolve duplicates to the recorded index, adopt unrecorded fills,
+     release claims on empty aliases, drop stale roster indices.}
     Quest pool = GetFollowQuest()
     If !pool
         Return
@@ -1409,19 +1476,26 @@ Function SweepFollowAliasesOnLoad(Actor[] followers)
     If releasedEmpty > 0
         Debug.Trace("[SeverActions_Follow] FollowPool sweep: released " + releasedEmpty + " claim(s) on empty aliases")
     EndIf
+    ; The filled seats' aliases and holders in one call each, where a read per seat costs a frame. Both are empty
+    ; on an older DLL, and every seat is then read by itself.
+    ReferenceAlias[] seatAliases = _PoolAliasesAt(pool, filled)
+    Actor[] seatHolders = _PoolKeepableHoldersAt(pool, filled)
     Int k = 0
     While k < filled.Length
         Int i = filled[k]
         ReferenceAlias al = None
         If i < FOLLOW_ALIAS_POOL_SIZE
-            al = pool.GetNthAlias(i) as ReferenceAlias
+            al = _PoolSeatAlias(pool, i, seatAliases, k)
         EndIf
         If al
-            Actor a = al.GetReference() as Actor
+            ; One read decides the seat: a second could see an actor seated in between.
+            ObjectReference fill = al.GetReference()
+            Actor a = fill as Actor
             If a
-                If a.IsDeleted() || a.IsDisabled()
+                If _SeatHolderGone(a, seatHolders, k)
                     al.Clear()
                     SeverActionsNativeExt2.FollowPool_Release(i)
+                    _DropFollowIndexAt(a, i)
                     Debug.Trace("[SeverActions_Follow] FollowPool sweep: emptied alias " + i + " (deleted/disabled holder)")
                 ElseIf (!fmSwp || !fmSwp.IsRegisteredFollower(a)) && !SeverActionsNative.Native_GetHasFollowPkg(a)
                     ; Neither a registered companion nor a casual (a pool-seated
@@ -1430,6 +1504,7 @@ Function SweepFollowAliasesOnLoad(Actor[] followers)
                     If !_IsWarBandSeat(a, i)
                         al.Clear()
                         SeverActionsNativeExt2.FollowPool_Release(i)
+                        _DropFollowIndexAt(a, i)
                         If SeverActions_FollowerFollowKW && a.GetLinkedRef(SeverActions_FollowerFollowKW) != None
                             SeverActionsNative.LinkedRef_Clear(a, SeverActions_FollowerFollowKW)
                         EndIf
@@ -1439,7 +1514,7 @@ Function SweepFollowAliasesOnLoad(Actor[] followers)
                     Int claimed = SeverActionsNativeExt.Native_GetFollowAliasIndex(a)
                     If claimed != i
                         If claimed >= 0
-                            ReferenceAlias other = GetFollowAlias(claimed)
+                            ReferenceAlias other = _FollowAliasIn(claimed, filled, seatAliases)
                             If other && other.GetReference() == a
                                 al.Clear()   ; duplicate fill — the recorded one wins
                                 SeverActionsNativeExt2.FollowPool_Release(i)
@@ -1454,8 +1529,13 @@ Function SweepFollowAliasesOnLoad(Actor[] followers)
                         EndIf
                     EndIf
                 EndIf
-            ElseIf SeverActionsNativeExt2.FollowPool_OwnerOf(i) != ""
-                ; Emptied since the native read (or a non-actor fill): no claim either.
+            ElseIf fill
+                ; A fill that is no actor goes with its claim: FollowPool_Claim never hands out a filled seat.
+                al.Clear()
+                SeverActionsNativeExt2.FollowPool_Release(i)
+                Debug.Trace("[SeverActions_Follow] FollowPool sweep: emptied alias " + i + " (its fill is no actor)")
+            Else
+                ; Emptied since the native read: no claim either.
                 SeverActionsNativeExt2.FollowPool_Release(i)
             EndIf
         EndIf
@@ -1469,7 +1549,7 @@ Function SweepFollowAliasesOnLoad(Actor[] followers)
         If rf
             Int rIdx = SeverActionsNativeExt.Native_GetFollowAliasIndex(rf)
             If rIdx >= 0
-                ReferenceAlias ral = GetFollowAlias(rIdx)
+                ReferenceAlias ral = _FollowAliasIn(rIdx, filled, seatAliases)
                 If !ral || ral.GetReference() != rf
                     If ral && ral.GetReference() == None
                         SeverActionsNativeExt2.FollowPool_Release(rIdx)   ; the empty alias keeps no claim
@@ -1483,6 +1563,15 @@ Function SweepFollowAliasesOnLoad(Actor[] followers)
     EndWhile
     _ListPoolSeats(pool)
     Debug.Trace("[SeverActions_Follow] FollowPool load sweep complete")
+EndFunction
+
+Function _DropFollowIndexAt(Actor akHolder, Int aiIndex)
+    {The load sweep cleared akHolder's seat aiIndex: her recorded index goes with it when it names that seat. The
+     roster pass only reaches registered followers, and the camp muster and the quick wheel read the index
+     without looking at the seat.}
+    If SeverActionsNativeExt.Native_GetFollowAliasIndex(akHolder) == aiIndex
+        SeverActionsNativeExt.Native_SetFollowAliasIndex(akHolder, -1)
+    EndIf
 EndFunction
 
 Bool Function _IsWarBandSeat(Actor akHolder, Int aiIndex)

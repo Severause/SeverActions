@@ -604,8 +604,8 @@ Bool Function Magelight_IsTradePromptAvailable() Global Native
 Bool Function Native_LLM_Dispatch(String promptName, String contextJson, String modEventName) Global Native
 {LLM relay over the C++ bridge. Use it instead of SkyrimNetApi.SendCustomPromptToLLM,
  whose Papyrus callback truncates replies near 1024 chars. Sends promptName
- (sever_background variant); the reply fires modEventName with strArg = the raw
- response, numArg 1.0 success / 0.0 failure, sender None - register for it
+ (sever_background variant); the reply fires modEventName with strArg = the
+ response (cut at 3500 bytes), numArg 1.0 success / 0.0 failure, sender None - register for it
  first. False, and nothing sent, when the bridge is down, llmCallsEnabled is
  off or the prompt is not installed.}
 
@@ -1033,7 +1033,7 @@ Bool Function Ceasefire_ApplyToActor(Actor akActor, Actor akPartner) Global Nati
 {Zero aggression, faction-swap, stop combat, register. True if newly applied, false if already monitored.}
 
 Actor[] Function Ceasefire_PropagateGroup(Actor akInitiator, Actor akPartner, Float radius) Global Native
-{Ceasefire the initiator, the partner and nearby faction allies in combat. Returns every actor affected, for Papyrus bookkeeping.}
+{Ceasefire the initiator, the partner and the initiator's faction allies nearby: those in the fight and idle aggressive outlaws, never a companion. Returns every actor affected, for Papyrus bookkeeping.}
 
 Function Ceasefire_ForceBreak(Actor akActor) Global Native
 {Restore aggression, factions and relationship rank WITHOUT the broken ModEvent (FullCleanup, so the prompt sees no yield-broken transition).}
@@ -1053,10 +1053,10 @@ Function Yield_SetHostileFactionsList(FormList l) Global Native
 {The "normally hostile" factions: an actor's membership in any is stashed for restore on revert / return-to-crime and sets wasNormallyHostile. Same TruceEligibility fallback as Ceasefire_SetHostileFactionsList.}
 
 Bool Function Yield_ConvertToSurrendered(Actor akActor) Global Native
-{Zero aggression, swap hostile factions for SeverSurrenderedFaction, and store the originals in the entry. True if a hostile faction was removed (WasNormallyHostile).}
+{Zero aggression, swap hostile factions for SeverSurrenderedFaction, hold the base's aggro radius off, and store the originals in the entry. True if a hostile faction was removed (WasNormallyHostile).}
 
 Function Yield_ReturnToCrime(Actor akActor) Global Native
-{Deliberate revert: restore aggression and hostile factions, leave SeverSurrenderedFaction, unregister. Silent (no SeverActionsNative_YieldBroken).}
+{Deliberate revert: restore aggression and hostile factions, leave SeverSurrenderedFaction, unregister (the aggro radius comes back once no hold needs it). Silent (no SeverActionsNative_YieldBroken).}
 
 Function Yield_ForceBreak(Actor akActor) Global Native
 {Same as Yield_ReturnToCrime (named for FullCleanup's call site).}

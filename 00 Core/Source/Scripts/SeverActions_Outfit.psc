@@ -1619,7 +1619,7 @@ Function ClearLockedOutfitForUndress(Actor akActor)
         return
     endif
     SeverActionsNative.Native_Outfit_ClearLockForUndress(akActor)
-    Debug.Trace("[SeverActions_Outfit] Cleared outfit lock (undress — DefaultOutfit stays suppressed) for " + akActor.GetDisplayName())
+    Debug.Trace("[SeverActions_Outfit] Cleared outfit lock (undress, DefaultOutfit stays suppressed) for " + akActor.GetDisplayName())
 EndFunction
 
 Int Function FilterDevicesInPlace(Form[] aWorn)
@@ -1837,6 +1837,14 @@ Function _PoolLog(String msg)
     EndIf
 EndFunction
 
+Function _PoolLogFor(String asBefore, Actor akActor, String asAfter)
+    {_PoolLog with akActor's name between the two texts. The name is read only when the line is written: it costs a
+     frame, and these lines sit in the load re-seat.}
+    If akActor && SeverActionsNativeExt2.Settings_GetBool("debugMode")
+        Debug.Trace("[SeverActions_Outfit] " + asBefore + akActor.GetDisplayName() + asAfter)
+    EndIf
+EndFunction
+
 Function EnsureOutfitPool()
     {Resolve the pool's 21 aliases by id, in FollowerManager's OutfitSlots
      fill order. Once per instance (the array rides the save); a missing alias
@@ -1959,7 +1967,7 @@ Function _AssignOutfitSlotLocked(Actor akActor)
     EndIf
 
     If SeverActionsNative.Native_GetOutfitExcluded(akActor)
-        _PoolLog("Outfit excluded: " + akActor.GetDisplayName() + " - no outfit seat")
+        _PoolLogFor("Outfit excluded: ", akActor, " - no outfit seat")
         Return
     EndIf
 
@@ -1975,7 +1983,7 @@ Function _AssignOutfitSlotLocked(Actor akActor)
     ; Already bound through their own slot-preset alias: the events arrive
     ; there. Still re-apply now if loaded, as a fresh seat below would.
     If IsBoundToOwnNativeOutfitAlias(akActor)
-        _PoolLog("Outfit events for " + akActor.GetDisplayName() + " already come from their slot-preset alias - no extra seat")
+        _PoolLogFor("Outfit events for ", akActor, " already come from their slot-preset alias - no extra seat")
         ReapplyLockedOutfitIfLoaded(akActor)
         Return
     EndIf
@@ -1984,14 +1992,14 @@ Function _AssignOutfitSlotLocked(Actor akActor)
     While i < _outfitPool.Length
         If _outfitPool[i] && !_outfitPoolIsNative[i] && !_outfitPool[i].GetActorRef()
             _outfitPool[i].ForceRefTo(akActor)
-            _PoolLog("Outfit seat " + i + " assigned to " + akActor.GetDisplayName())
+            _PoolLogFor("Outfit seat " + i + " assigned to ", akActor, "")
             ReapplyLockedOutfitIfLoaded(akActor)
             Return
         EndIf
         i += 1
     EndWhile
 
-    _PoolLog("WARNING: No free outfit seat for " + akActor.GetDisplayName())
+    _PoolLogFor("WARNING: No free outfit seat for ", akActor, "")
 EndFunction
 
 Function ReapplyLockedOutfitIfLoaded(Actor akActor)
@@ -2022,10 +2030,10 @@ Function _ClearOutfitSlotLocked(Actor akActor)
     While i < _outfitPool.Length
         If _outfitPool[i] && _outfitPool[i].GetActorRef() == akActor
             If IsOwnNativeOutfitAlias(akActor, _outfitPool[i])
-                _PoolLog("Outfit seat " + i + " is " + akActor.GetDisplayName() + "'s own slot-preset alias - left bound")
+                _PoolLogFor("Outfit seat " + i + " is ", akActor, "'s own slot-preset alias - left bound")
             Else
                 _outfitPool[i].Clear()
-                _PoolLog("Outfit seat " + i + " cleared for " + akActor.GetDisplayName())
+                _PoolLogFor("Outfit seat " + i + " cleared for ", akActor, "")
             EndIf
         EndIf
         i += 1
@@ -2085,7 +2093,9 @@ Int Function _SeatEach(Actor[] actors)
     EndIf
     Int i = 0
     While i < actors.Length
-        If actors[i] && ActorNeedsOutfitSeat(actors[i])
+        ; An actor bound through her own slot alias takes no seat here, and that test is free: skip her before the
+        ; engine reads. One with a lock is still reached by _SeatLockedByRoster, which re-applies it.
+        If actors[i] && !IsBoundToOwnNativeOutfitAlias(actors[i]) && ActorNeedsOutfitSeat(actors[i])
             _AssignOutfitSlotLocked(actors[i])
             n += 1
         EndIf
@@ -2095,9 +2105,11 @@ Int Function _SeatEach(Actor[] actors)
 EndFunction
 
 Int Function _SeatLockedByRoster(Actor[] actors, Bool abFollowers)
-    {_SeatEach over the actors whose Native_GetIsFollower equals abFollowers,
-     so ReassignOutfitSlots can seat locked current followers and other locked
-     actors in separate passes. The caller holds the pool lock.}
+    {Seats the actors whose Native_GetIsFollower equals abFollowers, so
+     ReassignOutfitSlots can seat locked current followers and other locked
+     actors in separate passes. Unlike _SeatEach it does not skip an actor bound
+     through her own slot alias: this is the path that re-applies her lock. The
+     caller holds the pool lock.}
     Int n = 0
     If !actors
         Return 0
@@ -2142,7 +2154,7 @@ Function ReassignOutfitSlots(Actor[] followers)
     ; seat there is settled by the sweep at the end.
     Int i = 0
     While i < _outfitPool.Length
-        If _outfitPool[i] && !_outfitPoolIsNative[i]
+        If _outfitPool[i] && !_outfitPoolIsNative[i] && _outfitPool[i].GetActorRef()
             _outfitPool[i].Clear()
         EndIf
         i += 1

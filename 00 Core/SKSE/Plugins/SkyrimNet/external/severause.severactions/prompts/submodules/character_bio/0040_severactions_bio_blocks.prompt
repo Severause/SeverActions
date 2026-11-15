@@ -1,11 +1,27 @@
-{% if render_mode == "stable" or render_mode == "thoughts" or render_mode == "transform" or (render_mode == "full" and not default(stable_split, false)) %}
-{# Bio Blocks: the library blocks applied to this character, each a "### Title" section from custom_bio_blocks
-   under this file's own heading. Ships with the DLL that registers the decorator; the bare test catches null. #}
+{% if render_mode == "stable" or render_mode == "thoughts" or render_mode == "transform" or (render_mode == "full" and not default(stable_split, false)) or render_mode == "dialogue_target" %}
+{# Bio Blocks: the library blocks applied to this character, each a "### Title" section, under this file's own heading;
+   as the listener only the player's, not while unseen: all of them to a speaker known to be an adult, without intimate
+   tabs to anyone else (custom_bio_blocks_seen). The bio render inherits the dialogue's npc, which is part of its cache
+   key; == "1" sends a missing decorator to the safe set. Ships with the DLL that registers the three decorators; the
+   bare test catches null. #}
 {% if actorUUID and actorUUID != 0 %}
+{% if render_mode != "dialogue_target" %}
 {% set bio_blocks = custom_bio_blocks(actorUUID) %}
 {% if bio_blocks and bio_blocks != "" %}
 ## Additional Details
 {{ bio_blocks }}
+{% endif %}
+{% elif player and player.UUID and actorUUID == player.UUID and not exists("stealthHiddenPlayer") %}
+{% if npc and npc.UUID and sever_known_adult(npc.UUID) == "1" %}
+{% set bio_blocks = custom_bio_blocks(actorUUID) %}
+{% else %}
+{% set bio_blocks = custom_bio_blocks_seen(actorUUID) %}
+{% endif %}
+{% if bio_blocks and bio_blocks != "" %}
+## Additional Details
+- About {{ player.name }}: a "you" in these notes means {{ player.name }}, and someone who has just met them knows only what shows.
+{{ bio_blocks }}
+{% endif %}
 {% endif %}
 {% endif %}
 {% endif %}

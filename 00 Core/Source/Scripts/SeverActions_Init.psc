@@ -9,7 +9,18 @@ Scriptname SeverActions_Init extends ReferenceAlias
 ; === Initialization ===
 
 ; K0: bumped together with the DLL's KernelSession::kAbiVersion whenever a native's signature or
-; meaning changes in a way an older pex must not run against. 46: CompanionLife calls OffScreen_StorySubjects,
+; meaning changes in a way an older pex must not run against. 51: every sandbox override goes on and off through
+; SeverActions_ModuleBase.AddSandboxOverride / RemoveSandboxOverride, which call SceneYield_Defer and SceneYield_Release,
+; and the DLL's restore SceneYield_IsOn, which an older DLL does not register (unbound, no sandbox steps aside for a
+; SexLab or OStim scene). 50: CompanionLife calls OffScreen_DispatchLifeEvent,
+; OffScreen_StoreLifeEventHistory and LLM_DispatchBanter, and Loot Book_TextPart and Magelight_SelectedDiaryPart,
+; which an older DLL does not register (unbound, no off-screen life event and no banter is sent, and no book or
+; diary is read). 49: the load sweeps and the schedule read whole pools
+; and rosters through Pool_AliasesAt, Pool_KeepableHoldersAt, Sched_BlockInputs, Sched_SleepersToRouse,
+; Native_ScanPlayerCellFollowerCandidates and Native_OutfitSlot_GetActorsUsingPresetOutfit, which an older DLL does
+; not register (the scripts test Kernel_AbiVersion and take the per-row reads then). 48: FollowerManager's tick names the homed NPCs with
+; 3D through Sched_GetHomedRoster, which an older DLL does not register (unbound, no homed NPC is sent to bed or
+; moved between rooms; 47 is the vampire work's). 46: CompanionLife calls OffScreen_StorySubjects,
 ; OffScreen_StoryPlace and OffScreen_StoryHold, which an older DLL does not register (unbound, a homed NPC's
 ; off-screen arrest would jail nobody). 45: Currency and Loot plan and move every trade and
 ; hand-over through ItemList_Plan, ItemList_Items, ItemList_Recipients, ItemList_Shortfall and ItemList_HandOver, and
@@ -33,7 +44,7 @@ Scriptname SeverActions_Init extends ReferenceAlias
 ; would strip Devious Devices). 31: Familiarity calls Familiarity_SetBlurb
 ; and Familiarity_ImportBlurb, which an older DLL does not register (unbound, every reputation impression
 ; would be dropped), and CompanionMind calls Bond_NoteSources.
-Int Property KERNEL_ABI = 46 AutoReadOnly
+Int Property KERNEL_ABI = 51 AutoReadOnly
 
 Event OnInit()
     Debug.Trace("[SeverActions] OnInit - First time initialization")

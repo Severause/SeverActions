@@ -487,7 +487,7 @@ Quest Function GetCaptiveQuest()
     EndIf
     _captiveQuest = Game.GetFormFromFile(CAPTIVE_QUEST_FORMID, "SeverActions.esp") as Quest
     If !_captiveQuest
-        Debug.Trace("[SeverActions] CAPTIVE ALIAS POOL UNAVAILABLE — SeverActions_CaptiveQuest failed to resolve from SeverActions.esp (outdated ESP?). Alias-held captivity disabled; the priority-95 override remains the hold.")
+        Debug.Trace("[SeverActions] CAPTIVE ALIAS POOL UNAVAILABLE: SeverActions_CaptiveQuest failed to resolve from SeverActions.esp (outdated ESP?). Alias-held captivity disabled; the priority-95 override remains the hold.")
         Return None
     EndIf
     _captiveQuestResolved = true
@@ -2035,11 +2035,11 @@ Function _TearDownHold(Actor akVictim)
     ; (the guard sandbox too). Safe no-ops otherwise.
     Package guardPkgTD = Game.GetFormFromFile(KIDNAP_GUARD_PKG_FORMID, "SeverActions.esp") as Package
     If guardPkgTD
-        ActorUtil.RemovePackageOverride(akVictim, guardPkgTD)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akVictim, guardPkgTD)
     EndIf
     SeverActions_Arrest arrTD = _Arrest()
     If arrTD && arrTD.SeverActions_PrisonerSandBox
-        ActorUtil.RemovePackageOverride(akVictim, arrTD.SeverActions_PrisonerSandBox)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akVictim, arrTD.SeverActions_PrisonerSandBox)
     EndIf
     If arrTD && arrTD.SeverActions_SandboxAnchorKW
         SeverActionsNative.LinkedRef_Clear(akVictim, arrTD.SeverActions_SandboxAnchorKW)
@@ -2178,12 +2178,12 @@ Function _EndGuardDuty(Actor akKidnapper)
     StorageUtil.UnsetIntValue(akKidnapper, "SeverKidnap_OnGuard")
     Package guardPkg = Game.GetFormFromFile(KIDNAP_GUARD_PKG_FORMID, "SeverActions.esp") as Package
     If guardPkg
-        ActorUtil.RemovePackageOverride(akKidnapper, guardPkg)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akKidnapper, guardPkg)
     EndIf
     If arrest
         ; PrisonerSandBox: UntieCaptive's loosened watch (older builds guarded with it too).
         If arrest.SeverActions_PrisonerSandBox
-            ActorUtil.RemovePackageOverride(akKidnapper, arrest.SeverActions_PrisonerSandBox)
+            SeverActions_ModuleBase.RemoveSandboxOverride(akKidnapper, arrest.SeverActions_PrisonerSandBox)
         EndIf
         If arrest.SeverActions_SandboxAnchorKW
             SeverActionsNative.LinkedRef_Clear(akKidnapper, arrest.SeverActions_SandboxAnchorKW)
@@ -2564,7 +2564,7 @@ Function _BindCaptive(Actor akVictim, Actor akKidnapper, Bool abGuard = true, Bo
                         DebugMsg("CaptiveAlias: seated " + akVictim.GetDisplayName() + " in alias " + captiveAliasIdx)
                     EndIf
                 ElseIf GetCaptiveQuest()
-                    DebugMsg("CaptiveAlias: pool exhausted (" + CAPTIVE_ALIAS_POOL_SIZE + " slots) — " + akVictim.GetDisplayName() + " stays on the override hold")
+                    DebugMsg("CaptiveAlias: pool exhausted (" + CAPTIVE_ALIAS_POOL_SIZE + " slots): " + akVictim.GetDisplayName() + " stays on the override hold")
                 EndIf
             EndIf
             ; The guard anchors to the marker (at the captor) in either style. Only a guard: a
@@ -2634,9 +2634,9 @@ Function _BindCaptive(Actor akVictim, Actor akKidnapper, Bool abGuard = true, Bo
             ; Re-bind after loose captivity: drop the wide watch sandbox so
             ; the tight guard package is unambiguous at its priority.
             If arrest.SeverActions_PrisonerSandBox
-                ActorUtil.RemovePackageOverride(akKidnapper, arrest.SeverActions_PrisonerSandBox)
+                SeverActions_ModuleBase.RemoveSandboxOverride(akKidnapper, arrest.SeverActions_PrisonerSandBox)
             EndIf
-            ActorUtil.AddPackageOverride(akKidnapper, guardPkg, 110, 1)
+            SeverActions_ModuleBase.AddSandboxOverride(akKidnapper, guardPkg, 110, 1)
             akKidnapper.EvaluatePackage()
             ; While set, KidnapTick's station heal re-posts a strayed guard (teammate drag on
             ; fast travel, door leaks); _EndGuardDuty clears it.
@@ -3721,7 +3721,7 @@ Function UntieCaptive(Actor akSpeaker, String targetName)
     ObjectReference mU = SeverActionsNativeExt.Native_Kidnap_GetMarker(victim)
     If mU && arrestU && arrestU.SeverActions_PrisonerSandBox && arrestU.SeverActions_SandboxAnchorKW
         SeverActionsNativeExt.LinkedRef_SetPermanent(victim, mU, arrestU.SeverActions_SandboxAnchorKW)
-        ActorUtil.AddPackageOverride(victim, arrestU.SeverActions_PrisonerSandBox, 105, 1)
+        SeverActions_ModuleBase.AddSandboxOverride(victim, arrestU.SeverActions_PrisonerSandBox, 105, 1)
     EndIf
     victim.EvaluatePackage()
 
@@ -3732,10 +3732,10 @@ Function UntieCaptive(Actor akSpeaker, String targetName)
     If watcherU && !watcherU.IsDead() && arrestU && StorageUtil.GetIntValue(watcherU, "SeverKidnap_OnGuard", 0) == 1
         Package guardPkgU = Game.GetFormFromFile(KIDNAP_GUARD_PKG_FORMID, "SeverActions.esp") as Package
         If guardPkgU
-            ActorUtil.RemovePackageOverride(watcherU, guardPkgU)
+            SeverActions_ModuleBase.RemoveSandboxOverride(watcherU, guardPkgU)
         EndIf
         If arrestU.SeverActions_PrisonerSandBox
-            ActorUtil.AddPackageOverride(watcherU, arrestU.SeverActions_PrisonerSandBox, 110, 1)
+            SeverActions_ModuleBase.AddSandboxOverride(watcherU, arrestU.SeverActions_PrisonerSandBox, 110, 1)
         EndIf
         watcherU.EvaluatePackage()
     EndIf
@@ -4054,7 +4054,7 @@ Function _UnbindCaptive(Actor akVictim)
     ; and its SandboxAnchorKW LinkedRef go with the anchor block below.
     Package guardPkgRel = Game.GetFormFromFile(KIDNAP_GUARD_PKG_FORMID, "SeverActions.esp") as Package
     If guardPkgRel
-        ActorUtil.RemovePackageOverride(akVictim, guardPkgRel)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akVictim, guardPkgRel)
     EndIf
     If furnPkg
         ActorUtil.RemovePackageOverride(akVictim, furnPkg)
@@ -4071,7 +4071,7 @@ Function _UnbindCaptive(Actor akVictim)
         EndIf
         ; The hold anchor: the bind's jail-pattern pin, or UntieCaptive's loose sandbox.
         If arrest.SeverActions_PrisonerSandBox
-            ActorUtil.RemovePackageOverride(akVictim, arrest.SeverActions_PrisonerSandBox)
+            SeverActions_ModuleBase.RemoveSandboxOverride(akVictim, arrest.SeverActions_PrisonerSandBox)
         EndIf
         If arrest.SeverActions_SandboxAnchorKW
             SeverActionsNative.LinkedRef_Clear(akVictim, arrest.SeverActions_SandboxAnchorKW)

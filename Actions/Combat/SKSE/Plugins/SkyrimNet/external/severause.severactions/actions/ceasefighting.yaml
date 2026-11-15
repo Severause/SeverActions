@@ -1,6 +1,6 @@
 customCategory: combat
 name: CeaseFighting
-description: "Use when the speaker, in a real fight, wants it stopped and calls it off in this line: a misunderstanding, or someone they will not kill. The speaker and the opponent they name stand down, with allies fighting nearby, and stay down unless attacked. Never to keep fighting or to attack; demanding that the other side surrender is words. Ending a fist-fight is Brawl."
+description: "Use when the speaker, in a real fight, wants it stopped and calls it off in this line: a misunderstanding, or someone they will not kill. The speaker and the opponent they name stand down, with their group nearby, and stay down unless attacked. Never to keep fighting or to attack; demanding that the other side surrender is words. Ending a fist-fight is Brawl."
 questEditorId: SeverActions
 scriptName: SeverActions_Combat
 executionFunctionName: CeaseFire_Execute

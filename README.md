@@ -11,7 +11,7 @@
 
 <p align="center">
   <code>Skyrim SE &middot; AE &middot; VR</code> &nbsp;&middot;&nbsp; <code>SkyrimNet 0.25+</code> &nbsp;&middot;&nbsp;
-  <code>Magelight UI 1.8 included</code>
+  <code>Magelight UI 1.9 included</code>
 </p>
 
 <p align="center">
@@ -25,41 +25,34 @@
 > **Upgrading from 3.9.x?** Reinstall with **Replace**; don't merge into the old mod. See
 > [Installing and upgrading](#installing-and-upgrading).
 
-**Contents:** [What's new in 4.8](#whats-new-in-48) · [Earlier releases](#earlier-releases) · [Overview](#overview) · [Features](#features) ·
+**Contents:** [What's new in 4.9](#whats-new-in-49) · [Earlier releases](#earlier-releases) · [Overview](#overview) · [Features](#features) ·
 [Requirements](#requirements) · [Compatibility](#compatibility) · [Installing and upgrading](#installing-and-upgrading) ·
 [Settings](#settings) · [Support and troubleshooting](#support-and-troubleshooting) · [Under the hood](#under-the-hood) ·
 [Credits](#credits)
 
 ---
 
-## What's new in 4.8
+## What's new in 4.9
 
-- **One order, several people**: send a group somewhere in one line, tell several companions to wait or follow at
-  once, and buy, sell or give several items in one trade, each for whoever it is for.
-- **Follow anyone's days**: off-screen life can follow any named NPC without giving them a home, so SeverActions never
-  moves them or touches their routine.
-- **Followers rest in bed**: lying in a bed takes off their survival fatigue by the hour, waiting and sleeping included.
-- **Injured NPCs move like it**: someone with a broken leg, a broken arm or a lost limb no longer shakes or jerks, keeps
-  the injured posture while turning, idling or fighting, and limps in step.
-- **Maimed NPCs react as themselves**: a victim no longer always begs, and whoever did it no longer always bandages
-  them; how each one reacts comes from who they are and what lies between them.
-- **Easier reading**: a Text Size option, a Plain Font switch and a High Contrast theme in Settings > UI Display.
-- **Travel**: followers sent into a walled city walk to its gate and in.
-- **Generic NPCs keep their looks**: a bandit or other generic NPC you kept no longer turns into someone else when
-  their area resets.
-- **Brawls**: bystanders become ghosts while a brawl or duel lasts, so stray blows pass through them.
-- **Steadier on installs that lose PapyrusUtil values**: the values SeverActions changes and puts back (relationships,
-  Aggression and Confidence, a brawler's party seat, a journey's follower) and its one-time steps are kept in its own
-  save data.
-- **And more**: followers remember fast travel, undressing takes weapons and quivers off, homed NPCs keep their homes
-  through bard songs and town scenes, the truce holds only outlaws, portraits keep their names when your load order
-  changes and other mods can show them, Bio Blocks can be dragged into place, and
-  SeverActions' events can be switched off one by one in SkyrimNet's Events settings.
+- **NPCs know you as they should**: the What You Know About section is each NPC's own impression of you, written from
+  their memories, instead of a general note that had people you knew well greet you like a near-stranger.
+- **Saves always load**: a save made while SeverActions held a very long script text no longer crashes on every load.
+- **Ceasefires hold**: bandits who stood down no longer attack you for coming close, or start fighting each other.
+- **SexLab and OStim scenes keep their actors**: SeverActions' sandboxes (waiting, home, work, prisoners, camps) step
+  aside for the scene and come back after it.
+- **Bio Blocks**: for your own character, kept on an NPC in every save, and every block you apply is used.
+- **SeverActions speaks German**, and names in Russian, Greek and accented letters match whatever their capitals.
+- **Faster**: the schedule check and the work after a load take a fraction of the time with many homes.
+- **And more**: banter that follows what the party just said, work and relax spots without hiring, investing raises a
+  retainer's mood, faces that look at the camera, rumors pin in any language, travel fixes on Solstheim and into
+  houses, and other mods can report a crime.
 
 The full list is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Earlier releases
 
+- **4.8 Many Hands**: one order for several people, several items in one trade, following any NPC's days, followers
+  who rest in bed, and maimed NPCs who react as themselves.
 - **4.7 Linen and Bone**: survivable dismemberment with bandages, splints and regrowth, controller support in the menu,
   the Tallow & Soot theme and a finish for every theme, and redrawn pages.
 - **4.6 Blood and Thread**: Phantasm draws the Outfits mirror, the item view and the automatic party faces.
@@ -192,7 +185,7 @@ Opens). Every page has a **?** button that explains it.
   you and your companions this way.
 - **Bio Blocks**: reusable character traits (a quirk, a backstory beat, a way of speaking) you write once and give to
   any NPC, your companions or a whole faction. The library is shared by all saves; who carries which block is kept per
-  save. Import and export it as JSON. Other mods can add read-only blocks; their guide installs to
+  save, unless you apply it for every save. Import and export it as JSON, with or without who carries what. Other mods can add read-only blocks; their guide installs to
   `Data/SKSE/Plugins/SeverActions/API/BIO_BLOCKS_API.md`.
 - **Survival**: hunger, cold and fatigue for followers, tuned on the Survival page's Rules tab (Debuff Severity scales
   the penalties). Followers eat by themselves when hungry, and each companion's card has Feed, Tracked and Shares food /

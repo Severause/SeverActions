@@ -1,6 +1,6 @@
 Scriptname SeverActions_Familiarity extends Quest
-{Familiarity (social module): the reputation assessment an NPC forms of the player at
- the milestones the native player_familiarity decorator detects - queue pop, LLM
+{Familiarity (social module): the reputation assessment an NPC forms of the player
+ whenever the native player_familiarity decorator finds one due - queue pop, LLM
  dispatch through the kernel relay, reply parse, tier write. FollowerManager keeps a
  safe-exit stub for each moved function (F7). The native stores (FamiliarityStore,
  IntimacyStanceStore, IntimacyGate) are gated on this module. Maintenance runs from
@@ -18,8 +18,9 @@ Function Maintenance()
     {Load recovery (the social provider's stage 1): the request listener. The in-flight
      state is the native lane social.reputation (cleared on revert, TTL-expired), so a
      save made mid-call cannot wedge the queue.}
-    ; Fired on a blurb milestone: the first real conversation (10+ lines), every +100
-    ; lines after, or a bond rise; at most once a game day (FamiliarityStore decides).
+    ; Fired when an NPC's impression of the player is due (FamiliarityCore::ImpressionDue in
+    ; the DLL: real history and none stored, or 20 new lines) or on a bond rise; at most
+    ; once a game day per NPC.
     RegisterForModEvent("SeverActions_ReputationAssess", "OnReputationAssessRequest")
     ; The impressions an older build kept in StorageUtil, copied into the DLL once per save. On its own
     ; event so the walk never holds up the other load stages.
@@ -179,10 +180,10 @@ Function OnReputationAssessResult(String response, Int success)
     String blurb = SeverActionsNative.TrimString(response)
 
     ; The reply leads with a verdict, "TIER:<token>|", then the prose. The verdict
-    ; replaces the conversation ladder for this NPC from now on (the ladder only
-    ; bootstraps an unassessed NPC; bonds still floor it natively). Without the prefix
-    ; the computed tier stands. A pipe, not a newline: a Papyrus string literal cannot
-    ; express a newline to search for.
+    ; replaces an earlier one and is reported when it is above the contact ladder's
+    ; tier (bonds floor it natively too). Without the prefix the computed tier stands.
+    ; A pipe, not a newline: a Papyrus string literal cannot express a newline to
+    ; search for.
     If StringUtil.Find(blurb, "TIER:") == 0
         Int tierBar = StringUtil.Find(blurb, "|")
         If tierBar > 5

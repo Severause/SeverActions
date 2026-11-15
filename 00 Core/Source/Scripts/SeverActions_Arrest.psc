@@ -588,53 +588,63 @@ EndFunction
 
 Function HealOrphanedCaptivitySandboxes()
     {Strip the captivity holds (PrisonerSandBox, the kidnap guard sandbox, the SandboxAnchorKW link)
-     from anyone in the player's cell with no live claim on them.
+     from anyone in the player's cell who holds one with no live claim on them.
      Must run after MigrateJailedNPCsToNative / VerifyJailedNPCs, which repair the jail record the
      Native_Jailed_IsJailed probe reads; before them it would strip a real prisoner's hold. Every
      probe is a kernel native, so no other module's recovery need run first.
      SeverKidnap_OnGuard is deliberately not probed: it is only set on the kidnapper of a live
      entry, which FindVictimOf already covers, so a flag without an entry is the orphan to strip.}
     Package guardPkgHeal = Game.GetFormFromFile(0x00165679, "SeverActions.esp") as Package   ; SeverActions_KidnapGuardSandbox
-    Actor playerHeal = Game.GetPlayer()
+    ; The scan leaves out the player and the dead.
     Actor[] cellActors = SeverActionsNativeExt.Native_ScanPlayerCellForLiveActors()
     Int healN = 0
     String healNames = ""
     Int i = 0
     While i < cellActors.Length
         Actor a = cellActors[i]
-        If a && !a.IsDead() && a != playerHeal
-            Bool legit = SeverActionsNativeExt.Native_Kidnap_GetPhase(a) != 0
+        ; Most of the cell holds nothing: both packages only ever go on as ActorUtil overrides, so an actor with
+        ; none (a free count) and no anchor link is left alone, her AI package included.
+        ObjectReference anchor = None
+        If a && SeverActions_SandboxAnchorKW
+            anchor = a.GetLinkedRef(SeverActions_SandboxAnchorKW)
+        EndIf
+        If a && (anchor || ActorUtil.CountPackageOverride(a) > 0)
+            Bool legit = SeverActionsNativeExt.Native_Jailed_IsJailed(a)
             If !legit
-                legit = SeverActionsNativeExt.Native_Kidnap_FindVictimOf(a) != None
+                legit = SeverActionsNativeExt.Native_Kidnap_GetPhase(a) != 0
             EndIf
             If !legit
-                legit = SeverActionsNativeExt.Native_Jailed_IsJailed(a)
+                legit = SeverActionsNativeExt.Native_Kidnap_FindVictimOf(a) != None
             EndIf
             If !legit
                 legit = SeverActionsNative.Native_ArrestSession_HasSession(a)
             EndIf
             If !legit
-                If SeverActions_PrisonerSandBox
-                    ActorUtil.RemovePackageOverride(a, SeverActions_PrisonerSandBox)
+                Bool stripped = false
+                If SeverActions_PrisonerSandBox && SeverActions_ModuleBase.RemoveSandboxOverride(a, SeverActions_PrisonerSandBox)
+                    stripped = true
                 EndIf
-                If guardPkgHeal
-                    ActorUtil.RemovePackageOverride(a, guardPkgHeal)
+                If guardPkgHeal && SeverActions_ModuleBase.RemoveSandboxOverride(a, guardPkgHeal)
+                    stripped = true
                 EndIf
-                If SeverActions_SandboxAnchorKW
+                If anchor
                     SeverActionsNative.LinkedRef_Clear(a, SeverActions_SandboxAnchorKW)
+                    stripped = true
                 EndIf
-                a.EvaluatePackage()
-                healN += 1
-                If healNames != ""
-                    healNames += ", "
+                If stripped
+                    a.EvaluatePackage()
+                    healN += 1
+                    If healNames != ""
+                        healNames += ", "
+                    EndIf
+                    healNames += a.GetDisplayName()
                 EndIf
-                healNames += a.GetDisplayName()
             EndIf
         EndIf
         i += 1
     EndWhile
     ; The names are the evidence: a live captive or prisoner in this list means a probe failed.
-    Debug.Trace("[SeverActions_Arrest] Load recovery: captivity-sandbox sweep checked " + cellActors.Length + " cell actors (" + healN + " without live captivity claims - overrides stripped defensively: " + healNames + ")")
+    Debug.Trace("[SeverActions_Arrest] Load recovery: captivity-sandbox sweep checked " + cellActors.Length + " cell actors (" + healN + " orphaned hold(s) stripped: " + healNames + ")")
 EndFunction
 
 Event OnTrackedStatsEvent(String asStat, Int aiValue)
@@ -665,7 +675,7 @@ Event OnNativeSandboxCleanup(string eventName, string strArg, float numArg, Form
     ; at its next tick.
     SeverActionsNative.UnregisterSandboxUser(akActor)
     If SeverActions_PrisonerSandBox != None
-        ActorUtil.RemovePackageOverride(akActor, SeverActions_PrisonerSandBox)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akActor, SeverActions_PrisonerSandBox)
     EndIf
     If SeverActions_SandboxAnchorKW != None
         SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_SandboxAnchorKW)
@@ -1046,7 +1056,7 @@ Bool Function ClearStaleArrestState(Actor akActor, String asWhy)
         ActorUtil.RemovePackageOverride(akActor, SeverActions_GuardFollowPlayer)
     EndIf
     If SeverActions_PrisonerSandBox
-        ActorUtil.RemovePackageOverride(akActor, SeverActions_PrisonerSandBox)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akActor, SeverActions_PrisonerSandBox)
     EndIf
     If SeverActions_FollowTargetKW
         SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_FollowTargetKW)
@@ -2339,7 +2349,7 @@ Function JailPrisonerAtFor(Actor guard, Actor prisoner, ObjectReference jailMark
             ; Per-actor sandbox anchor. Permanent (LREF v3): a sentence can outlast the 30-day
             ; staleness prune, which would leave the prisoner on default AI.
             SeverActionsNativeExt.LinkedRef_SetPermanent(prisoner, jailMarker, SeverActions_SandboxAnchorKW)
-            ActorUtil.AddPackageOverride(prisoner, SeverActions_PrisonerSandBox, PackagePriority + 10, 1)
+            SeverActions_ModuleBase.AddSandboxOverride(prisoner, SeverActions_PrisonerSandBox, PackagePriority + 10, 1)
             prisoner.EvaluatePackage()
             DebugMsg("Prisoner sandboxing in jail (linked to marker)")
         Else
@@ -2679,7 +2689,7 @@ Function ClearPrisonerCommonArtifacts(Actor akActor)
     akActor.RemoveFromFaction(dunPrisonerFaction)
 
     If SeverActions_PrisonerSandBox
-        ActorUtil.RemovePackageOverride(akActor, SeverActions_PrisonerSandBox)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akActor, SeverActions_PrisonerSandBox)
     EndIf
     SeverActionsNative.LinkedRef_Clear(akActor, SeverActions_SandboxAnchorKW)
 
@@ -2924,7 +2934,7 @@ Function RemoveAllArrestPackages(Actor akActor)
         ActorUtil.RemovePackageOverride(akActor, SeverActions_FollowGuard_Prisoner)
     EndIf
     If SeverActions_PrisonerSandBox
-        ActorUtil.RemovePackageOverride(akActor, SeverActions_PrisonerSandBox)
+        SeverActions_ModuleBase.RemoveSandboxOverride(akActor, SeverActions_PrisonerSandBox)
     EndIf
     If SeverActions_GuardFollowPlayer
         ActorUtil.RemovePackageOverride(akActor, SeverActions_GuardFollowPlayer)
@@ -3695,7 +3705,7 @@ Function VerifyJailedNPCs()
                     If SeverActions_PrisonerSandBox
                         ; Permanent (LREF v3), as at the jailing site.
                         SeverActionsNativeExt.LinkedRef_SetPermanent(prisoner, jailMarker, SeverActions_SandboxAnchorKW)
-                        ActorUtil.AddPackageOverride(prisoner, SeverActions_PrisonerSandBox, PackagePriority + 10, 1)
+                        SeverActions_ModuleBase.AddSandboxOverride(prisoner, SeverActions_PrisonerSandBox, PackagePriority + 10, 1)
                         prisoner.EvaluatePackage()
                     EndIf
 
@@ -4998,7 +5008,7 @@ Function FallbackSandboxSearch(String guardName, String targetName)
     SeverActionsNative.LinkedRef_Set(DispatchGuard, sandboxAnchor, SeverActions_SandboxAnchorKW)
 
     If SeverActions_PrisonerSandBox
-        ActorUtil.AddPackageOverride(DispatchGuard, SeverActions_PrisonerSandBox, PackagePriority, 1)
+        SeverActions_ModuleBase.AddSandboxOverride(DispatchGuard, SeverActions_PrisonerSandBox, PackagePriority, 1)
         DispatchGuard.EvaluatePackage()
     EndIf
     If SeverActions_PrisonerSandBox
@@ -5039,7 +5049,7 @@ Function CheckDispatchPhase3_Sandbox()
 
             SeverActionsNative.UnregisterSandboxUser(DispatchGuard)
             If SeverActions_PrisonerSandBox
-                ActorUtil.RemovePackageOverride(DispatchGuard, SeverActions_PrisonerSandBox)
+                SeverActions_ModuleBase.RemoveSandboxOverride(DispatchGuard, SeverActions_PrisonerSandBox)
             EndIf
             SeverActionsNative.LinkedRef_Clear(DispatchGuard, SeverActions_SandboxAnchorKW)
 
@@ -6509,7 +6519,7 @@ Function OffScreenJail(Actor akNPC, String asHome)
 
     If SeverActions_PrisonerSandBox
         SeverActionsNativeExt.LinkedRef_SetPermanent(akNPC, jailMarker, SeverActions_SandboxAnchorKW)
-        ActorUtil.AddPackageOverride(akNPC, SeverActions_PrisonerSandBox, 110, 1)
+        SeverActions_ModuleBase.AddSandboxOverride(akNPC, SeverActions_PrisonerSandBox, 110, 1)
         akNPC.EvaluatePackage()
     EndIf
 

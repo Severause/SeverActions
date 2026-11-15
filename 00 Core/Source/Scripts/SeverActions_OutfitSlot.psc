@@ -1730,7 +1730,7 @@ Function MigrateToOutfitSlotSystem()
         Bool alreadyMigrated = akActor && StorageUtil.GetIntValue(akActor, "SeverActions_OutfitSlotMigDone", 0) >= 1 && SeverActionsNative.Native_OutfitSlot_GetSlot(akActor) >= 0
         ; Only a slot-eligible actor: a stranger's legacy-only preset stays legacy
         ; rather than taking a slot, an alias and chests.
-        if akActor && !akActor.IsDead() && !alreadyMigrated && IsSlotEligible(akActor)
+        if akActor && !alreadyMigrated && !akActor.IsDead() && IsSlotEligible(akActor)
             Int slotIdx = AssignSlotToActor(akActor)
             if slotIdx >= 0
                 String[] storageNames = outfitSys.GetPresetNames(akActor)
@@ -1929,17 +1929,34 @@ Function Maintenance()
     Int i = 0
     Int rebuilt = 0
     Int skipped = 0
-    While i < assigned.Length
-        if assigned[i]
-            if SeverActionsNativeExt2.Native_OutfitSlot_UsesPresetOutfit(assigned[i])
-                RepopulateAllLvlItemsForActor(assigned[i])
-                rebuilt += 1
-            else
-                skipped += 1
-            endif
+    if SeverActionsNativeExt2.Kernel_AbiVersion() >= 49
+        ; The owners wearing a preset Outfit, from one call (a test per owner costs a frame each).
+        Actor[] wearers = SeverActionsNativeExt2.Native_OutfitSlot_GetActorsUsingPresetOutfit()
+        Int wearerCount = 0
+        if wearers
+            wearerCount = wearers.Length
         endif
-        i += 1
-    EndWhile
+        While i < wearerCount
+            if wearers[i]
+                RepopulateAllLvlItemsForActor(wearers[i])
+                rebuilt += 1
+            endif
+            i += 1
+        EndWhile
+        skipped = assigned.Length - rebuilt
+    else
+        While i < assigned.Length
+            if assigned[i]
+                if SeverActionsNativeExt2.Native_OutfitSlot_UsesPresetOutfit(assigned[i])
+                    RepopulateAllLvlItemsForActor(assigned[i])
+                    rebuilt += 1
+                else
+                    skipped += 1
+                endif
+            endif
+            i += 1
+        EndWhile
+    endif
     Log("Maintenance: Rebuilt LvlItems for " + rebuilt + " actors, skipped " + skipped + " with no preset default or sleep outfit")
 
     ; 1.2: empty a slot alias its occupant no longer owns. The native releases
@@ -2095,17 +2112,19 @@ Int Function DrainStrandedSatchelItems(Actor akActor)
         return 0
     endif
 
-    ObjectReference[] guardians = SeverActionsNative.Native_OutfitSlot_GetGuardians(akActor)
-    if guardians && guardians.Length > 0
-        return 0
-    endif
-
+    ; The satchel first: most slots have none, and that ends it in one read. The guardian test still comes before
+    ; anything is moved.
     ObjectReference satchel = SeverActionsNative.Native_OutfitSlot_GetSatchel(slotIdx)
     if !satchel
         return 0
     endif
     Int n = satchel.GetNumItems()
     if n <= 0
+        return 0
+    endif
+
+    ObjectReference[] guardians = SeverActionsNative.Native_OutfitSlot_GetGuardians(akActor)
+    if guardians && guardians.Length > 0
         return 0
     endif
     satchel.RemoveAllItems(akActor)

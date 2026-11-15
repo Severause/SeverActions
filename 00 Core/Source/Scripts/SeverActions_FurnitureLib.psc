@@ -146,7 +146,8 @@ Bool Function IsUsing(Actor akActor) Global
      TargetKeyword (a belt for a link the session-start restore,
      FurnitureManager::RestoreUsersFromLinkedRefs, could not re-register, e.g. an actor
      that did not resolve then; keep the filter in step with it: keyword 062B5B, a
-     Furniture base, no kidnap entry).}
+     Furniture base, no kidnap entry). FurnitureUse::IsUsing (FurnitureUse.h) is the
+     native twin: keep both in step.}
     if !akActor
         return false
     endif

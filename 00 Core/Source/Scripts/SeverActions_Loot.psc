@@ -7,6 +7,8 @@ dispatcher OnVerb_Items - by Severause. GiveItem/UseItem also draw on a merchant
 ; =============================================================================
 
 float Property INTERACTION_DISTANCE = 150.0 AutoReadOnly
+; The most parts of text one reading stores (3500 bytes each): prompt 0280 prints exactly this many keys.
+Int Property READING_TEXT_PARTS = 16 AutoReadOnly
 
 ; =============================================================================
 ; BOOK READING STATE - the title and text live in per-actor StorageUtil (read by
@@ -92,7 +94,7 @@ Event OnCombatSpoils(String eventName, String strArg, Float numArg, Form sender)
         Return
     EndIf
     SkyrimNetApi.RegisterEvent("combat_spoils", \
-        "The fighting is over. Worthwhile spoils lie on the fallen — " + strArg + ".", \
+        "The fighting is over. Worthwhile spoils lie on the fallen: " + strArg + ".", \
         Game.GetPlayer(), None)
 EndEvent
 
@@ -282,7 +284,7 @@ Bool Function TryPickLock(Actor akActor, ObjectReference akContainer, String dis
     Int lockLevel = akContainer.GetLockLevel()
     if lockLevel >= 255
         SkyrimNetApi.RegisterEvent("container_locked", \
-            akActor.GetDisplayName() + " tried " + displayName + ", but it needs its key — no pick will turn that lock.", akActor, None)
+            akActor.GetDisplayName() + " tried " + displayName + ", but it needs its key: no pick will turn that lock.", akActor, None)
         return false
     endif
     ; Vanilla IdleLockPick, by FormID so no ESP fill is needed; plays whatever the roll's outcome.
@@ -369,7 +371,7 @@ Function _FireSearchEvent(Actor akActor, ObjectReference akSource, String displa
     String contents = SeverActionsNativeExt.Native_Loot_DescribeContents(akSource, 10)
     if contents == ""
         ; SN-EVENT: container_searched corpse_searched
-        SkyrimNetApi.RegisterEvent(eventKind, akActor.GetDisplayName() + " " + verb + " " + displayName + " — nothing there worth taking.", akActor, None)
+        SkyrimNetApi.RegisterEvent(eventKind, akActor.GetDisplayName() + " " + verb + " " + displayName + ": nothing there worth taking.", akActor, None)
     else
         ; SN-EVENT: container_searched corpse_searched
         SkyrimNetApi.RegisterEvent(eventKind, \
@@ -514,7 +516,15 @@ Function GiveItem_Execute(Actor akActor, Actor akTarget, String itemName, Int ai
  optional count and an optional "for <name>" recipient near the giver; ItemList_Plan), from the
  giver's pack or merchant chest, walking to each recipient in turn. One item_given event per
  recipient; what the giver lacks is named in one item_give_failed.}
-    if !akActor || !akTarget || itemName == ""
+    _GiveItem(akActor, akTarget, itemName, aiCount, False)
+EndFunction
+
+Function _GiveItem(Actor akActor, Actor akTarget, String itemName, Int aiCount, Bool abFromUi)
+{GiveItem_Execute's body. The NPC giver walks to each recipient; a recipient walks to the player
+ when the player gives, since the player cannot be walked. abFromUi: the player ordered the give
+ on the Actions page, so a failure is also a HUD notification.}
+    if !akActor || !akTarget || itemName == "" || akActor == akTarget
+        Debug.Trace("[SeverActions_Loot] GiveItem refused: giver " + akActor + ", receiver " + akTarget + ", item '" + itemName + "'")
         return
     endif
 
@@ -522,17 +532,27 @@ Function GiveItem_Execute(Actor akActor, Actor akTarget, String itemName, Int ai
         aiCount = 1
     endif
 
+    Bool playerGives = (akActor == Game.GetPlayer())
+    String giverName = akActor.GetDisplayName()
+
     String plan = SeverActionsNativeExt2.ItemList_Plan(akActor, akTarget, itemName, aiCount, 0, True, True)
     String missing = SeverActionsNativeExt2.Json_GetString(plan, "/missing")
     Int count = SeverActionsNativeExt2.Json_ArrayCount(plan, "/lines")
     if count <= 0
-        String failText = akActor.GetDisplayName() + " doesn't have " + itemName + " to give"
+        ; The whole plan text goes in the trace: an empty count from a plan the native log says has
+        ; lines is the case this line exists for.
+        Debug.Trace("[SeverActions_Loot] GiveItem: " + giverName + " has no '" + itemName + "' to give (plan " + plan + ")")
+        String failText = giverName + " doesn't have " + itemName + " to give"
         if missing != ""
             failText += " - " + missing
         endif
         SkyrimNetApi.RegisterEvent("item_give_failed", failText, akActor, akTarget)
+        if abFromUi
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("loot.giveNoItem", giverName, itemName))
+        endif
         return
     endif
+    Debug.Trace("[SeverActions_Loot] GiveItem: " + giverName + " plans " + count + " line(s) of '" + itemName + "' for " + akTarget.GetDisplayName())
 
     Form[] items = SeverActionsNativeExt2.ItemList_Items(plan)
     Actor[] takers = SeverActionsNativeExt2.ItemList_Recipients(plan)
@@ -554,9 +574,17 @@ Function GiveItem_Execute(Actor akActor, Actor akTarget, String itemName, Int ai
             String[] wanted = Utility.CreateStringArray(count)
             Int movedAny = 0
             Int goldValue = 0
-            Bool reached = SeverActions_WalkLib.WalkToReference(akActor, taker)
-            if reached && IdleGive
-                PlayAnimationAndWait(akActor, IdleGive, 2.0)
+            Actor walker = akActor
+            Actor goal = taker
+            Idle walkerIdle = IdleGive
+            if playerGives
+                walker = taker
+                goal = akActor
+                walkerIdle = IdleTake
+            endif
+            Bool reached = SeverActions_WalkLib.WalkToReference(walker, goal)
+            if reached && walkerIdle
+                PlayAnimationAndWait(walker, walkerIdle, 2.0)
             endif
             Int j = i
             while j < count
@@ -577,27 +605,44 @@ Function GiveItem_Execute(Actor akActor, Actor akTarget, String itemName, Int ai
                 j += 1
             endwhile
             if reached
-                ResetToDefaultIdle(akActor)
+                ResetToDefaultIdle(walker)
             endif
 
+            String takerName = taker.GetDisplayName()
             if movedAny > 0
                 ; Auto-debt: a gift from a creditor adds its value to the receiver's debt, through
                 ; the economy provider (DR2: items may not name its types); no module, no ledger.
                 if goldValue > 0
                     SeverActions_ModuleBase.CallBool("economy", "autoAddToDebt", akActor, taker, "", goldValue)
                 endif
-                SkyrimNetApi.RegisterEvent("item_given", akActor.GetDisplayName() + " gave " + SeverActions_ModuleBase.JoinLabels(gave) + " to " + taker.GetDisplayName(), akActor, taker)
+                Debug.Trace("[SeverActions_Loot] GiveItem: " + giverName + " gave " + SeverActions_ModuleBase.JoinLabels(gave) + " to " + takerName)
+                SkyrimNetApi.RegisterEvent("item_given", giverName + " gave " + SeverActions_ModuleBase.JoinLabels(gave) + " to " + takerName, akActor, taker)
             elseif !reached
-                SkyrimNetApi.RegisterEvent("item_give_failed", akActor.GetDisplayName() + " couldn't reach " + taker.GetDisplayName() + " to give " + SeverActions_ModuleBase.JoinLabels(wanted), akActor, taker)
+                String walkerName = walker.GetDisplayName()
+                String goalName = goal.GetDisplayName()
+                String purpose = " to give "
+                if playerGives
+                    purpose = " to take "
+                endif
+                Debug.Trace("[SeverActions_Loot] GiveItem: " + walkerName + " did not reach " + goalName + " (distance " + (walker.GetDistance(goal) as Int) + ")")
+                SkyrimNetApi.RegisterEvent("item_give_failed", walkerName + " couldn't reach " + goalName + purpose + SeverActions_ModuleBase.JoinLabels(wanted), akActor, taker)
+                if abFromUi
+                    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("loot.giveNoReach", walkerName, goalName))
+                endif
             else
-                SkyrimNetApi.RegisterEvent("item_give_failed", akActor.GetDisplayName() + " doesn't have " + SeverActions_ModuleBase.JoinLabels(wanted) + " to give", akActor, taker)
+                Debug.Trace("[SeverActions_Loot] GiveItem: " + giverName + " reached " + takerName + " but moved none of " + SeverActions_ModuleBase.JoinLabels(wanted))
+                SkyrimNetApi.RegisterEvent("item_give_failed", giverName + " doesn't have " + SeverActions_ModuleBase.JoinLabels(wanted) + " to give", akActor, taker)
+                if abFromUi
+                    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("loot.giveNoItem", giverName, SeverActions_ModuleBase.JoinLabels(wanted)))
+                endif
             endif
         endif
         i += 1
     endwhile
 
     if missing != ""
-        SkyrimNetApi.RegisterEvent("item_give_failed", akActor.GetDisplayName() + " couldn't give everything asked for: " + missing, akActor, akTarget)
+        Debug.Trace("[SeverActions_Loot] GiveItem: " + giverName + " could not give everything: " + missing)
+        SkyrimNetApi.RegisterEvent("item_give_failed", giverName + " couldn't give everything asked for: " + missing, akActor, akTarget)
     endif
 EndFunction
 
@@ -1209,7 +1254,7 @@ going. A diary opens the diary viewer instead when the interface is available.}
     endif
 
     ; Their pack first, then the player's. Reading is non-destructive, so a
-    ; player's book is read in place, no transfer: GetBookText needs only the base form.
+    ; player's book is read in place, no transfer: the text is read from the base form.
     Form bookForm = None
     Bool borrowed = false
     if bookName != ""
@@ -1254,14 +1299,20 @@ going. A diary opens the diary viewer instead when the interface is available.}
         endif
     endif
 
-    String bookText = SeverActionsNative.GetBookText(bookForm)
+    ; The slot is claimed before the text is stored (a frame a part), so a second ReadBook in that time finds
+    ; this reading under way. The text goes in before the reading flag below: the prompt never shows half of it.
+    BookReader = akActor
+    BookReadingStartTime = Utility.GetCurrentRealTime()
+    Int textParts = _StoreReadingText(akActor, bookForm)
 
-    if bookText == ""
+    if textParts == 0
+        BookReader = None
+        BookReadingStartTime = 0.0
         SkyrimNetApi.RegisterEvent("book_empty", npcName + " opened " + actualBookName + " but found it blank or unreadable", akActor, None)
         return
     endif
 
-    Debug.Trace("[SeverActions_Loot] ReadBook: " + npcName + " reading '" + actualBookName + "' (" + StringUtil.GetLength(bookText) + " chars, borrowed=" + borrowed + ")")
+    Debug.Trace("[SeverActions_Loot] ReadBook: " + npcName + " reading '" + actualBookName + "' (" + textParts + " part(s) of text, borrowed=" + borrowed + ")")
 
     ; A scene beat so both characters know whose book it is
     if borrowed
@@ -1269,9 +1320,6 @@ going. A diary opens the diary viewer instead when the interface is available.}
             npcName + " borrows '" + actualBookName + "' from " + Game.GetPlayer().GetDisplayName() + "'s pack.", \
             akActor, Game.GetPlayer())
     endif
-
-    BookReader = akActor
-    BookReadingStartTime = Utility.GetCurrentRealTime()
 
     ; Read by the prompt on the NPC's next line. SeverActions_ReadingBook:
     ; 1 = verbatim (BookReadMode 0), 2 = summary (BookReadMode 1).
@@ -1281,7 +1329,6 @@ going. A diary opens the diary viewer instead when the interface is available.}
     endif
     StorageUtil.SetIntValue(akActor, "SeverActions_ReadingBook", readingModeValue)
     StorageUtil.SetStringValue(akActor, "SeverActions_ReadingBookTitle", actualBookName)
-    StorageUtil.SetStringValue(akActor, "SeverActions_ReadingBookText", bookText)
 
     ; The note idle for a note, else the book idle (seated or standing)
     Bool isNote = SeverActionsNative.IsNote(bookForm)
@@ -1318,6 +1365,45 @@ going. A diary opens the diary viewer instead when the interface is available.}
     ChronoArm(BookReadingUpdateInterval)
 EndFunction
 
+String Function _ReadingTextKey(Int part)
+{The StorageUtil key of part `part` of the text being read: the bare key for part 0, then ...1, ...2.}
+    If part <= 0
+        Return "SeverActions_ReadingBookText"
+    EndIf
+    Return "SeverActions_ReadingBookText" + part
+EndFunction
+
+Int Function _StoreReadingText(Actor akReader, Form akBook)
+{Stores the text akReader is about to read under the reading keys, in parts: akBook's text, or with None
+ the diary entry the player picked. A string of 4096 bytes or more in a script makes a save unloadable, so the
+ text never crosses whole; prompt 0280 prints the parts one after another. Returns the parts stored (0 = no
+ text); a text beyond READING_TEXT_PARTS parts loses its end.}
+    Int stored = 0
+    Int part = 0
+    While part < READING_TEXT_PARTS
+        String piece = ""
+        ; Past the text's end nothing is asked for: the rest of the pass drops an earlier, longer text's parts.
+        If part == stored
+            If akBook
+                piece = SeverActionsNativeExt2.Book_TextPart(akBook, part)
+            Else
+                piece = SeverActionsNativeExt2.Magelight_SelectedDiaryPart(part)
+            EndIf
+        EndIf
+        If piece != ""
+            StorageUtil.SetStringValue(akReader, _ReadingTextKey(part), piece)
+            stored += 1
+        Else
+            StorageUtil.UnsetStringValue(akReader, _ReadingTextKey(part))
+        EndIf
+        part += 1
+    EndWhile
+    If stored == READING_TEXT_PARTS
+        Debug.Trace("[SeverActions_Loot] Reading: the text filled all " + READING_TEXT_PARTS + " parts; anything longer is left out")
+    EndIf
+    Return stored
+EndFunction
+
 Function ClearBookReadingState()
 {Clear all book reading state. Call when reading finishes or times out.}
     ; The slot is freed before the idle reset, which waits: a new reading started in that wait keeps its own state.
@@ -1329,7 +1415,11 @@ Function ClearBookReadingState()
         Debug.Trace("[SeverActions_Loot] ReadBook: Clearing reading state for " + reader.GetDisplayName())
         StorageUtil.UnsetIntValue(reader, "SeverActions_ReadingBook")
         StorageUtil.UnsetStringValue(reader, "SeverActions_ReadingBookTitle")
-        StorageUtil.UnsetStringValue(reader, "SeverActions_ReadingBookText")
+        Int part = 0
+        While part < READING_TEXT_PARTS
+            StorageUtil.UnsetStringValue(reader, _ReadingTextKey(part))
+            part += 1
+        EndWhile
         ResetToDefaultIdle(reader)
     endif
 EndFunction
@@ -1343,10 +1433,9 @@ Event OnDiaryEntrySelected(string eventName, string strArg, float numArg, Form s
  strArg = NPC name, sender = the reader.}
     Debug.Trace("[SeverActions_Loot] Diary entry selected for '" + strArg + "'")
 
-    String content = SeverActionsNative.Magelight_GetSelectedDiaryContent()
     String title = SeverActionsNative.Magelight_GetSelectedDiaryTitle()
 
-    if content == ""
+    if SeverActionsNativeExt2.Magelight_SelectedDiaryPart(0) == ""
         Debug.Trace("[SeverActions_Loot] Diary: Empty content - aborting")
         BookReader = None
         return
@@ -1368,10 +1457,10 @@ Event OnDiaryEntrySelected(string eventName, string strArg, float numArg, Form s
     BookReader = reader
     BookReadingStartTime = Utility.GetCurrentRealTime()
 
-    ; Always verbatim (1): the player picked this entry
+    ; Always verbatim (1): the player picked this entry. The text first, so the prompt never shows half of it.
+    _StoreReadingText(reader, None)
     StorageUtil.SetIntValue(reader, "SeverActions_ReadingBook", 1)
     StorageUtil.SetStringValue(reader, "SeverActions_ReadingBookTitle", title)
-    StorageUtil.SetStringValue(reader, "SeverActions_ReadingBookText", content)
 
     Bool isSitting = reader.GetSitState() >= 2
     if isSitting && IdleBook_ReadingSitting
@@ -1580,7 +1669,8 @@ Event OnVerb_Items(String eventName, String strArg, Float numArg, Form sender)
             If giveCount < 1
                 giveCount = 1
             EndIf
-            GiveItem_Execute(target, target2, strParam, giveCount)
+            ; The ambient director sends this verb too, marked in str2: only the page's gives notify.
+            _GiveItem(target, target2, strParam, giveCount, str2Param != "ambient")
         EndIf
 
     ElseIf actionId == "takeItemFromPlayer"
