@@ -31,6 +31,11 @@ Function CastSpell_Execute(Actor akCaster, String spellName, String targetName, 
         SkyrimNetApi.DirectNarration(akCaster.GetDisplayName() + " won't stop to cast a spell while fighting.", akCaster)
         Return
     EndIf
+    ; The cast's override outranks an arrest's packages: a prisoner or a guard on task stays on them.
+    If SeverActionsNativeExt2.Custody_IsHeld(akCaster) || SeverActionsNativeExt2.Native_ArrestSession_IsGuardOnTask(akCaster)
+        SeverActionsNative.Native_OutfitSlot_Log("[SpellCast] " + akCaster.GetDisplayName() + " is held or on an arrest - abort")
+        Return
+    EndIf
 
     ; Only a spell the caster knows, so the LLM cannot invent one.
     Spell spellToCast = SeverActionsNative.FindSpellOnActor(akCaster, spellName) as Spell
@@ -214,8 +219,13 @@ Bool Function _DispatchOneCast(Actor akCaster, Spell akSpell, ObjectReference ak
     ; reconcile keeps her off while she holds the slot.
     SeverActions_ModuleBase.CallBool("followers", "leaveSchedule", akCaster)
 
-    ; ForceRefTo should re-evaluate by itself, but on a registered companion (whose follow alias package
-    ; competes) the engine can keep the old package until the next AI tick. Harmless when it already switched.
+    ; The same package as an override for the cast: the follow pool's quest ties this one at priority 95, so a
+    ; companion kept her follow package, and any override (a Wait's at 100) outranks every alias package.
+    ; 200 as the seat-mate's (FurnitureLib); SpellCastAlias.CleanupCast removes it. Not on a follower another
+    ; framework owns (its package stack is its own), nor when another cast took this slot meanwhile.
+    If slot.GetActorRef() == akCaster && !SeverActionsNativeExt2.Native_IsTrackOnlyFollower(akCaster)
+        ActorUtil.AddPackageOverride(akCaster, livePackage, 200, 1)
+    EndIf
     akCaster.EvaluatePackage()
 
     ; (6) Hand off to the alias for polling, with the spell the package holds.

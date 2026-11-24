@@ -254,6 +254,13 @@ Event OnResistCombatEndedEvent(String asEventName, String asReason, Float afUnus
         ArrestScript.DebugMsg("Post-resist cleanup: WATCHDOG fired (vanilla bounty already 0; clearing state)")
     EndIf
 
+    ; Zeroing the crime gold does not call the guards off, so they keep attacking a player whose
+    ; bounty reads 0. StopCombatAlarm ends every fight and alarm against the player: a timeout fires
+    ; mid-combat (another fight, or a re-arm after a load), so it calls off only a live resist bounty.
+    If !watchdog || vanillaBounty > 0
+        Game.GetPlayer().StopCombatAlarm()
+    EndIf
+
     ResistArrestFaction = None
     ResistArrestStartTime = 0.0
 EndEvent

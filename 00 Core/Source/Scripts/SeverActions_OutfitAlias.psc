@@ -5,7 +5,8 @@ Scriptname SeverActions_OutfitAlias extends ReferenceAlias
     A slot preset is applied with no SetOutfit (see SeverActions_OutfitSlot's
     header), so the engine never re-applies it: this alias does, beside the
     native 3D-load pass and the native settle re-check (OutfitSettle.h). Loads
-    re-equip at once; unequips and intrusion equips are debounced so strip mods
+    re-equip at once, never in a SexLab or OStim scene; unequips and intrusion
+    equips are debounced so strip mods
     are not fought, and OnUpdate yields to scenes, bulk strips and
     helm/shield-only removals, else re-applies (a bulk re-dress included).
 }
@@ -277,6 +278,11 @@ Function ReequipIfLocked()
     ; and the suspend test (the native 3D-load apply's grace is often live here),
     ; or a preset wearer stays suppressed and OnUpdate yields to every later swap.
     SeverActionsNative.Native_Outfit_ClearBurstSuppression(follower)
+
+    ; In a SexLab or OStim scene the framework stripped them on purpose: its end dresses them.
+    If SeverActionsNative.Native_Outfit_IsInAnimationScene(follower)
+        Return
+    EndIf
 
     ; Don't fight in-progress outfit operations (builder, preset apply, etc.)
     If SeverActionsNative.Native_Outfit_IsNativeSuspended(follower)

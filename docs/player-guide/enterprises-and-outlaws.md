@@ -162,6 +162,8 @@ To collect gold, do any of these:
 ![The Holds page](images/enterprises-holds.png)
 *Example with made-up data: the Holds page groups retainers by hold. **+ Assign** is highlighted at the top right, and clicking a row opens that retainer's details.*
 
+**Which hold a retainer belongs to** follows their workplace: it decides where Holds lists them, which steward collects from them and whose guards deal with their crimes. To put them in another hold, open their details and use **Change** on the **Hold** row. **Automatic** goes back to following the workplace.
+
 **Wages come out of the week's earnings first.** Your own gold only covers a shortfall, and only the gold you are carrying counts. Keep some on you, or a slow week becomes unpaid wages.
 
 ### Making a venture earn more
@@ -369,6 +371,20 @@ The truce does **not** cover:
 
 - **Dungeons.** Outlaws in a barrow, crypt or Dwemer ruin fight on sight. Camps, forts, warlock lairs and the open road are all fine. To include dungeons, turn on **Include Dungeon Holdouts**.
 - **Essential, protected and scripted NPCs.** These stay hostile as usual. An ordinary outlaw a quest is using does hold fire, so strike first. To change that, turn off **Include Quest-Involved NPCs**.
+- **Hostile camps, with Outlaw Temperament on.** See below.
+- **Places and NPCs on the Left Alone list.** Redwater Den is on it from the start: its skooma den staff are not outlaws, so the truce would calm its vampires and leave the den fighting you. Stand somewhere and press **No Truce Here** to add that place, or remove an entry, under Settings → Outlaws → Truce & Camps → **Left Alone**.
+
+### Outlaw Temperament
+
+Off by default. Turn on **Outlaw Temperament** under Settings → Outlaws → Truce & Camps and the truce stops calming every camp alike:
+
+- **Each camp rolls once** and keeps the result for the playthrough. Calm camps keep the truce, wary ones keep it with short patience and size you up, and hostile ones attack as in the base game. **Unfriendly Camps** sets how many roll wary or hostile.
+- **How you look counts.** When a camp comes into reach, your level against its strongest fighter, your armor, a drawn weapon, and the companions and war band beside you can talk a wary camp into calm or a hostile one into wary. A weak stranger alone may find even a calm camp wary. **How Much Your Strength Counts** sets the weight.
+- **The reading holds for the visit.** It lasts until the camp has been out of sight for a few minutes, and only gets worse: once a truce breaks, the whole camp stays hostile until you leave. Reloading a save made at a camp keeps it.
+- **Outlaws on the road** with no camp behind them are judged as one party.
+- **Never affected:** camps sworn to you, camps whose chief has fallen, a leaderless camp you are winning over, and your companions.
+
+The same page lists every camp that has rolled, with its last reading.
 
 ## How do I talk to bandits?
 
@@ -495,6 +511,7 @@ You can also ask the chief in person to muster the camp or send it home.
 - Are you in a barrow, crypt or Dwemer ruin? Those stay hostile unless you turn on **Include Dungeon Holdouts**.
 - Did you or a companion hit one, or stand close with a weapon drawn? That truce stays broken until they unload. Leave and come back.
 - If a spread-out camp charges you from far away, raise **Truce Reach**.
+- Is the place on the **Left Alone** list? Nobody there is calmed.
 - Raised thralls, summons, and modded enemies outside the game's outlaw groups are not covered.
 
 **There is no Camps tab.** It appears once the truce has met a camp, so turn the truce on and go near one. Places that count are bandit camps, forts, warlock lairs, Forsworn camps and vampire lairs. A barrow never counts as a camp.
@@ -549,6 +566,9 @@ You can also ask the chief in person to muster the camp or send it home.
 | Include Necromancers | On |
 | Include Forsworn | On |
 | Include Vampires (while you are one) | On |
+| Outlaw Temperament | Off |
+| Unfriendly Camps | 40% |
+| How Much Your Strength Counts | 100% |
 | Camp Takeover | On |
 | Freeze Respawn On Takeover | On |
 | Challenge At The Door | On |

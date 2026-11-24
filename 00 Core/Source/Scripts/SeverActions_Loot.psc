@@ -556,9 +556,12 @@ Function _GiveItem(Actor akActor, Actor akTarget, String itemName, Int aiCount, 
 
     Form[] items = SeverActionsNativeExt2.ItemList_Items(plan)
     Actor[] takers = SeverActionsNativeExt2.ItemList_Recipients(plan)
+    ; Cleared by hand: some SKSE builds ignore CreateBoolArray's fill and leave stray Trues, and a
+    ; True here skips the line silently (no walk, no event).
     Bool[] served = Utility.CreateBoolArray(count)
     Int i = 0
     while i < count
+        served[i] = False
         ; Someone who died or went away since the plan: the named recipient takes their lines.
         if !takers[i] || takers[i].IsDead()
             takers[i] = akTarget
@@ -1328,7 +1331,7 @@ going. A diary opens the diary viewer instead when the interface is available.}
         readingModeValue = 2
     endif
     StorageUtil.SetIntValue(akActor, "SeverActions_ReadingBook", readingModeValue)
-    StorageUtil.SetStringValue(akActor, "SeverActions_ReadingBookTitle", actualBookName)
+    StorageUtil.SetStringValue(akActor, "SeverActions_ReadingBookTitle", SeverActions_ModuleBase.StorageLine(actualBookName))
 
     ; The note idle for a note, else the book idle (seated or standing)
     Bool isNote = SeverActionsNative.IsNote(bookForm)
@@ -1376,8 +1379,9 @@ EndFunction
 Int Function _StoreReadingText(Actor akReader, Form akBook)
 {Stores the text akReader is about to read under the reading keys, in parts: akBook's text, or with None
  the diary entry the player picked. A string of 4096 bytes or more in a script makes a save unloadable, so the
- text never crosses whole; prompt 0280 prints the parts one after another. Returns the parts stored (0 = no
- text); a text beyond READING_TEXT_PARTS parts loses its end.}
+ text never crosses whole; prompt 0280 prints the parts one after another. The DLL hands each line break
+ over as "<br>", which the prompt turns back: a saved StorageUtil string is cut at a real one. Returns the
+ parts stored (0 = no text); a text beyond READING_TEXT_PARTS parts loses its end.}
     Int stored = 0
     Int part = 0
     While part < READING_TEXT_PARTS
@@ -1689,9 +1693,15 @@ Event OnVerb_Items(String eventName, String strArg, Float numArg, Form sender)
 
     ; -- Magic and property (the items module's sibling scripts, A7) --
     ElseIf actionId == "teachSpell"
+        ; target = the teacher; target2 = the student (none named = the player). A named one that did not resolve is
+        ; refused, never turned into a lesson for the player.
         SeverActions_SpellTeach teachSys = (Self as Quest) as SeverActions_SpellTeach
         If teachSys
-            teachSys.TeachSpell(target, strParam)
+            If target2
+                teachSys.TeachSpellTo(target, target2, strParam)
+            ElseIf target2Name == ""
+                teachSys.TeachSpell(target, strParam)
+            EndIf
         EndIf
 
     ElseIf actionId == "learnSpell"

@@ -3,7 +3,7 @@ name: StartFollowing
 description: "Use when {{ player.name }} asks the speaker to come along now and the speaker agrees in this line to walk behind them for a while without joining as a companion: a friend coming to the inn, a curious local tagging along to see the ruin. Not for the speaker going ahead to a place (Journeys), and not for joining up for the long road (Companionship)."
 questEditorId: SeverActions
 scriptName: SeverActions_Follow
-executionFunctionName: StartFollowing
+executionFunctionName: TagAlong_Execute
 parameterMapping:
   - type: speaker
     name: akActor

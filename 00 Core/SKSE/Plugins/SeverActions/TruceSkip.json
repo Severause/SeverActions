@@ -1,0 +1,12 @@
+{
+	"_comment": "Places and NPCs the truce never calms (Settings > Truce & Camps > Left Alone). Each entry names a record as XXXXXX:Plugin.esp, its id in the plugin that defines it; a place covers the places inside it, an NPC is their reference or base record. noteKey names the page's translated text for the note. This file is replaced by every update: your own additions, and the entries of this file you took off, are kept in SeverActions_TruceSkip.json beside the SKSE logs, which has the same shape plus \"unlisted\".",
+	"places": [
+		{
+			"form": "004D6F:Dawnguard.esm",
+			"name": "Redwater Den",
+			"noteKey": "settings.truceSkipNote.redwaterDen",
+			"note": "The skooma den's own people are not outlaws, so the truce would calm the vampires here and leave the den attacking you, and the part meant to be sneaked through would ignore you."
+		}
+	],
+	"npcs": []
+}

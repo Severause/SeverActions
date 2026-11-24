@@ -391,7 +391,7 @@ Bool Function DoBeginJourney(Actor akNPC, ObjectReference akDest, String asPlace
     ; An older pex reads SeverTravel_State as the journey-keys marker; other code reads
     ; the native travel state (M-T).
     StorageUtil.SetStringValue(akNPC, "SeverTravel_State", "traveling")
-    StorageUtil.SetStringValue(akNPC, "SeverTravel_Destination", asPlaceLabel)
+    StorageUtil.SetStringValue(akNPC, "SeverTravel_Destination", SeverActions_ModuleBase.StorageLine(asPlaceLabel))
     SeverActionsNative.Native_SetTravelState(akNPC, "traveling", asPlaceLabel)
     Debug.Trace("[SeverActions_TravelCore] " + akNPC.GetDisplayName() + " sets out for '" + asPlaceLabel + "' (handle " + handle + ", speed " + aiSpeed + ", wait " + afWaitHours + " h, " + (abWaitForPlayer as String) + ")")
     Return true
@@ -561,7 +561,7 @@ Event OnTravelComplete(String eventName, String strArg, Float numArg, Form sende
         StorageUtil.SetStringValue(npc, "SeverTravel_Result", "arrived_together")
         Actor player = Game.GetPlayer()
         SkyrimNetApi.DirectNarration("*" + npc.GetDisplayName() + " arrives at " + place + " with " + player.GetDisplayName() + " at their side*", npc, player)
-        Debug.Notification(npc.GetDisplayName() + " arrived at " + place)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("travel.arrivedAt", npc.GetDisplayName(), place))
         _Teardown(npc, true)
     ElseIf status == "waitdone"
         StorageUtil.SetStringValue(npc, "SeverTravel_State", "complete")
@@ -573,13 +573,13 @@ Event OnTravelComplete(String eventName, String strArg, Float numArg, Form sende
         StorageUtil.SetStringValue(npc, "SeverTravel_State", "timeout")
         SeverActionsNative.Native_SetTravelState(npc, "timeout", "")
         StorageUtil.SetStringValue(npc, "SeverTravel_Result", "timeout")
-        Debug.Notification(npc.GetDisplayName() + "'s patience ran out!")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("travel.patienceRanOut", npc.GetDisplayName()))
         _Teardown(npc, false)   ; whoever wants them back re-summons
     ElseIf status == "stayended"
         StorageUtil.SetStringValue(npc, "SeverTravel_State", "complete")
         SeverActionsNative.Native_SetTravelState(npc, "complete", "")
         StorageUtil.SetStringValue(npc, "SeverTravel_Result", "stay_ended")
-        Debug.Notification(npc.GetDisplayName() + " has finished their business at " + place)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("travel.finishedBusinessAt", npc.GetDisplayName(), place))
         _Teardown(npc, false)
     ElseIf status == "cancelled"
         ; A cancel no Papyrus caller tore down (the UI's "Turn back", Hearth's
@@ -587,7 +587,7 @@ Event OnTravelComplete(String eventName, String strArg, Float numArg, Form sende
         _Teardown(npc, true)
     Else
         ; aborted | gaveup | timedout - a terminal failure of the walk; restore.
-        Debug.Notification(npc.GetDisplayName() + " gave up traveling.")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("travel.gaveUpTraveling", npc.GetDisplayName()))
         _Teardown(npc, true)
     EndIf
 EndEvent
@@ -598,7 +598,7 @@ Function _OnArrivedWaiting(Actor akNPC, String asPlace)
     _ApplyArrivalSandbox(akNPC)
     StorageUtil.SetStringValue(akNPC, "SeverTravel_State", "waiting")
     SeverActionsNative.Native_SetTravelState(akNPC, "waiting", asPlace)
-    Debug.Notification(akNPC.GetDisplayName() + " arrived at " + asPlace)
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("travel.arrivedAt", akNPC.GetDisplayName(), asPlace))
 EndFunction
 
 Function _ApplyArrivalSandbox(Actor akNPC)

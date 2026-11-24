@@ -514,6 +514,8 @@ String Property KEY_WORK_ONLY_NPCS = "SeverActions_WorkOnlyNPCs" AutoReadOnly
 ; Last-applied schedule type per NPC, so the marker moves only on a boundary.
 ; 0=home, 1=work, 2=play, -99=never evaluated (forces a full re-resolve).
 String Property KEY_LAST_SCHEDULED_TYPE = "SeverFollower_LastScheduledType" AutoReadOnly
+; The attendant's rank toward the principal before AttendNPC raised it to Ally; _EndGuardAssignment puts it back.
+String Property KEY_ATTEND_PRIOR_RANK = "SeverAttend_PriorRank" AutoReadOnly
 
 ; Per-NPC one-shot: copy HomeMarker_NN's position to TrueHomeAnchor_NN before any
 ; schedule logic runs, or an older save's first tick sends the NPC to the anchor's
@@ -747,7 +749,7 @@ Function Maintenance()
     ; HomeSandboxVerifier found a dismissed homed NPC on no package or an engine
     ; fallback one (resetAI cannot recover it): re-assert her hold.
     RegisterForModEvent("SeverActions_HomeFallbackReassert", "OnHomeFallbackReassert")
-    ; The DLL: an NPC the schedule holds entered a SexLab or OStim scene (OnSchedYield).
+    ; The DLL: an NPC the schedule holds entered a hold it yields to, a SexLab or OStim scene or another mod's (OnSchedYield).
     RegisterForModEvent("SeverActions_SchedYield", "OnSchedYield")
 
     ; UI actions. ModEvents, because DispatchMethodCall returns true and never runs.
@@ -1629,7 +1631,7 @@ Event OnCellLoadedReapplyHome(string eventName, string strArg, float numArg, For
                         npcA.EvaluatePackage()
                         DebugMsg("CellLoad self-heal: stripped stray schedule aliases from active follower " + npcA.GetDisplayName())
                     EndIf
-                ElseIf HoldsAnySchedAlias(npcA) && !_OnJourney(npcA)
+                ElseIf HoldsAnySchedAlias(npcA) && !_OnJourney(npcA) && !_HeldByAnotherMod(npcA)
                     _ReassertSchedAssistsFor(npcA)
                     _EnsureHeldSchedAnchors(npcA)
                     npcA.SetAV("WaitingForPlayer", 2)
@@ -1651,7 +1653,7 @@ Event OnCellLoadedReapplyHome(string eventName, string strArg, float numArg, For
         Actor akActor = homedNPCs[i]
         ; Dismissed followers only: an active one entering their home cell keeps following,
         ; and a traveler passing through keeps walking.
-        If akActor && akActor.Is3DLoaded() && !IsRegisteredFollower(akActor) && !_OnJourney(akActor)
+        If akActor && akActor.Is3DLoaded() && !IsRegisteredFollower(akActor) && !_OnJourney(akActor) && !_HeldByAnotherMod(akActor)
             Int slot = SeverActionsNative.Native_GetHomeMarkerSlot(akActor)
             If slot >= 0 && slot < HomeSlots.Length
                 ; Only track-only NPCs need the ActorUtil override back (the rest ride the home
@@ -1808,6 +1810,10 @@ Event OnPrismaClearWorkLoc(string eventName, string strArg, float numArg, Form s
         Return
     EndIf
     ClearRoutineLoc(akActor, "work")
+    ; Both pages list by the work target, which is only now cleared: an NPC with nothing else assigned leaves the
+    ; Companions page, and the row leaves the board's Working without terms list.
+    SeverActionsNative.Magelight_RefreshPage("companions")
+    SeverActionsNative.Magelight_RefreshPage("enterprises")
 EndEvent
 
 Event OnPrismaSetPlayLoc(string eventName, string strArg, float numArg, Form sender)
@@ -1836,6 +1842,8 @@ Event OnPrismaClearPlayLoc(string eventName, string strArg, float numArg, Form s
         Return
     EndIf
     ClearRoutineLoc(akActor, "play")
+    ; As OnPrismaClearWorkLoc: a relax-only NPC leaves the Companions page.
+    SeverActionsNative.Magelight_RefreshPage("companions")
 EndEvent
 
 Event OnPrismaSetCombatStyle(string eventName, string strArg, float numArg, Form sender)
@@ -3756,6 +3764,12 @@ Function RegisterFollower(Actor akActor)
             akActor.AddToFaction(cff)
             akActor.SetFactionRank(cff, 0)
         EndIf
+        ; Clear DismissedFollowerFaction as vanilla SetFollower does: with NFF or SFF installed that call is skipped
+        ; below, and a dismissal NFF or the vanilla dialogue made would leave the mark on a returning follower.
+        Faction dismissedFaction = Game.GetFormFromFile(0x0005C84C, "Skyrim.esm") as Faction
+        If dismissedFaction
+            akActor.RemoveFromFaction(dismissedFaction)
+        EndIf
         If akActor.GetRelationshipRank(Game.GetPlayer()) < 3
             akActor.SetRelationshipRank(Game.GetPlayer(), 3)
         EndIf
@@ -4851,9 +4865,15 @@ Package Function GetActiveWorkPackage(Actor akActor)
 EndFunction
 
 Function GuardNPC(Actor akActor, Actor akProtectee)
-    {Protect-a-person work assignment: links the retainer to the protectee, sets Ally
+    {The retainer popup's person duty: AttendNPC with the role already given, if any.}
+    AttendNPC(akActor, akProtectee, "")
+EndFunction
+
+Function AttendNPC(Actor akActor, Actor akProtectee, String asRole)
+    {Person-duty work assignment, for any NPC: links akActor to akProtectee, sets Ally
      rank so they defend them, and applies the guard package in work hours. The
-     protectee IS the work loc; guard mode = Native_GetWorkLoc returns an Actor.}
+     protectee IS the work loc; guard mode = Native_GetWorkLoc returns an Actor.
+     asRole is what both NPCs' prompts call it (Attend_Set; "" keeps the role given).}
     If !akActor || !akProtectee
         Return
     EndIf
@@ -4863,12 +4883,19 @@ Function GuardNPC(Actor akActor, Actor akProtectee)
         ; Permanent, so the 30-day staleness prune never cuts the protectee link.
         SeverActionsNativeExt.LinkedRef_SetPermanent(akActor, akProtectee, followKw)
     Else
-        DebugMsg("GuardNPC: guard follow keyword not found. Guard inactive for " + akActor.GetDisplayName())
+        DebugMsg("AttendNPC: guard follow keyword not found. Guard inactive for " + akActor.GetDisplayName())
     EndIf
     SeverActionsNative.Native_SetWorkLoc(akActor, akProtectee)
+    ; The "protecting " prefix is VentureMonitor::IsGuardLabel's contract.
     SeverActionsNativeExt.Native_SetWorkLocationName(akActor, "protecting " + akProtectee.GetDisplayName())
-    ; Ally rank (3) → a helps-allies combat NPC (guards/mercs) defends their charge.
-    akActor.SetRelationshipRank(akProtectee, 3)
+    SeverActionsNativeExt2.Attend_Set(akActor, akProtectee, asRole)
+    ; Ally rank (3) → a helps-allies combat NPC (guards/mercs) defends their charge. Never lowered (a spouse or lover
+    ; stays 4); the rank before is kept so the end of the duty gives a friend or a stranger theirs back.
+    Int rankBefore = akActor.GetRelationshipRank(akProtectee)
+    StorageUtil.SetIntValue(akActor, KEY_ATTEND_PRIOR_RANK, rankBefore)
+    If rankBefore < 3
+        akActor.SetRelationshipRank(akProtectee, 3)
+    EndIf
     ; Stray hits from the player and the party pass over them while on duty (FollowerProtection).
     akActor.IgnoreFriendlyHits(true)
 
@@ -4889,10 +4916,85 @@ Function GuardNPC(Actor akActor, Actor akProtectee)
         StorageUtil.SetIntValue(akActor, KEY_LAST_SCHEDULED_TYPE, SCHEDULE_WORK)
     EndIf
 
-    DebugMsg("GuardNPC: " + akActor.GetDisplayName() + " now protects " + akProtectee.GetDisplayName())
+    DebugMsg("AttendNPC: " + akActor.GetDisplayName() + " now attends " + akProtectee.GetDisplayName() + " (role '" + asRole + "')")
     If SeverActionsNativeExt2.Settings_GetBool("showNotifications")
-        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.willProtectDuringWork", ("" + akActor.GetDisplayName()), ("" + akProtectee.GetDisplayName())))
+        If asRole != ""
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.willAttendDuringWork", ("" + akActor.GetDisplayName()), ("" + akProtectee.GetDisplayName())))
+        Else
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("followermanager.willProtectDuringWork", ("" + akActor.GetDisplayName()), ("" + akProtectee.GetDisplayName())))
+        EndIf
     EndIf
+EndFunction
+
+Function AttendSomeone_Execute(Actor akActor, Actor akPrincipal, String asRole = "")
+    {The AttendSomeone action: the speaker takes up attending akPrincipal in their work hours, as AttendNPC. Already
+     attending them, only the role changes. Never the player, on either side.}
+    Actor playerRef = Game.GetPlayer()
+    If !akActor || !akPrincipal || akPrincipal == akActor || akActor == playerRef || akPrincipal == playerRef || akPrincipal.IsDead()
+        Debug.Trace("[SeverActions_FollowerManager] AttendSomeone: refused")
+        Return
+    EndIf
+    ; A workplace the player gave them stays theirs (the YAML's sever_work_location gate, re-read here).
+    Form workLoc = SeverActionsNative.Native_GetWorkLoc(akActor)
+    If workLoc && !(workLoc as Actor)
+        Debug.Trace("[SeverActions_FollowerManager] AttendSomeone: refused, " + akActor.GetDisplayName() + " has a workplace")
+        Return
+    EndIf
+    String role = _CleanAttendRole(asRole)
+    If (workLoc as Actor) == akPrincipal
+        If role != ""
+            SeverActionsNativeExt2.Attend_Set(akActor, akPrincipal, role)
+        EndIf
+        Return
+    EndIf
+    AttendNPC(akActor, akPrincipal, role)
+EndFunction
+
+Function StopAttending_Execute(Actor akActor)
+    {The StopAttending action: the speaker gives up attending whoever they attend (Clear on the Work row).}
+    If akActor && (SeverActionsNative.Native_GetWorkLoc(akActor) as Actor)
+        ClearRoutineLoc(akActor, "work")
+    EndIf
+EndFunction
+
+String Function _CleanAttendRole(String asRole)
+    {A role as an LLM writes it, without the words it puts in front: "as her bodyguard" is "bodyguard".}
+    String s = asRole
+    Bool cut = True
+    While cut && s != ""
+        cut = False
+        Int i = 0
+        While i < 8 && !cut
+            String lead = _AttendRoleLead(i)
+            Int n = StringUtil.GetLength(lead)
+            ; String == folds case, so "As her bodyguard" is cut too.
+            If StringUtil.GetLength(s) > n && StringUtil.Substring(s, 0, n) == lead
+                s = StringUtil.Substring(s, n)
+                cut = True
+            EndIf
+            i += 1
+        EndWhile
+    EndWhile
+    Return s
+EndFunction
+
+String Function _AttendRoleLead(Int i)
+    If i == 0
+        Return "as "
+    ElseIf i == 1
+        Return "a "
+    ElseIf i == 2
+        Return "an "
+    ElseIf i == 3
+        Return "the "
+    ElseIf i == 4
+        Return "her "
+    ElseIf i == 5
+        Return "his "
+    ElseIf i == 6
+        Return "their "
+    EndIf
+    Return "my "
 EndFunction
 
 ObjectReference Function EnsureWorkMarker(Actor akActor, ObjectReference akTarget)
@@ -5229,6 +5331,7 @@ Function SetRoutineLocHere(Actor akActor, String kind, ObjectReference akDest = 
             Return
         EndIf
         _EndGuardAssignment(akActor)
+        SeverActionsNativeExt2.Attend_Clear(akActor)
         ; The link is cosaved in LREF. Without the ESP keyword only the link is
         ; skipped; the work loc and its name still register for prompts.
         Keyword workKw = GetWorkAnchorKeyword()
@@ -5342,14 +5445,23 @@ Function SetRoutineLocHere(Actor akActor, String kind, ObjectReference akDest = 
 EndFunction
 
 Function _EndGuardAssignment(Actor akActor)
-    {Undoes GuardNPC while the work target still names the protectee: the Ally bond, the
+    {Undoes AttendNPC while the work target still names the protectee: the Ally bond, the
      protectee link and the friendly-hit flag (kept for a rostered follower or a teammate).
      Call before the work target is replaced or cleared.}
     Actor exProtectee = SeverActionsNative.Native_GetWorkLoc(akActor) as Actor
     If !exProtectee
         Return
     EndIf
-    akActor.SetRelationshipRank(exProtectee, 0)
+    ; Only the Ally rank the duty gave is undone: the rank before it, or 0 for a duty set before that was kept.
+    Bool hadPrior = StorageUtil.HasIntValue(akActor, KEY_ATTEND_PRIOR_RANK)
+    If akActor.GetRelationshipRank(exProtectee) == 3
+        If hadPrior
+            akActor.SetRelationshipRank(exProtectee, StorageUtil.GetIntValue(akActor, KEY_ATTEND_PRIOR_RANK))
+        Else
+            akActor.SetRelationshipRank(exProtectee, 0)
+        EndIf
+    EndIf
+    StorageUtil.UnsetIntValue(akActor, KEY_ATTEND_PRIOR_RANK)
     If !IsRegisteredFollower(akActor) && !akActor.IsPlayerTeammate()
         akActor.IgnoreFriendlyHits(false)
     EndIf
@@ -5367,6 +5479,7 @@ Function ClearRoutineLoc(Actor akActor, String kind)
     EndIf
     If kind == "work"
         _EndGuardAssignment(akActor)
+        SeverActionsNativeExt2.Attend_Clear(akActor)
         SeverActionsNative.Native_ClearWorkLoc(akActor)
         StorageUtil.UnsetStringValue(akActor, "SeverFollower_WorkLocation")
         ; Teardown: override, link, then the placed marker (deleted, or it leaks as
@@ -5785,6 +5898,7 @@ Int Property SCHED_HOLD_TEAMMATE_NO_HOME = 17 AutoReadOnly
 Int Property SCHED_HOLD_ANCHOR_MISSING   = 18 AutoReadOnly
 Int Property SCHED_HOLD_ARRESTED         = 19 AutoReadOnly   ; Sched_HoldYield 6 (7 notes ARREST)
 Int Property SCHED_HOLD_CONFRONTING      = 20 AutoReadOnly   ; Sched_HoldYield 8
+Int Property SCHED_HOLD_EXTERNAL         = 21 AutoReadOnly   ; Sched_HoldYield 9: another mod holds them (ExternalHold.h)
 
 ; Sched_BlockInputs' packing (HomeHoldCore::kBlockIn*, the same values: keep both in step). A flag is
 ; (inputs / BLOCKIN_X) % 2, WaitingForPlayer (inputs / BLOCKIN_WAITING_UNIT) % 8 - 1, the yield
@@ -6182,6 +6296,11 @@ Int Function _BlockInputsByReads(Actor akActor)
     Return inputs + yieldTo * BLOCKIN_YIELD_UNIT
 EndFunction
 
+Bool Function _HeldByAnotherMod(Actor akActor)
+    {Another mod holds akActor (ExternalHold.h, Sched_HoldYield 9): no home re-assert or AI reset over its packages.}
+    Return SeverActionsNativeExt2.Sched_HoldYield(akActor) == 9
+EndFunction
+
 Int Function _NoteForYield(Int aiYield)
     {The SCHED_HOLD_* code a Sched_HoldYield answer above 0 is noted as (HomeHoldCore::NoteForYield). Never 0, so an
      unknown yield still releases.}
@@ -6191,6 +6310,8 @@ Int Function _NoteForYield(Int aiYield)
         Return SCHED_HOLD_ARREST
     ElseIf aiYield == 8
         Return SCHED_HOLD_CONFRONTING
+    ElseIf aiYield == 9
+        Return SCHED_HOLD_EXTERNAL
     EndIf
     Return 9 + aiYield
 EndFunction
@@ -6255,6 +6376,8 @@ String Function _SchedHoldText(Int aiWhy)
         Return "not held: under arrest (an arrest's prisoner)"
     ElseIf aiWhy == SCHED_HOLD_CONFRONTING
         Return "not held: confronting the player (a persuasion window)"
+    ElseIf aiWhy == SCHED_HOLD_EXTERNAL
+        Return "not held: another mod holds them"
     EndIf
     Return "reason " + aiWhy
 EndFunction
@@ -6341,7 +6464,7 @@ EndFunction
 Function YieldSchedule(Actor akActor)
     {Empties akActor's schedule aliases, and with them the schedule's own fallback overrides, now, for a hold the
      schedule would override (Sched_HoldYield): this quest's crafter or caster alias, a SexLab or OStim scene, an
-     arrest's prisoner. Without an alias only the fallback overrides come off (_DropSchedOverrides). The followers
+     arrest's prisoner, another mod's hold. Without an alias only the fallback overrides come off (_DropSchedOverrides). The followers
      "leaveSchedule" service and OnSchedYield call it. The reconcile keeps her off while _SchedHoldBlock says so, and
      re-seats her after.}
     If !akActor
@@ -6520,14 +6643,15 @@ Int Function ReconcileSchedAliasesFor(Actor akActor)
     EndIf
     Int why = _SchedHoldBlock(akActor)
     If why > 0
-        ; For an NPC with no alias this branch only notes the reason again, except under the three arrest reasons.
+        ; For an NPC with no alias this branch only notes the reason again, except under the three arrest reasons and
+        ; another mod's hold, which also drop the fallback overrides.
         ; HomeHoldCore::NoteIsSteadyBlock lists the others, and the fast lane skips them: work added here for one of
         ; them runs only once in up to ten ticks unless that list changes with it.
         If HoldsAnySchedAlias(akActor)
             EmptyAllSchedAliases(akActor)
             akActor.EvaluatePackage()
-        ElseIf why == SCHED_HOLD_ARRESTED || why == SCHED_HOLD_ARREST || why == SCHED_HOLD_CONFRONTING
-            ; The fallback overrides held with no alias outrank the arrest's packages as well.
+        ElseIf why == SCHED_HOLD_ARRESTED || why == SCHED_HOLD_ARREST || why == SCHED_HOLD_CONFRONTING || why == SCHED_HOLD_EXTERNAL
+            ; The fallback overrides held with no alias outrank the arrest's packages (or the holder's) as well.
             If _DropSchedOverrides(akActor)
                 akActor.EvaluatePackage()
             EndIf
@@ -10399,6 +10523,16 @@ Event OnVerb_Followers(String eventName, String strArg, Float numArg, Form sende
         ; Any NPC; the relax spot at the player, as the Companions page's Relax row (no home needed once the
         ; schedule pools run).
         SetRoutineLocHere(target, "play")
+        repaintCompanions = true
+
+    ElseIf actionId == "attendNpc"
+        ; Any NPC attends target2 in their work hours, no hire; strParam is the role the player gave it.
+        Actor playerRef = Game.GetPlayer()
+        If target2 && target2 != target && target != playerRef && target2 != playerRef
+            AttendNPC(target, target2, strParam)
+        Else
+            Debug.Trace("[SeverActions_FollowerManager] attendNpc: refused " + targetName + " -> " + target2Name)
+        EndIf
         repaintCompanions = true
 
     ElseIf actionId == "setCombatStyle"

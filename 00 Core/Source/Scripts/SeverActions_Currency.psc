@@ -972,8 +972,14 @@ Int[] Function _HandOverLines(Actor akSeller, Form[] akItems, Actor[] akTakers, 
      lines; returns what each line moved (0 for a taker never reached).}
     Int count = akItems.Length
     Int[] moved = Utility.CreateIntArray(count)
+    ; Cleared by hand: some SKSE builds ignore CreateBoolArray's fill (SeverActions_Loot._GiveItem).
     Bool[] served = Utility.CreateBoolArray(count)
     Int i = 0
+    While i < count
+        served[i] = False
+        i += 1
+    EndWhile
+    i = 0
     While i < count
         If !served[i]
             Actor taker = akTakers[i]

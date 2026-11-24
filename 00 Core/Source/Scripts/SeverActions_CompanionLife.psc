@@ -687,6 +687,9 @@ Function AppendGossip(String locationName, String gossipText)
     {Appends to a location's gossip ring: StorageUtil string "SeverGossip_<location>" on None,
      pipe-delimited, the newest 3 kept, and lists the place in SeverGossip_Places. Read by the
      0185 gossip prompt; SeverActions_Kidnap keeps a twin.}
+    ; The place is a home's name and the text can quote the LLM: one line each (StorageLine).
+    locationName = SeverActions_ModuleBase.StorageLine(locationName)
+    gossipText = SeverActions_ModuleBase.StorageLine(gossipText)
     String gossipKey = "SeverGossip_" + locationName
     ; The 0185 gossip prompt finds each ring through this index of place names.
     StorageUtil.StringListAdd(None, "SeverGossip_Places", locationName, false)
@@ -877,7 +880,7 @@ Function ProcessOffScreenArrest(Actor akActor, String home, String crime, Int bo
     SeverActionsNativeExt2.Verb_Send("arrest", "offscreenJail", "||" + SeverActionsNativeExt2.OffScreen_StoryHold(akActor), akActor)
 
     If SeverActionsNativeExt2.Settings_GetBool("showNotifications")
-        Debug.Notification(actorName + " was arrested in " + home + "! (" + bounty + " bounty)")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hud.sentenceJoin", SeverActionsNativeExt2.Native_L10nFmt("companionlife.arrestedIn", actorName, home), SeverActionsNativeExt2.Native_L10nFmt("companionlife.bountyAmount", ("" + bounty))))
     EndIf
 EndFunction
 
@@ -1088,7 +1091,7 @@ Function ProcessOffScreenItemAcquired(Actor akActor, String itemName, String cat
     SeverActionsNative.Native_OffScreen_AddEvent(akActor, eventDesc, "notable", GetGameTimeInSeconds(), true, "item_acquired", count, itemName, "")
 
     If SeverActionsNativeExt2.Settings_GetBool("showNotifications")
-        Debug.Notification(actorName + " acquired " + count + "x " + resolvedName)
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("companionlife.acquired", actorName, ("" + count + "x " + resolvedName)))
     EndIf
 
     DebugMsg("Off-screen item: " + actorName + " +" + count + "x " + resolvedName + " (searched: '" + itemName + "', cat: " + category + ")")

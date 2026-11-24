@@ -1343,7 +1343,7 @@ Function RestrainNPC(Actor akRestrainer, String targetName)
         && !SeverActionsNativeExt.Native_Kidnap_GetFlag(victim, KIDNAP_FLAG_UNBOUND)
         If SeverActionsNativeExt.Native_Kidnap_GetFlag(victim, KIDNAP_FLAG_LEASHED) \
             && StorageUtil.GetFormValue(victim, "SeverKidnap_LeashLeader") as Actor == akRestrainer
-            Debug.Notification(akRestrainer.GetDisplayName() + " already has " + victim.GetDisplayName() + " in hand.")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("kidnap.alreadyInHand", akRestrainer.GetDisplayName(), victim.GetDisplayName()))
             Return
         EndIf
         If !LeashCaptive(victim, akRestrainer)
@@ -1648,7 +1648,7 @@ Function MoveCaptive(Actor akEscort, String targetName, String destination)
     SkyrimNetApi.RegisterPersistentEvent( \
         akEscort.GetDisplayName() + " sets out to move the captive " + victim.GetDisplayName() + " to " + destination + ".", \
         akEscort, victim)
-    Debug.Notification(akEscort.GetDisplayName() + " is moving " + victim.GetDisplayName() + " to " + destination)
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("kidnap.isMovingCaptive", akEscort.GetDisplayName(), SeverActionsNativeExt2.Native_L10nFmt("hud.whoToPlace", victim.GetDisplayName(), destination)))
 EndFunction
 
 Function MoveCaptiveHere(Actor akEscort, String captiveName)
@@ -1847,7 +1847,7 @@ Function DemandRansom(Actor akSpeaker, String targetName, Int aiAmount = 0)
     SkyrimNetApi.RegisterPersistentEvent( \
         akSpeaker.GetDisplayName() + " has sent word to " + holdName + " demanding " + amount + " gold for the safe return of " + victim.GetDisplayName() + ". The answer will take a day or two to come back.", \
         akSpeaker, victim)
-    Debug.Notification("Ransom demanded for " + victim.GetDisplayName() + ": " + amount + " gold.")
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("kidnap.ransomDemanded", ("" + victim.GetDisplayName()), ("" + amount)))
     Debug.Trace("[SeverActions_Kidnap] Kidnap: ransom demanded for " + victim.GetDisplayName() + " (" + amount + "g, payer hold '" + holdName + "')")
 EndFunction
 
@@ -2718,7 +2718,7 @@ Function _FireKidnapReleaseConsequences(Actor akVictim)
             ; native.
             SeverActionsNativeExt.Native_Bounty_ModFor(kd, repFac, KIDNAP_BOUNTY)
             SeverActionsNativeExt.Native_Bounty_AddEventFor(kd, repFac, KIDNAP_BOUNTY, "kidnapping", "")
-            Debug.Notification(akVictim.GetDisplayName() + " reported the abduction. +" + KIDNAP_BOUNTY + " bounty on " + kdName + ".")
+            Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hud.sentenceJoin", SeverActionsNativeExt2.Native_L10nFmt("kidnap.reportedAbduction", akVictim.GetDisplayName()), SeverActionsNativeExt2.Native_L10nFmt("arrestbounty.npcBountyAdded", kdName, ("" + KIDNAP_BOUNTY))))
             Debug.Trace("[SeverActions_Kidnap] Kidnap: released victim reported the crime")
         EndIf
     EndIf
@@ -3000,7 +3000,7 @@ Function TieCaptiveToFurniture(Actor akSpeaker, String targetName, String furnit
         Return
     EndIf
     If _GetFurnitureTie(victim) == furnRef
-        Debug.Notification(victim.GetDisplayName() + " is already tied to that.")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("kidnap.alreadyTiedToThat", victim.GetDisplayName()))
         Return
     EndIf
 
@@ -3271,7 +3271,11 @@ Function _CompleteFurnitureTie(Actor akSpeaker, Actor akVictim, ObjectReference 
     SkyrimNetApi.RegisterPersistentEvent( \
         akSpeaker.GetDisplayName() + " has tied " + akVictim.GetDisplayName() + " to " + tieWhat + " - still bound, going nowhere, and no longer anyone's to carry.", \
         akSpeaker, akVictim)
-    Debug.Notification(akVictim.GetDisplayName() + " is tied to " + tieWhat + ".")
+    If akFurn.GetDisplayName() != ""
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("kidnap.tiedToNamed", akVictim.GetDisplayName(), akFurn.GetDisplayName()))
+    Else
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("kidnap.tiedToSomething", akVictim.GetDisplayName()))
+    EndIf
 EndFunction
 
 Bool Function PlayerTieLedCaptive(ObjectReference akFurn)

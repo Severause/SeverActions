@@ -59,6 +59,18 @@ eligibilityRules:
         expectedValue: ""
     logicalOperator: "AND"
     required: true
+  - conditions:
+      # Not a prisoner or a guard on an arrest: the cast outranks their packages. "" = free.
+      - decoratorName: "sever_in_custody"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+      - decoratorName: "sever_is_dispatched"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
 # No eventString — the cast is visible in-game (animation + projectile + sound)
 # and we deliberately don't pollute the LLM context with a redundant "X casts Y"
 # event for every cast. The action invocation itself is enough signal.

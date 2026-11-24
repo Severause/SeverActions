@@ -1768,7 +1768,7 @@ Function StartEscortPhase()
 
     ArrestState = 3 ; escorting
 
-    Debug.Notification(CurrentGuard.GetDisplayName() + " is escorting " + CurrentPrisoner.GetDisplayName() + " to " + CurrentJailName)
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.isEscorting", CurrentGuard.GetDisplayName(), SeverActionsNativeExt2.Native_L10nFmt("hud.whoToPlace", CurrentPrisoner.GetDisplayName(), CurrentJailName)))
     DebugMsg("Starting escort to " + CurrentJailName)
 
     JailDestination.ForceRefTo(CurrentJailMarker)

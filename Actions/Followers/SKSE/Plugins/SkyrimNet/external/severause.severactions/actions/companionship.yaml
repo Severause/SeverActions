@@ -1,6 +1,6 @@
 customCategory: sa_companionship
 name: Companionship
-description: "Category: the player's companions and anyone walking along with the player: someone joins the player as a companion; someone walking with the player waits at this spot, or follows again after waiting; a companion parts ways and goes home, or quits for good after long mistreatment; the place where the player and a companion are standing becomes that companion's home. Only for a decision made in this line; talk of someday is not. Walking along for a short while without joining is TagAlong."
+description: "Category: the player's companions, anyone walking along with the player, and standing duties: someone joins the player as a companion; someone walking with the player waits at this spot, or follows again after waiting; a companion parts ways and goes home, or quits for good after long mistreatment; the place where the player and a companion are standing becomes that companion's home; someone takes up or gives up attending another person as a bodyguard, squire or the like. Only for a decision made in this line; talk of someday is not. Walking along for a short while without joining is TagAlong."
 enabled: true
 
 eligibilityRules:

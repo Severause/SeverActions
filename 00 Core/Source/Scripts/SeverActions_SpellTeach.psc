@@ -1115,6 +1115,8 @@ EndFunction
 
 Function _RunLesson(Actor teacher, Actor learner, Spell akSpell)
     {The lesson itself; the caller holds both lanes (_ClaimLesson) and ends them after.}
+    ; The screen fades only for a lesson the player is part of.
+    Bool fade = teacher == Game.GetPlayer() || learner == Game.GetPlayer()
 
     ; Magic overhauls give NPCs hand-locked copies (MAG_FireboltRightHand) with the same name as
     ; the tome's either-hand spell: teach the PLAYER the tome version, or they can use it in one
@@ -1139,11 +1141,15 @@ Function _RunLesson(Actor teacher, Actor learner, Spell akSpell)
     Int reach = SeverActionsNativeExt2.Spell_GetReach(learner, akSpell)
     Int mishapTier = SeverActionsNativeExt2.Spell_GetMishapTier(learner, akSpell)
 
-    _StartFadeToBlack()
+    if fade
+        _StartFadeToBlack()
+    endif
 
     Utility.Wait(1.0)
 
-    _HoldFadeToBlack()
+    if fade
+        _HoldFadeToBlack()
+    endif
 
     if IdleTeaching
         teacher.PlayIdle(IdleTeaching)
@@ -1168,7 +1174,9 @@ Function _RunLesson(Actor teacher, Actor learner, Spell akSpell)
         if outcome < 2
             ; Lift the fade so the player sees the consequence
             _ResetIdles(teacher, learner)
-            _EndFadeToBlack()
+            if fade
+                _EndFadeToBlack()
+            endif
             Utility.Wait(0.5)
 
             _ApplyFailureConsequence(teacher, learner, school, mishapTier, outcome)
@@ -1182,7 +1190,11 @@ Function _RunLesson(Actor teacher, Actor learner, Spell akSpell)
                 SeverActionsNativeExt2.Spell_NoteLearning(learner, teacher, akSpell, None, 0, reach, false)
                 SkyrimNetApi.DirectNarration(narration, teacher, learner)
                 _WaitForNarrationComplete()
-                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("spellteach.spellFailed", ("" + spellName)))
+                if fade
+                    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("spellteach.spellFailed", ("" + spellName)))
+                else
+                    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("spellteach.npcSpellFailed", learnerName, spellName))
+                endif
                 return
             else
                 ; Partial success: the lesson resumes after the narration
@@ -1191,9 +1203,13 @@ Function _RunLesson(Actor teacher, Actor learner, Spell akSpell)
 
                 _WaitForNarrationComplete()
 
-                _StartFadeToBlack()
+                if fade
+                    _StartFadeToBlack()
+                endif
                 Utility.Wait(1.0)
-                _HoldFadeToBlack()
+                if fade
+                    _HoldFadeToBlack()
+                endif
 
                 if IdleTeaching
                     teacher.PlayIdle(IdleTeaching)
@@ -1214,7 +1230,9 @@ Function _RunLesson(Actor teacher, Actor learner, Spell akSpell)
             teacherName + " attempted to teach " + spellName + " but " + learnerName + " already possesses this knowledge.", \
             teacher, learner)
         _ResetIdles(teacher, learner)
-        _EndFadeToBlack()
+        if fade
+            _EndFadeToBlack()
+        endif
         return
     endif
 
@@ -1226,7 +1244,9 @@ Function _RunLesson(Actor teacher, Actor learner, Spell akSpell)
         SeverActionsNativeExt2.Spell_NoteLearning(learner, teacher, akSpell, None, 0, reach, false)
         _ApplyExhaustion(learner, akSpell)
         _ResetIdles(teacher, learner)
-        _EndFadeToBlack()
+        if fade
+            _EndFadeToBlack()
+        endif
         return
     endif
 
@@ -1246,7 +1266,9 @@ Function _RunLesson(Actor teacher, Actor learner, Spell akSpell)
         learnedOutcome = 1
     endif
     SeverActionsNativeExt2.Spell_NoteLearning(learner, teacher, akSpell, None, learnedOutcome, reach, unstable)
-    if isPartialSuccess
+    if !fade
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("spellteach.npcSpellLearned", learnerName, spellName))
+    elseif isPartialSuccess
         Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("spellteach.spellLearnedPartial", ("" + spellName)))
     else
         Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("spellteach.spellLearned", ("" + spellName)))
@@ -1263,7 +1285,9 @@ Function _RunLesson(Actor teacher, Actor learner, Spell akSpell)
 
     _ResetIdles(teacher, learner)
 
-    _EndFadeToBlack()
+    if fade
+        _EndFadeToBlack()
+    endif
 
     if SpellLearnedFXS
         SpellLearnedFXS.Play(learner, 3.0)
@@ -1320,13 +1344,63 @@ EndFunction
 
 ; The NPC akActor teaches the player; spellName is the LLM's name for the spell.
 Function TeachSpell(Actor akActor, String spellName)
-    ; One 10 s cooldown across teach and learn
+    _TeachSpellTo(akActor, Game.GetPlayer(), spellName)
+EndFunction
+
+; The NPC akActor teaches akStudent (the TeachSpellTo action; the player as the student = TeachSpell).
+Function TeachSpellTo(Actor akActor, Actor akStudent, String spellName)
+    {Teach a spell the speaker knows to someone present. None (SkyrimNet could not resolve the name) does nothing;
+     refused, with an event, for the speaker themselves and for a student who is dead, fighting, too far away, in an
+     animation scene, held captive or in custody.}
+    if !akActor
+        return
+    endif
+    if !akStudent
+        Debug.Trace("[SeverActions_SpellTeach] TeachSpellTo: no student resolved - nothing taught")
+        return
+    endif
+    Actor player = Game.GetPlayer()
+    if akStudent == player
+        _TeachSpellTo(akActor, player, spellName)
+        return
+    endif
+    if akStudent == akActor || akStudent.IsDead() || akStudent.IsInCombat() || !akStudent.Is3DLoaded() \
+        || akActor.GetDistance(akStudent) > MaxStudentDistance \
+        || SeverActionsNative.Native_Outfit_IsInAnimationScene(akStudent) \
+        || SeverActionsNativeExt.Native_Kidnap_GetPhase(akStudent) != 0 \
+        || SeverActionsNativeExt2.Custody_IsHeld(akStudent)
+        SkyrimNetApi.SetActionCooldown("teachspellto", 10)
+        SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
+            akActor.GetDisplayName() + " could not teach " + akStudent.GetDisplayName() + " a spell: a student must be close by and at peace for a lesson.", \
+            akActor, akStudent)
+        return
+    endif
+    _TeachSpellTo(akActor, akStudent, spellName)
+EndFunction
+
+; Which of a lesson's two actors to name as already in one: the student when their lane is held and they are not the
+; player, else the teacher.
+Actor Function _BusyOne(Actor teacher, Actor learner)
+    if learner != Game.GetPlayer() && SeverActionsNativeExt2.LLMLane_IsHeld(_LessonLane(learner))
+        return learner
+    endif
+    return teacher
+EndFunction
+
+; How near the student must stand for TeachSpellTo, in units.
+Float Property MaxStudentDistance = 1024.0 Auto Hidden
+
+Function _TeachSpellTo(Actor akActor, Actor learner, String spellName)
+    {TeachSpell's lesson for any learner: resolves the spell by name on the teacher, refuses with an event what cannot
+     be taught, then narrates and runs the lesson under its claim.}
+    ; One 10 s cooldown across teaching and learning
     SkyrimNetApi.SetActionCooldown("teachspell", 10)
+    SkyrimNetApi.SetActionCooldown("teachspellto", 10)
     SkyrimNetApi.SetActionCooldown("learnspell", 10)
 
     Actor player = Game.GetPlayer()
-    if _InLesson(akActor, player)
-        _RefuseInLesson(akActor)
+    if _InLesson(akActor, learner)
+        _RefuseInLesson(_BusyOne(akActor, learner))
         return
     endif
 
@@ -1335,7 +1409,7 @@ Function TeachSpell(Actor akActor, String spellName)
     if !spellForm
         SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
             akActor.GetDisplayName() + " doesn't know any spell called " + spellName + ".", \
-            akActor, player)
+            akActor, learner)
         return
     endif
 
@@ -1344,62 +1418,65 @@ Function TeachSpell(Actor akActor, String spellName)
         return
     endif
 
-    ; Swap to the tome variant BEFORE the already-knows check, or a player who owns it passes the
-    ; check (they lack the teacher's hand-locked copy) and _RunLesson refuses at the end.
-    Spell learnable = SeverActionsNative.GetLearnableSpellVariant(akSpell) as Spell
-    if learnable
-        akSpell = learnable
+    ; The player learns the tome variant (see _RunLesson). Swapped BEFORE the already-knows check, or a player who
+    ; owns it passes the check (they lack the teacher's hand-locked copy) and _RunLesson refuses at the end.
+    if learner == player
+        Spell learnable = SeverActionsNative.GetLearnableSpellVariant(akSpell) as Spell
+        if learnable
+            akSpell = learnable
+        endif
     endif
 
     if SeverActionsNativeExt2.Spell_IsUnteachable(akSpell)
         SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
             akSpell.GetName() + " is a power, not a spell: " + akActor.GetDisplayName() + " cannot teach it.", \
-            akActor, player)
+            akActor, learner)
         return
     endif
 
     ; Just taught it: the reply to the lesson's outcome, quietly (_EndLesson).
-    if SeverActionsNativeExt2.LLMLane_IsHeld(_LessonDoneLane(player, akSpell))
+    if SeverActionsNativeExt2.LLMLane_IsHeld(_LessonDoneLane(learner, akSpell))
         Debug.Trace("[SeverActions_SpellTeach] TeachSpell: " + akSpell.GetName() + " was just taught - not again")
         return
     endif
-    if player.HasSpell(akSpell)
+    if learner.HasSpell(akSpell)
         SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
-            player.GetDisplayName() + " already knows " + akSpell.GetName() + ".", \
-            akActor, player)
+            learner.GetDisplayName() + " already knows " + akSpell.GetName() + ".", \
+            akActor, learner)
         return
     endif
 
-    if RequireSkillCheck && !_MeetsSkillRequirement(player, akSpell)
+    if RequireSkillCheck && !_MeetsSkillRequirement(learner, akSpell)
         SkyrimNetApi.RegisterEvent("spell_transfer_failed", \
-            akSpell.GetName() + " is beyond " + player.GetDisplayName() + "'s skill, and the lesson is not attempted.", \
-            akActor, player)
+            akSpell.GetName() + " is beyond " + learner.GetDisplayName() + "'s skill, and the lesson is not attempted.", \
+            akActor, learner)
         return
     endif
 
     String school = GetSpellSchool(akSpell)
     String diffName = _DifficultyName(GetSpellDifficulty(akSpell))
-    String narration = akActor.GetDisplayName() + " begins teaching " + player.GetDisplayName() + \
+    String narration = akActor.GetDisplayName() + " begins teaching " + learner.GetDisplayName() + \
         " the " + diffName + "-level " + school + " spell " + akSpell.GetName() + "."
-    narration += _BeyondWarning(player, akSpell)
+    narration += _BeyondWarning(learner, akSpell)
     ; Claimed before the narration: the NPC's reply to it can start a second lesson.
-    if !_ClaimLesson(akActor, player)
-        _RefuseInLesson(akActor)
+    if !_ClaimLesson(akActor, learner)
+        _RefuseInLesson(_BusyOne(akActor, learner))
         return
     endif
-    SkyrimNetApi.DirectNarration(narration, akActor, player)
+    SkyrimNetApi.DirectNarration(narration, akActor, learner)
 
     _WaitForNarrationComplete()
 
-    _RunLesson(akActor, player, akSpell)
-    _EndLesson(akActor, player, akSpell)
+    _RunLesson(akActor, learner, akSpell)
+    _EndLesson(akActor, learner, akSpell)
 EndFunction
 
 ; The NPC akActor learns a spell from the player.
 Function LearnSpell(Actor akActor, String spellName)
-    ; One 10 s cooldown across teach and learn
+    ; One 10 s cooldown across teaching and learning
     SkyrimNetApi.SetActionCooldown("teachspell", 10)
     SkyrimNetApi.SetActionCooldown("learnspell", 10)
+    SkyrimNetApi.SetActionCooldown("teachspellto", 10)
 
     Actor player = Game.GetPlayer()
     if _InLesson(player, akActor)   ; see TeachSpell

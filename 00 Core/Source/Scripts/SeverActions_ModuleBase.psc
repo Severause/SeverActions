@@ -241,6 +241,17 @@ Form Function CallForm(String asBundle, String asSvc, Form akA = None, Form akB 
     Return p.ServiceForm(asSvc, akA, akB, asArg, afArg)
 EndFunction
 
+String Function StorageLine(String asText) Global
+    {asText on one line, for a StorageUtil string or key that takes text from the LLM or the player: PapyrusUtil
+     cuts a saved string at a line break or tab and misreads what the save holds after it. asText as it came
+     on an older DLL.}
+    String line = SeverActionsNativeExt2.Letter_PackText(asText, true)
+    If line == ""
+        Return asText
+    EndIf
+    Return line
+EndFunction
+
 String Function Secs(Float afSeconds) Global
     {Seconds as "1.23s", for timing lines (Papyrus prints a Float with six decimals).}
     Int hundredths = (afSeconds * 100.0 + 0.5) as Int

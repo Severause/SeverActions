@@ -1,7 +1,9 @@
 {% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" %}
 {# An outlaw holding their fire at the player (the Truce layer). sever_truce builds the posture
-   text ("" for everyone else); the bullets add only what it leaves out. The heading follows
-   the camp state, and anything that asserts a death also checks sever_camp_leader_fell. #}
+   text ("" for everyone else), and says whether they stand on their camp's ground or stopped the
+   player on the road, so the standoff bullets assume neither; they add only what it leaves out.
+   The heading follows the camp state, and anything that asserts a death also checks
+   sever_camp_leader_fell. #}
 {% if actorUUID and actorUUID != 0 %}
 {% set truce = sever_truce(actorUUID) %}
 {% if truce != "" and not exists("stealthHiddenPlayer") %}
@@ -32,7 +34,7 @@
 {% elif kind == "vampire" %}
 ## One of Your Own, Unannounced
 {{ truce }}
-- You may test them: whose blood, whose court, who turned them, what they want in your hall. Curiosity is in character; so is contempt for a fledgling.
+- You may test them: whose blood, whose court, who turned them, what they want with you. Curiosity is in character; so is contempt for a fledgling.
 - Do NOT treat them as prey, and do NOT treat them as kin on sight. Sired strangers have brought the Dawnguard down on covens before.
 - If they crowd you, threaten yours, or reach for what is not theirs, say so plainly before it turns — and mean it.
 {% elif kind == "necromancer" %}
@@ -50,10 +52,14 @@
 {% else %}
 ## An Uneasy Standoff
 {{ truce }}
-- You have NOT surrendered, been recruited, or become friendly. You are an outlaw and this is your ground.
+- You have NOT surrendered, been recruited, or become friendly. You are an outlaw first.
 - You may demand a toll, threaten, bargain, trade, or tell them to leave. Asking what they want is reasonable.
 - Do NOT act like a guard, a merchant with fixed prices, or a quest-giver. You are dangerous people choosing, for now, not to swing first.
 - If they draw on you, crowd you, or start taking your things, say so plainly before it turns — and mean it.
+{% endif %}
+{# sever_truce_mood is "wary" when the approach went badly for the player (the outlaw temperament); the text above already says how to act on it. #}
+{% if sever_truce_mood(actorUUID) == "wary" %}
+- You did not like the look of {{ player.name }}, and nothing yet has changed your mind. Do not warm to them, whatever they offer.
 {% endif %}
 {% endif %}
 {% endif %}

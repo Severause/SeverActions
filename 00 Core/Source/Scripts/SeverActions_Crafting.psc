@@ -483,7 +483,7 @@ Function _PlaceCommission()
 
     string etaPhrase = DescribeEta(etaDays)
     SeverActionsNativeExt.Native_Ledger_RecordEvent(deposit, true, "commission", akActor, "", "deposit: " + itemLabel, 0)
-    Debug.Notification("Commissioned " + itemLabel + " - " + deposit + " gold deposit paid, " + balanceDue + " gold due on pickup.")
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hud.sentenceJoin", SeverActionsNativeExt2.Native_L10nFmt("crafting.commissionedDeposit", itemLabel, ("" + deposit)), SeverActionsNativeExt2.Native_L10nFmt("crafting.balanceOnPickup", ("" + balanceDue))))
     SkyrimNetApi.RegisterPersistentEvent(akActor.GetDisplayName() + " agreed to craft " + itemLabel + " for " + player.GetDisplayName() + ", ready " + etaPhrase + ". Took a " + deposit + " gold deposit; " + balanceDue + " gold is due when " + player.GetDisplayName() + " collects it.", akActor, player)
     _ClearCommPending()
 EndFunction

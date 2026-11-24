@@ -167,6 +167,11 @@ Function CleanupCast()
     If caster
         SeverActionsNative.Native_SkyrimNet_ClearActorBusy(caster)
     EndIf
+    ; The dispatcher's override of SlotPackage, taken off everyone: the package is this slot's alone, and a caster
+    ; another cast pushed out of the slot is no longer in it.
+    If SlotPackage
+        ActorUtil.RemoveAllPackageOverride(SlotPackage)
+    EndIf
 
     If caster && SeverActionsNativeExt.Native_IsCasterStillCasting(caster)
         SeverActionsNativeExt.Native_ForceReleaseCast(caster)

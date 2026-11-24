@@ -1,6 +1,6 @@
 customCategory: magic
 name: TeachSpell
-description: "Use only when {{ player.name }} asks to learn a spell the speaker knows and the speaker agrees in this line, or the speaker offered and {{ player.name }} has just accepted; the lesson starts now, a short practice that can fail, or go wrong, on a harder spell. Not for talk about magic, an offer not yet accepted, or a lesson promised for later. Spells only; a Shout is TeachShout. The speaker learning from {{ player.name }} is LearnSpell."
+description: "Use only when {{ player.name }} asks to learn a spell the speaker knows and the speaker agrees in this line, or the speaker offered and {{ player.name }} has just accepted; the lesson starts now, a short practice that can fail, or go wrong, on a harder spell. Not for talk about magic, an offer not yet accepted, or a lesson promised for later. Spells only; a Shout is TeachShout. The speaker learning from {{ player.name }} is LearnSpell; teaching someone else is TeachSpellTo."
 questEditorId: SeverActions
 scriptName: SeverActions_SpellTeach
 executionFunctionName: TeachSpell

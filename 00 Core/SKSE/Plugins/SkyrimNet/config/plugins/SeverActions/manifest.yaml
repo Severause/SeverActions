@@ -5,47 +5,56 @@ plugin:
   icon: "\U0001F30A"
 
 # ── LLM Variants ──
-# Each variant is a named LLM-config bucket. Background prompts (relationship
-# assessment, banter, off-screen life, quest awareness, etc.) all go through
-# the sever_background variant so users can route them to a cheaper model
-# than their dialogue tier — these calls fire periodically and don't need the
-# top-tier model that live conversation does.
-#
-# Empty override = fall through to the base OpenRouter config users already
-# have set up. So zero behavior change for users who don't touch these.
+# Each variant is a named LLM-config bucket, listed as its own row on SkyrimNet's
+# AI > LLMs page. Native/src/LlmVariantCore.h says which background prompt goes
+# to which; check_release check 2 keeps the names here and there in step.
+# A variant with no saved settings starts from the fields below, or SkyrimNet's
+# base model when they are empty; never from sever_background's row.
 variants:
+  - name: sever_stories
+    description: "SeverActions stories: off-screen life events, retainer work stories and courier letters."
+  - name: sever_banter
+    description: "SeverActions banter: follower banter and ambient banter between nearby NPCs."
+  - name: sever_decisions
+    description: "SeverActions decisions: the ambient action director, its adjudicator and the parley verdict."
+  - name: sever_assessments
+    description: "SeverActions assessments: relationship, companion-to-companion, reputation and intimacy stance reads."
+  - name: sever_summaries
+    description: "SeverActions summaries: quest awareness summaries."
   - name: sever_background
-    description: "Background context prompts — relationship assessment, banter, off-screen life, quest awareness, reputation, inter-follower opinions. Override these to use a cheaper model and save on dialogue-budget tokens."
+    description: "Background prompts other mods send through SeverActions on this row. SeverActions' own prompts use the five rows above."
 
 schema:
   fields:
-    # ── LLM Overrides for sever_background variant ──
-    # All fields are optional. Empty / 0 = inherit from base OpenRouter config.
+    # ── LLM Overrides ──
+    # SkyrimNet copies these into each variant above that has no saved settings
+    # yet (RegisterPluginVariant keeps a saved row); after that the row's own
+    # settings on the AI > LLMs page win. Empty / 0 = SkyrimNet's base config.
     - name: "API Endpoint"
       path: "llm.endpoint"
       type: "string"
-      description: "Custom API endpoint URL for background prompts (e.g., http://localhost:5000/v1 for a local model). Leave empty to use the base OpenRouter endpoint."
+      description: "Starting API endpoint for SeverActions' rows on the AI > LLMs page that have no saved settings yet (e.g., http://localhost:5000/v1 for a local model). Change a row there afterwards. Leave empty to use the base endpoint."
       defaultValue: ""
       category: "LLM Overrides"
 
     - name: "API Key"
       path: "llm.api_key"
       type: "string"
-      description: "API key for the custom endpoint above. Leave empty to use the base OpenRouter API key."
+      description: "API key for the endpoint above, used the same way. Leave empty to use the base API key."
       defaultValue: ""
       category: "LLM Overrides"
 
     - name: "Model Name"
       path: "llm.model_name"
       type: "string"
-      description: "Override model for background prompts (e.g., 'meta-llama/llama-3.3-70b-instruct' or any OpenRouter model id). Leave empty to use the same model as dialogue. Background prompts run periodically and don't need a top-tier model."
+      description: "Starting model for SeverActions' rows on the AI > LLMs page that have no saved settings yet (e.g., 'meta-llama/llama-3.3-70b-instruct' or any OpenRouter model id). Change a row there afterwards. Leave empty to use the same model as dialogue."
       defaultValue: ""
       category: "LLM Overrides"
 
     - name: "Temperature"
       path: "llm.temperature"
       type: "float"
-      description: "Override sampling temperature for background prompts. Set to 0 to inherit the base config value."
+      description: "Starting temperature for those rows. Set to 0 to use the base config value."
       defaultValue: 0
       min: 0.0
       max: 2.0
@@ -54,7 +63,7 @@ schema:
     - name: "Max Tokens"
       path: "llm.max_tokens"
       type: "int"
-      description: "Override max response tokens for background prompts. Set to 0 to inherit the base config value."
+      description: "Starting max response tokens for those rows. Set to 0 to use the base config value."
       defaultValue: 0
       min: 0
       max: 4096
@@ -63,7 +72,7 @@ schema:
     - name: "Request Timeout (seconds)"
       path: "llm.timeout"
       type: "int"
-      description: "Override request timeout in seconds for background prompts. Set to 0 to inherit the base config value."
+      description: "Starting request timeout in seconds for those rows. Set to 0 to use the base config value."
       defaultValue: 0
       min: 0
       max: 120

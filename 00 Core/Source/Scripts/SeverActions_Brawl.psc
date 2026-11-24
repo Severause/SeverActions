@@ -335,7 +335,7 @@ Function ShowPlayerChallengePopup(Actor akChallenger, Bool abIsRetry = false)
     EndIf
 
     ; Neither installed: notify only.
-    Debug.Notification(challengerName + " challenges you to a brawl. Speak to them to accept or decline. (The SeverActions interface or Papyrus MessageBox shows a proper prompt.)")
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("brawl.challengeNotice", challengerName))
 EndFunction
 
 Event OnBrawlPromptChoice(String asEventName, String asChoice, Float afNumArg, Form akSender)

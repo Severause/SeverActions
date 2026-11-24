@@ -34,6 +34,10 @@ Bool CourierWsBlacklistBuilt = false
 ; and the second pops the one behind it. Cleared by Maintenance on every load.
 Bool _courierDispatching = false
 
+; True while a call adds to or pops the five queue lists (_LockQueue / _UnlockQueue), so the
+; lists always change together. Cleared by Maintenance on every load.
+Bool _courierQueueLocked = false
+
 ; Single-courier rule: at most one courier at a time and one per
 ; CourierMinIntervalDays. Every letter queues; the courier hands over the first
 ; with ceremony and the rest of the queue with it. Urgent (ransom) letters bypass
@@ -48,6 +52,7 @@ Function Maintenance()
     {Load recovery from the couriers provider's stage 1 (idempotent, DR20): re-registers the
      listeners and re-arms the poll while letters wait or a courier is out (ticks do not survive a load).}
     _courierDispatching = false
+    _courierQueueLocked = false
     _RegisterEvents()
     If StorageUtil.StringListCount(self, "SeverTravel_CourierQ_Body") > 0 || ActiveCourierLive()
         ChronoArm(TICK_INTERVAL)
@@ -240,11 +245,13 @@ Bool Function _DispatchFirstLetter()
     ; still on him: the loiter sandbox (100) would outrank a pool-full jog override (85)
     ; and hold him after the journey.
     _ClearCourierHolds(courier)
+    _LockQueue()
     StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_SenderFid", 0)
     StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_Subject", 0)
     StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_Body", 0)
     StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_Reason", 0)
     StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_SenderName", 0)
+    _UnlockQueue()
     StorageUtil.SetFormValue(self, "SeverTravel_ActiveCourier", courier)
     StorageUtil.SetFloatValue(self, "SeverTravel_ActiveCourierGT", nowGT)
     StorageUtil.SetFloatValue(self, "SeverTravel_LastCourierGT", nowGT)
@@ -304,20 +311,68 @@ Function QueueCourierLetter(Actor akSender, String asSubject, String asBody, Str
     {Append to the FIFO of letters waiting for the player to step outside: parallel StorageUtil
      string lists on self. The sender rides as a FormID string (a None in a FormList would
      desync the lists) and its name is snapshotted now, since the sender can be gone by
-     delivery and the letter view needs its from-line.}
-    ; Both reads come before the first add: a call on the sender lets another thread into
-    ; this script, and the five lists must grow together.
+     delivery and the letter view needs its from-line. Subject and body are stored packed
+     (Letter_PackText): a saved StorageUtil string is cut at its first line break on load, and
+     the rest of a letter would come back as the next letter in the queue.
+     Letter_DeliverToCourier unpacks them.}
+    ; The calls on the sender and the DLL come before the lock, which is held only across
+    ; the list calls.
     Int senderFid = 0
     String qSenderNm = ""
     If akSender
         senderFid = akSender.GetFormID()
         qSenderNm = akSender.GetDisplayName()
     EndIf
+    String qSubject = SeverActionsNativeExt2.Letter_PackText(asSubject, true)
+    String qBody = SeverActionsNativeExt2.Letter_PackText(asBody)
+    If qBody == ""
+        ; Unbound on an older DLL: keep the letter as it came.
+        qSubject = asSubject
+        qBody = asBody
+    EndIf
+    _LockQueue()
+    ; A save that cut a waiting letter loads the bodies as pieces and the four lists beside
+    ; them empty. Level those to the bodies first, or this letter's sender and title would
+    ; pair with an older piece.
+    Int waiting = StorageUtil.StringListCount(self, "SeverTravel_CourierQ_Body")
+    _LevelQueueList("SeverTravel_CourierQ_SenderFid", waiting, "0")
+    _LevelQueueList("SeverTravel_CourierQ_Subject", waiting, "")
+    _LevelQueueList("SeverTravel_CourierQ_Reason", waiting, "meet")
+    _LevelQueueList("SeverTravel_CourierQ_SenderName", waiting, "")
     StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_SenderFid", senderFid as String)
-    StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_Subject", asSubject)
-    StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_Body", asBody)
+    StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_Subject", qSubject)
+    StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_Body", qBody)
     StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_Reason", asReason)
     StorageUtil.StringListAdd(self, "SeverTravel_CourierQ_SenderName", qSenderNm)
+    _UnlockQueue()
+EndFunction
+
+Function _LockQueue()
+    {Waits for the call that is changing the five queue lists, then takes its place. A call on
+     StorageUtil lets another thread into this script; the wait and the claim have no call
+     between them.}
+    While _courierQueueLocked
+        Utility.Wait(0.1)
+    EndWhile
+    _courierQueueLocked = true
+EndFunction
+
+Function _UnlockQueue()
+    _courierQueueLocked = false
+EndFunction
+
+Function _LevelQueueList(String asKey, Int aiCount, String asFill)
+    {Brings one queue list to aiCount entries: asFill appended, or the newest dropped. The caller
+     holds the queue lock.}
+    Int have = StorageUtil.StringListCount(self, asKey)
+    While have < aiCount
+        StorageUtil.StringListAdd(self, asKey, asFill)
+        have += 1
+    EndWhile
+    While have > aiCount
+        have -= 1
+        StorageUtil.StringListRemoveAt(self, asKey, have)
+    EndWhile
 EndFunction
 
 Bool Function ProcessCourierQueue()
@@ -404,6 +459,7 @@ Function DeliverCourierLetter(Actor akCourier)
     ; Hand over the rest of the queue silently, each as a real note.
     Int extraDelivered = 0
     While StorageUtil.StringListCount(self, "SeverTravel_CourierQ_Body") > 0
+        _LockQueue()
         Actor qSnd = Game.GetFormEx(StorageUtil.StringListGet(self, "SeverTravel_CourierQ_SenderFid", 0) as Int) as Actor
         String qSubj   = StorageUtil.StringListGet(self, "SeverTravel_CourierQ_Subject", 0)
         String qBody   = StorageUtil.StringListGet(self, "SeverTravel_CourierQ_Body", 0)
@@ -414,10 +470,12 @@ Function DeliverCourierLetter(Actor akCourier)
         StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_Body", 0)
         StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_Reason", 0)
         StorageUtil.StringListRemoveAt(self, "SeverTravel_CourierQ_SenderName", 0)
+        _UnlockQueue()
         If qBody != ""
             If qName == "" && qSnd != None
                 qName = qSnd.GetDisplayName()
             EndIf
+            ; None also for a piece of a letter a save cut: it rejoined the letter before it.
             Form qNote = SeverActionsNativeExt.Letter_DeliverToCourier(qSnd, akCourier, qSubj, qBody, qReason, qName)
             If qNote != None && player != None
                 akCourier.RemoveItem(qNote, 1, true, player)

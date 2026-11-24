@@ -45,8 +45,11 @@ Bool Function ServiceBool(String asSvc, Form akA, Form akB, String asArg, Float 
      resolves to nothing, so the caller hands it over directly.
      "useItem": akA eats or drinks the item named asArg from their own pack through
      Loot.UseItem_Execute (animation, SkyrimNet event, the survival.ateFood / survival.drank
-     verb). Survival's auto-eat eats directly when this module is absent.}
-    If asSvc != "giveItem" && asSvc != "useItem" && asSvc != "giveItemForm"
+     verb).
+     "useItemForm": the same for the exact item given by FormID in asArg (signed decimal,
+     GetFormEx), so a same-named item is never used in its place. Survival's auto-eat calls
+     it, and eats directly when it answers False or this module is absent.}
+    If asSvc != "giveItem" && asSvc != "useItem" && asSvc != "giveItemForm" && asSvc != "useItemForm"
         Return Parent.ServiceBool(asSvc, akA, akB, asArg, afArg)
     EndIf
     SeverActions_Loot loot = GetOwningQuest() as SeverActions_Loot
@@ -62,6 +65,18 @@ Bool Function ServiceBool(String asSvc, Form akA, Form akB, String asArg, Float 
             Return False
         EndIf
         loot.UseItem_Execute(eater, asArg)
+        Return True
+    EndIf
+    If asSvc == "useItemForm"
+        Actor formEater = akA as Actor
+        Form exact = None
+        If asArg != ""
+            exact = Game.GetFormEx(asArg as Int)
+        EndIf
+        If !loot || !formEater || !exact || formEater.GetItemCount(exact) <= 0 || !SeverActions_Loot.IsConsumable(exact)
+            Return False
+        EndIf
+        loot._ConsumeItem(formEater, exact, false)
         Return True
     EndIf
     Actor giver = akA as Actor

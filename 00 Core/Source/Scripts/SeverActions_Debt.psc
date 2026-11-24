@@ -158,7 +158,7 @@ Event OnPrismaPayDebt(String eventName, String strArg, Float numArg, Form sender
         Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("debt.paidGoldToSettled", ("" + pay), ("" + creditor.GetDisplayName())))
     Else
         SkyrimNetApi.RegisterEvent("debt_partial_payment", player.GetDisplayName() + " paid " + pay + " gold toward debt with " + creditor.GetDisplayName() + " (" + newAmount + " remaining)", creditor, player)
-        Debug.Notification("Paid " + pay + " gold toward your debt to " + creditor.GetDisplayName() + " (" + newAmount + "g remaining)")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hud.sentenceJoin", SeverActionsNativeExt2.Native_L10nFmt("debt.paidGoldToward", ("" + pay), ("" + creditor.GetDisplayName())), SeverActionsNativeExt2.Native_L10nFmt("debt.goldRemaining", ("" + newAmount))))
     EndIf
     SyncDebtFactionsForActor(creditor)
     SyncDebtFactionsForActor(player)

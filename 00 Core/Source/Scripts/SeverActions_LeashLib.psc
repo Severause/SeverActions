@@ -40,13 +40,8 @@ Function WarnIfOutdated() Global
         Return
     EndIf
     StorageUtil.SetIntValue(None, "SeverActions_LeashVerWarned", 1)
-    String verMsg = "SeverActions has found Leash Framework, but an older version than it needs. "
-    verMsg += "Captives are meant to be led by a rope from the leader's hand to their BOUND WRISTS, and that attachment arrived in Leash Framework 1.1.1. "
-    verMsg += "On this version the framework can only put a collar on the captive, so every rope runs from the neck instead. "
-    verMsg += "Everything still works - being tugged along, dragged off their feet, and tied to furniture - it just looks wrong. "
-    verMsg += "Update Leash Framework to 1.1.1 or newer (Nexus 187303) for the intended behaviour."
-    Debug.Notification("SeverActions: update Leash Framework to 1.1.1 or newer.")
-    Debug.MessageBox(verMsg)
+    Debug.Notification(SeverActionsNativeExt2.Native_L10n("leash.updateFramework"))
+    Debug.MessageBox(SeverActionsNativeExt2.Native_L10n("leash.outdatedNotice"))
     Debug.Trace("[SeverActions_LeashLib] LeashFramework: installed but pre-1.1.1 (no Leash_hand_chain) - neck collar in use")
 EndFunction
 

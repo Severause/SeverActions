@@ -361,6 +361,50 @@ Event OnSkyrimNetPackageRemoved(String eventName, String strArg, Float numArg, F
     EndIf
 EndEvent
 
+Event OnSkyrimNetPackageAdded(String eventName, String strArg, Float numArg, Form sender)
+    {SkyrimNet put a package on an actor (sender). When it is SkyrimNet's own FollowPlayer, which its AccompanyTarget
+     action applies, on an NPC SA would lead, SA takes the follow over: TagAlong_Execute asks the player first when
+     followersTagAlongAsk is on, and SA's follow seat carries them through load doors, which FollowPlayer does not.}
+    Actor akActor = sender as Actor
+    If !akActor || akActor.IsDead() || akActor == Game.GetPlayer()
+        Return
+    EndIf
+    ; Fires for every SkyrimNet package (each dialogue line's too): this is the cheap test.
+    If SkyrimNetApi.HasPackage(akActor, "FollowPlayer") <= 0
+        Return
+    EndIf
+    If IsInFollowerSlot(akActor)
+        ; SA already leads them: one mechanism drives follow, or the AI flickers.
+        SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
+        akActor.EvaluatePackage()
+        Debug.Trace("[SeverActions_Follow] " + akActor.GetDisplayName() + " is on SA's follow seat - removed SkyrimNet's FollowPlayer")
+        Return
+    EndIf
+    ; A companion or a teammate keeps the follow it has, SA's or another framework's.
+    If akActor.IsPlayerTeammate() || SeverActionsNativeExt.Native_GetIsFollower(akActor)
+        Return
+    EndIf
+    ; StartFollowing's own test: where SA would lead nobody, SkyrimNet's follow stays.
+    SeverActions_FollowerManager fm = Game.GetFormFromFile(0x000D62, "SeverActions.esp") as SeverActions_FollowerManager
+    If SeverActions_ModuleBase.IsFollowHandsOff(akActor) && !(fm && fm._UnledInTracking(akActor))
+        Return
+    EndIf
+    If SeverActionsNative.Native_GetHasFollowPkg(akActor)
+        ; An older save's casual follow on FollowPlayer: already agreed, so no card. Seated before the removal, as
+        ; VerifyCasualFollowPackages does: the removal notice's VerifyCasualFollowPackage clears an unseated casual.
+        StartFollowing(akActor)
+        SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
+        akActor.EvaluatePackage()
+        Debug.Trace("[SeverActions_Follow] Moved " + akActor.GetDisplayName() + "'s casual follow off SkyrimNet's FollowPlayer onto the follow pool")
+        Return
+    EndIf
+    ; Removed before the card, so a refusal or a card that runs out leaves them behind.
+    SkyrimNetApi.UnregisterPackage(akActor, "FollowPlayer")
+    akActor.EvaluatePackage()
+    Debug.Trace("[SeverActions_Follow] Taking over SkyrimNet's FollowPlayer on " + akActor.GetDisplayName())
+    TagAlong_Execute(akActor)
+EndEvent
+
 Bool Function VerifyCasualFollowPackage(Actor akActor)
     {Clear a legacy casual's hasFollowPkg and follow LinkedRef when SkyrimNet no
      longer holds its FollowPlayer package. Returns true if the flag was stale and
@@ -457,9 +501,12 @@ Function Maintenance()
     ; SkyrimNet's removals: the Package Manager rows SA lists (see the handler), and a legacy
     ; casual's FollowPlayer, whose loss would leave hasFollowPkg set for cell catch-up to drag.
     RegisterForModEvent("SkyrimNet_OnPackageRemoved", "OnSkyrimNetPackageRemoved")
+    ; SkyrimNet's own FollowPlayer (its AccompanyTarget action): SA takes the follow over (see the handler).
+    RegisterForModEvent("SkyrimNet_OnPackageAdded", "OnSkyrimNetPackageAdded")
     ; The camp muster and the persistence pools register in
     ; SeverActions_Enterprises.Maintenance (P9-03).
     RegisterForModEvent("SeverActions_CasualFollowRecycle", "OnCasualFollowRecycle")
+    RegisterForModEvent("SeverActions_TagAlongChoice", "OnTagAlongChoice")
 
     ; Heal flags that are already stale; the listener above only stops new drift.
     VerifyCasualFollowPackages()
@@ -1929,6 +1976,49 @@ Function StartFollowing(Actor akActor)
 
     Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("follow.isNowFollowingYou", ("" + akActor.GetDisplayName())))
 EndFunction
+
+Function TagAlong_Execute(Actor akActor)
+    {The StartFollowing action (an NPC agreeing in dialogue to tag along): with followersTagAlongAsk on, a card asks
+     the player first and OnTagAlongChoice starts the follow on a yes; off, StartFollowing at once. The player's own
+     orders call StartFollowing directly and never ask.}
+    if !akActor || akActor.IsDead()
+        return
+    endif
+    Int asked = SeverActionsNativeExt2.Magelight_OpenTagAlongPrompt(akActor, 20000)
+    If asked == 1
+        Debug.Trace("[SeverActions_Follow] TagAlong: asked the player about " + akActor.GetDisplayName())
+    ElseIf asked == 2
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("follow.tagAlongCouldNotAsk", ("" + akActor.GetDisplayName())))
+        Debug.Trace("[SeverActions_Follow] TagAlong: could not ask about " + akActor.GetDisplayName() + " - no follow")
+    Else
+        StartFollowing(akActor)
+    EndIf
+EndFunction
+
+Event OnTagAlongChoice(String eventName, String strArg, Float numArg, Form sender)
+    {The tag-along card's answer (MagelightTagAlongPromptBridge): accept starts the follow unless they joined the
+     player another way meanwhile, deny tells the NPC they were turned down, denySilent (Refuse silently, the card
+     ran out, or Escape) leaves them behind with no event.}
+    Actor akActor = sender as Actor
+    if !akActor || akActor.IsDead()
+        return
+    endif
+    String npcName = akActor.GetDisplayName()
+    If strArg == "accept"
+        ; Not StartFollowing_IsEligible: its CurrentFollowerFaction test is rank-blind and refuses every follower SA
+        ; dismissed, whom the action offers. Only what can change while the card is up is checked.
+        If akActor.IsPlayerTeammate() || SeverActionsNativeExt.Native_GetIsFollower(akActor) || HasFollowPackage(akActor)
+            Debug.Trace("[SeverActions_Follow] TagAlong: " + npcName + " already walks with the player - accepted card needs nothing")
+        Else
+            StartFollowing(akActor)
+        EndIf
+        Return
+    EndIf
+    If strArg == "deny"
+        SkyrimNetApi.RegisterEvent("tag_along_declined", Game.GetPlayer().GetDisplayName() + " told " + npcName + " not to come along, so " + npcName + " stays behind.", akActor, Game.GetPlayer())
+    EndIf
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("follow.tagAlongStaysBehind", npcName))
+EndEvent
 
 Function StopFollowing(Actor akActor)
     {Stop casual following: free the pool seat and LinkedRef, and any legacy

@@ -331,7 +331,7 @@ Function PayNpcBountyToGuard_Internal(Actor akGuard, String offenderName)
 
     ; The choice ModEvent carries only the guard and amount, so the offender
     ; name waits on the guard.
-    StorageUtil.SetStringValue(akGuard, "SeverBounty_PendingOffender", offenderName)
+    StorageUtil.SetStringValue(akGuard, "SeverBounty_PendingOffender", SeverActions_ModuleBase.StorageLine(offenderName))
 
     ; When the popup cannot open (no UI host, another view focused, a prompt
     ; already open) pay directly.

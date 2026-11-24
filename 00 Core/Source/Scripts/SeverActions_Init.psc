@@ -9,7 +9,11 @@ Scriptname SeverActions_Init extends ReferenceAlias
 ; === Initialization ===
 
 ; K0: bumped together with the DLL's KernelSession::kAbiVersion whenever a native's signature or
-; meaning changes in a way an older pex must not run against. 51: every sandbox override goes on and off through
+; meaning changes in a way an older pex must not run against. 53: Survival's own-pack food search asks
+; Survival_IsFoodBlacklisted, which an older DLL does not register (unbound, a follower still eats a blacklisted food
+; from their own pack). 52: FollowerManager records who attends whom through
+; Attend_Set and Attend_Clear, which an older DLL does not register (unbound, no attendance reaches either NPC's
+; prompt). 51: every sandbox override goes on and off through
 ; SeverActions_ModuleBase.AddSandboxOverride / RemoveSandboxOverride, which call SceneYield_Defer and SceneYield_Release,
 ; and the DLL's restore SceneYield_IsOn, which an older DLL does not register (unbound, no sandbox steps aside for a
 ; SexLab or OStim scene). 50: CompanionLife calls OffScreen_DispatchLifeEvent,
@@ -44,7 +48,7 @@ Scriptname SeverActions_Init extends ReferenceAlias
 ; would strip Devious Devices). 31: Familiarity calls Familiarity_SetBlurb
 ; and Familiarity_ImportBlurb, which an older DLL does not register (unbound, every reputation impression
 ; would be dropped), and CompanionMind calls Bond_NoteSources.
-Int Property KERNEL_ABI = 51 AutoReadOnly
+Int Property KERNEL_ABI = 53 AutoReadOnly
 
 Event OnInit()
     Debug.Trace("[SeverActions] OnInit - First time initialization")
@@ -121,8 +125,8 @@ Function Initialize(Bool isFirstInit)
     ; live changes arrive on SeverActions_SettingsMirror.
     SeedSettingsFromStorageUtil()
     RegisterForModEvent("SeverActions_SettingsMirror", "OnSettingsMirror_Init")
-    ; UI item transfers are the kernel's: the Inventory page that raises them is a kernel surface and
-    ; stays installed when the module that would own them is absent.
+    ; UI item transfers from an older DLL (this one tells them at menu close, ItemHandoff.h); the
+    ; kernel's because the Inventory page is a kernel surface.
     RegisterForModEvent("SeverActions_MagelightItemMoved", "OnPrismaItemMoved")
     WriteSettingsMirrors()
 
@@ -179,7 +183,7 @@ String[] Function DiscoverProviders()
             ; An installed module (every one, in Legacy) without its provider pex is a broken install:
             ; its load work is skipped, so say so.
             If SeverActionsNativeExt2.Module_IsUsable(id)
-                Debug.Notification("SeverActions: module '" + id + "' is installed but its provider script did not load - reinstall with Replace")
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("init.moduleProviderMissing", id))
             EndIf
         ElseIf p.BundleId() != id
             Debug.Trace("[SeverActions] K2 provider " + id + ": alias " + SeverActions_ModuleBase.ProviderAliasId(id) + " answers '" + p.BundleId() + "' - skipped")
@@ -202,7 +206,7 @@ String[] Function DiscoverProviders()
     Else
         result = new String[1]
         Debug.Trace("[SeverActions] K2: no provider bound - no module installed (or every provider pex missing)")
-        Debug.Notification("SeverActions: no modules installed")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10n("init.noModulesInstalled"))
     EndIf
     SeverActionsNativeExt2.Module_ReportBound(result)
     Return result
@@ -648,7 +652,8 @@ Event OnPrismaItemMoved(String eventName, String strArg, Float numArg, Form send
      Catalog (giveItem) as an item_given / item_taken event, as the spoken GiveItem / TakeItem
      actions do: SkyrimNet's own container_changed event for these is ephemeral and reaction-free.
      strArg = "fromFid|toFid|itemFid|count", FormIDs as signed decimal (never float numArg, the
-     2^24 rule); fromFid 0 = the catalog.}
+     2^24 rule); fromFid 0 = the catalog. Only an older DLL sends it: this one tells the moves itself, one
+     line per giver when the menu closes (ItemHandoff.h).}
     Int fromFid = SeverActions_ModuleBase.VerbField(strArg, 0) as Int
     Int toFid   = SeverActions_ModuleBase.VerbField(strArg, 1) as Int
     Int itemFid = SeverActions_ModuleBase.VerbField(strArg, 2) as Int

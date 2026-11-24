@@ -698,7 +698,7 @@ Bool Function DismissSteward(Actor akActor)
     EndIf
     Int remainder = SeverActionsNativeExt2.Steward_Dismiss(akActor)
     If remainder > 0
-        Debug.Notification(akActor.GetDisplayName() + " steps down as steward of " + holdName + " and hands back " + remainder + " gold.")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hud.sentenceJoin", SeverActionsNativeExt2.Native_L10nFmt("currency.stepsDownAsSteward", akActor.GetDisplayName(), holdName), SeverActionsNativeExt2.Native_L10nFmt("currency.handsBackGold", ("" + remainder))))
     Else
         Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("currency.stepsDownAsSteward", ("" + akActor.GetDisplayName()), ("" + holdName)))
     EndIf
@@ -717,7 +717,7 @@ Bool Function CollectFromSteward(Actor akActor)
     EndIf
     Int vault = SeverActionsNativeExt2.Steward_Collect(akActor)
     If vault > 0
-        Debug.Notification(akActor.GetDisplayName() + " hands over " + holdName + "'s takings: " + vault + " gold.")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("hud.sentenceJoin", SeverActionsNativeExt2.Native_L10nFmt("currency.handsOverTakings", akActor.GetDisplayName(), holdName), SeverActionsNativeExt2.Native_L10nFmt("currency.goldAmount", ("" + vault))))
     Else
         Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("currency.vaultEmptyThisWeek", ("" + holdName)))
     EndIf

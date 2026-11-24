@@ -66,7 +66,7 @@ Keyword Property VendorItemFood Auto
 Keyword Property VendorItemFoodRaw Auto
 {Vanilla keyword for raw food items}
 
-; The LootScript property is gone (DR2): TryAutoEat goes through the items provider's useItem
+; The LootScript property is gone (DR2): TryAutoEat goes through the items provider's useItemForm
 ; service. The ESP's leftover VMAD fill warning is allowlisted until P12.
 
 FormList Property SeverActions_WarmLocations Auto
@@ -96,12 +96,17 @@ Float Property BASE_COLD_PER_HOUR = 5.0 AutoReadOnly     ; scaled by exposure; w
 Float Property FATIGUE_REST_PER_HOUR = 12.5 AutoReadOnly
 
 ; The pack's "game seconds" per game hour (shared with the other scripts and SurvivalUtils.h, not
-; the engine's 3600). Here only LastUpdateTime uses it.
+; the engine's 3600). Here only LastUpdateTime and the sleep window use it.
 Float Property SECONDS_PER_GAME_HOUR = 3631.0 AutoReadOnly
 
 ; ---- Internal state ----
 
 Float LastUpdateTime        ; GetGameTimeInSeconds() at the last needs update
+; The player's last sleep, GetGameTimeInSeconds() units: no follower tires over it, in a bed or not. SleepTo is the
+; asked-for wake time until OnSleepStop writes the real one, so a tick that runs first never counts an open window.
+Float SleepFrom
+Float SleepTo
+Float SleepHoursThisTick    ; the hours of the running tick's span the player slept (UpdateFollowerSurvival reads it)
 Bool IsUpdating = false     ; re-entrancy guard for the tick
 Bool NativeAvailable = false ; cached CheckNativeAvailable()
 
@@ -316,7 +321,9 @@ Event OnChronoTick_Survival(String eventName, String strArg, Float numArg, Form 
 
     ; Accumulate until at least half a game hour has passed
     If hoursPassed >= 0.5
+        SleepHoursThisTick = SleptHoursBetween(LastUpdateTime, currentTime)
         UpdateAllFollowers(hoursPassed)
+        SleepHoursThisTick = 0.0
         LastUpdateTime = currentTime
     EndIf
 
@@ -412,21 +419,31 @@ Function UpdateFollowerSurvival(Actor akFollower, Float hoursPassed)
         ; Hours lain in a bed since the last pass, measured natively from the bed entry, so a Wait or Sleep skip
         ; counts: they gain no fatigue and shed FATIGUE_REST_PER_HOUR each.
         Float bedHours = SeverActionsNativeExt2.Survival_TakeBedRest(akFollower, hoursPassed)
-        Float awakeHours = hoursPassed - bedHours
+        ; The player's sleep, interrupted or not, is no waking time either; a bed hour inside it counts once.
+        Float restHours = bedHours
+        If SleepHoursThisTick > restHours
+            restHours = SleepHoursThisTick
+        EndIf
+        Float awakeHours = hoursPassed - restHours
+        If awakeHours < 0.0
+            awakeHours = 0.0
+        EndIf
         Float fatigueIncrease = BASE_FATIGUE_PER_HOUR * awakeHours * FatigueRate
         If bedHours > 0.0
             ; Through the stored float: a half hour's 6.25 would lose its fraction to the Int path on every pass.
             SeverActionsNative.Native_Survival_AdjustNeeds(akFollower, 0.0, fatigueIncrease - bedHours * FATIGUE_REST_PER_HOUR, 0.0)
             currentFatigue = GetFollowerFatigue(akFollower)
             If ShowNotifications && ShowFatigueNotifications && prevFatigueLevel >= LEVEL_MILD && currentFatigue < LEVEL_MILD
-                Debug.Notification(akFollower.GetDisplayName() + " is now well rested")
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("survival.wellRested", akFollower.GetDisplayName()))
             EndIf
             If DebugMode
                 Debug.Trace("[SeverActions_Survival] " + akFollower.GetDisplayName() + " rested " + bedHours + " h in bed, fatigue now " + currentFatigue)
             EndIf
         Else
-            currentFatigue = ClampInt(currentFatigue + fatigueIncrease as Int, 0, 100)
-            SetFollowerFatigue(akFollower, currentFatigue)
+            ; A delta, never the value read above written back: OnSleepStop's reset can land in between. Whole
+            ; points only, as before.
+            SeverActionsNative.Native_Survival_AdjustNeeds(akFollower, 0.0, (fatigueIncrease as Int) as Float, 0.0)
+            currentFatigue = GetFollowerFatigue(akFollower)
 
             If ShowNotifications && ShowFatigueNotifications && GetSeverityLevel(currentFatigue) > prevFatigueLevel
                 NotifyFatigueChange(akFollower, currentFatigue)
@@ -462,11 +479,17 @@ EndFunction
 ; ---- Sleep ----
 
 Event OnSleepStart(Float afSleepStartTime, Float afDesiredSleepEndTime)
+    SleepFrom = afSleepStartTime * 24.0 * SECONDS_PER_GAME_HOUR
+    SleepTo = afDesiredSleepEndTime * 24.0 * SECONDS_PER_GAME_HOUR
     Debug.Trace("[SeverActions_Survival] Player sleeping, followers will rest")
 EndEvent
 
 Event OnSleepStop(Bool abInterrupted)
-    {When the player wakes from an uninterrupted sleep, followers' fatigue is fully restored.}
+    {When the player wakes from an uninterrupted sleep, followers' fatigue is fully restored. Any sleep, interrupted
+     or not, ends the window the tick counts as rest.}
+    If SleepFrom > 0.0
+        SleepTo = GetGameTimeInSeconds()
+    EndIf
 
     If !Enabled || !FatigueEnabled || abInterrupted
         Return
@@ -486,7 +509,7 @@ Event OnSleepStop(Bool abInterrupted)
             SetFollowerFatigue(follower, newFatigue)
 
             If ShowNotifications && ShowFatigueNotifications && currentFatigue >= LEVEL_MILD
-                Debug.Notification(follower.GetDisplayName() + " is now well rested")
+                Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("survival.wellRested", follower.GetDisplayName()))
             EndIf
         EndIf
         i += 1
@@ -495,10 +518,30 @@ Event OnSleepStop(Bool abInterrupted)
     Debug.Trace("[SeverActions_Survival] Followers rested, fatigue restored")
 EndEvent
 
+Float Function SleptHoursBetween(Float afFrom, Float afTo)
+    {Game hours of [afFrom, afTo] (GetGameTimeInSeconds() units) the player spent in their last sleep.}
+    If SleepFrom <= 0.0 || SleepTo <= SleepFrom
+        Return 0.0
+    EndIf
+    Float a = afFrom
+    If SleepFrom > a
+        a = SleepFrom
+    EndIf
+    Float b = afTo
+    If SleepTo < b
+        b = SleepTo
+    EndIf
+    If b <= a
+        Return 0.0
+    EndIf
+    Return (b - a) / SECONDS_PER_GAME_HOUR
+EndFunction
+
 ; ---- Hunger and auto-eat ----
 
 Bool Function TryAutoEat(Actor akFollower)
-    {Have a follower eat from their inventory (cooked first, then any food, then the party's).
+    {Have a follower eat from their inventory (cooked first, then any food, then the party's),
+     never a food on the party's food blacklist.
      Returns True when the items module took the meal and its hunger reduction is still in
      flight (it lands later in OnVerb_Survival); False when the follower ate directly here
      (hunger already reduced) or found nothing.}
@@ -511,17 +554,19 @@ Bool Function TryAutoEat(Actor akFollower)
         ; Party larder (the rations pool the Survival page shows): move the cheapest suitable
         ; food from whoever carries it (player included) into this follower's pack, so the
         ; normal flow below still plays the animation, sends the event and stamps MarkFed.
-        ; None for a follower set to eat only their own food (the Survival page's toggle).
+        ; None for a follower set to eat only their own food (the Survival page's toggle), and
+        ; when every food the party carries is blacklisted.
         food = SeverActionsNativeExt.Native_Survival_PullFoodFromParty(akFollower)
     EndIf
 
     If food
-        ; The items module's useItem service runs Loot.UseItem_Execute (animation, SkyrimNet
-        ; event), which reports back through survival.ateFood. Without the module it returns
-        ; False and the follower eats directly.
+        ; The items module's useItemForm service eats this exact food (animation, SkyrimNet
+        ; event) and reports back through survival.ateFood. By FormID, not by name: a name
+        ; lookup could eat a same-named food the blacklist holds. Without the module it
+        ; returns False and the follower eats directly.
         String foodName = food.GetName()
-        If SeverActions_ModuleBase.CallBool("items", "useItem", akFollower, None, foodName)
-            Debug.Trace("[SeverActions_Survival] TryAutoEat: items.useItem fed " + akFollower.GetDisplayName() + " " + foodName)
+        If SeverActions_ModuleBase.CallBool("items", "useItemForm", akFollower, None, "" + (food.GetFormID() as Int))
+            Debug.Trace("[SeverActions_Survival] TryAutoEat: items.useItemForm fed " + akFollower.GetDisplayName() + " " + foodName)
             Return True
         EndIf
         ; Direct eating: the items module is absent, or its service could not find the item
@@ -530,13 +575,14 @@ Bool Function TryAutoEat(Actor akFollower)
     EndIf
 
     If ShowNotifications && ShowHungerNotifications && GetFollowerHunger(akFollower) >= LEVEL_SEVERE
-        Debug.Notification(akFollower.GetDisplayName() + " is starving and has no food!")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("survival.starvingNoFood", akFollower.GetDisplayName()))
     EndIf
     Return False
 EndFunction
 
 Form Function FindFoodInInventory(Actor akActor, Bool cookedOnly)
-    {First food item in the actor's inventory; cookedOnly limits it to VendorItemFood items that are not raw.}
+    {First food item in the actor's inventory that is not on the party's food blacklist;
+     cookedOnly limits it to VendorItemFood items that are not raw.}
 
     Int numItems = akActor.GetNumItems()
     Int i = 0
@@ -544,7 +590,7 @@ Form Function FindFoodInInventory(Actor akActor, Bool cookedOnly)
         Form item = akActor.GetNthForm(i)
         If item
             Potion foodItem = item as Potion
-            If foodItem && foodItem.IsFood()
+            If foodItem && foodItem.IsFood() && !SeverActionsNativeExt2.Survival_IsFoodBlacklisted(item)
                 Bool isCooked = foodItem.HasKeyword(VendorItemFood) && !foodItem.HasKeyword(VendorItemFoodRaw)
 
                 If cookedOnly && isCooked
@@ -564,6 +610,8 @@ Function EatFood(Actor akFollower, Form akFood, Int hungerRestore)
     {Direct meal: remove one item silently (no animation) and lower hunger by hungerRestore.}
 
     akFollower.RemoveItem(akFood, 1, true)
+    ; A RemoveItem raises no equip event, so neither SunHelm nor the native sink hands back the rest of a waterskin
+    SeverActionsNativeExt2.SunHelm_LeaveNextWaterskin(akFollower, akFood)
 
     Int currentHunger = GetFollowerHunger(akFollower)
     Int newHunger = ClampInt(currentHunger - hungerRestore, 0, 100)
@@ -578,7 +626,7 @@ Function EatFood(Actor akFollower, Form akFood, Int hungerRestore)
     EndIf
 
     If ShowNotifications && ShowHungerNotifications
-        Debug.Notification(akFollower.GetDisplayName() + " ate some " + akFood.GetName())
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("survival.ateSome", akFollower.GetDisplayName(), akFood.GetName()))
     EndIf
 
     Debug.Trace("[SeverActions_Survival] " + akFollower.GetDisplayName() + " ate " + akFood.GetName() + ", hunger: " + currentHunger + " -> " + newHunger)
@@ -1059,11 +1107,11 @@ Function NotifyHungerChange(Actor akFollower, Int hunger)
     Int level = GetSeverityLevel(hunger)
 
     If level >= LEVEL_SEVERE
-        Debug.Notification(name + " is ravenous!")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("survival.ravenous", name))
     ElseIf level >= LEVEL_MODERATE
-        Debug.Notification(name + " is getting hungry")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("survival.gettingHungry", name))
     ElseIf level >= LEVEL_MILD
-        Debug.Notification(name + " is feeling peckish")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("survival.feelingPeckish", name))
     EndIf
 EndFunction
 
@@ -1072,11 +1120,11 @@ Function NotifyFatigueChange(Actor akFollower, Int fatigue)
     Int level = GetSeverityLevel(fatigue)
 
     If level >= LEVEL_SEVERE
-        Debug.Notification(name + " is exhausted!")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("survival.exhausted", name))
     ElseIf level >= LEVEL_MODERATE
-        Debug.Notification(name + " is getting tired")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("survival.gettingTired", name))
     ElseIf level >= LEVEL_MILD
-        Debug.Notification(name + " could use some rest")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("survival.couldUseRest", name))
     EndIf
 EndFunction
 
@@ -1085,11 +1133,11 @@ Function NotifyColdChange(Actor akFollower, Int cold)
     Int level = GetSeverityLevel(cold)
 
     If level >= LEVEL_SEVERE
-        Debug.Notification(name + " is freezing!")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("survival.freezing", name))
     ElseIf level >= LEVEL_MODERATE
-        Debug.Notification(name + " is getting cold")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("survival.gettingCold", name))
     ElseIf level >= LEVEL_MILD
-        Debug.Notification(name + " feels a chill")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("survival.feelsChill", name))
     EndIf
 EndFunction
 

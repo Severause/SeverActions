@@ -1888,9 +1888,15 @@ Function EnsureOutfitAliasOwnership(Bool abRebuild = false)
     If !abRebuild && _outfitPoolIsNative && _outfitPoolIsNative.Length == _outfitPool.Length
         Return
     EndIf
+    ; Cleared by hand: some SKSE builds ignore CreateBoolArray's fill (SeverActions_Loot._GiveItem).
     Bool[] mask = Utility.CreateBoolArray(_outfitPool.Length)
-    Int nativeCount = 0
     Int k = 0
+    While k < mask.Length
+        mask[k] = false
+        k += 1
+    EndWhile
+    Int nativeCount = 0
+    k = 0
     While k < 100   ; the slots with an alias (OutfitSlotStore: 0-99)
         ReferenceAlias slotAlias = SeverActionsNative.Native_OutfitSlot_GetAliasForSlot(k)
         If slotAlias
@@ -2770,7 +2776,8 @@ String Function NormalizePresetName(String name)
 {Lower-case, trim and strip ONE trailing word LLMs append to preset names
  ("travel outfit" -> "travel", "formal clothes" -> "formal"); a clean name
  passes unchanged.}
-    name = TrimString(StringToLower(name))
+    ; One line first (StorageLine): the name is a StorageUtil value and part of a key.
+    name = TrimString(StringToLower(SeverActions_ModuleBase.StorageLine(name)))
     Int len = StringUtil.GetLength(name)
     if len == 0
         return ""

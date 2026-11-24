@@ -1,0 +1,38 @@
+{% if render_mode == "full" or render_mode == "thoughts" or render_mode == "transform" or render_mode == "action" or render_mode == "dialogue_target" %}
+{# An NPC SeverActions walks behind the player (StartFollowing) or parks for them without a companion's place: they
+   stay with the player until StopFollowing ends it. The pointer renders only where stopfollowing.yaml offers it. #}
+{% set _actionsOffered = render_mode == "action" or (render_mode == "full" and default(responseTarget.type, "none") != "none") %}
+{% if player and player.UUID and actorUUID != player.UUID and not exists("stealthHiddenPlayer") %}
+{% set followState = sever_follow_state(actorUUID) %}
+{% if followState != "" and is_sever_follower(actorUUID) == "" %}
+{% set actor = decnpc(actorUUID) %}
+{% set _canStop = _actionsOffered and not is_in_combat(actorUUID) and sever_in_scene(actorUUID) == "" %}
+## Tagging Along With {{ player.name }}
+{% if render_mode == "dialogue_target" %}
+{% if followState == "waiting" %}
+- {{ actor.name }} is waiting here for {{ player.name }}, not as a companion.
+{% else %}
+- {{ actor.name }} is tagging along with {{ player.name }} for now, not as a companion.
+{% endif %}
+{% elif render_mode == "action" %}
+{% if followState == "waiting" %}
+- {{ actor.name }} is waiting here for {{ player.name }}, not as a companion.
+{% else %}
+- {{ actor.name }} is still tagging along with {{ player.name }}, not as a companion.
+{% endif %}
+{% if _canStop %}
+- Saying so does not end it: only the **TagAlong** action category's **StopFollowing** does.
+{% endif %}
+{% else %}
+{% if followState == "waiting" %}
+- You are waiting here for {{ player.name }}, though you are not their companion. You stay until {{ player.name }} comes back for you or you go back to your own business.
+{% else %}
+- You are walking along behind {{ player.name }} right now: you agreed to come with them for a while, though you are not their companion. You go wherever they go, and saying you will go your own way does not make it so: you keep following until you actually stop.
+{% endif %}
+{% if _canStop %}
+- When you go back to your own business, or {{ player.name }} sends you off, select the **TagAlong** action category, then **StopFollowing**, in that same line.
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

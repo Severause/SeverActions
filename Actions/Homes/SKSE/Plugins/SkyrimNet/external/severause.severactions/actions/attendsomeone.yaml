@@ -1,0 +1,94 @@
+customCategory: sa_companionship
+name: AttendSomeone
+description: "Use when the speaker agrees in this line, or decides now on their own, to take up a standing duty of attending someone present, as a bodyguard, squire, steward or the like: from then on they keep at that person's side in their working hours, and both of them know it. Already attending that person, only the role changes. Not for a promise of someday, walking along with someone right now, or joining {{ player.name }} as a companion (SetCompanion)."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: AttendSomeone_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the one taking up the duty
+  - type: dynamic
+    name: principal
+    description: "exact name of the person the speaker will attend, as listed in Nearby Actors; never the player or the speaker"
+  - type: dynamic
+    name: role
+    description: "what the speaker is to that person, in a word or a few, e.g. 'bodyguard', 'squire', 'steward', 'companion'; leave empty when no role was named"
+    optional: true
+    default: ""
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  # The duty seats them in an alias package that outranks a quest's own, so only NPCs SeverActions already manages
+  # (a companion, or an NPC with a home, a relax spot or an attendance) are offered it; the Actions page reaches anyone.
+  - conditions:
+      - decoratorName: "is_sever_follower"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+      - decoratorName: "sever_home"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+      - decoratorName: "sever_play_location"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+      - decoratorName: "sever_attending"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "OR"
+    required: true
+  # The duty is their work assignment: a workplace the player gave them is never replaced by their own decision
+  # (sever_work_location is "" for an attendance).
+  - conditions:
+      - decoratorName: "sever_work_location"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  # A retainer's post is the Employment category's to change.
+  - conditions:
+      - decoratorName: "retainer_status"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_custody"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_is_dispatched"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true

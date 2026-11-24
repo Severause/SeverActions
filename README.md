@@ -34,6 +34,19 @@
 
 ## What's new in 4.9
 
+**4.9.2 Arms and Oaths**
+
+- **Outfits carry weapons**: a saved outfit can keep the weapons the NPC holds, and an optional switch makes NPCs fight
+  with their kept weapons.
+- **Outlaw camps with a temper** (optional): calm, wary or hostile, and how you look to them counts; a list of places
+  and NPCs the truce leaves alone.
+- **Anyone can attend someone**, with work hours of their own (24 hours too), and you choose who tags along.
+- **Followers leave foods you mark alone**, wake rested after you sleep, and remember thane quests and the jarls' tasks.
+- **And more**: SunHelm waterskins, courier letters that arrive whole, a model for each kind of background call, and
+  fixes for retainers' holds, items with commas in their names and giving items on Skyrim 1.5.97.
+
+**4.9.0 Familiar Faces**
+
 - **NPCs know you as they should**: the What You Know About section is each NPC's own impression of you, written from
   their memories, instead of a general note that had people you knew well greet you like a near-stranger.
 - **Saves always load**: a save made while SeverActions held a very long script text no longer crashes on every load.
@@ -438,8 +451,11 @@ retainer stories and courier letters.
   and can be set to 1-12 or Off.
 - Default spacing, in game hours: each follower's relationship read 4-10, companions' opinions of each other 6-14,
   follower banter 2-5, ambient banter 3-7.
-- To save tokens, send these calls to a cheaper or local model with the **LLM Overrides** in SeverActions' plugin
-  settings in SkyrimNet (left empty, they use your normal model).
+- To save tokens, send these calls to a cheaper or local model on SkyrimNet's **AI > LLMs** page. Each kind has its
+  own row: sever_stories (off-screen life, work stories, letters), sever_banter, sever_decisions (the ambient action
+  director, the parley verdict), sever_assessments (relationship, reputation and intimacy reads) and sever_summaries
+  (quest awareness). The **LLM Overrides** in SeverActions' plugin settings in SkyrimNet fill in a row that has no
+  saved settings yet; left empty, a new row uses your normal model.
 
 ---
 

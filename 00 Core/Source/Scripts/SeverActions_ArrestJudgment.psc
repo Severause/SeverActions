@@ -148,7 +148,7 @@ Function DefaultToJail()
         String eventMsg = senderName + " never gave a ruling, so " + guardName + " is taking " + prisonerName + " to jail."
         SkyrimNetApi.RegisterPersistentEvent(eventMsg, prisoner, sender)
 
-        Debug.Notification(senderName + " lost patience - " + prisonerName + " sent to jail")
+        Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.lostPatienceSentToJail", senderName, prisonerName))
     EndIf
 
     _EndJudgmentClaimed(false)
@@ -224,7 +224,7 @@ Bool Function OrderRelease_Execute(Actor akSender)
     String eventMsg = senderName + " ordered " + prisonerName + " released."
     SkyrimNetApi.RegisterPersistentEvent(eventMsg, prisoner, sender)
 
-    Debug.Notification(prisonerName + " has been released")
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.hasBeenReleased", prisonerName))
 
     _EndJudgmentClaimed(true)
     Return true
@@ -288,7 +288,7 @@ Bool Function OrderJailed_Execute(Actor akSender)
     String eventMsg = senderName + " ordered " + prisonerName + " taken to jail."
     SkyrimNetApi.RegisterPersistentEvent(eventMsg, prisoner, sender)
 
-    Debug.Notification(prisonerName + " will be taken to jail")
+    Debug.Notification(SeverActionsNativeExt2.Native_L10nFmt("arrest.willBeTakenToJail", prisonerName))
 
     _EndJudgmentClaimed(false)
     Return true

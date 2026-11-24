@@ -604,7 +604,7 @@ Bool Function Magelight_IsTradePromptAvailable() Global Native
 Bool Function Native_LLM_Dispatch(String promptName, String contextJson, String modEventName) Global Native
 {LLM relay over the C++ bridge. Use it instead of SkyrimNetApi.SendCustomPromptToLLM,
  whose Papyrus callback truncates replies near 1024 chars. Sends promptName
- (sever_background variant); the reply fires modEventName with strArg = the
+ on its own model slot (LlmVariantCore.h); the reply fires modEventName with strArg = the
  response (cut at 3500 bytes), numArg 1.0 success / 0.0 failure, sender None - register for it
  first. False, and nothing sent, when the bridge is down, llmCallsEnabled is
  off or the prompt is not installed.}
@@ -1639,9 +1639,10 @@ Int Function Letter_DebugDeliverTest() Global Native
 {DEBUG: deliver a hardcoded test letter on a vanilla note, to test the reading loop from the console.}
 
 ; === Survival: party-larder auto-eat ===
-; Move one of the cheapest suitable foods (cooked first, then raw) from whichever
-; party member carries it (the player included) into the follower's pack.
-; Returns the food, or None when the party carries none.
+; Move one of the cheapest suitable foods (cooked first, then raw; never one on the
+; party's food blacklist) from whichever party member carries it (the player included)
+; into the follower's pack. Returns the food, or None when the party carries none a
+; follower may eat.
 Form Function Native_Survival_PullFoodFromParty(Actor akFollower) Global Native
 
 ; === Courier (letter-delivery NPC) ===

@@ -1055,8 +1055,8 @@ Int Function Sched_HoldYield(Actor akActor) Global Native
 {Which other hold the schedule gives way to: 0 none, 1 crafting (CrafterAlias 3 or CrafterApproachAlias 6 of quest
  0x000D62), 2 a spell cast (SpellCastCaster aliases 124-127), 3 a Levy patrol (quest 0x16AC46), 4 Walk With Me leads
  them, 5 a SexLab or OStim scene, 6 an arrest's prisoner in custody, 7 an arrest's guard on task, 8 the owner of a
- persuasion window. The schedule's aliases (101) would beat 1-5; its fallback overrides (100-110) would beat or tie
- 6-8, since any override beats every alias. Read-only.}
+ persuasion window, 9 another mod holds them (ExternalHold.h, whatever it runs). The schedule's aliases (101) would
+ beat 1-5; its fallback overrides (100-110) would beat or tie 6-8, since any override beats every alias. Read-only.}
 
 Int Function Sched_NoteHold(Actor akActor, Int aiReason) Global Native
 {Records why the schedule holds nothing on akActor (FollowerManager's SCHED_HOLD_* codes; 0 drops the note) for the
@@ -1112,6 +1112,11 @@ Bool Function Magelight_OpenDebtPromptMode(Actor akCounterparty, String asMode, 
 Function Magelight_CloseDebtPrompt() Global Native
 Bool Function Magelight_IsDebtPromptOpen() Global Native
 Bool Function Magelight_IsDebtPromptAvailable() Global Native
+
+; The "wants to tag along" card for an NPC's own StartFollowing (setting followersTagAlongAsk). Returns 0 = follow
+; now (the setting is off, or VR immersive mode), 1 = asked (SeverActions_TagAlongChoice follows: strArg
+; accept|deny|denySilent, sender = the NPC), 2 = could not ask (no card can open now): no follow.
+Int Function Magelight_OpenTagAlongPrompt(Actor akNpc, Int aiTimeoutMs) Global Native
 
 ; ── Bio Blocks: MCM apply / faction-rule surface (for VR) ───────────────────
 ; SeverActions' own MCM natives, not a public API: they may change in any release.
@@ -1342,6 +1347,9 @@ Int Function Survival_SetPenalty(Actor akActor, Int aiKind, Int aiPenalty) Globa
 Float Function Survival_TakeBedRest(Actor akActor, Float afMaxHours) Global Native
 ; Whether the actor's needs were ever set: a follower at 0/0/0 is rested and fed, not new. False on an older DLL.
 Bool Function Survival_HasNeeds(Actor akActor) Global Native
+; Whether the food is on the party's food blacklist (FoodBlacklistCore.h): no follower eats it unless told to.
+; False on an older DLL.
+Bool Function Survival_IsFoodBlacklisted(Form akFood) Global Native
 
 ; Quick wheel (QuickWheelBridge), the only wheel (D8). The DLL owns the key/chord
 ; and routes a pick through HotkeySink (SeverActions_Hotkey_<Name>, strArg
@@ -1579,6 +1587,13 @@ String Function RecruitRequest_DeclinesText(Actor akActor) Global Native
 {How often and how long ago akActor turned the player down ("twice, the last about 3 hours ago"),
  or "" when they never have.}
 
+; ── Attendance (Attendance.h) ──
+Function Attend_Set(Actor akAttendant, Actor akPrincipal, String asRole) Global Native
+{Records akAttendant attending akPrincipal as asRole, for both NPCs' prompts. An empty asRole keeps the role already
+ given while the principal is the same. Call after the work target is set.}
+Function Attend_Clear(Actor akAttendant) Global Native
+{Forgets akAttendant's attendance and its role.}
+
 ; ── Survivable dismemberment (LivingDismember.h) ───────────────────────────
 Function LivingDismember_Restore(Actor akActor) Global Native
 {Regrows every limb akActor lost and lived without (Dismembering Framework's reset) and lifts the
@@ -1684,8 +1699,21 @@ Function OffScreen_StoreLifeEventHistory(Actor akActor, Int maxEvents, Float cur
 {Writes akActor's newest maxEvents life events (Native_OffScreen_GetRecentLifeEvents' lines) to their life event
 history in the DLL, so the text never passes through a script.}
 
-; A text too long for one script string, in parts of at most 3500 bytes: part 0, 1, 2... until "".
+; A text too long for one script string, in parts of at most 3500 bytes: part 0, 1, 2... until "". Each line
+; break is "<br>", which no part is cut inside: the parts wait in StorageUtil for prompt 0280, which turns it back.
 String Function Book_TextPart(Form akBook, Int part) Global Native
-{Part `part` of akBook's text (GetBookText's), "" past the end. Ask for part 0 first: it reads the book.}
+{Part `part` of akBook's text (GetBookText's, each line break as "<br>"), "" past the end. Ask for part 0 first:
+ it reads the book.}
 String Function Magelight_SelectedDiaryPart(Int part) Global Native
-{Part `part` of the diary entry the player picked in the diary viewer, "" past the end.}
+{Part `part` of the diary entry the player picked in the diary viewer (each line break as "<br>"), "" past the
+ end. Ask for part 0 first: it takes the entry.}
+
+; PapyrusUtil reads a saved StorageUtil string back only up to its first line break or tab, and misreads what the
+; save held after it. Pack a text that may hold one before it goes into a StorageUtil string or string list.
+String Function Letter_PackText(String asText, Bool abOneLine = False) Global Native
+{asText with each line break as a mark Letter_DeliverToCourier turns back (a space when abOneLine, for a title) and
+ each tab as a space. Packing a packed text changes nothing.}
+
+; SunHelm Survival swaps a waterskin only for a drink it sees: after a RemoveItem of one, the next emptier skin goes
+; to whoever the larder took it from, else to akDrinker. Anything else, or SunHelm absent: nothing.
+Function SunHelm_LeaveNextWaterskin(Actor akDrinker, Form akDrunk) Global Native

@@ -1,0 +1,63 @@
+customCategory: sa_companionship
+name: StopAttending
+description: "Use when the speaker, who attends someone as a standing duty, gives that duty up in this line, by their own choice or because {{ player.name }} releases them from it: they stop keeping at that person's side, and their working hours are their own again. Not for a short absence, a complaint about the duty, waiting somewhere for {{ player.name }} (WaitForPlayerHere), or parting ways with {{ player.name }} (DismissFollower)."
+questEditorId: SeverActions
+scriptName: SeverActions_FollowerManager
+executionFunctionName: StopAttending_Execute
+parameterMapping:
+  - type: speaker
+    name: akActor
+    description: the one giving up the duty
+enabled: true
+defaultPriority: 6
+eligibilityRules:
+  - conditions:
+      - decoratorName: "sever_attending"
+        arguments: ["currentActor"]
+        comparisonOperator: "!="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  # A retainer's post is the Employment category's to change.
+  - conditions:
+      - decoratorName: "retainer_status"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_in_combat"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: false
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_is_dispatched"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_scene"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "is_kidnap_victim"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
+  - conditions:
+      - decoratorName: "sever_in_custody"
+        arguments: ["currentActor"]
+        comparisonOperator: "=="
+        expectedValue: ""
+    logicalOperator: "AND"
+    required: true
